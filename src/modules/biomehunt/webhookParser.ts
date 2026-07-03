@@ -1,7 +1,7 @@
 import { Logger } from "@/utils/logging";
 import type { ParsedEvent } from "./types";
 
-const logger = new Logger("biomehunt:webhookParser");
+const logger = new Logger("biomehunt.webhookParser");
 
 export interface WebhookMessageLike {
     webhookId: string | null;

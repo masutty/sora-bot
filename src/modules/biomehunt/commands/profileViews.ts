@@ -7,7 +7,7 @@ import {
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
 import { Logger } from "@/utils/logging";
 
-const logger = new Logger("biomehunt:profileViews");
+const logger = new Logger("biomehunt.profileViews");
 
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
 
@@ -45,7 +45,7 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
             },
             {
                 name: `Quota (last ${guildConfig.quota_window_hours}h)`,
-                value: formatCodeblock(`${compliant ? "✅" : "❌ (" + formatTime(activeSeconds) + " / " + formatTime(guildConfig.quota_target_seconds) + ")"}`),
+                value: formatCodeblock(`${compliant ? "✅" : "❌ ( " + formatTime(activeSeconds) + " / " + formatTime(guildConfig.quota_target_seconds) + " )"}`),
                 inline: true,
             },
         );

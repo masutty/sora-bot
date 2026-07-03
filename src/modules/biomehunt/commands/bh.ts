@@ -9,7 +9,7 @@ import { runUserSetup } from "../guildSetup";
 import { BiomeHuntError } from "../types";
 import { buildHistoryEmbed, buildLeaderboardEmbed, buildProfileEmbed } from "./profileViews";
 
-const logger = new Logger("biomehunt:bh");
+const logger = new Logger("biomehunt.commands.bh");
 
 export default defineCommand({
     name: "bh",

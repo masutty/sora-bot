@@ -4,7 +4,7 @@ import { Logger } from "@/utils/logging";
 import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/guilds";
 import { getGuildUserCounts } from "../repository/users";
 
-const logger = new Logger("biomehunt:CounterEngine");
+const logger = new Logger("biomehunt.CounterEngine");
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000;
 

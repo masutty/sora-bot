@@ -16,7 +16,7 @@ import {
 } from "./adminUserActions";
 import { BiomeHuntError } from "../types";
 
-const logger = new Logger("biomehunt:bh-admin");
+const logger = new Logger("biomehunt.commands.bh-admin");
 
 export default defineCommand({
     name: "bh-admin",

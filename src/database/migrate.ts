@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Logger } from "@/utils/logging";
 import { closePool, query, testConnection } from "./connection";
 
-const logger = new Logger("Core.Database");
+const logger = new Logger("core.database");
 
 // ─── Schema Base ──────────────────────────────────────────────────────────────
 

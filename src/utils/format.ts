@@ -5,7 +5,10 @@ export function formatTime(seconds: number): string {
     const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
-    return [d && `${d}d`, h && `${h}h`, m && `${m}m`, s && `${s}s`].filter(Boolean).join(" ") ?? "0?s";
+
+    return [d && `${d}d`, h && `${h}h`, m && `${m}m`, s && `${s}s`]
+        .filter(Boolean)
+        .join(" ") || "?s";
 }
 
 export function formatCodeblock(code: string, language: string = "txt"): string {

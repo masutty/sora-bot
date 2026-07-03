@@ -3,7 +3,7 @@ import { Logger } from "@/utils/logging";
 import { getPendingJobs, markJobProcessed, rescheduleJob } from "../repository/roleJobs";
 import { getUserById } from "../repository/users";
 
-const logger = new Logger("biomehunt:RoleEngine");
+const logger = new Logger("biomehunt.RoleEngine");
 
 const TICK_INTERVAL_MS = 2_000;
 const BATCH_SIZE = 10;

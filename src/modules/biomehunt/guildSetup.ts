@@ -7,7 +7,7 @@ import { createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUse
 import { BiomeHuntError } from "./types";
 import type { GuildConfigRow } from "./types";
 
-const logger = new Logger("biomehunt:guildSetup");
+const logger = new Logger("biomehunt.guildSetup");
 
 export interface SetupResult {
     channelId: string;

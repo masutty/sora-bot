@@ -7,7 +7,7 @@ import { extendSession, getLatestSession, insertEventIfNew, openNewSession } fro
 import { parseEvent } from "../webhookParser";
 import { transitionUser } from "../workers/StatusEngine";
 
-const logger = new Logger("biomehunt:ActivityEngine");
+const logger = new Logger("biomehunt.ActivityEngine");
 
 export async function processIncomingMessage(message: Message): Promise<void> {
     const entry = lookupChannel(message.channelId);

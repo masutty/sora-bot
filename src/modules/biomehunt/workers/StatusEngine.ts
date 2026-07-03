@@ -5,7 +5,7 @@ import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds";
 import { deleteUserCascade, getUsersForStatusSweep, updateUserStatus } from "../repository/users";
 import { enqueueRoleJob } from "../repository/roleJobs";
 
-const logger = new Logger("biomehunt:StatusEngine");
+const logger = new Logger("biomehunt.StatusEngine");
 
 export async function transitionUser(userId: number, guildId: string, newStatus: ActivityStatus): Promise<void> {
     await updateUserStatus(userId, newStatus);
