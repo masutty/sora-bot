@@ -8,13 +8,13 @@ import { join } from "path";
 import { config } from "./config";
 import { BotClient } from "./core/BotClient";
 import { registerCommandHandlers, registerSlashCommands } from "./core/CommandHandler";
-import { loadModules } from "./core/ModuleLoader";
+import { loadCogs } from "./core/CogLoader";
 import { closePool } from "./database/connection";
 import { migrate } from "./database/migrate";
 import { Logger } from "./utils/logging";
 
 const logger = new Logger("Core.Bootstrap");
-let stopModules: () => Promise<void> = async () => { };
+let stopCogs: () => Promise<void> = async () => { };
 
 async function bootstrap(): Promise<void> {
     logger.info("Starting...");
@@ -23,8 +23,8 @@ async function bootstrap(): Promise<void> {
 
     const client = new BotClient();
 
-    const modulesPath = join(__dirname, "modules");
-    stopModules = await loadModules(client, modulesPath);
+    const cogsPath = join(__dirname, "modules");
+    stopCogs = await loadCogs(client, cogsPath);
 
     registerCommandHandlers(client);
 
@@ -45,7 +45,7 @@ async function bootstrap(): Promise<void> {
 
 async function shutdown(signal: string): Promise<void> {
     logger.info(`Signal ${signal} received. Stopping...`);
-    await stopModules();
+    await stopCogs();
     await closePool();
     process.exit(0);
 }

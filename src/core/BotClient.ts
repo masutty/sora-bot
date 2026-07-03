@@ -1,11 +1,12 @@
 import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { CommandRegistry } from "./CommandRegistry";
-import type { ModuleDefinition } from "../types";
+import type { Cog } from "@/types";
 
 export class BotClient extends Client {
     public readonly commands: CommandRegistry;
-    public readonly modules = new Map<string, ModuleDefinition>();
+    public readonly cogs = new Map<string, Cog>();
+
     private readonly logger = new Logger("Core.BotClient");
 
     constructor() {

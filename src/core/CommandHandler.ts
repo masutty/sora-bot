@@ -8,50 +8,19 @@ import {
     SlashCommandBuilder,
 } from "discord.js";
 import { Logger } from "@/utils/logging";
-import { config } from "../config";
-import { getGuildPrefix } from "../database/guildRepository";
+import { config } from "@/config";
+import { getGuildPrefix } from "@/database/guildRepository";
 import type { BotClient } from "./BotClient";
-import { PrefixCommandContext, SlashCommandContext } from "./context";
+import { PrefixArgs, deriveSchema, deriveSubcommandSchema } from "./PrefixArgs";
 import { checkGuards } from "./guards";
-import type { CommandArg } from "../types";
 import { getFailureQuip } from "@/utils/quips";
+import type { CommandDefinition } from "@/types";
+import { GuildMember } from "discord.js";
 
 const logger = new Logger("Core.CommandHandler");
 const slashLogger = new Logger("Core.SlashCmd");
 
-// ─── Arg Derivation ────────────────────────────────────────────────────────────
-
-type RawOption = {
-    name: string;
-    description: string;
-    type: number;
-    required?: boolean;
-};
-
-const OPTION_TYPE_MAP: Record<number, CommandArg["type"] | null> = {
-    3: "string",
-    4: "number",
-    5: "boolean",
-    6: "user",
-    7: "channel",
-    8: "role",
-    10: "number",
-};
-
-function deriveArgsFromBuilder(
-    builder: SlashCommandBuilder | { toJSON(): { options?: RawOption[] } },
-): CommandArg[] {
-    const json = builder.toJSON() as { options?: RawOption[] };
-    if (!json.options?.length) return [];
-
-    return json.options.flatMap((opt): CommandArg[] => {
-        const type = OPTION_TYPE_MAP[opt.type];
-        if (!type) return [];
-        return [{ name: opt.name, description: opt.description, type, required: opt.required ?? false }];
-    });
-}
-
-// ─── Arg Parser ────────────────────────────────────────────────────────────────
+// ─── Arg parser ───────────────────────────────────────────────────────────────
 
 function parseArgs(input: string): string[] {
     const args: string[] = [];
@@ -59,10 +28,7 @@ function parseArgs(input: string): string[] {
     let inQuotes = false;
 
     for (const char of input) {
-        if (char === '"') {
-            inQuotes = !inQuotes;
-            continue;
-        }
+        if (char === '"') { inQuotes = !inQuotes; continue; }
         if (char === " " && !inQuotes) {
             if (current.length) { args.push(current); current = ""; }
             continue;
@@ -74,49 +40,44 @@ function parseArgs(input: string): string[] {
     return args;
 }
 
-// ─── Command Handlers ──────────────────────────────────────────────────────────
+// ─── Command Handlers ─────────────────────────────────────────────────────────
 
 export function registerCommandHandlers(client: BotClient): void {
+
+    // ── Prefix ────────────────────────────────────────────────────────────────
     client.on(Events.MessageCreate, async (message: Message) => {
         if (message.author.bot || !message.guild) return;
 
         const prefix = await getGuildPrefix(message.guild.id);
         if (!message.content.startsWith(prefix)) return;
 
-        const [commandName, ...args] = parseArgs(message.content.slice(prefix.length).trim());
+        const [commandName, ...rawArgs] = parseArgs(message.content.slice(prefix.length).trim());
         if (!commandName) return;
 
         const command = client.commands.get(commandName.toLowerCase());
         if (!command) return;
 
-        if (command.prefixEnabled === false) return;
+        const handler = command.executeAsPrefix;
+        if (!handler) return; // Command doesn't support prefix
 
-        // respeita setDefaultMemberPermissions no prefix
-        const requiredPerms = command.options?.toJSON().default_member_permissions;
-        if (requiredPerms && !message.member?.permissions.has(BigInt(requiredPerms))) {
-            await message.reply({ embeds: [errorEmbed("You don't have permission to use this command.")] }).catch(() => { });
-            return;
-        }
+        const schema = command.options ? deriveSchema(command.options) : [];
+        const subcommandMap = command.options ? deriveSubcommandSchema(command.options) : undefined;
+        const args = new PrefixArgs(rawArgs, schema, message.guild, client, subcommandMap);
 
         try {
-            if (command.execute) {
-                const schema = command.options ? deriveArgsFromBuilder(command.options) : [];
-                const ctx = new PrefixCommandContext(message, args, schema, client);
-                const guardError = await checkGuards(ctx, command);
-                if (guardError) {
-                    await ctx.reply({ embeds: [errorEmbed("Error! " + getFailureQuip() + "\n" + guardError)] });
-                    return;
-                }
-                await command.execute(ctx);
-            } else if (command.executePrefix) {
-                await command.executePrefix(message, args, client);
+            const guardError = await checkGuards({ user: message.author, member: message.member }, command);
+            if (guardError) {
+                await message.reply({ embeds: [errorEmbed("Error! " + getFailureQuip() + "\n" + guardError)] }).catch(() => { });
+                return;
             }
+            await handler(message, args, client);
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { command: commandName });
             await message.reply({ embeds: [errorEmbed(getFailureQuip())] }).catch(() => { });
         }
     });
 
+    // ── Slash ─────────────────────────────────────────────────────────────────
     client.on(Events.InteractionCreate, async (interaction) => {
         if (!interaction.isChatInputCommand()) return;
 
@@ -126,23 +87,27 @@ export function registerCommandHandlers(client: BotClient): void {
             return;
         }
 
+        const handler = command.executeAsSlash;
+        if (!handler) {
+            await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });
+            return;
+        }
+
         try {
-            if (command.execute) {
-                const ctx = new SlashCommandContext(interaction as ChatInputCommandInteraction, client);
-                const guardError = await checkGuards(ctx, command);
-                if (guardError) {
-                    await ctx.reply({ embeds: [errorEmbed(getFailureQuip() + "\n" + guardError)], ephemeral: true });
-                    return;
-                }
-                await command.execute(ctx);
-            } else if (command.executeSlash) {
-                await command.executeSlash(interaction as ChatInputCommandInteraction, client);
+            const guardError = await checkGuards(
+                { user: interaction.user, member: interaction.member as GuildMember | null },
+                command,
+            );
+            if (guardError) {
+                const payload = { embeds: [errorEmbed(getFailureQuip() + "\n" + guardError)], ephemeral: true };
+                await interaction.reply(payload).catch(() => { });
+                return;
             }
+            await handler(interaction as ChatInputCommandInteraction, client);
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { command: interaction.commandName });
 
             const payload = { embeds: [errorEmbed(getFailureQuip())], ephemeral: true };
-
             if (interaction.replied || interaction.deferred) {
                 await interaction.followUp(payload).catch(() => { });
             } else {
@@ -152,7 +117,7 @@ export function registerCommandHandlers(client: BotClient): void {
     });
 }
 
-// ─── Slash Command Registration ────────────────────────────────────────────────
+// ─── Slash Registration ───────────────────────────────────────────────────────
 
 export async function registerSlashCommands(
     client: BotClient,
@@ -162,7 +127,10 @@ export async function registerSlashCommands(
 
     const builders = client.commands.getAll().map((cmd) => {
         if (cmd.options) return cmd.options.toJSON();
-        return new SlashCommandBuilder().setName(cmd.name).setDescription(cmd.description).toJSON();
+        return new SlashCommandBuilder()
+            .setName(cmd.name)
+            .setDescription(cmd.description)
+            .toJSON();
     });
 
     try {

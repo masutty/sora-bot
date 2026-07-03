@@ -1,13 +1,18 @@
 import { PermissionFlagsBits } from "discord.js";
+import type { GuildMember, User } from "discord.js";
 import { config } from "../config";
 import type { CommandDefinition } from "../types";
-import type { CommandContext } from "./context";
+
+interface GuardContext {
+    user: User;
+    member: GuildMember | null;
+}
 
 export async function checkGuards(
-    ctx: CommandContext,
+    ctx: GuardContext,
     cmd: CommandDefinition,
 ): Promise<string | null> {
-    if (cmd.ownerOnly && !config.bot.ownerIds.includes(ctx.user.id)) {
+    if (cmd.botOwnerOnly && !config.bot.ownerIds.includes(ctx.user.id)) {
         return "This command is restricted to my developers!";
     }
 
@@ -15,10 +20,7 @@ export async function checkGuards(
         return "You don't have permission to run this command!";
     }
 
-    if (
-        cmd.adminOnly &&
-        !ctx.member?.permissions.has(PermissionFlagsBits.Administrator)
-    ) {
+    if (cmd.adminOnly && !ctx.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         return "This command requires administrator permission!";
     }
 

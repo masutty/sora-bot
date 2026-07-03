@@ -1,38 +1,32 @@
-import type { CommandDefinition, ModuleDefinition } from "./types";
-
-export type {
-    ArgHelper,
-    ArgType,
-    CommandArg,
-    CommandContext,
-    ReplyPayload,
-    SentMessage,
-} from "./core/context";
+import type { CommandDefinition, Cog } from "./types";
 
 export type {
     CommandDefinition,
-    ModuleAuthor,
-    ModuleDefinition,
+    Cog,
+    CogAuthor,
 } from "./types";
 
+export type { PrefixArgs } from "./core/PrefixArgs";
+
 const DEFAULT_COMMAND_FLAGS: Partial<CommandDefinition> = {
-    hidden: false,
-    prefixEnabled: true,
+    showOnHelp: false,
 };
 
-export function defineCommand(options: CommandDefinition): CommandDefinition {
-    if (options.options) {
-        options.options
-            .setName(options.name)
-            .setDescription(options.description);
+export function defineCommand(def: CommandDefinition): CommandDefinition {
+    // Sync name/description into the SlashCommandBuilder
+    if (def.options) {
+        def.options.setName(def.name).setDescription(def.description);
     }
-    return { ...DEFAULT_COMMAND_FLAGS, ...options };
+
+    // Wire execute → executeAsSlash
+    if (def.execute && !def.executeAsSlash) {
+        def.executeAsSlash = def.execute;
+    }
+
+    return { ...DEFAULT_COMMAND_FLAGS, ...def };
 }
 
-const DEFAULT_MODULE_FLAGS: Partial<ModuleDefinition> = {
-    
-}
-
-export function defineModule(options: ModuleDefinition): ModuleDefinition {
-    return options;
+// the name of the cog should be the same as module/<cog_name>
+export function defineCog(cog: Cog): Cog {
+    return cog;
 }
