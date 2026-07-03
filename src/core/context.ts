@@ -8,11 +8,14 @@ import type {
     Message,
     TextBasedChannel,
     User,
+    MessageCreateOptions, TextChannel, DMChannel, NewsChannel
 } from "discord.js";
 import { ChannelType, GuildMember, MessageFlags, Role } from "discord.js";
 import type { BotClient } from "./BotClient";
 import { Logger } from "@/utils/logging";
 import { config } from "@/config";
+
+type SendableChannel = TextChannel | DMChannel | NewsChannel;
 
 const logger = new Logger("Core.CommandContext");
 
@@ -31,6 +34,17 @@ export interface CommandArg {
     description: string;
     type: ArgType;
     required: boolean;
+}
+
+// ─── Send ─────────────────────────────────────────────────────────
+
+export interface SendPayload {
+    content?: string;
+    embeds?: EmbedBuilder[];
+    ephemeral?: boolean;
+    components?: ActionRowBuilder<ButtonBuilder>[];
+    allowedMentions?: MessageFlags;
+    deleteAfter?: number; // ms
 }
 
 // ─── Reply ─────────────────────────────────────────────────────────────────────
@@ -76,6 +90,7 @@ export interface CommandContext {
     readonly args: ArgHelper;
     readonly source: Message | ChatInputCommandInteraction;
 
+    send(payload: SendPayload): Promise<Message>;
     reply(payload: ReplyPayload): Promise<SentMessage>;
     editReply(payload: ReplyPayload): Promise<Message>;
     deferReply(options?: DeferReplyOptions): Promise<void>;
@@ -219,6 +234,24 @@ export class PrefixCommandContext implements CommandContext {
     isSlash(): boolean { return false; }
     isPrefix(): boolean { return true; }
 
+    async send(payload: SendPayload): Promise<Message> {
+        if (!("send" in this.channel)) {
+            throw new Error("Channel does not support sending messages");
+        }
+
+        const sent = await this.channel.send({
+            content: payload.content,
+            embeds: payload.embeds,
+            components: payload.components as never,
+        });
+
+        if (payload.deleteAfter) {
+            setTimeout(() => sent.delete().catch(() => { }), payload.deleteAfter);
+        }
+
+        return sent;
+    }
+
     async reply(payload: ReplyPayload): Promise<Message> {
         if (this.sentMessage) {
             return this.editReply(payload);
@@ -310,6 +343,24 @@ export class SlashCommandContext implements CommandContext {
 
     isSlash(): boolean { return true; }
     isPrefix(): boolean { return false; }
+
+    async send(payload: SendPayload): Promise<Message> {
+        if (!("send" in this.channel)) {
+            throw new Error("Channel does not support sending messages");
+        }
+
+        const sent = await this.channel.send({
+            content: payload.content,
+            embeds: payload.embeds,
+            components: payload.components as never,
+        });
+
+        if (payload.deleteAfter) {
+            setTimeout(() => sent.delete().catch(() => { }), payload.deleteAfter);
+        }
+
+        return sent;
+    }
 
     async reply(payload: ReplyPayload): Promise<Message> {
         if (this.source.deferred || this.source.replied) {

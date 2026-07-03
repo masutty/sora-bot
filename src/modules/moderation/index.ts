@@ -1,5 +1,5 @@
 import { defineModule } from "@/define";
-import clearCommand from "./commands/clear";
+import purgeCommand from "./commands/purge";
 import { noteCommand, noteDelCommand, notesCommand } from "./commands/note";
 import { rolCreateCommand, rolDeleteCommand, rolInfoCommand, rolAddUserCommand, rolRemoveUserCommand } from "./commands/role";
 
@@ -24,7 +24,7 @@ export default defineModule({
     authors: [{ name: "masutty", id: 188851299255713792n }],
     migrations: [SCHEMA],
     commands: [
-        clearCommand,
+        purgeCommand,
         noteCommand,
         noteDelCommand,
         notesCommand,
