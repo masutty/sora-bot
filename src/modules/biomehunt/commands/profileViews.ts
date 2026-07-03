@@ -1,16 +1,21 @@
-import { EmbedBuilder } from "discord.js";
-import { EmbedFormatter, formatTime } from "@/utils/format";
+import { EmbedBuilder, GuildMember } from "discord.js";
+import { EmbedFormatter, formatCodeblock, formatTime } from "@/utils/format";
 import { getOrCreateGuildConfig } from "../repository/guilds";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getComplianceRate, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
 import { getGuildUserCounts, getUserByDiscordId } from "../repository/users";
+import { Logger } from "@/utils/logging";
+
+const logger = new Logger("biomehunt:profileViews");
 
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
 
-export async function buildProfileEmbed(guildId: string, discordUserId: string): Promise<EmbedBuilder> {
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) return EmbedFormatter.info("You haven't set up BiomeHunt yet. Run `/bh setup` to get started.");
+export async function buildProfileEmbed(guildId: string, member: GuildMember): Promise<EmbedBuilder> {
+    const user = await getUserByDiscordId(guildId, member.id);
+    if (!user) return EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started.");
+
+    logger.debug(`Found user: ${JSON.stringify(user, null, 2)}`);
 
     const guildConfig = await getOrCreateGuildConfig(guildId);
     const activeSeconds = await getActiveSecondsInWindow(user.id, guildConfig.quota_window_hours);
@@ -19,17 +24,28 @@ export async function buildProfileEmbed(guildId: string, discordUserId: string):
 
     const embed = new EmbedBuilder()
         .setColor(compliant ? 0x57f287 : 0xed4245)
-        .setTitle("BiomeHunt Profile")
+        .setTitle(`\`${member.user.username}\`'s hunter profile`)
+        .setThumbnail(member.displayAvatarURL())
+        .setDescription([
+            `- \`${formatTime(activeSeconds)}\` activity time in the last \`${guildConfig.quota_window_hours}h\` window.`,
+            `- \`${biomes.length}\` biomes registered.`,
+        ].join("\n"))
+        .setFooter({ text: `profile created at <t:${Math.floor(user.created_at.getTime() / 1000)}:R>` })
         .addFields(
-            { name: "Status", value: `${STATUS_EMOJI[user.current_status]} ${user.current_status.toUpperCase()}`, inline: true },
+            {
+                name: "Current Status",
+                value: formatCodeblock(STATUS_EMOJI[user.current_status] + " " + user.current_status.toUpperCase()),
+                inline: true
+            },
             {
                 name: `Quota (last ${guildConfig.quota_window_hours}h)`,
-                value: `${formatTime(activeSeconds)} / ${formatTime(guildConfig.quota_target_seconds)} — ${compliant ? "✅ Compliant" : "❌ Not compliant"}`,
+                value: formatCodeblock(`${compliant ? "✅" : "❌"}`),
+                inline: true,
             },
         );
 
     if (biomes.length > 0) {
-        embed.addFields({ name: "Biomes captured", value: biomes.map((b) => `${b.biome}: ${b.count}`).join("\n") });
+        embed.addFields({ name: "Biomes registered:", value: formatCodeblock(biomes.map((b) => `${b.biome}: ${b.count}`).join("\n")) });
     }
 
     return embed;
@@ -37,7 +53,7 @@ export async function buildProfileEmbed(guildId: string, discordUserId: string):
 
 export async function buildHistoryEmbed(guildId: string, discordUserId: string): Promise<EmbedBuilder> {
     const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) return EmbedFormatter.info("You haven't set up BiomeHunt yet. Run `/bh setup` to get started.");
+    if (!user) return EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started.");
 
     const sessions = await getRecentSessions(user.id, 10);
     if (sessions.length === 0) return EmbedFormatter.info("No activity recorded yet.");

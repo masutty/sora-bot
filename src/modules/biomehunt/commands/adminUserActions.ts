@@ -5,33 +5,33 @@ import { deleteUserCascade, getUserByDiscordId, pauseUser, unpauseUser } from ".
 import { BiomeHuntError } from "../types";
 import { buildGuildStatsEmbed, buildLeaderboardEmbed, buildProfileEmbed } from "./profileViews";
 
-export async function checkUserAction(guildId: string, discordUserId: string): Promise<EmbedBuilder> {
-    return buildProfileEmbed(guildId, discordUserId);
+export async function checkUserAction(guildId: string, member: GuildMember): Promise<EmbedBuilder> {
+    return buildProfileEmbed(guildId, member);
 }
 
 export async function resetUserAction(guildId: string, discordUserId: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no BiomeHunt data to reset.");
     await deleteUserCascade(user.id);
-    return `<@${discordUserId}>'s BiomeHunt data has been reset. They can run \`/bh setup\` again.`;
+    return `<@${discordUserId}>'s data has been reset. They can run \`/bh setup\` again.`;
 }
 
 export async function removeUserAction(guildId: string, discordUserId: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) throw new BiomeHuntError("That user has no BiomeHunt data to remove.");
+    if (!user) throw new BiomeHuntError("That user has no data to remove.");
     await deleteUserCascade(user.id);
-    return `<@${discordUserId}> has been removed from BiomeHunt.`;
+    return `<@${discordUserId}> has been removed from the hunt.`;
 }
 
 export async function pauseUserAction(guildId: string, discordUserId: string): Promise<string> {
     const paused = await pauseUser(guildId, discordUserId);
-    if (!paused) throw new BiomeHuntError("That user has no BiomeHunt data.");
+    if (!paused) throw new BiomeHuntError("That user has no data.");
     return `<@${discordUserId}> is now exempt from inactivity auto-delete.`;
 }
 
 export async function unpauseUserAction(guildId: string, discordUserId: string): Promise<string> {
     const unpaused = await unpauseUser(guildId, discordUserId);
-    if (!unpaused) throw new BiomeHuntError("That user has no BiomeHunt data.");
+    if (!unpaused) throw new BiomeHuntError("That user has no data.");
     return `<@${discordUserId}> is no longer exempt from inactivity auto-delete.`;
 }
 

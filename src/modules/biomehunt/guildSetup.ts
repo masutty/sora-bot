@@ -17,13 +17,13 @@ export interface SetupResult {
 export async function runUserSetup(guild: Guild, member: GuildMember): Promise<SetupResult> {
     const { ready } = await isGuildReady(guild.id);
     if (!ready) {
-        throw new BiomeHuntError("This server isn't fully configured for BiomeHunt yet. Please contact an administrator.");
+        throw new BiomeHuntError("It seems that this server is not fully configured yet! Please contact an administrator for more information.");
     }
 
     const user = await ensureUser(guild.id, member.id);
     const existingChannel = await getMacroChannelByUserId(user.id);
     if (existingChannel) {
-        throw new BiomeHuntError("You already have a macro channel set up. Ask an administrator to reset it if you need a new one.");
+        throw new BiomeHuntError("It seems that you already have a macro channel set up. Ask an administrator to reset it if you need to regenerate it.");
     }
 
     const guildConfig = await getOrCreateGuildConfig(guild.id);
@@ -59,8 +59,10 @@ export async function runUserSetup(guild: Guild, member: GuildMember): Promise<S
 
     try {
         await member.send(
-            `Your BiomeHunt webhook URL is ready! Configure your macro with this URL:\n${webhook.url}\n\n` +
-                "Keep it secret — anyone with this URL can post fake activity to your channel.",
+            `Here is your webhook for <#${channel.id}>:` +
+            `\n${webhook.url}\n\n` +
+            "-# Do not share this URL with anyone, nor use it for anything other than your macro.\n" +
+            "-# You can be punished for webhook misuse. If you believe that your webhook url has leaked, please contact an administrator as soon as possible.\n",
         );
     } catch {
         await deleteUserCascade(user.id);

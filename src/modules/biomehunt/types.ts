@@ -87,5 +87,6 @@ export interface RoleJobRow {
 export interface ParsedEvent {
     biome: string | null;
     macroType: string | null;
+    eventType: "started" | "ended" | null;
     eventTimestamp: Date | null;
 }

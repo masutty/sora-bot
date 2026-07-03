@@ -11,13 +11,12 @@ function buildCounterEmbed(counts: Record<"active" | "idle" | "inactive", number
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setTitle("Macro Activity Counter")
-        .setDescription(`-# Last updated: <t:${Math.floor(Date.now() / 1000)}:R>`)
         .addFields(
             { name: `🟢 \`${String(counts.active)}\``, value: "Active", inline: true },
             { name: `🟡 \`${String(counts.idle)}\``, value: "Idle", inline: true },
             { name: `🔴 \`${String(counts.idle)}\``, value: "Inactive", inline: true },
         )
-        .setTimestamp();
+        .setFooter({ text: `-# Last updated: <t:${Math.floor(Date.now() / 1000)}:R>` })
 }
 
 async function tick(client: BotClient): Promise<void> {

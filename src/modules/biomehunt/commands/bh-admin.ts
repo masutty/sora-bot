@@ -231,9 +231,9 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
         case "config-reset":
             return resetConfigAction(guildId);
         case "user-check": {
-            const id = args.getUserId("user");
-            if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return checkUserAction(guildId, id);
+            const member = await args.getMember("user");
+            if (!member) throw new BiomeHuntError("Missing required argument: user");
+            return checkUserAction(guildId, member);
         }
         case "user-reset": {
             const id = args.getUserId("user");

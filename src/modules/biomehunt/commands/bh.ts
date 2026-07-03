@@ -18,9 +18,9 @@ export default defineCommand({
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your BiomeHunt macro channel."))
-        .addSubcommand((sub) => sub.setName("profile").setDescription("View your BiomeHunt profile."))
-        .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
-        .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
+        .addSubcommand((sub) => sub.setName("profile").setDescription("View your BiomeHunt profile.")),
+        // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
+        // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
     async executeAsSlash(interaction, _client) {
         if (!interaction.guild || !interaction.member) {
@@ -60,14 +60,14 @@ async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Pr
     switch (sub) {
         case "setup": {
             const result = await runUserSetup(guild, member);
-            return EmbedFormatter.success(`Setup complete! Check your DMs for your webhook URL. Channel: <#${result.channelId}>`);
+            return EmbedFormatter.success(`Created: <#${result.channelId}>`);
         }
         case "profile":
-            return buildProfileEmbed(guild.id, member.id);
-        case "history":
-            return buildHistoryEmbed(guild.id, member.id);
-        case "leaderboard":
-            return buildLeaderboardEmbed(guild.id);
+            return buildProfileEmbed(guild.id, member);
+        // case "history":
+        //     return buildHistoryEmbed(guild.id, member.id);
+        // case "leaderboard":
+        //     return buildLeaderboardEmbed(guild.id);
         default:
             throw new BiomeHuntError(`Unknown subcommand: ${sub}`);
     }
