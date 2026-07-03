@@ -8,7 +8,7 @@ import type {
 	SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
 import type { BotClient } from "../core/BotClient";
-import type { CommandContext } from "../core/context";
+import type { CommandContext, CommandArg } from "../core/context";
 
 export type {
 	ArgHelper,
@@ -18,8 +18,6 @@ export type {
 	ReplyPayload,
 	SentMessage,
 } from "../core/context";
-
-// ─── Command Definition ────────────────────────────────────────────────────────
 
 export enum CommandCategory {
 	GENERAL = "GENERAL",
@@ -35,24 +33,29 @@ export interface CommandDefinition {
 	name: string;
 	description: string;
 	category?: CommandCategory;
-	args?: import("../core/context").CommandArg[];
 
-	// Slash builder for advanced customisation (choices, autocomplete, maxLength…)
-	slashBuilder?:
+	/** Full SlashCommandBuilder — used for slash registration and prefix arg derivation */
+	options?:
 		| SlashCommandBuilder
-		| SlashCommandSubcommandsOnlyBuilder
-		| SlashCommandOptionsOnlyBuilder;
+		| SlashCommandOptionsOnlyBuilder
+		| SlashCommandSubcommandsOnlyBuilder;
 
-	// ── Restrictions ──────────────────────────────────────────────────────────────
+	/** Whether this command can be invoked via prefix (default: true) */
+	prefixEnabled?: boolean;
+
+	/** Whether this command appears in !help (default: true) */
+	hidden?: boolean;
+
+	// ── Restrictions ─────────────────────────────────────────────────────────
 	ownerOnly?: boolean;
 	adminOnly?: boolean;
 	permissions?: PermissionResolvable[];
 	allowedUsers?: string[];
 
-	// ── Unified handler (new API) ─────────────────────────────────────────────────
+	// ── Unified handler ───────────────────────────────────────────────────────
 	execute?: (ctx: CommandContext) => Promise<void>;
 
-	// ── Legacy handlers (kept for compatibility) ──────────────────────────────────
+	// ── Legacy handlers ───────────────────────────────────────────────────────
 	executeSlash?: (
 		interaction: ChatInputCommandInteraction,
 		client: BotClient,
@@ -63,8 +66,6 @@ export interface CommandDefinition {
 		client: BotClient,
 	) => Promise<void>;
 }
-
-// ─── Module Definition ─────────────────────────────────────────────────────────
 
 export interface ModuleAuthor {
 	name: string;
@@ -85,8 +86,6 @@ export interface ModuleDefinition {
 	onReady?: (client: BotClient) => void | Promise<void>;
 }
 
-// ─── Guild Configuration ───────────────────────────────────────────────────────
-
 export interface GuildConfig {
 	id: string;
 	prefix: string;
@@ -94,8 +93,6 @@ export interface GuildConfig {
 	created_at: Date;
 	updated_at: Date;
 }
-
-// ─── Command Registry interface ────────────────────────────────────────────────
 
 export interface CommandRegistry {
 	get(name: string): CommandDefinition | undefined;

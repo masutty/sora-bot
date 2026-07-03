@@ -1,6 +1,7 @@
 import { defineModule, defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { Logger } from "@/utils/logging";
+import { SlashCommandBuilder } from "discord.js";
 
 const logger = new Logger("gloomer.index");
 
@@ -8,14 +9,14 @@ const giveAuraCommand = defineCommand({
     name: "give-aura",
     description: "Check one specific aura",
     category: CommandCategory.UTILITY,
-    args: [
-        {
-            name: "aura",
-            type: "string",
-            required: true,
-            description: "Aura to check",
-        }
-    ],
+    options: new SlashCommandBuilder()
+        .addStringOption((opt) =>
+            opt
+                .setName("aura")
+                .setDescription("Aura to check")
+                .setRequired(true),
+        ),
+
     async execute(ctx) {
         logger.debug(`Execution context: ${Logger.stringify(ctx)}`);
 

@@ -60,7 +60,7 @@ async function handleJoin(state: VoiceState): Promise<void> {
 	} catch (err) {
 		// User left before we could move them — clean up the channel we created
 		logger.warn(
-			`Não foi possível mover ${member.displayName} — removendo canal`,
+			`Failed to move ${member.displayName} - destroying channel`,
 			{ channel: tempChannel.id },
 		);
 		await tempChannel.delete().catch(() => {});
@@ -69,7 +69,7 @@ async function handleJoin(state: VoiceState): Promise<void> {
 
 	activeRooms.set(tempChannel.id, member.id);
 	await saveActiveRoom(tempChannel.id, state.guild.id, member.id);
-	logger.info(`Sala criada: "${roomName}" para ${member.displayName}`);
+	logger.info(`Room created: "${roomName}" for ${member.displayName}`);
 }
 
 // ─── User left a voice channel ────────────────────────────────────────────────
@@ -88,11 +88,11 @@ async function handleLeave(state: VoiceState): Promise<void> {
 
 	if (channel) {
 		await channel.delete().catch((err: unknown) => {
-			logger.warn(`Falha ao deletar sala ${state.channelId}`, {
+			logger.warn(`Failed to destroy room ${state.channelId}`, {
 				err: String(err),
 			});
 		});
-		logger.info(`Sala removida: "${channel.name}"`);
+		logger.info(`Room destroyed: "${channel.name}"`);
 	}
 }
 
@@ -118,6 +118,6 @@ export async function restoreActiveRooms(client: BotClient): Promise<void> {
 	}
 
 	if (rooms.length > 0) {
-		logger.info(`Cleanup de restart: ${rooms.length} salas verificadas.`);
+		logger.info(`Restart cleanup: ${rooms.length} rooms verified.`);
 	}
 }

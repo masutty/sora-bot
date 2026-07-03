@@ -4,23 +4,14 @@ import { CommandCategory } from "@/types";
 import {
 	invalidatePrefixCache,
 	updateGuildPrefix,
-} from "../database/guildRepository";
+} from "../../../database/guildRepository";
 
 export default defineCommand({
 	name: "setprefix",
 	description: "Defines my prefix on this server!",
 	category: CommandCategory.UTILITY,
 	adminOnly: true,
-	args: [
-		{
-			name: "prefix",
-			type: "string",
-			required: true,
-			description: "New prefix (e.g.: ?, $, >>)",
-		},
-	],
-
-	slashBuilder: new SlashCommandBuilder()
+	options: new SlashCommandBuilder()
 		.setName("setprefix")
 		.setDescription("Defines my prefix for this server!.")
 		.addStringOption((opt) =>

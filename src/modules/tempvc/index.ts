@@ -5,7 +5,7 @@ import { setCustomRoomName, setJtcConfig } from "./repository";
 import { CommandCategory } from "@/types";
 import { Logger } from "@/utils/logging";
 
-const logger = new Logger("jtc.index")
+const logger = new Logger("tempvc.index")
 
 // ─── Schema ────────────────────────────────────────────────────────────────────
 
@@ -33,27 +33,18 @@ const SCHEMA = `
 
 // ─── Commands ──────────────────────────────────────────────────────────────────
 
-const jtcSetCommand = defineCommand({
+const tempvcSetOriginCommand = defineCommand({
 	name: "jtc-set",
-	description: "Defines the join-to-create voice channel root.",
+	description: "Marks a channel as a temporary-voice-channel generator.",
 	category: CommandCategory.ADMIN,
 	adminOnly: true,
-	args: [
-		{
-			name: "channel",
-			type: "channel",
-			required: true,
-			description: "JTC Root Channel",
-		},
-	],
+	prefixEnabled: false, // slash only
 
-	slashBuilder: new SlashCommandBuilder()
-		.setName("jtc-set")
-		.setDescription("Defines the join-to-create voice channel root.")
+	options: new SlashCommandBuilder()
 		.addChannelOption((opt) =>
 			opt
 				.setName("channel")
-				.setDescription("JTC Root channel")
+				.setDescription("Origin channel")
 				.setRequired(true)
 				.addChannelTypes(ChannelType.GuildVoice),
 		),
@@ -79,25 +70,24 @@ const jtcSetCommand = defineCommand({
 	},
 });
 
-const jtcSetRoomNameCommand = defineCommand({
-	name: "jtc-setroomname",
-	description: "Defines the join-to-create room name for a specific user",
+const tempvcSetRoomName = defineCommand({
+	name: "tempvc-setroomname",
+	description: "Sets a custom room name for a user.",
 	category: CommandCategory.ADMIN,
 	adminOnly: true,
-	args: [
-		{
-			name: "user",
-			type: "user",
-			required: true,
-			description: "Target user",
-		},
-		{
-			name: "room_name",
-			type: "string",
-			required: true,
-			description: "Room name (max. 100 chars)",
-		},
-	],
+    options: new SlashCommandBuilder()
+        .addUserOption((opt) =>
+            opt
+                .setName("user")
+                .setDescription("Target user")
+                .setRequired(true),
+        )
+        .addStringOption((opt) =>
+            opt
+                .setName("room_name")
+                .setDescription("Room name (max. 100 chars)")
+                .setRequired(true),
+        ),
 
 	async execute(ctx) {
         logger.debug(`Execution context: ${Logger.stringify(ctx)}`)
@@ -123,6 +113,7 @@ const jtcSetRoomNameCommand = defineCommand({
             });
             return;
         }
+
 		if (room_name.length > 100) {
 			await ctx.reply({
 				content: "❌ This name is too long! (max. 100 characters)",
@@ -141,25 +132,25 @@ const jtcSetRoomNameCommand = defineCommand({
 // ─── Module ────────────────────────────────────────────────────────────────────
 
 export default defineModule({
-	name: "jtc",
-	description:
-		"Join-to-Create: Create temporary voice channels.",
+	name: "tempvc",
+	description: "Temporary Voice Channels",
 	authors: [{ name: "masutty", id: 188851299255713792n }],
 
 	migrations: [SCHEMA],
 
-	commands: [jtcSetCommand, jtcSetRoomNameCommand],
+	commands: [tempvcSetOriginCommand, tempvcSetRoomName],
 
 	events: {
 		async voiceStateUpdate(client, oldState, newState) {
             logger.debug(`Voice state update detected`)
             logger.debug("Previous: " + JSON.stringify(oldState));
             logger.debug("New: " + JSON.stringify(newState));
-			// await handleVoiceStateUpdate(client, oldState, newState);
+			await handleVoiceStateUpdate(client, oldState, newState);
 		},
 	},
 
 	async onReady(client) {
+        logger.info("onReady - Restoring active rooms");
 		await restoreActiveRooms(client);
 	},
 });
