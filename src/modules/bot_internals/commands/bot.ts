@@ -18,17 +18,20 @@ export default defineCommand({
     showOnHelp: false,
 
     options: new SlashCommandBuilder()
-        .addSubcommand((sub) =>
-            sub.setName("mod_load").setDescription("Load a cog.")
-                .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
-        )
-        .addSubcommand((sub) =>
-            sub.setName("mod_unload").setDescription("Unload a cog.")
-                .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
-        )
-        .addSubcommand((sub) =>
-            sub.setName("mod_reload").setDescription("Restart a cog.")
-                .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
+        .addSubcommandGroup((g) =>
+            g.setName("mod").setDescription("Cog management.")
+                .addSubcommand((s) =>
+                    s.setName("load").setDescription("Load a cog.")
+                        .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("unload").setDescription("Unload a cog.")
+                        .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("reload").setDescription("Restart a cog.")
+                        .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
+                ),
         )
         .addSubcommand((sub) =>
             sub.setName("sync").setDescription("Sync slash commands with Discord."),
@@ -42,11 +45,13 @@ export default defineCommand({
 
     // ── Slash ─────────────────────────────────────────────────────────────────
     async executeAsSlash(interaction, client) {
+        const group = interaction.options.getSubcommandGroup(false);
         const sub = interaction.options.getSubcommand(true);
+        const routeKey = group ? `${group}-${sub}` : sub;
         await interaction.deferReply({ ephemeral: true });
 
         try {
-            const result = await runSubcommand(sub, interaction.options.getString("name"), client);
+            const result = await runSubcommand(routeKey, interaction.options.getString("name"), client);
             await interaction.editReply({ embeds: [successEmbed(result)] });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -57,14 +62,16 @@ export default defineCommand({
 
     // ── Prefix ────────────────────────────────────────────────────────────────
     async executeAsPrefix(message, args, client) {
+        const group = args.getSubcommandGroup();
         const sub = args.getSubcommand();
         if (!sub) {
             await message.reply({ embeds: [usageEmbed()] });
             return;
         }
+        const routeKey = group ? `${group}-${sub}` : sub;
 
         try {
-            const result = await runSubcommand(sub, args.getString("name"), client);
+            const result = await runSubcommand(routeKey, args.getString("name"), client);
             await message.reply({ embeds: [successEmbed(result)] });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -82,17 +89,17 @@ async function runSubcommand(
     client: import("@/core/BotClient").BotClient,
 ): Promise<string> {
     switch (sub) {
-        case "mod_load":
+        case "mod-load":
             if (!name) throw new Error("Cog name required.");
             await loadCog(client, COGS_PATH, name);
             return `Cog \`${name}\` loaded.`;
 
-        case "mod_unload":
+        case "mod-unload":
             if (!name) throw new Error("Cog name required.");
             await unloadCog(client, name);
             return `Cog \`${name}\` unloaded.`;
 
-        case "mod_reload":
+        case "mod-reload":
             if (!name) throw new Error("Cog name required.");
             await reloadCog(client, COGS_PATH, name);
             return `Cog \`${name}\` restarted.`;
@@ -134,7 +141,7 @@ function usageEmbed(): EmbedBuilder {
         .addFields([
             {
                 name: "Cog management",
-                value: "`!bot mod_load <name>`\n`!bot mod_unload <name>`\n`!bot mod_reload <name>`",
+                value: "`!bot mod load <name>`\n`!bot mod unload <name>`\n`!bot mod reload <name>`",
             },
             {
                 name: "Bot",

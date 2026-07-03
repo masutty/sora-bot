@@ -13,12 +13,13 @@ const logger = new Logger("biomehunt:bh");
 
 export default defineCommand({
     name: "bh",
-    description: "BiomeHunt — track your macro activity.",
+    description: "User commands for biome hunt module",
     category: CommandCategory.UTILITY,
+    showOnHelp: true,
 
     options: new SlashCommandBuilder()
-        .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your BiomeHunt macro channel."))
-        .addSubcommand((sub) => sub.setName("profile").setDescription("View your BiomeHunt profile.")),
+        .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
+        .addSubcommand((sub) => sub.setName("profile").setDescription("View your hunt profile.")),
         // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
         // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 

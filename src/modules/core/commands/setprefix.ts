@@ -7,6 +7,7 @@ export default defineCommand({
     name: "setprefix",
     description: "Defines my prefix on this server!",
     category: CommandCategory.UTILITY,
+    showOnHelp: true,
     adminOnly: true,
 
     options: new SlashCommandBuilder()

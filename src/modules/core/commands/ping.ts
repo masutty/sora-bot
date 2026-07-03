@@ -6,6 +6,7 @@ export default defineCommand({
     name: "ping",
     description: "Checks bot latency.",
     category: CommandCategory.UTILITY,
+    showOnHelp: true,
 
     async executeAsPrefix(message) {
         const sent = await message.reply({ content: "Calculating..." });

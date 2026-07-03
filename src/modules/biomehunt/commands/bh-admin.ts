@@ -20,8 +20,9 @@ const logger = new Logger("biomehunt:bh-admin");
 
 export default defineCommand({
     name: "bh-admin",
-    description: "BiomeHunt administration.",
+    description: "Admin commands for biome hunt module.",
     category: CommandCategory.ADMIN,
+    showOnHelp: true,
     adminOnly: true,
 
     options: new SlashCommandBuilder()
