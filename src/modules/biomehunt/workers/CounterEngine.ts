@@ -5,18 +5,19 @@ import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/
 import { getGuildUserCounts } from "../repository/users";
 
 const logger = new Logger("biomehunt:CounterEngine");
+
 const TICK_INTERVAL_MS = 5 * 60 * 1000;
 
 function buildCounterEmbed(counts: Record<"active" | "idle" | "inactive", number>): EmbedBuilder {
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setTitle("Macro Activity Counter")
+        .setDescription(`-# Last updated: <t:${Math.floor(Date.now() / 1000)}:R>`)
         .addFields(
             { name: `🟢 \`${String(counts.active)}\``, value: "Active", inline: true },
             { name: `🟡 \`${String(counts.idle)}\``, value: "Idle", inline: true },
             { name: `🔴 \`${String(counts.idle)}\``, value: "Inactive", inline: true },
         )
-        .setFooter({ text: `-# Last updated: <t:${Math.floor(Date.now() / 1000)}:R>` })
 }
 
 async function tick(client: BotClient): Promise<void> {

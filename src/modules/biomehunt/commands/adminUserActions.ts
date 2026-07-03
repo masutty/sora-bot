@@ -11,7 +11,7 @@ export async function checkUserAction(guildId: string, member: GuildMember): Pro
 
 export async function resetUserAction(guildId: string, discordUserId: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) throw new BiomeHuntError("That user has no BiomeHunt data to reset.");
+    if (!user) throw new BiomeHuntError("That user has no data to reset.");
     await deleteUserCascade(user.id);
     return `<@${discordUserId}>'s data has been reset. They can run \`/bh setup\` again.`;
 }

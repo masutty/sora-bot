@@ -44,7 +44,7 @@ export default defineCommand({
         }
         const sub = args.getSubcommand();
         if (!sub) {
-            await message.reply({ embeds: [EmbedFormatter.info("Usage: `bh <setup|profile|history|leaderboard>`")] });
+            await message.reply({ embeds: [EmbedFormatter.info("Usage: `bh <setup|profile>`")] });
             return;
         }
         try {

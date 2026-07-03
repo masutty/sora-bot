@@ -31,12 +31,12 @@ export async function runUserSetup(guild: Guild, member: GuildMember): Promise<S
 
     const safeName = member.user.username.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 80);
     const channel = await guild.channels.create({
-        name: `macro-${safeName}`,
+        name: `・${safeName}`,
         type: ChannelType.GuildText,
         parent: category.id,
         permissionOverwrites: [
             { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-            { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
+            { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages] },
         ],
     });
 

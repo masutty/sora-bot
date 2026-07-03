@@ -4,7 +4,7 @@ import { getOrCreateGuildConfig } from "../repository/guilds";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getComplianceRate, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
-import { getGuildUserCounts, getUserByDiscordId } from "../repository/users";
+import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
 import { Logger } from "@/utils/logging";
 
 const logger = new Logger("biomehunt:profileViews");
@@ -15,12 +15,13 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
     const user = await getUserByDiscordId(guildId, member.id);
     if (!user) return EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started.");
 
-    logger.debug(`Found user: ${JSON.stringify(user, null, 2)}`);
+    // logger.debug(`Found user: ${JSON.stringify(user, null, 2)}`);
 
     const guildConfig = await getOrCreateGuildConfig(guildId);
     const activeSeconds = await getActiveSecondsInWindow(user.id, guildConfig.quota_window_hours);
     const compliant = activeSeconds >= guildConfig.quota_target_seconds;
     const biomes = await getBiomeCounts(user.id);
+    const channel = await getMacroChannelByUserId(user.id);
 
     const embed = new EmbedBuilder()
         .setColor(compliant ? 0x57f287 : 0xed4245)
@@ -29,9 +30,14 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
         .setDescription([
             `- \`${formatTime(activeSeconds)}\` activity time in the last \`${guildConfig.quota_window_hours}h\` window.`,
             `- \`${biomes.length}\` biomes registered.`,
+            `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
         ].join("\n"))
-        .setFooter({ text: `profile created at <t:${Math.floor(user.created_at.getTime() / 1000)}:R>` })
         .addFields(
+            {
+                name: "Macro Channel",
+                value: `${channel ? `<#${channel.channel_id}>` : formatCodeblock("No channel.")}`,
+                inline: false,
+            },
             {
                 name: "Current Status",
                 value: formatCodeblock(STATUS_EMOJI[user.current_status] + " " + user.current_status.toUpperCase()),
@@ -39,7 +45,7 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
             },
             {
                 name: `Quota (last ${guildConfig.quota_window_hours}h)`,
-                value: formatCodeblock(`${compliant ? "✅" : "❌"}`),
+                value: formatCodeblock(`${compliant ? "✅" : "❌ (" + formatTime(activeSeconds) + " / " + formatTime(guildConfig.quota_target_seconds) + ")"}`),
                 inline: true,
             },
         );
