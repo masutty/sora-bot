@@ -1,13 +1,16 @@
-import { EmbedBuilder, GuildMember } from "discord.js";
-import { EmbedFormatter, formatCodeblock, formatTime } from "@/utils/format";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, GuildMember } from "discord.js";
+import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { getOrCreateGuildConfig } from "../repository/guilds";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getComplianceRate, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
+import type { ActivitySessionRow } from "../types";
 import { Logger } from "@/utils/logging";
 
 const logger = new Logger("biomehunt.profileViews");
+
+export const SESSIONS_PER_PAGE = 10;
 
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
 
@@ -57,21 +60,44 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
     return embed;
 }
 
-export async function buildHistoryEmbed(guildId: string, discordUserId: string): Promise<EmbedBuilder> {
+export async function getSessionHistory(guildId: string, discordUserId: string, limit = 100): Promise<ActivitySessionRow[] | null> {
     const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) return EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started.");
+    if (!user) return null;
+    return getRecentSessions(user.id, limit);
+}
 
-    const sessions = await getRecentSessions(user.id, 10);
-    if (sessions.length === 0) return EmbedFormatter.info("No activity recorded yet.");
+export function buildHistoryEmbed(sessions: ActivitySessionRow[], member: GuildMember, page: number): EmbedBuilder {
+    const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
+    const start = page * SESSIONS_PER_PAGE;
+    const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
+    const oldestFirst = [...slice].reverse();
 
-    const brokenCount = Math.max(sessions.length - 1, 0);
-    const lines = sessions.map((s) => `<t:${Math.floor(s.started_at.getTime() / 1000)}:R> — ${formatTime(s.duration_seconds)}`);
+    const lines: string[] = [];
+    oldestFirst.forEach((session, i) => {
+        lines.push(
+            `<t:${unix(session.started_at)}:F> - <t:${unix(session.ended_at)}:F> (${formatTime(session.duration_seconds)})`,
+        );
+
+        const newer = oldestFirst[i + 1];
+        if (newer) {
+            const gapSeconds = Math.floor((newer.started_at.getTime() - session.ended_at.getTime()) / 1000);
+            if (gapSeconds > 0) lines.push(`-# ↳ gap: ${formatTime(gapSeconds)}`);
+        }
+    });
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle("BiomeHunt Session History")
+        .setThumbnail(member.displayAvatarURL())
+        .setTitle(`\`${member.user.username}\`'s Session History`)
         .setDescription(lines.join("\n"))
-        .setFooter({ text: `${brokenCount} session gap(s) in this history` });
+        .setFooter({ text: `Page ${page + 1} of ${pages} - ${sessions.length} session(s) total` });
+}
+
+export function buildHistoryRow(page: number, pages: number): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId("history-prev").setEmoji("◀️").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+        new ButtonBuilder().setCustomId("history-next").setEmoji("▶️").setStyle(ButtonStyle.Secondary).setDisabled(page === pages - 1),
+    );
 }
 
 export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuilder> {

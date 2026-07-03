@@ -210,29 +210,35 @@ export class PrefixArgs {
         return null;
     }
 
-    getUser(name: string): User | null {
+    async getUser(name: string): Promise<User | null> {
         const raw = this.getRaw(name);
         if (!raw) return null;
         const id = extractId(raw, /^<@!?(\d+)>$/);
-        return id ? (this.client.users.cache.get(id) ?? null) : null;
+        if (!id) return null;
+        return this.client.users.cache.get(id) ?? await this.client.users.fetch(id).catch(() => null);
     }
 
-    getMember(name: string): GuildMember | null {
-        const user = this.getUser(name);
-        return user ? (this.guild?.members.cache.get(user.id) ?? null) : null;
-    }
-
-    getChannel(name: string): GuildBasedChannel | null {
+    async getMember(name: string): Promise<GuildMember | null> {
         const raw = this.getRaw(name);
-        if (!raw) return null;
+        if (!raw || !this.guild) return null;
+        const id = extractId(raw, /^<@!?(\d+)>$/);
+        if (!id) return null;
+        return this.guild.members.cache.get(id) ?? await this.guild.members.fetch(id).catch(() => null);
+    }
+
+    async getChannel(name: string): Promise<GuildBasedChannel | null> {
+        const raw = this.getRaw(name);
+        if (!raw || !this.guild) return null;
         const id = extractId(raw, /^<#(\d+)>$/);
-        return id ? (this.guild?.channels.cache.get(id) ?? null) : null;
+        if (!id) return null;
+        return this.guild.channels.cache.get(id) ?? await this.guild.channels.fetch(id).catch(() => null);
     }
 
-    getRole(name: string): Role | null {
+    async getRole(name: string): Promise<Role | null> {
         const raw = this.getRaw(name);
-        if (!raw) return null;
+        if (!raw || !this.guild) return null;
         const id = extractId(raw, /^<@&(\d+)>$/);
-        return id ? (this.guild?.roles.cache.get(id) ?? null) : null;
+        if (!id) return null;
+        return this.guild.roles.cache.get(id) ?? await this.guild.roles.fetch(id).catch(() => null);
     }
 }

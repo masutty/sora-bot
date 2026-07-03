@@ -1,5 +1,5 @@
-import { ChannelType, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
-import type { Guild, GuildMember } from "discord.js";
+import { ChannelType, ComponentType, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
+import type { Guild, GuildMember, Message } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
@@ -14,6 +14,7 @@ import {
     checkUserAction, guildStatsAction, leaderboardAction, pauseUserAction, removeUserAction,
     resetUserAction, setupUserAction, unpauseUserAction,
 } from "./adminUserActions";
+import { buildHistoryEmbed, buildHistoryRow, getSessionHistory, SESSIONS_PER_PAGE } from "./profileViews";
 import { BiomeHuntError } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-admin");
@@ -95,6 +96,10 @@ export default defineCommand({
                 .addSubcommand((s) =>
                     s.setName("setup").setDescription("Force-run setup on behalf of a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("session").setDescription("View a user's recent activity sessions.")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 ),
         )
         .addSubcommand((s) => s.setName("guild-stats").setDescription("Show guild-wide BiomeHunt stats."))
@@ -108,15 +113,28 @@ export default defineCommand({
         const group = interaction.options.getSubcommandGroup(false);
         const sub = interaction.options.getSubcommand(true);
         const routeKey = group ? `${group}-${sub}` : sub;
+
+        if (routeKey === "user-session") {
+            const target = interaction.options.getUser("user");
+            const member = target && await interaction.guild.members.fetch(target.id).catch(() => null);
+            if (!member) {
+                await interaction.reply({ content: "Could not resolve that member.", ephemeral: true });
+                return;
+            }
+            await interaction.deferReply();
+            await replySessionHistory(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply(payload));
+            return;
+        }
+
         await interaction.deferReply();
         try {
             const result = await runSubcommand(routeKey, interaction.guild, {
                 getInteger: (name) => interaction.options.getInteger(name),
                 getNumber: (name) => interaction.options.getNumber(name),
                 getBoolean: (name) => interaction.options.getBoolean(name),
-                getChannelId: (name) => interaction.options.getChannel(name)?.id ?? null,
-                getRoleId: (name) => interaction.options.getRole(name)?.id ?? null,
-                getUserId: (name) => interaction.options.getUser(name)?.id ?? null,
+                getChannelId: async (name) => interaction.options.getChannel(name)?.id ?? null,
+                getRoleId: async (name) => interaction.options.getRole(name)?.id ?? null,
+                getUserId: async (name) => interaction.options.getUser(name)?.id ?? null,
                 getMember: async (name) => {
                     const user = interaction.options.getUser(name);
                     if (!user) return null;
@@ -141,15 +159,26 @@ export default defineCommand({
             return;
         }
         const routeKey = group ? `${group}-${sub}` : sub;
+
+        if (routeKey === "user-session") {
+            const member = await args.getMember("user");
+            if (!member) {
+                await message.reply("Could not resolve that member. Try pinging them instead.");
+                return;
+            }
+            await replySessionHistory(message.guild.id, member, message.author.id, (payload) => message.reply(payload));
+            return;
+        }
+
         try {
             const result = await runSubcommand(routeKey, message.guild, {
                 getInteger: (name) => args.getNumber(name),
                 getNumber: (name) => args.getNumber(name),
                 getBoolean: (name) => args.getBoolean(name),
-                getChannelId: (name) => args.getChannel(name)?.id ?? null,
-                getRoleId: (name) => args.getRole(name)?.id ?? null,
-                getUserId: (name) => args.getUser(name)?.id ?? null,
-                getMember: async (name) => args.getMember(name),
+                getChannelId: async (name) => (await args.getChannel(name))?.id ?? null,
+                getRoleId: async (name) => (await args.getRole(name))?.id ?? null,
+                getUserId: async (name) => (await args.getUser(name))?.id ?? null,
+                getMember: (name) => args.getMember(name),
             });
             await message.reply(toReplyPayload(result));
         } catch (err) {
@@ -162,9 +191,9 @@ interface ArgReader {
     getInteger(name: string): number | null;
     getNumber(name: string): number | null;
     getBoolean(name: string): boolean | null;
-    getChannelId(name: string): string | null;
-    getRoleId(name: string): string | null;
-    getUserId(name: string): string | null;
+    getChannelId(name: string): Promise<string | null>;
+    getRoleId(name: string): Promise<string | null>;
+    getUserId(name: string): Promise<string | null>;
     getMember(name: string): Promise<GuildMember | null>;
 }
 
@@ -202,26 +231,26 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
             return setAutoCreateCategoriesAction(guildId, enabled);
         }
         case "config-add-category": {
-            const id = args.getChannelId("category");
+            const id = await args.getChannelId("category");
             if (!id) throw new BiomeHuntError("Missing required argument: category");
             return addCategoryAction(guildId, id);
         }
         case "config-remove-category": {
-            const id = args.getChannelId("category");
+            const id = await args.getChannelId("category");
             if (!id) throw new BiomeHuntError("Missing required argument: category");
             return removeCategoryAction(guildId, id);
         }
         case "config-set-roles": {
-            const active = args.getRoleId("active");
-            const idle = args.getRoleId("idle");
-            const inactive = args.getRoleId("inactive");
+            const active = await args.getRoleId("active");
+            const idle = await args.getRoleId("idle");
+            const inactive = await args.getRoleId("inactive");
             if (!active || !idle || !inactive) throw new BiomeHuntError("All three roles (active, idle, inactive) are required.");
             return setRolesAction(guildId, active, idle, inactive);
         }
         case "config-clear-roles":
             return clearRolesAction(guildId);
         case "config-set-counter-channel": {
-            const id = args.getChannelId("channel");
+            const id = await args.getChannelId("channel");
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
             return setCounterChannelAction(guildId, id);
         }
@@ -237,22 +266,22 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
             return checkUserAction(guildId, member);
         }
         case "user-reset": {
-            const id = args.getUserId("user");
+            const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return resetUserAction(guildId, id);
         }
         case "user-remove": {
-            const id = args.getUserId("user");
+            const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return removeUserAction(guildId, id);
         }
         case "user-pause": {
-            const id = args.getUserId("user");
+            const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return pauseUserAction(guildId, id);
         }
         case "user-unpause": {
-            const id = args.getUserId("user");
+            const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return unpauseUserAction(guildId, id);
         }
@@ -268,6 +297,51 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
         default:
             throw new BiomeHuntError(`Unknown subcommand: ${sub}`);
     }
+}
+
+async function replySessionHistory(
+    guildId: string,
+    member: GuildMember,
+    invokerId: string,
+    respond: (payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof buildHistoryRow>[] }) => Promise<Message>,
+): Promise<void> {
+    const sessions = await getSessionHistory(guildId, member.id);
+    if (sessions === null) {
+        await respond({ embeds: [EmbedFormatter.info(`<@${member.id}> doesn't have a profile yet.`)], components: [] });
+        return;
+    }
+    if (sessions.length === 0) {
+        await respond({ embeds: [EmbedFormatter.info(`<@${member.id}> has no activity recorded yet.`)], components: [] });
+        return;
+    }
+
+    const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
+    let page = 0;
+    const msg = await respond({
+        embeds: [buildHistoryEmbed(sessions, member, page)],
+        components: pages > 1 ? [buildHistoryRow(page, pages)] : [],
+    });
+
+    if (pages <= 1) return;
+
+    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60_000 });
+
+    collector.on("collect", async (i) => {
+        if (i.user.id !== invokerId) {
+            await i.reply({ content: "These buttons aren't yours!", ephemeral: true });
+            return;
+        }
+        if (i.customId === "history-prev" && page > 0) page--;
+        if (i.customId === "history-next" && page < pages - 1) page++;
+        await i.update({
+            embeds: [buildHistoryEmbed(sessions, member, page)],
+            components: [buildHistoryRow(page, pages)],
+        });
+    });
+
+    collector.on("end", async () => {
+        await msg.edit({ components: [] }).catch(() => { });
+    });
 }
 
 function toReplyPayload(result: string | EmbedBuilder): { embeds: EmbedBuilder[] } {

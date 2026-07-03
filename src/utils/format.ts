@@ -15,6 +15,11 @@ export function formatCodeblock(code: string, language: string = "txt"): string 
     return `\`\`\`${language}\n${code}\n\`\`\``;
 }
 
+/** Unix seconds for a Date, for use in Discord timestamp tags (`<t:...:F>` etc). */
+export function unix(date: Date): number {
+    return Math.floor(date.getTime() / 1000);
+}
+
 export class EmbedFormatter {
     public static error(msg: string): EmbedBuilder {
         return new EmbedBuilder().setColor(0xff0000).setDescription(`❌ ${msg}`);
