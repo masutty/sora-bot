@@ -8,10 +8,20 @@ export default defineCommand({
     category: CommandCategory.UTILITY,
     showOnHelp: true,
 
+    async executeAsSlash(interaction, _client) {
+        await interaction.deferReply();
+        const sent = await interaction.editReply({ content: "Calculating..." });
+        const roundtrip = sent.createdTimestamp - interaction.createdTimestamp;
+        await interaction.editReply({
+            content: "",
+            embeds: [buildEmbed(roundtrip, interaction.client.ws.ping)],
+        });
+    },
+
     async executeAsPrefix(message) {
         const sent = await message.reply({ content: "Calculating..." });
         const roundtrip = sent.createdTimestamp - message.createdTimestamp;
-        await message.reply({
+        await sent.edit({
             content: "",
             embeds: [buildEmbed(roundtrip, message.client.ws.ping)],
         });

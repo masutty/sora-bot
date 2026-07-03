@@ -113,14 +113,14 @@ export function getRandomQuip(
     return pool[Math.floor(Math.random() * pool.length)].text;
 }
 
-export function getSuccessQuip(maxFunnyLevel = 0): string {
-    return getRandomQuip(QuipTypes.SUCCESS, maxFunnyLevel);
+export function getSuccessQuip(maxFunnyLevel?: number): string {
+    return getRandomQuip(QuipTypes.SUCCESS, maxFunnyLevel ?? DEFAULT_FUNNY_LEVEL);
 }
 
-export function getFailureQuip(maxFunnyLevel = 0): string {
-    return getRandomQuip(QuipTypes.FAILURE, maxFunnyLevel);
+export function getFailureQuip(maxFunnyLevel?: number): string {
+    return getRandomQuip(QuipTypes.FAILURE, maxFunnyLevel ?? DEFAULT_FUNNY_LEVEL);
 }
 
-export function getThinkingQuip(maxFunnyLevel = 0): string {
-    return getRandomQuip(QuipTypes.THINKING, maxFunnyLevel);
+export function getThinkingQuip(maxFunnyLevel?: number): string {
+    return getRandomQuip(QuipTypes.THINKING, maxFunnyLevel ?? DEFAULT_FUNNY_LEVEL);
 }

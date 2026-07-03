@@ -134,6 +134,7 @@ export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
         logger.warn(`Webhook ${message.webhookId} has unknown macro type: ${embed.footer?.text}`);
     }
 
+    // event type is "started"|"ended"
     const { biome, eventType } = extractBiome(embed);
 
     if (!biome) return null;
