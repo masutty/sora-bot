@@ -7,7 +7,7 @@ import {
 import { Logger } from "@/utils/logging";
 import { config } from "../config";
 
-const logger = new Logger("Core.Database");
+const logger = new Logger("core.database");
 
 // ─── Pool singleton ───────────────────────────────────────────────────────────
 // Pool é thread-safe e gerencia conexões automaticamente.

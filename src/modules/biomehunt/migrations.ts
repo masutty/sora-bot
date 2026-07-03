@@ -1,71 +1,113 @@
-export const BIOME_HUNTER_SCHEMA = `
+export const BIOMEHUNT_SCHEMA = `
 
-/* ─────────────────────────────────────────── */
-/* Guild configuration                         */
-/* ─────────────────────────────────────────── */
+/* ───────────────────────────────────────────── */
+/* Per-guild configuration                      */
+/* ───────────────────────────────────────────── */
 
-CREATE TABLE IF NOT EXISTS bh_guild_config (
-    guild_id        VARCHAR(20) PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS bh_guilds (
+    guild_id                 VARCHAR(20) PRIMARY KEY,
 
-    green_role_id   VARCHAR(20),
-    yellow_role_id  VARCHAR(20),
-    red_role_id     VARCHAR(20),
+    quota_window_hours       INTEGER NOT NULL DEFAULT 24,
+    quota_target_seconds     INTEGER NOT NULL DEFAULT 21600,  /* 6h */
 
-    -- seconds of inactivity before GREEN → YELLOW
-    yellow_threshold_s  INTEGER NOT NULL DEFAULT 300,
-    -- seconds of inactivity before YELLOW → RED  
-    red_threshold_s     INTEGER NOT NULL DEFAULT 900,
+    session_gap_threshold_s  INTEGER NOT NULL DEFAULT 1200,   /* 20min */
+    idle_threshold_s         INTEGER NOT NULL DEFAULT 1800,   /* 30min */
+    inactive_threshold_s     INTEGER NOT NULL DEFAULT 86400,  /* 24h */
 
-    -- channel where the live counter message lives
-    counter_channel_id  VARCHAR(20),
-    counter_message_id  VARCHAR(20),
+    auto_create_categories   BOOLEAN NOT NULL DEFAULT FALSE,
+    delete_inactive_after_s  INTEGER,                         /* NULL = disabled */
 
-    -- categories where macro channels are created
-    macro_category_ids  VARCHAR(20)[] NOT NULL DEFAULT '{}',
+    counter_channel_id       VARCHAR(20),
+    counter_message_id       VARCHAR(20),
 
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-
-/* ─────────────────────────────────────────── */
-/* User profiles                               */
-/* ─────────────────────────────────────────── */
-
-CREATE TABLE IF NOT EXISTS bh_user_profiles (
-    user_id             VARCHAR(20) NOT NULL,
-    guild_id            VARCHAR(20) NOT NULL,
-
-    dedicated_channel_id VARCHAR(20) UNIQUE,
-    webhook_id          VARCHAR(20),
-    webhook_url         TEXT,   -- store encrypted or omit if unnecessary
-
-    -- current activity state: 'green' | 'yellow' | 'red'
-    current_state       VARCHAR(10) NOT NULL DEFAULT 'red',
-
-    last_activity       TIMESTAMPTZ,
-    total_messages      BIGINT NOT NULL DEFAULT 0,
-    total_active_s      BIGINT NOT NULL DEFAULT 0,
-
-    -- biome counters stored as JSONB: { "Ancient": 42, "Glitch": 7, ... }
-    -- avoids N writes per message; updated in batch flush
-    biome_counts        JSONB NOT NULL DEFAULT '{}',
-
-    registered_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    PRIMARY KEY (user_id, guild_id)
+CREATE TABLE IF NOT EXISTS bh_guild_categories (
+    id SERIAL PRIMARY KEY,
+    guild_id VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    discord_category_id VARCHAR(20) NOT NULL,
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE(guild_id, discord_category_id)
 );
 
--- Fast lookup: is this channel a macro channel? (hot path, every message)
-CREATE UNIQUE INDEX IF NOT EXISTS bh_user_profiles_channel
-    ON bh_user_profiles(dedicated_channel_id);
+CREATE TABLE IF NOT EXISTS bh_guild_roles (
+    guild_id VARCHAR(20) PRIMARY KEY REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    active_role_id   VARCHAR(20),
+    idle_role_id     VARCHAR(20),
+    inactive_role_id VARCHAR(20)
+);
 
--- For StateEngine: find users whose status should change
-CREATE INDEX IF NOT EXISTS bh_user_profiles_last_activity
-    ON bh_user_profiles(guild_id, last_activity)
-    WHERE last_activity IS NOT NULL;
+/* ───────────────────────────────────────────── */
+/* Users                                        */
+/* ───────────────────────────────────────────── */
 
-CREATE INDEX IF NOT EXISTS bh_user_profiles_state
-    ON bh_user_profiles(guild_id, current_state);
+CREATE TABLE IF NOT EXISTS bh_users (
+    id SERIAL PRIMARY KEY,
+    guild_id VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    discord_user_id VARCHAR(20) NOT NULL,
+    current_status VARCHAR(10) NOT NULL DEFAULT 'inactive',
+    last_activity_at TIMESTAMPTZ,
+    paused_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(guild_id, discord_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS bh_users_status ON bh_users(guild_id, current_status);
+CREATE INDEX IF NOT EXISTS bh_users_last_activity ON bh_users(last_activity_at) WHERE last_activity_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS bh_user_macro_channels (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES bh_users(id) ON DELETE CASCADE,
+    channel_id VARCHAR(20) NOT NULL UNIQUE,
+    webhook_id VARCHAR(20) NOT NULL,
+    webhook_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+/* ───────────────────────────────────────────── */
+/* Activity                                     */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_activity_events (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    discord_message_id VARCHAR(20) NOT NULL UNIQUE,
+    biome VARCHAR(50),
+    macro_type VARCHAR(100),
+    event_timestamp TIMESTAMPTZ,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS bh_activity_events_user ON bh_activity_events(user_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS bh_activity_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ NOT NULL,
+    ended_at TIMESTAMPTZ NOT NULL,
+    duration_seconds INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS bh_activity_sessions_user ON bh_activity_sessions(user_id, started_at DESC);
+
+/* ───────────────────────────────────────────── */
+/* Role queue                                   */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_role_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    guild_id VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    role_id VARCHAR(20) NOT NULL,
+    action VARCHAR(10) NOT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    execute_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS bh_role_jobs_pending ON bh_role_jobs(execute_after) WHERE processed = FALSE;
+
 `;

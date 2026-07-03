@@ -13,7 +13,7 @@ import { closePool } from "./database/connection";
 import { migrate } from "./database/migrate";
 import { Logger } from "./utils/logging";
 
-const logger = new Logger("Core.Bootstrap");
+const logger = new Logger("core.bootstrap");
 let stopCogs: () => Promise<void> = async () => { };
 
 async function bootstrap(): Promise<void> {

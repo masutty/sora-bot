@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Logger } from "@/utils/logging";
 import { closePool, query, testConnection } from "./connection";
 
@@ -21,25 +22,51 @@ CREATE INDEX IF NOT EXISTS idx_guilds_settings ON guilds USING gin(settings);
 -- Tabela de tracking de migrações (evita re-executar)
 CREATE TABLE IF NOT EXISTS _migrations (
   name       VARCHAR(255) PRIMARY KEY,
+  hash       VARCHAR(64),
   applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Garante a coluna hash em bancos migrados antes dela existir
+ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
 `;
+
+function hashOf(sql: string): string {
+	return createHash("sha256").update(sql).digest("hex");
+}
 
 /**
  * Registra e executa uma migração de forma idempotente.
+ * Migrações são reaplicadas automaticamente quando o SQL muda (por hash),
+ * então cada bloco de migração deve ser escrito de forma idempotente
+ * (CREATE TABLE/INDEX IF NOT EXISTS, etc).
  */
 async function runMigration(name: string, sql: string): Promise<void> {
-	const check = await query(`SELECT 1 FROM _migrations WHERE name = $1`, [
-		name,
-	]);
+	const hash = hashOf(sql);
+	const check = await query<{ hash: string | null }>(
+		`SELECT hash FROM _migrations WHERE name = $1`,
+		[name],
+	);
 
 	if (check.rowCount && check.rowCount > 0) {
-		logger.debug(`Migration already applied: ${name}`);
+		if (check.rows[0].hash === hash) {
+			logger.debug(`Migration already applied: ${name}`);
+			return;
+		}
+
+		await query(sql);
+		await query(
+			`UPDATE _migrations SET hash = $2, applied_at = NOW() WHERE name = $1`,
+			[name, hash],
+		);
+		logger.info(`Migration content changed, re-applied: ${name}`);
 		return;
 	}
 
 	await query(sql);
-	await query(`INSERT INTO _migrations (name) VALUES ($1)`, [name]);
+	await query(`INSERT INTO _migrations (name, hash) VALUES ($1, $2)`, [
+		name,
+		hash,
+	]);
 	logger.info(`Migration applied: ${name}`);
 }
 
@@ -61,16 +88,8 @@ export async function runModuleMigrations(
 export async function migrate(): Promise<void> {
 	await testConnection();
 
-	// Schema base sempre primeiro
+	// Schema base sempre primeiro (inclui bootstrap de _migrations)
 	await query(BASE_SCHEMA);
-
-	// Cria tabela de migrações se não existe (bootstrap inicial)
-	await query(`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      name       VARCHAR(255) PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
 
 	logger.info("Base schema ready.");
 }

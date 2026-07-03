@@ -17,8 +17,8 @@ import { getFailureQuip } from "@/utils/quips";
 import type { CommandDefinition } from "@/types";
 import { GuildMember } from "discord.js";
 
-const logger = new Logger("Core.CommandHandler");
-const slashLogger = new Logger("Core.SlashCmd");
+const logger = new Logger("core.commandhandlers");
+const slashLogger = new Logger("core.slashcommands");
 
 // ─── Arg parser ───────────────────────────────────────────────────────────────
 

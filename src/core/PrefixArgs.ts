@@ -22,6 +22,7 @@ interface ArgSchema {
 
 interface SubcommandSchema {
     name: string;
+    group: string | null;
     options: ArgSchema[];
 }
 
@@ -36,6 +37,7 @@ const OPTION_TYPE_MAP: Record<number, ArgType | undefined> = {
 };
 
 const SUB_COMMAND = 1;
+const SUB_COMMAND_GROUP = 2;
 
 type AnyBuilder =
     | SlashCommandBuilder
@@ -63,9 +65,22 @@ export function deriveSchema(builder: AnyBuilder): ArgSchema[] {
     });
 }
 
+function subcommandKey(group: string | null, name: string): string {
+    return group ? `${group}:${name}` : name;
+}
+
+function optionsOf(opt: RawOption): ArgSchema[] {
+    return (opt.options ?? []).flatMap((child): ArgSchema[] => {
+        const type = OPTION_TYPE_MAP[child.type];
+        if (!type) return [];
+        return [{ name: child.name, type, required: child.required ?? false }];
+    });
+}
+
 /**
  * Derives a subcommand schema map from a builder.
- * Returns a map of subcommand name → its arg schemas.
+ * Returns a map keyed by subcommand name (or `"<group>:<name>"` for
+ * subcommands nested in a subcommand group) → its arg schemas.
  * Used by PrefixArgs when the builder has subcommands.
  */
 export function deriveSubcommandSchema(builder: AnyBuilder): Map<string, SubcommandSchema> {
@@ -74,13 +89,14 @@ export function deriveSubcommandSchema(builder: AnyBuilder): Map<string, Subcomm
     if (!json.options?.length) return map;
 
     for (const opt of json.options) {
-        if (opt.type !== SUB_COMMAND) continue;
-        const options = (opt.options ?? []).flatMap((child): ArgSchema[] => {
-            const type = OPTION_TYPE_MAP[child.type];
-            if (!type) return [];
-            return [{ name: child.name, type, required: child.required ?? false }];
-        });
-        map.set(opt.name, { name: opt.name, options });
+        if (opt.type === SUB_COMMAND) {
+            map.set(subcommandKey(null, opt.name), { name: opt.name, group: null, options: optionsOf(opt) });
+        } else if (opt.type === SUB_COMMAND_GROUP) {
+            for (const sub of opt.options ?? []) {
+                if (sub.type !== SUB_COMMAND) continue;
+                map.set(subcommandKey(opt.name, sub.name), { name: sub.name, group: opt.name, options: optionsOf(sub) });
+            }
+        }
     }
 
     return map;
@@ -105,9 +121,10 @@ function extractId(input: string, pattern: RegExp): string | null {
  * 1. Flat args — builder has regular options only.
  *    `args.getString("message")` maps positionally from the schema.
  *
- * 2. Subcommand mode — builder has .addSubcommand().
- *    First raw token is the subcommand name; remaining tokens are its args.
- *    Use `args.getSubcommand()` to get the active subcommand name.
+ * 2. Subcommand mode — builder has .addSubcommand() and/or .addSubcommandGroup().
+ *    First raw token is the subcommand (or group) name; remaining tokens are its args.
+ *    For a grouped subcommand, the first two raw tokens are `<group> <subcommand>`.
+ *    Use `args.getSubcommand()` / `args.getSubcommandGroup()` to get the active names.
  *    Arg getters (`getString`, etc.) resolve against the subcommand's schema.
  *
  * The last defined arg in a schema is always greedy (joins remaining tokens).
@@ -116,6 +133,7 @@ export class PrefixArgs {
     private readonly activeSchema: ArgSchema[];
     private readonly activeRaw: string[];
     private readonly _subcommand: string | null;
+    private readonly _subcommandGroup: string | null;
 
     constructor(
         raw: string[],
@@ -125,15 +143,23 @@ export class PrefixArgs {
         subcommandMap?: Map<string, SubcommandSchema>,
     ) {
         if (subcommandMap && subcommandMap.size > 0) {
-            // Subcommand mode: raw[0] = subcommand name, raw[1+] = its args
-            const subName = raw[0]?.toLowerCase() ?? null;
-            const sub = subName ? subcommandMap.get(subName) : null;
+            // Subcommand mode. Try a grouped match first (2 tokens: group + sub),
+            // then fall back to a flat match (1 token).
+            const first = raw[0]?.toLowerCase() ?? null;
+            const second = raw[1]?.toLowerCase() ?? null;
+            const grouped = first && second ? subcommandMap.get(`${first}:${second}`) : undefined;
+
+            const sub = grouped ?? (first ? subcommandMap.get(first) : undefined);
+            const consumed = grouped ? 2 : 1;
+
             this._subcommand = sub?.name ?? null;
+            this._subcommandGroup = sub?.group ?? null;
             this.activeSchema = sub?.options ?? [];
-            this.activeRaw = raw.slice(1);
+            this.activeRaw = sub ? raw.slice(consumed) : raw.slice(1);
         } else {
             // Flat mode
             this._subcommand = null;
+            this._subcommandGroup = null;
             this.activeSchema = schema;
             this.activeRaw = raw;
         }
@@ -144,6 +170,15 @@ export class PrefixArgs {
      */
     getSubcommand(): string | null {
         return this._subcommand;
+    }
+
+    /**
+     * Returns the active subcommand group name, or null if the matched
+     * subcommand isn't nested in a group (mirrors discord.js's
+     * `interaction.options.getSubcommandGroup(false)`).
+     */
+    getSubcommandGroup(): string | null {
+        return this._subcommandGroup;
     }
 
     private getRaw(name: string): string | null {

@@ -7,7 +7,7 @@ export class BotClient extends Client {
     public readonly commands: CommandRegistry;
     public readonly cogs = new Map<string, Cog>();
 
-    private readonly logger = new Logger("Core.BotClient");
+    private readonly logger = new Logger("core.botclient");
 
     constructor() {
         super({

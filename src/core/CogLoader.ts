@@ -6,7 +6,7 @@ import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
 import type { BotClient } from "./BotClient";
 
-const logger = new Logger("Core.CogLoader");
+const logger = new Logger("core.cogloader");
 
 // Tracks event listeners per cog so they can be removed on unload
 const cogListeners = new Map<string, Array<{ event: string; handler: Function }>>();
@@ -30,6 +30,7 @@ export async function loadCogs(
         await loadCog(client, cogsPath, entry).catch((err) => {
             const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
             logger.warn(`Failed to load cog "${entry}": ${msg}`);
+            logger.error(err);
         });
     }
 
