@@ -38,15 +38,14 @@ async function computeQuotaRewardProgress(guildId: string, userId: number): Prom
 export async function getQuotaRewardLines(guildId: string, userId: number): Promise<string[]> {
     const progress = await computeQuotaRewardProgress(guildId, userId);
     return progress.map(({ p, activeSeconds, qualifies }) => {
-        const modeLabel = p.mode === "F" ? "Fixed" : "Rolling Window";
-        const lines = [`- <@&${p.role_id}>`];
+        const lines = [`- ${qualifies ? "✅" : "❌"} <@&${p.role_id}> (${p.mode})`];
 
         if (p.held_granted_at) {
             lines.push(p.mode === "F" && p.held_expires_at
-                ? `> ${modeLabel}: expires <t:${unix(p.held_expires_at)}:R>`
-                : `> ${modeLabel}: holds it`);
+                ? `> expires <t:${unix(p.held_expires_at)}:R>`
+                : "> holds it");
         } else {
-            lines.push(`> ${modeLabel}: ${formatTime(activeSeconds)} / ${formatTime(p.quota_target_seconds)}`);
+            lines.push(`> ${formatTime(activeSeconds)} / ${formatTime(p.quota_target_seconds)}`);
             if (qualifies) {
                 lines.push(`> ${p.mode === "F" ? "Qualifies - granted at the next daily evaluation" : "Qualifies - syncs within ~30s"}`);
             }

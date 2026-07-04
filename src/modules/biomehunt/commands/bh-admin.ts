@@ -473,9 +473,9 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
             return setupUserAction(guild, member);
         }
         case "user-quota-progress": {
-            const id = await args.getUserId("user");
-            if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return quotaProgressAction(guildId, id);
+            const member = await args.getMember("user");
+            if (!member) throw new BiomeHuntError("Missing required argument: user");
+            return quotaProgressAction(guildId, member);
         }
         case "user-add-badge": {
             const id = await args.getUserId("user");

@@ -43,8 +43,8 @@ export async function setupUserAction(guild: Guild, member: GuildMember): Promis
     return `Setup complete for <@${member.id}>. Their webhook URL was sent to their DMs. Channel: <#${result.channelId}>`;
 }
 
-export async function quotaProgressAction(guildId: string, discordUserId: string): Promise<EmbedBuilder> {
-    const user = await getUserByDiscordId(guildId, discordUserId);
+export async function quotaProgressAction(guildId: string, member: GuildMember): Promise<EmbedBuilder> {
+    const user = await getUserByDiscordId(guildId, member.id);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
     const lines = await getQuotaRewardLines(guildId, user.id);
@@ -52,8 +52,10 @@ export async function quotaProgressAction(guildId: string, discordUserId: string
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle(`<@${discordUserId}>'s Quota Progress`)
-        .setDescription(lines.join("\n\n"));
+        .setTitle(`\`${member.user.username}\`'s Quota Progress`)
+        .setThumbnail(member.displayAvatarURL())
+        .setDescription(lines.join("\n\n"))
+        .setFooter({ text: "F: Fixed, RW: Rolling Window" });
 }
 
 export async function addBadgeAction(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
