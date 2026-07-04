@@ -5,12 +5,13 @@ import {
 import type { Guild, GuildTextBasedChannel, Message } from "discord.js";
 import { EmbedFormatter, formatTime } from "@/utils/format";
 import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds";
+import { getGuildBadgeRoles } from "../repository/badges";
 import { getQuotaRolesForGuild } from "../repository/quotaRoles";
 import {
     addCategoryAction, disableAutoDeleteAction, disableCounterAction, removeQuotaRoleAction, setAutoDeleteAction,
-    setCounterChannelAction, setQuotaRoleAction, setRolesAction, setThresholdsAction, showConfig,
+    setBadgeRoleAction, setCounterChannelAction, setQuotaRoleAction, setRolesAction, setThresholdsAction, showConfig,
 } from "./adminConfigActions";
-import type { QuotaRoleMode, QuotaRoleRow } from "../types";
+import { ALL_BADGES, BADGE_META, type Badge, type QuotaRoleMode, type QuotaRoleRow } from "../types";
 
 const STEP_TIMEOUT_MS = 5 * 60_000;
 
@@ -142,6 +143,32 @@ async function awaitRoleTriplet(msg: Message, adminId: string): Promise<StepResu
         });
         collector.on("end", (_collected, reason) => {
             if (reason === "done") resolve({ kind: "ok", value: { active: picked.active!, idle: picked.idle!, inactive: picked.inactive! } });
+            else if (reason === "cancel") resolve({ kind: "cancel" });
+            else if (reason === "skip") resolve({ kind: "skip" });
+            else if (reason === "back") resolve({ kind: "back" });
+            else resolve({ kind: "timeout" });
+        });
+    });
+}
+
+/** Waits for any subset of the three badge role selects to be filled in, resolving once the admin clicks a nav button. */
+async function awaitBadgeRoleSelects(msg: Message, adminId: string): Promise<StepResult<Partial<Record<Badge, string>>>> {
+    const picked: Partial<Record<Badge, string>> = {};
+    return new Promise((resolve) => {
+        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: STEP_TIMEOUT_MS });
+        collector.on("collect", async (i) => {
+            if (i.customId === "ez-cancel") { await i.deferUpdate(); collector.stop("cancel"); return; }
+            if (i.customId === "ez-skip") { await i.deferUpdate(); collector.stop("skip"); return; }
+            if (i.customId === "ez-back") { await i.deferUpdate(); collector.stop("back"); return; }
+            if (i.customId === "ez-done") { await i.deferUpdate(); collector.stop("done"); return; }
+            if (i.isRoleSelectMenu()) {
+                await i.deferUpdate();
+                const key = i.customId.replace("ez-badge-", "") as Badge;
+                picked[key] = i.values[0];
+            }
+        });
+        collector.on("end", (_collected, reason) => {
+            if (reason === "done") resolve({ kind: "ok", value: picked });
             else if (reason === "cancel") resolve({ kind: "cancel" });
             else if (reason === "skip") resolve({ kind: "skip" });
             else if (reason === "back") resolve({ kind: "back" });
@@ -564,6 +591,38 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
     }
 }
 
+async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGoBack: boolean): Promise<Direction> {
+    const badgeRoles = await getGuildBadgeRoles(guild.id);
+    const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
+
+    await msg.edit({
+        embeds: [stepEmbed(
+            "Special Biome Badges (optional)",
+            "Some biomes are rare: Glitched, Cyberspace and Dreamspace. The first time a user's macro reports one of them, they permanently earn a badge on their profile.\n\n" +
+            "You can optionally also grant a role for each one found. Pick a role for any (or none) of them below.\n\n" +
+            "Currently:\n" +
+            ALL_BADGES.map((b) => roleLine(`${BADGE_META[b].emoji} ${BADGE_META[b].label}`, badgeRoleMap.get(b) ?? null)).join("\n"),
+        )],
+        components: [
+            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-GLITCHED").setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`)),
+            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-CYBERSPACE").setPlaceholder(`${BADGE_META.CYBERSPACE.emoji} Cyberspace role`)),
+            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-DREAMSPACE").setPlaceholder(`${BADGE_META.DREAMSPACE.emoji} Dreamspace role`)),
+            navRow(canGoBack, "Skip", new ButtonBuilder().setCustomId("ez-done").setLabel("Done").setStyle(ButtonStyle.Primary)),
+        ],
+    });
+
+    const result = await awaitBadgeRoleSelects(msg, adminId);
+    if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
+    if (result.kind === "back") return "back";
+    if (result.kind === "ok") {
+        for (const badge of ALL_BADGES) {
+            const roleId = result.value[badge];
+            if (roleId) await setBadgeRoleAction(guild.id, badge, roleId);
+        }
+    }
+    return "forward";
+}
+
 // ─── Driver ─────────────────────────────────────────────────────────────────
 
 export async function runEzSetup(
@@ -594,6 +653,7 @@ export async function runEzSetup(
         (canGoBack) => stepAutoDelete(guild, adminId, msg, canGoBack),
         (canGoBack) => stepCounter(guild, adminId, msg, canGoBack),
         (canGoBack) => stepQuotaRoles(guild, adminId, msg, canGoBack),
+        (canGoBack) => stepBadgeRoles(guild, adminId, msg, canGoBack),
     ];
 
     let i = 0;

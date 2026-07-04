@@ -3,17 +3,25 @@ import type { BotClient } from "@/core/BotClient";
 import { formatTime } from "@/utils/format";
 import {
     addCategory, clearGuildRoles, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
-    isGuildReady, removeCategory, resetGuildConfig, resetQuota, resetThresholds, setAutoCreateCategories,
-    setAutoDeleteAfter, setCounterChannel, setGuildRoles, setQuotaEvalHour, updateQuota, updateThresholds,
+    isGuildReady, removeCategory, resetGuildConfig, resetThresholds, setAutoCreateCategories,
+    setAutoDeleteAfter, setCounterChannel, setGuildRoles, setQuotaEvalHour, updateThresholds,
 } from "../repository/guilds";
+import { getGuildBadgeRoles, setGuildBadgeRole, clearGuildBadgeRoles } from "../repository/badges";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
-import { BiomeHuntError, type QuotaRoleMode } from "../types";
+import { ALL_BADGES, BADGE_META, BiomeHuntError, type Badge, type QuotaRoleMode } from "../types";
 import { updateCounterForGuild } from "../workers/CounterEngine";
 
 export async function showConfig(guildId: string): Promise<EmbedBuilder> {
     const config = await getOrCreateGuildConfig(guildId);
     const roles = await getGuildRoles(guildId);
     const categories = await getEnabledCategories(guildId);
+    const badgeRoles = await getGuildBadgeRoles(guildId);
+
+    const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
+    const badgeLines = ALL_BADGES.map((badge) => {
+        const roleId = badgeRoleMap.get(badge);
+        return `${BADGE_META[badge].emoji} ${BADGE_META[badge].label}: ${roleId ? `<@&${roleId}>` : "not set"}`;
+    });
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
@@ -23,12 +31,12 @@ export async function showConfig(guildId: string): Promise<EmbedBuilder> {
                 name: "Thresholds",
                 value: `Session gap: ${formatTime(config.session_gap_threshold_s)}\nIdle: ${formatTime(config.idle_threshold_s)}\nInactive: ${formatTime(config.inactive_threshold_s)}`,
             },
-            { name: "Quota", value: `${formatTime(config.quota_target_seconds)} within a ${config.quota_window_hours}h window` },
             { name: "Categories", value: categories.length > 0 ? categories.map((c) => `<#${c.discord_category_id}>`).join(", ") : "None" },
             {
                 name: "Roles",
                 value: `Active: ${roles.active ? `<@&${roles.active}>` : "not set"}\nIdle: ${roles.idle ? `<@&${roles.idle}>` : "not set"}\nInactive: ${roles.inactive ? `<@&${roles.inactive}>` : "not set"}`,
             },
+            { name: "Special Biome Roles", value: badgeLines.join("\n") },
             { name: "Auto-create categories", value: config.auto_create_categories ? "Enabled" : "Disabled", inline: true },
             { name: "Auto-delete inactive users", value: config.delete_inactive_after_s ? formatTime(config.delete_inactive_after_s) : "Disabled", inline: true },
             { name: "Live counter", value: config.counter_channel_id ? `<#${config.counter_channel_id}>` : "Disabled", inline: true },
@@ -62,17 +70,6 @@ export async function setAutoDeleteAction(guildId: string, hoursAfterInactive: n
 export async function disableAutoDeleteAction(guildId: string): Promise<string> {
     await setAutoDeleteAfter(guildId, null);
     return "Auto-delete disabled. Inactive users' channels are no longer removed automatically.";
-}
-
-export async function setQuotaAction(guildId: string, windowHours: number, targetHours: number): Promise<string> {
-    if (windowHours <= 0 || targetHours <= 0) throw new BiomeHuntError("Quota window and target must be greater than zero.");
-    await updateQuota(guildId, windowHours, Math.round(targetHours * 3600));
-    return `Quota updated: ${targetHours}h required within a ${windowHours}h window.`;
-}
-
-export async function resetQuotaAction(guildId: string): Promise<string> {
-    await resetQuota(guildId);
-    return "Quota reset to default (6h within a 24h window).";
 }
 
 export async function setAutoCreateCategoriesAction(guildId: string, enabled: boolean): Promise<string> {
@@ -129,7 +126,6 @@ export async function testConfigAction(guildId: string): Promise<EmbedBuilder> {
         `${hasCategory ? "✅" : "❌"} At least one enabled category`,
         `${hasRoles ? "✅" : "❌"} All 3 status roles configured`,
         `✅ Thresholds: gap=${formatTime(config.session_gap_threshold_s)} idle=${formatTime(config.idle_threshold_s)} inactive=${formatTime(config.inactive_threshold_s)}`,
-        `✅ Quota: ${formatTime(config.quota_target_seconds)} / ${config.quota_window_hours}h`,
         `ℹ️ Live counter: ${config.counter_channel_id ? "enabled (optional)" : "disabled (optional)"}`,
     ];
 
@@ -201,4 +197,14 @@ export async function setQuotaEvalHourAction(guildId: string, hourUtc: number): 
     if (hourUtc < 0 || hourUtc > 23) throw new BiomeHuntError("Hour must be between 0 and 23.");
     await setQuotaEvalHour(guildId, hourUtc);
     return `Fixed-mode quota rewards will now be evaluated daily at ${hourUtc}:00 UTC.`;
+}
+
+export async function setBadgeRoleAction(guildId: string, badge: Badge, roleId: string): Promise<string> {
+    await setGuildBadgeRole(guildId, badge, roleId);
+    return `${BADGE_META[badge].emoji} ${BADGE_META[badge].label} will now grant <@&${roleId}>.`;
+}
+
+export async function clearBadgeRolesAction(guildId: string): Promise<string> {
+    await clearGuildBadgeRoles(guildId);
+    return "All special biome badge role configurations have been cleared.";
 }

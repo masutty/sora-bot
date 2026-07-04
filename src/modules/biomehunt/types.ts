@@ -2,6 +2,16 @@ export type ActivityStatus = "active" | "idle" | "inactive";
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 
+export type Badge = "GLITCHED" | "CYBERSPACE" | "DREAMSPACE";
+
+export const BADGE_META: Record<Badge, { emoji: string; label: string }> = {
+    GLITCHED: { emoji: "🔥", label: "Glitched" },
+    CYBERSPACE: { emoji: "🌐", label: "Cyberspace" },
+    DREAMSPACE: { emoji: "🌸", label: "Dreamspace" },
+};
+
+export const ALL_BADGES: Badge[] = ["GLITCHED", "CYBERSPACE", "DREAMSPACE"];
+
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
  * Command handlers show its message verbatim instead of the generic failure quip.
@@ -10,8 +20,6 @@ export class BiomeHuntError extends Error {}
 
 export interface GuildConfigRow {
     guild_id: string;
-    quota_window_hours: number;
-    quota_target_seconds: number;
     session_gap_threshold_s: number;
     idle_threshold_s: number;
     inactive_threshold_s: number;
@@ -63,6 +71,7 @@ export interface ActivityEventRow {
     discord_message_id: string;
     biome: string | null;
     macro_type: string | null;
+    event_type: "started" | "ended" | null;
     event_timestamp: Date | null;
     received_at: Date;
 }
@@ -92,6 +101,18 @@ export interface UserQuotaRoleRow {
     quota_role_id: number;
     granted_at: Date;
     expires_at: Date | null;
+}
+
+export interface GuildBadgeRoleRow {
+    guild_id: string;
+    badge: Badge;
+    role_id: string;
+}
+
+export interface UserBadgeRow {
+    user_id: number;
+    badge: Badge;
+    awarded_at: Date;
 }
 
 export interface RoleJobRow {

@@ -6,22 +6,22 @@ import { EmbedFormatter } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import {
-    addCategoryAction, clearRolesAction, disableAutoDeleteAction, disableCounterAction, forceCounterUpdateAction,
-    listQuotaRolesAction, removeCategoryAction, removeQuotaRoleAction, resetConfigAction, resetQuotaAction,
-    resetThresholdsAction, setAutoCreateCategoriesAction, setAutoDeleteAction, setCounterChannelAction,
-    setQuotaAction, setQuotaEvalHourAction, setQuotaRoleAction, setRolesAction, setThresholdsAction, showConfig,
-    testConfigAction,
+    addCategoryAction, clearBadgeRolesAction, clearRolesAction, disableAutoDeleteAction, disableCounterAction,
+    forceCounterUpdateAction, listQuotaRolesAction, removeCategoryAction, removeQuotaRoleAction, resetConfigAction,
+    resetThresholdsAction, setAutoCreateCategoriesAction, setAutoDeleteAction, setBadgeRoleAction,
+    setCounterChannelAction, setQuotaEvalHourAction, setQuotaRoleAction, setRolesAction, setThresholdsAction,
+    showConfig, testConfigAction,
 } from "./adminConfigActions";
 import {
-    checkUserAction, guildStatsAction, leaderboardAction, pauseUserAction, quotaProgressAction,
-    removeUserAction, resetUserAction, setupUserAction, unpauseUserAction,
+    addBadgeAction, checkUserAction, guildStatsAction, leaderboardAction, pauseUserAction, quotaProgressAction,
+    removeBadgeAction, removeUserAction, resetUserAction, setupUserAction, unpauseUserAction,
 } from "./adminUserActions";
 import { runEzSetup } from "./ezsetup";
 import {
     buildHistoryEmbed, buildHistoryRow, buildUserListEmbed, buildUserListRow, getSessionHistory,
     getUserListPage, SESSIONS_PER_PAGE, USERS_PER_PAGE,
 } from "./profileViews";
-import { BiomeHuntError, type ActivityStatus, type QuotaRoleMode } from "../types";
+import { BiomeHuntError, type ActivityStatus, type Badge, type QuotaRoleMode } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-admin");
 
@@ -54,15 +54,6 @@ export default defineCommand({
                 .addSubcommand((s) => s.setName("disable-auto-delete").setDescription("Disable auto-deleting inactive users' channels.")),
         )
         .addSubcommandGroup((g) =>
-            g.setName("quota").setDescription("General activity quota.")
-                .addSubcommand((s) =>
-                    s.setName("set").setDescription("Set the activity quota.")
-                        .addIntegerOption((o) => o.setName("window_hours").setDescription("Rolling window size, in hours").setRequired(true).setMinValue(1))
-                        .addNumberOption((o) => o.setName("target_hours").setDescription("Required active hours within the window").setRequired(true).setMinValue(0.1)),
-                )
-                .addSubcommand((s) => s.setName("reset").setDescription("Reset quota to defaults.")),
-        )
-        .addSubcommandGroup((g) =>
             g.setName("categories").setDescription("Macro channel categories.")
                 .addSubcommand((s) =>
                     s.setName("add").setDescription("Allow a category for macro channels.")
@@ -85,7 +76,20 @@ export default defineCommand({
                         .addRoleOption((o) => o.setName("idle").setDescription("Idle role").setRequired(true))
                         .addRoleOption((o) => o.setName("inactive").setDescription("Inactive role").setRequired(true)),
                 )
-                .addSubcommand((s) => s.setName("clear").setDescription("Unset all status roles.")),
+                .addSubcommand((s) => s.setName("clear").setDescription("Unset all status roles."))
+                .addSubcommand((s) =>
+                    s.setName("found-glitched").setDescription("Set the role awarded for finding the Glitched biome.")
+                        .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("found-cyberspace").setDescription("Set the role awarded for finding the Cyberspace biome.")
+                        .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("found-dreamspace").setDescription("Set the role awarded for finding the Dreamspace biome.")
+                        .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true)),
+                )
+                .addSubcommand((s) => s.setName("clear-badges").setDescription("Unset all special biome badge roles.")),
         )
         .addSubcommandGroup((g) =>
             g.setName("counter").setDescription("Live activity counter.")
@@ -152,6 +156,30 @@ export default defineCommand({
                 .addSubcommand((s) =>
                     s.setName("quota-progress").setDescription("View a user's progress toward configured quota rewards.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("add-badge").setDescription("Manually grant a special biome badge to a user.")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
+                        .addStringOption((o) =>
+                            o.setName("badge").setDescription("Badge").setRequired(true)
+                                .addChoices(
+                                    { name: "Glitched", value: "GLITCHED" },
+                                    { name: "Cyberspace", value: "CYBERSPACE" },
+                                    { name: "Dreamspace", value: "DREAMSPACE" },
+                                ),
+                        ),
+                )
+                .addSubcommand((s) =>
+                    s.setName("remove-badge").setDescription("Manually remove a special biome badge from a user.")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
+                        .addStringOption((o) =>
+                            o.setName("badge").setDescription("Badge").setRequired(true)
+                                .addChoices(
+                                    { name: "Glitched", value: "GLITCHED" },
+                                    { name: "Cyberspace", value: "CYBERSPACE" },
+                                    { name: "Dreamspace", value: "DREAMSPACE" },
+                                ),
+                        ),
                 ),
         )
         .addSubcommand((s) => s.setName("guild-stats").setDescription("Show guild-wide BiomeHunt stats."))
@@ -335,14 +363,6 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
         }
         case "thresholds-disable-auto-delete":
             return disableAutoDeleteAction(guildId);
-        case "quota-set":
-            return setQuotaAction(
-                guildId,
-                requireNumber(args.getInteger("window_hours"), "window_hours"),
-                requireNumber(args.getNumber("target_hours"), "target_hours"),
-            );
-        case "quota-reset":
-            return resetQuotaAction(guildId);
         case "categories-auto-create": {
             const enabled = args.getBoolean("enabled");
             if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
@@ -367,6 +387,23 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
         }
         case "roles-clear":
             return clearRolesAction(guildId);
+        case "roles-found-glitched": {
+            const roleId = await args.getRoleId("role");
+            if (!roleId) throw new BiomeHuntError("Missing required argument: role");
+            return setBadgeRoleAction(guildId, "GLITCHED", roleId);
+        }
+        case "roles-found-cyberspace": {
+            const roleId = await args.getRoleId("role");
+            if (!roleId) throw new BiomeHuntError("Missing required argument: role");
+            return setBadgeRoleAction(guildId, "CYBERSPACE", roleId);
+        }
+        case "roles-found-dreamspace": {
+            const roleId = await args.getRoleId("role");
+            if (!roleId) throw new BiomeHuntError("Missing required argument: role");
+            return setBadgeRoleAction(guildId, "DREAMSPACE", roleId);
+        }
+        case "roles-clear-badges":
+            return clearBadgeRolesAction(guildId);
         case "counter-set-channel": {
             const id = await args.getChannelId("channel");
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
@@ -436,6 +473,20 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return quotaProgressAction(guildId, id);
+        }
+        case "user-add-badge": {
+            const id = await args.getUserId("user");
+            const badge = args.getString("badge") as Badge | null;
+            if (!id) throw new BiomeHuntError("Missing required argument: user");
+            if (!badge) throw new BiomeHuntError("Missing required argument: badge");
+            return addBadgeAction(guildId, id, badge);
+        }
+        case "user-remove-badge": {
+            const id = await args.getUserId("user");
+            const badge = args.getString("badge") as Badge | null;
+            if (!id) throw new BiomeHuntError("Missing required argument: user");
+            if (!badge) throw new BiomeHuntError("Missing required argument: badge");
+            return removeBadgeAction(guildId, id, badge);
         }
         case "guild-stats":
             return guildStatsAction(guildId);

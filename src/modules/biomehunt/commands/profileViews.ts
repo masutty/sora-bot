@@ -1,11 +1,12 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, GuildMember } from "discord.js";
 import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
-import { getOrCreateGuildConfig } from "../repository/guilds";
 import {
-    getActiveSecondsInWindow, getBiomeCounts, getComplianceRate, getLeaderboard, getRecentSessions,
+    getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
+import { getUserBadges } from "../repository/badges";
+import { getUserQuotaProgress } from "../repository/quotaRoles";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
-import type { ActivitySessionRow, ActivityStatus, UserRow } from "../types";
+import { BADGE_META, type ActivitySessionRow, type ActivityStatus, type UserRow } from "../types";
 import { Logger } from "@/utils/logging";
 
 const logger = new Logger("biomehunt.profileViews");
@@ -13,7 +14,38 @@ const logger = new Logger("biomehunt.profileViews");
 export const SESSIONS_PER_PAGE = 10;
 export const USERS_PER_PAGE = 10;
 
+/** There's no general per-guild quota anymore (that's fully replaced by per-role quota rewards) - recent-activity displays just use a fixed lookback window. */
+const RECENT_ACTIVITY_WINDOW_HOURS = 24;
+
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
+const STATUS_COLOR = { active: 0x57f287, idle: 0xfaa61a, inactive: 0xed4245 } as const;
+
+/**
+ * Per quota-role progress lines for a user (0, 1, or many - a guild can have any number
+ * of independently configured reward roles). Shared between the user's own `/bh profile`
+ * and the admin-facing `user quota-progress` command.
+ */
+export async function getQuotaRewardLines(guildId: string, userId: number): Promise<string[]> {
+    const progress = await getUserQuotaProgress(guildId, userId);
+    return Promise.all(progress.map(async (p) => {
+        const activeSeconds = await getActiveSecondsInWindow(userId, p.quota_window_hours);
+        const modeLabel = p.mode === "F" ? "Fixed" : "Rolling Window";
+        const progressText = `${formatTime(activeSeconds)} / ${formatTime(p.quota_target_seconds)}`;
+
+        let statusText: string;
+        if (p.held_granted_at) {
+            statusText = p.mode === "F" && p.held_expires_at
+                ? `holds it, expires <t:${unix(p.held_expires_at)}:R>`
+                : "holds it";
+        } else if (activeSeconds >= p.quota_target_seconds) {
+            statusText = p.mode === "F" ? "qualifies, granted at the next daily evaluation" : "qualifies, syncs within ~30s";
+        } else {
+            statusText = "not yet qualified";
+        }
+
+        return `<@&${p.role_id}> (${modeLabel}) - ${progressText} - ${statusText}`;
+    }));
+}
 
 export async function buildProfileEmbed(guildId: string, member: GuildMember): Promise<EmbedBuilder> {
     const user = await getUserByDiscordId(guildId, member.id);
@@ -21,18 +53,18 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
 
     // logger.debug(`Found user: ${JSON.stringify(user, null, 2)}`);
 
-    const guildConfig = await getOrCreateGuildConfig(guildId);
-    const activeSeconds = await getActiveSecondsInWindow(user.id, guildConfig.quota_window_hours);
-    const compliant = activeSeconds >= guildConfig.quota_target_seconds;
+    const activeSeconds = await getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS);
     const biomes = await getBiomeCounts(user.id);
     const channel = await getMacroChannelByUserId(user.id);
+    const quotaRewardLines = await getQuotaRewardLines(guildId, user.id);
+    const badges = await getUserBadges(user.id);
 
     const embed = new EmbedBuilder()
-        .setColor(compliant ? 0x57f287 : 0xed4245)
+        .setColor(STATUS_COLOR[user.current_status])
         .setTitle(`\`${member.user.username}\`'s hunter profile`)
         .setThumbnail(member.displayAvatarURL())
         .setDescription([
-            `- \`${formatTime(activeSeconds)}\` activity time in the last \`${guildConfig.quota_window_hours}h\` window.`,
+            `- \`${formatTime(activeSeconds)}\` activity time in the last \`${RECENT_ACTIVITY_WINDOW_HOURS}h\`.`,
             `- \`${biomes.length}\` biomes registered.`,
             `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
         ].join("\n"))
@@ -47,15 +79,19 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
                 value: formatCodeblock(STATUS_EMOJI[user.current_status] + " " + user.current_status.toUpperCase()),
                 inline: true
             },
-            {
-                name: `Quota (last ${guildConfig.quota_window_hours}h)`,
-                value: formatCodeblock(`${compliant ? "✅" : "❌ ( " + formatTime(activeSeconds) + " / " + formatTime(guildConfig.quota_target_seconds) + " )"}`),
-                inline: true,
-            },
         );
 
     if (biomes.length > 0) {
         embed.addFields({ name: "Biomes registered:", value: formatCodeblock(biomes.map((b) => `${b.biome}: ${b.count}`).join("\n")) });
+    }
+
+    if (quotaRewardLines.length > 0) {
+        embed.addFields({ name: "Quota Rewards", value: quotaRewardLines.join("\n") });
+    }
+
+    if (badges.length > 0) {
+        const badgeLines = badges.map((b) => `${BADGE_META[b.badge].emoji} Found ${BADGE_META[b.badge].label}!`);
+        embed.addFields({ name: "Badges", value: badgeLines.join("\n") });
     }
 
     return embed;
@@ -102,8 +138,7 @@ export function buildHistoryRow(page: number, pages: number): ActionRowBuilder<B
 }
 
 export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuilder> {
-    const guildConfig = await getOrCreateGuildConfig(guildId);
-    const rows = await getLeaderboard(guildId, guildConfig.quota_window_hours, 10);
+    const rows = await getLeaderboard(guildId, RECENT_ACTIVITY_WINDOW_HOURS, 10);
     if (rows.length === 0) return EmbedFormatter.info("No activity recorded yet.");
 
     const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> — ${formatTime(r.activeSeconds)} (${r.sessionCount} sessions)`);
@@ -143,9 +178,7 @@ export function buildUserListRow(page: number, pages: number): ActionRowBuilder<
 }
 
 export async function buildGuildStatsEmbed(guildId: string): Promise<EmbedBuilder> {
-    const guildConfig = await getOrCreateGuildConfig(guildId);
     const counts = await getGuildUserCounts(guildId);
-    const { compliant, total } = await getComplianceRate(guildId, guildConfig.quota_window_hours, guildConfig.quota_target_seconds);
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
@@ -154,6 +187,5 @@ export async function buildGuildStatsEmbed(guildId: string): Promise<EmbedBuilde
             { name: "🟢 Active", value: String(counts.active), inline: true },
             { name: "🟡 Idle", value: String(counts.idle), inline: true },
             { name: "🔴 Inactive", value: String(counts.inactive), inline: true },
-            { name: "Quota compliance", value: total > 0 ? `${compliant} / ${total} users` : "No users tracked yet" },
         );
 }

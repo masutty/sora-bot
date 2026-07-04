@@ -5,6 +5,7 @@ import { getOrCreateGuildConfig } from "../repository/guilds";
 import { getUserById, lookupChannel, touchLastActivity } from "../repository/users";
 import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity";
 import { parseEvent } from "../webhookParser";
+import { checkAndAwardBadge } from "./BadgeEngine";
 import { transitionUser } from "../workers/StatusEngine";
 
 const logger = new Logger("biomehunt.ActivityEngine");
@@ -27,9 +28,11 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     const now = new Date();
 
     const inserted = await transaction((client) =>
-        insertEventIfNew(client, entry.userId, message.id, parsed.biome, parsed.macroType, parsed.eventTimestamp),
+        insertEventIfNew(client, entry.userId, message.id, parsed.biome, parsed.macroType, parsed.eventType, parsed.eventTimestamp),
     );
     if (!inserted) return;
+
+    await checkAndAwardBadge(entry.guildId, entry.userId, parsed.biome, parsed.eventType);
 
     const user = await getUserById(entry.userId);
     if (!user) return;

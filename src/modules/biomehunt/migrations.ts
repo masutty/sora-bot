@@ -7,9 +7,6 @@ export const BIOMEHUNT_SCHEMA = `
 CREATE TABLE IF NOT EXISTS bh_guilds (
     guild_id                 VARCHAR(20) PRIMARY KEY,
 
-    quota_window_hours       INTEGER NOT NULL DEFAULT 24,
-    quota_target_seconds     INTEGER NOT NULL DEFAULT 21600,  /* 6h */
-
     session_gap_threshold_s  INTEGER NOT NULL DEFAULT 1200,   /* 20min */
     idle_threshold_s         INTEGER NOT NULL DEFAULT 1800,   /* 30min */
     inactive_threshold_s     INTEGER NOT NULL DEFAULT 86400,  /* 24h */
@@ -29,6 +26,10 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
 
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_eval_hour_utc SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_last_evaluated_date DATE;
+
+/* General guild-wide quota was replaced entirely by per-role quota rewards (bh_quota_roles). */
+ALTER TABLE bh_guilds DROP COLUMN IF EXISTS quota_window_hours;
+ALTER TABLE bh_guilds DROP COLUMN IF EXISTS quota_target_seconds;
 
 CREATE TABLE IF NOT EXISTS bh_guild_categories (
     id SERIAL PRIMARY KEY,
@@ -82,9 +83,12 @@ CREATE TABLE IF NOT EXISTS bh_activity_events (
     discord_message_id VARCHAR(20) NOT NULL UNIQUE,
     biome VARCHAR(50),
     macro_type VARCHAR(100),
+    event_type VARCHAR(10),                 /* 'started' | 'ended' | NULL (unknown) */
     event_timestamp TIMESTAMPTZ,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE bh_activity_events ADD COLUMN IF NOT EXISTS event_type VARCHAR(10);
 
 CREATE INDEX IF NOT EXISTS bh_activity_events_user ON bh_activity_events(user_id, received_at DESC);
 
@@ -121,6 +125,24 @@ CREATE TABLE IF NOT EXISTS bh_user_quota_roles (
     granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ,   /* NULL for RW mode (no fixed expiry; revoked reactively) */
     PRIMARY KEY (user_id, quota_role_id)
+);
+
+/* ───────────────────────────────────────────── */
+/* Special biome badges                         */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_guild_badge_roles (
+    guild_id VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    badge    VARCHAR(20) NOT NULL,   /* 'GLITCHED' | 'CYBERSPACE' | 'DREAMSPACE' - same value as bh_activity_events.biome */
+    role_id  VARCHAR(20) NOT NULL,
+    PRIMARY KEY (guild_id, badge)
+);
+
+CREATE TABLE IF NOT EXISTS bh_user_badges (
+    user_id    INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    badge      VARCHAR(20) NOT NULL,
+    awarded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, badge)
 );
 
 /* ───────────────────────────────────────────── */

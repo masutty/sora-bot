@@ -8,14 +8,15 @@ export async function insertEventIfNew(
     discordMessageId: string,
     biome: string | null,
     macroType: string | null,
+    eventType: "started" | "ended" | null,
     eventTimestamp: Date | null,
 ): Promise<boolean> {
     const result = await client.query(
-        `INSERT INTO bh_activity_events (user_id, discord_message_id, biome, macro_type, event_timestamp)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO bh_activity_events (user_id, discord_message_id, biome, macro_type, event_type, event_timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (discord_message_id) DO NOTHING
          RETURNING id`,
-        [userId, discordMessageId, biome, macroType, eventTimestamp],
+        [userId, discordMessageId, biome, macroType, eventType, eventTimestamp],
     );
     return (result.rowCount ?? 0) > 0;
 }
@@ -67,11 +68,12 @@ export async function getRecentSessions(userId: number, limit: number): Promise<
     return result.rows;
 }
 
+/** Counts confirmed "started" events only — each biome session sends both a started and ended message, and counting both would double the total. */
 export async function getBiomeCounts(userId: number): Promise<Array<{ biome: string; count: number }>> {
     const result = await query<{ biome: string; count: string }>(
         `SELECT biome, COUNT(*) AS count
          FROM bh_activity_events
-         WHERE user_id = $1 AND biome IS NOT NULL
+         WHERE user_id = $1 AND biome IS NOT NULL AND event_type = 'started'
          GROUP BY biome
          ORDER BY count DESC`,
         [userId],
@@ -103,24 +105,3 @@ export async function getLeaderboard(
     }));
 }
 
-export async function getComplianceRate(
-    guildId: string,
-    windowHours: number,
-    targetSeconds: number,
-): Promise<{ compliant: number; total: number }> {
-    const result = await query<{ compliant: string; total: string }>(
-        `SELECT
-            COUNT(*) FILTER (WHERE COALESCE(s.total, 0) >= $3) AS compliant,
-            COUNT(*) AS total
-         FROM bh_users u
-         LEFT JOIN (
-             SELECT user_id, SUM(duration_seconds) AS total
-             FROM bh_activity_sessions
-             WHERE started_at >= NOW() - ($2 || ' hours')::interval
-             GROUP BY user_id
-         ) s ON s.user_id = u.id
-         WHERE u.guild_id = $1`,
-        [guildId, windowHours, targetSeconds],
-    );
-    return { compliant: Number(result.rows[0].compliant), total: Number(result.rows[0].total) };
-}

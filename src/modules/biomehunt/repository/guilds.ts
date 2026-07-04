@@ -49,20 +49,6 @@ export async function resetThresholds(guildId: string): Promise<void> {
     await updateThresholds(guildId, 1200, 1800, 86400);
 }
 
-export async function updateQuota(guildId: string, windowHours: number, targetSeconds: number): Promise<void> {
-    await query(
-        `UPDATE bh_guilds
-         SET quota_window_hours = $2, quota_target_seconds = $3, updated_at = NOW()
-         WHERE guild_id = $1`,
-        [guildId, windowHours, targetSeconds],
-    );
-    invalidate(guildId);
-}
-
-export async function resetQuota(guildId: string): Promise<void> {
-    await updateQuota(guildId, 24, 21600);
-}
-
 export async function setQuotaEvalHour(guildId: string, hourUtc: number): Promise<void> {
     await query(
         `UPDATE bh_guilds SET quota_eval_hour_utc = $2, updated_at = NOW() WHERE guild_id = $1`,
@@ -215,8 +201,7 @@ export async function resetGuildConfig(guildId: string): Promise<void> {
     await clearGuildRoles(guildId);
     await query(
         `UPDATE bh_guilds
-         SET quota_window_hours = 24, quota_target_seconds = 21600,
-             session_gap_threshold_s = 1200, idle_threshold_s = 1800, inactive_threshold_s = 86400,
+         SET session_gap_threshold_s = 1200, idle_threshold_s = 1800, inactive_threshold_s = 86400,
              auto_create_categories = FALSE, delete_inactive_after_s = NULL,
              counter_channel_id = NULL, counter_message_id = NULL, updated_at = NOW()
          WHERE guild_id = $1`,

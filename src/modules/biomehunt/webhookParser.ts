@@ -44,7 +44,10 @@ const VALID_BIOMES = new Set([
     "HELL",
     "SNOWY",
     "RAINY",
-    "NULL"
+    "NULL",
+    "GLITCHED",
+    "CYBERSPACE",
+    "DREAMSPACE",
 ]);
 
 function stripMarkdown(text: string): string {
