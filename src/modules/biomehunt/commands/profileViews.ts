@@ -4,7 +4,7 @@ import {
     getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
 import { getUserBadges } from "../repository/badges";
-import { getUserQuotaProgress } from "../repository/quotaRoles";
+import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quotaRoles";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
 import { BADGE_META, type ActivitySessionRow, type ActivityStatus, type UserRow } from "../types";
 import { Logger } from "@/utils/logging";
@@ -20,31 +20,49 @@ const RECENT_ACTIVITY_WINDOW_HOURS = 24;
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
 const STATUS_COLOR = { active: 0x57f287, idle: 0xfaa61a, inactive: 0xed4245 } as const;
 
-/**
- * Per quota-role progress lines for a user (0, 1, or many - a guild can have any number
- * of independently configured reward roles). Shared between the user's own `/bh profile`
- * and the admin-facing `user quota-progress` command.
- */
-export async function getQuotaRewardLines(guildId: string, userId: number): Promise<string[]> {
+async function computeQuotaRewardProgress(guildId: string, userId: number): Promise<Array<{ p: QuotaProgressRow; activeSeconds: number; qualifies: boolean }>> {
     const progress = await getUserQuotaProgress(guildId, userId);
     return Promise.all(progress.map(async (p) => {
         const activeSeconds = await getActiveSecondsInWindow(userId, p.quota_window_hours);
-        const modeLabel = p.mode === "F" ? "Fixed" : "Rolling Window";
-        const progressText = `${formatTime(activeSeconds)} / ${formatTime(p.quota_target_seconds)}`;
+        const qualifies = p.held_granted_at !== null || activeSeconds >= p.quota_target_seconds;
+        return { p, activeSeconds, qualifies };
+    }));
+}
 
-        let statusText: string;
+/**
+ * Detailed per quota-role progress blocks for a user (0, 1, or many - a guild can have any
+ * number of independently configured reward roles). Used by the admin-facing
+ * `user quota-progress` command. Each entry is a role header followed by only the sub-lines
+ * that actually add information (e.g. a held role doesn't repeat its progress).
+ */
+export async function getQuotaRewardLines(guildId: string, userId: number): Promise<string[]> {
+    const progress = await computeQuotaRewardProgress(guildId, userId);
+    return progress.map(({ p, activeSeconds, qualifies }) => {
+        const modeLabel = p.mode === "F" ? "Fixed" : "Rolling Window";
+        const lines = [`- <@&${p.role_id}>`];
+
         if (p.held_granted_at) {
-            statusText = p.mode === "F" && p.held_expires_at
-                ? `holds it, expires <t:${unix(p.held_expires_at)}:R>`
-                : "holds it";
-        } else if (activeSeconds >= p.quota_target_seconds) {
-            statusText = p.mode === "F" ? "qualifies, granted at the next daily evaluation" : "qualifies, syncs within ~30s";
+            lines.push(p.mode === "F" && p.held_expires_at
+                ? `> ${modeLabel}: expires <t:${unix(p.held_expires_at)}:R>`
+                : `> ${modeLabel}: holds it`);
         } else {
-            statusText = "not yet qualified";
+            lines.push(`> ${modeLabel}: ${formatTime(activeSeconds)} / ${formatTime(p.quota_target_seconds)}`);
+            if (qualifies) {
+                lines.push(`> ${p.mode === "F" ? "Qualifies - granted at the next daily evaluation" : "Qualifies - syncs within ~30s"}`);
+            }
         }
 
-        return `<@&${p.role_id}> (${modeLabel}) - ${progressText} - ${statusText}`;
-    }));
+        return lines.join("\n");
+    });
+}
+
+/**
+ * One-line-per-role summary for the user's own `/bh profile` - just a checkmark/X and the
+ * role ping, since the detailed breakdown got repetitive with several quota roles configured.
+ */
+export async function getQuotaRewardSummaryLines(guildId: string, userId: number): Promise<string[]> {
+    const progress = await computeQuotaRewardProgress(guildId, userId);
+    return progress.map(({ p, qualifies }) => `${qualifies ? "✅" : "❌"} <@&${p.role_id}>`);
 }
 
 export async function buildProfileEmbed(guildId: string, member: GuildMember): Promise<EmbedBuilder> {
@@ -56,7 +74,7 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
     const activeSeconds = await getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS);
     const biomes = await getBiomeCounts(user.id);
     const channel = await getMacroChannelByUserId(user.id);
-    const quotaRewardLines = await getQuotaRewardLines(guildId, user.id);
+    const quotaRewardLines = await getQuotaRewardSummaryLines(guildId, user.id);
     const badges = await getUserBadges(user.id);
 
     const embed = new EmbedBuilder()

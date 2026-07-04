@@ -42,9 +42,10 @@ async function evaluateRollingReward(user: UserRow, role: QuotaRoleRow): Promise
  * who don't qualify simply aren't renewed — an already-held role isn't cut
  * early, it just expires on its already-scheduled job.
  */
-async function evaluateFixedRewardsForGuild(guildId: string): Promise<void> {
+/** Returns the number of Fixed-mode roles evaluated (0 if none are configured for this guild). */
+export async function evaluateFixedRewardsForGuild(guildId: string): Promise<number> {
     const roles = await getQuotaRolesByMode(guildId, "F");
-    if (roles.length === 0) return;
+    if (roles.length === 0) return 0;
 
     const users = await getUsersForGuild(guildId);
 
@@ -61,6 +62,7 @@ async function evaluateFixedRewardsForGuild(guildId: string): Promise<void> {
             await scheduleRoleRemoval(guildId, user.id, role.role_id, expiresAt);
         }
     }
+    return roles.length;
 }
 
 /** Runs the F-mode daily sweep for every guild that's currently due for it. Call once per Status Engine tick. */

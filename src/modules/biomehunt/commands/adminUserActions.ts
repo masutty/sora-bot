@@ -53,7 +53,7 @@ export async function quotaProgressAction(guildId: string, discordUserId: string
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setTitle(`<@${discordUserId}>'s Quota Progress`)
-        .setDescription(lines.join("\n"));
+        .setDescription(lines.join("\n\n"));
 }
 
 export async function addBadgeAction(guildId: string, discordUserId: string, badge: Badge): Promise<string> {

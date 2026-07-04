@@ -3,11 +3,12 @@ import type { BotClient } from "@/core/BotClient";
 import { formatTime } from "@/utils/format";
 import {
     addCategory, clearGuildRoles, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
-    isGuildReady, removeCategory, resetGuildConfig, resetThresholds, setAutoCreateCategories,
+    isGuildReady, markQuotaEvaluated, removeCategory, resetGuildConfig, resetThresholds, setAutoCreateCategories,
     setAutoDeleteAfter, setCounterChannel, setGuildRoles, setQuotaEvalHour, updateThresholds,
 } from "../repository/guilds";
 import { getGuildBadgeRoles, setGuildBadgeRole, clearGuildBadgeRoles } from "../repository/badges";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
+import { evaluateFixedRewardsForGuild } from "../services/RewardEngine";
 import { ALL_BADGES, BADGE_META, BiomeHuntError, type Badge, type QuotaRoleMode } from "../types";
 import { updateCounterForGuild } from "../workers/CounterEngine";
 
@@ -197,6 +198,13 @@ export async function setQuotaEvalHourAction(guildId: string, hourUtc: number): 
     if (hourUtc < 0 || hourUtc > 23) throw new BiomeHuntError("Hour must be between 0 and 23.");
     await setQuotaEvalHour(guildId, hourUtc);
     return `Fixed-mode quota rewards will now be evaluated daily at ${hourUtc}:00 UTC.`;
+}
+
+export async function forceQuotaEvalAction(guildId: string): Promise<string> {
+    const count = await evaluateFixedRewardsForGuild(guildId);
+    if (count === 0) throw new BiomeHuntError("No Fixed-mode quota reward roles are configured for this server.");
+    await markQuotaEvaluated(guildId);
+    return `Fixed-mode quota rewards evaluated now for ${count} configured role(s).`;
 }
 
 export async function setBadgeRoleAction(guildId: string, badge: Badge, roleId: string): Promise<string> {

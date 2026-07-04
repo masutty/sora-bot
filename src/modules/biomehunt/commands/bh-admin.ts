@@ -7,8 +7,8 @@ import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import {
     addCategoryAction, clearBadgeRolesAction, clearRolesAction, disableAutoDeleteAction, disableCounterAction,
-    forceCounterUpdateAction, listQuotaRolesAction, removeCategoryAction, removeQuotaRoleAction, resetConfigAction,
-    resetThresholdsAction, setAutoCreateCategoriesAction, setAutoDeleteAction, setBadgeRoleAction,
+    forceCounterUpdateAction, forceQuotaEvalAction, listQuotaRolesAction, removeCategoryAction, removeQuotaRoleAction,
+    resetConfigAction, resetThresholdsAction, setAutoCreateCategoriesAction, setAutoDeleteAction, setBadgeRoleAction,
     setCounterChannelAction, setQuotaEvalHourAction, setQuotaRoleAction, setRolesAction, setThresholdsAction,
     showConfig, testConfigAction,
 } from "./adminConfigActions";
@@ -38,6 +38,7 @@ export default defineCommand({
         .addSubcommand((s) => s.setName("test").setDescription("Check whether required configuration is complete."))
         .addSubcommand((s) => s.setName("reset-all").setDescription("Reset all BiomeHunt configuration for this server."))
         .addSubcommand((s) => s.setName("ezsetup").setDescription("Guided step-by-step setup wizard."))
+        .addSubcommand((s) => s.setName("force-quota-eval").setDescription("Immediately run the Fixed-mode quota reward evaluation for this server."))
         .addSubcommandGroup((g) =>
             g.setName("thresholds").setDescription("Activity thresholds.")
                 .addSubcommand((s) =>
@@ -347,6 +348,8 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
             return testConfigAction(guildId);
         case "reset-all":
             return resetConfigAction(guildId);
+        case "force-quota-eval":
+            return forceQuotaEvalAction(guildId);
         case "thresholds-set":
             return setThresholdsAction(
                 guildId,
