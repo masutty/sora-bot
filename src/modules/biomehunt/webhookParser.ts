@@ -1,4 +1,5 @@
 import { Logger } from "@/utils/logging";
+import { BIOME_DISPLAY_NAMES } from "./types";
 import type { ParsedEvent } from "./types";
 
 const logger = new Logger("biomehunt.webhookParser");
@@ -34,21 +35,18 @@ type MacroType =
     | "unknown";
 
 const BIOME_PATTERN =
-    /Biome\s+(Started|Ended)\b[^A-Za-z0-9]*([A-Za-z0-9_]+)/i;
+    /Biome\s+(Started|Ended)\b[^A-Za-z0-9]*([A-Za-z0-9_ ]+)/i;
 
 const THUMBNAIL_PATTERN =
     /\/([A-Z_]+)\.png$/i;
 
-const VALID_BIOMES = new Set([
-    "WINDY",
-    "HELL",
-    "SNOWY",
-    "RAINY",
-    "NULL",
-    "GLITCHED",
-    "CYBERSPACE",
-    "DREAMSPACE",
-]);
+/** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token before matching against VALID_BIOMES. */
+function normalizeBiomeName(raw: string): string {
+    return raw.trim().toUpperCase().replace(/[\s_]+/g, "");
+}
+
+/** Single source of truth for recognized biomes lives in `BIOME_DISPLAY_NAMES` (types.ts). */
+const VALID_BIOMES = new Set(Object.keys(BIOME_DISPLAY_NAMES));
 
 function stripMarkdown(text: string): string {
     return text
@@ -87,7 +85,7 @@ function extractBiome(embed: WebhookMessageLike["embeds"][0]): { biome: string |
         const match = cleaned.match(BIOME_PATTERN);
 
         if (match) {
-            const biome = match[2].toUpperCase();
+            const biome = normalizeBiomeName(match[2]);
 
             if (!VALID_BIOMES.has(biome)) {
                 logger.warn(`Unknown biome: ${biome}`);
@@ -111,7 +109,7 @@ function extractBiome(embed: WebhookMessageLike["embeds"][0]): { biome: string |
         const match = thumb.match(THUMBNAIL_PATTERN);
 
         if (match) {
-            const biome = match[1].toUpperCase();
+            const biome = normalizeBiomeName(match[1]);
 
             if (VALID_BIOMES.has(biome)) {
                 return {

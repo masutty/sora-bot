@@ -1,4 +1,37 @@
 export type ActivityStatus = "active" | "idle" | "inactive";
+
+/**
+ * Pretty display names for biomes, keyed by their canonical space-less uppercase
+ * form (how they're stored/matched - see `normalizeBiomeName` in webhookParser.ts).
+ * Anything not listed here falls back to a generic Title Case conversion.
+ */
+export const BIOME_DISPLAY_NAMES: Record<string, string> = {
+    WINDY: "Windy",
+    HELL: "Hell",
+    SNOWY: "Snowy",
+    RAINY: "Rainy",
+    NULL: "Null",
+    SANDSTORM: "Sand Storm",
+    STARFALL: "Starfall",
+    HEAVEN: "Heaven",
+    CORRUPTION: "Corruption",
+    GLITCHED: "Glitched",
+    CYBERSPACE: "Cyberspace",
+    DREAMSPACE: "Dreamspace",
+    SINGULARITY: "Singularity",
+    PUMPKINMOON: "Pumpkin Moon",
+    GRAVEYARD: "Graveyard",
+    BLAZINGSUN: "Blazing Sun",
+    BLOODRAIN: "Blood Rain",
+    AURORA: "Aurora",
+    EGGLAND: "Eggland",
+};
+
+export function formatBiomeName(biome: string): string {
+    const known = BIOME_DISPLAY_NAMES[biome];
+    if (known) return known;
+    return biome.charAt(0) + biome.slice(1).toLowerCase();
+}
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 

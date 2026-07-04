@@ -6,7 +6,7 @@ import {
 import { getUserBadges } from "../repository/badges";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quotaRoles";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
-import { BADGE_META, type ActivitySessionRow, type ActivityStatus, type UserRow } from "../types";
+import { BADGE_META, formatBiomeName, type ActivitySessionRow, type ActivityStatus, type UserRow } from "../types";
 import { Logger } from "@/utils/logging";
 
 const logger = new Logger("biomehunt.profileViews");
@@ -99,7 +99,7 @@ export async function buildProfileEmbed(guildId: string, member: GuildMember): P
         );
 
     if (biomes.length > 0) {
-        embed.addFields({ name: "Biomes registered:", value: formatCodeblock(biomes.map((b) => `${b.biome}: ${b.count}`).join("\n")) });
+        embed.addFields({ name: "Biomes registered:", value: formatCodeblock(biomes.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n")) });
     }
 
     if (quotaRewardLines.length > 0) {
