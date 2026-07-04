@@ -6,11 +6,35 @@ export async function enqueueRoleJob(
     userId: number,
     roleId: string,
     action: RoleJobAction,
+    executeAfter?: Date,
 ): Promise<void> {
     await query(
-        `INSERT INTO bh_role_jobs (guild_id, user_id, role_id, action) VALUES ($1, $2, $3, $4)`,
-        [guildId, userId, roleId, action],
+        `INSERT INTO bh_role_jobs (guild_id, user_id, role_id, action, execute_after)
+         VALUES ($1, $2, $3, $4, COALESCE($5, NOW()))`,
+        [guildId, userId, roleId, action, executeAfter ?? null],
     );
+}
+
+/**
+ * Schedules a role removal, postponing any existing pending removal job for
+ * this (guild, user, role) instead of stacking a duplicate — used by the
+ * quota reward system to renew F-mode access without an early double-removal.
+ */
+export async function scheduleRoleRemoval(
+    guildId: string,
+    userId: number,
+    roleId: string,
+    executeAfter: Date,
+): Promise<void> {
+    const result = await query(
+        `UPDATE bh_role_jobs SET execute_after = $4, retry_count = 0
+         WHERE guild_id = $1 AND user_id = $2 AND role_id = $3 AND action = 'remove' AND processed = FALSE
+         RETURNING id`,
+        [guildId, userId, roleId, executeAfter],
+    );
+    if ((result.rowCount ?? 0) === 0) {
+        await enqueueRoleJob(guildId, userId, roleId, "remove", executeAfter);
+    }
 }
 
 export async function getPendingJobs(limit: number): Promise<RoleJobRow[]> {

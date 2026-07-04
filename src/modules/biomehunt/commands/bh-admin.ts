@@ -6,16 +6,22 @@ import { EmbedFormatter } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import {
-    addCategoryAction, clearRolesAction, disableCounterAction, removeCategoryAction, resetConfigAction,
-    resetQuotaAction, resetThresholdsAction, setAutoCreateCategoriesAction, setCounterChannelAction,
-    setQuotaAction, setRolesAction, setThresholdsAction, showConfig, testConfigAction,
+    addCategoryAction, clearRolesAction, disableAutoDeleteAction, disableCounterAction, forceCounterUpdateAction,
+    listQuotaRolesAction, removeCategoryAction, removeQuotaRoleAction, resetConfigAction, resetQuotaAction,
+    resetThresholdsAction, setAutoCreateCategoriesAction, setAutoDeleteAction, setCounterChannelAction,
+    setQuotaAction, setQuotaEvalHourAction, setQuotaRoleAction, setRolesAction, setThresholdsAction, showConfig,
+    testConfigAction,
 } from "./adminConfigActions";
 import {
-    checkUserAction, guildStatsAction, leaderboardAction, pauseUserAction, removeUserAction,
-    resetUserAction, setupUserAction, unpauseUserAction,
+    checkUserAction, guildStatsAction, leaderboardAction, pauseUserAction, quotaProgressAction,
+    removeUserAction, resetUserAction, setupUserAction, unpauseUserAction,
 } from "./adminUserActions";
-import { buildHistoryEmbed, buildHistoryRow, getSessionHistory, SESSIONS_PER_PAGE } from "./profileViews";
-import { BiomeHuntError } from "../types";
+import { runEzSetup } from "./ezsetup";
+import {
+    buildHistoryEmbed, buildHistoryRow, buildUserListEmbed, buildUserListRow, getSessionHistory,
+    getUserListPage, SESSIONS_PER_PAGE, USERS_PER_PAGE,
+} from "./profileViews";
+import { BiomeHuntError, type ActivityStatus, type QuotaRoleMode } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-admin");
 
@@ -28,48 +34,90 @@ export default defineCommand({
 
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand((s) => s.setName("show").setDescription("Show the current BiomeHunt configuration."))
+        .addSubcommand((s) => s.setName("test").setDescription("Check whether required configuration is complete."))
+        .addSubcommand((s) => s.setName("reset-all").setDescription("Reset all BiomeHunt configuration for this server."))
+        .addSubcommand((s) => s.setName("ezsetup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommandGroup((g) =>
-            g.setName("config").setDescription("BiomeHunt configuration for this server.")
-                .addSubcommand((s) => s.setName("show").setDescription("Show the current BiomeHunt configuration."))
+            g.setName("thresholds").setDescription("Activity thresholds.")
                 .addSubcommand((s) =>
-                    s.setName("set-thresholds").setDescription("Set activity thresholds.")
+                    s.setName("set").setDescription("Set activity thresholds.")
                         .addIntegerOption((o) => o.setName("session_gap_minutes").setDescription("Session gap, in minutes").setRequired(true).setMinValue(1))
                         .addIntegerOption((o) => o.setName("idle_minutes").setDescription("Idle threshold, in minutes").setRequired(true).setMinValue(1))
                         .addIntegerOption((o) => o.setName("inactive_hours").setDescription("Inactive threshold, in hours").setRequired(true).setMinValue(1)),
                 )
-                .addSubcommand((s) => s.setName("reset-thresholds").setDescription("Reset thresholds to defaults."))
+                .addSubcommand((s) => s.setName("reset").setDescription("Reset thresholds to defaults."))
                 .addSubcommand((s) =>
-                    s.setName("set-quota").setDescription("Set the activity quota.")
+                    s.setName("set-auto-delete").setDescription("Auto-delete a user's macro channel after prolonged inactivity.")
+                        .addNumberOption((o) => o.setName("hours").setDescription("Hours after going inactive").setRequired(true).setMinValue(0.1)),
+                )
+                .addSubcommand((s) => s.setName("disable-auto-delete").setDescription("Disable auto-deleting inactive users' channels.")),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("quota").setDescription("General activity quota.")
+                .addSubcommand((s) =>
+                    s.setName("set").setDescription("Set the activity quota.")
                         .addIntegerOption((o) => o.setName("window_hours").setDescription("Rolling window size, in hours").setRequired(true).setMinValue(1))
                         .addNumberOption((o) => o.setName("target_hours").setDescription("Required active hours within the window").setRequired(true).setMinValue(0.1)),
                 )
-                .addSubcommand((s) => s.setName("reset-quota").setDescription("Reset quota to defaults."))
+                .addSubcommand((s) => s.setName("reset").setDescription("Reset quota to defaults.")),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("categories").setDescription("Macro channel categories.")
                 .addSubcommand((s) =>
-                    s.setName("auto-create-categories").setDescription("Toggle automatic category creation.")
+                    s.setName("add").setDescription("Allow a category for macro channels.")
+                        .addChannelOption((o) => o.setName("category").setDescription("Category channel").setRequired(true).addChannelTypes(ChannelType.GuildCategory)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("remove").setDescription("Disallow a category for macro channels.")
+                        .addChannelOption((o) => o.setName("category").setDescription("Category channel").setRequired(true).addChannelTypes(ChannelType.GuildCategory)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("auto-create").setDescription("Toggle automatic category creation.")
                         .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
-                )
+                ),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("roles").setDescription("Status roles (active/idle/inactive).")
                 .addSubcommand((s) =>
-                    s.setName("add-category").setDescription("Allow a category for macro channels.")
-                        .addChannelOption((o) => o.setName("category").setDescription("Category channel").setRequired(true).addChannelTypes(ChannelType.GuildCategory)),
-                )
-                .addSubcommand((s) =>
-                    s.setName("remove-category").setDescription("Disallow a category for macro channels.")
-                        .addChannelOption((o) => o.setName("category").setDescription("Category channel").setRequired(true).addChannelTypes(ChannelType.GuildCategory)),
-                )
-                .addSubcommand((s) =>
-                    s.setName("set-roles").setDescription("Set the status roles.")
+                    s.setName("set").setDescription("Set the status roles.")
                         .addRoleOption((o) => o.setName("active").setDescription("Active role").setRequired(true))
                         .addRoleOption((o) => o.setName("idle").setDescription("Idle role").setRequired(true))
                         .addRoleOption((o) => o.setName("inactive").setDescription("Inactive role").setRequired(true)),
                 )
-                .addSubcommand((s) => s.setName("clear-roles").setDescription("Unset all status roles."))
+                .addSubcommand((s) => s.setName("clear").setDescription("Unset all status roles.")),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("counter").setDescription("Live activity counter.")
                 .addSubcommand((s) =>
-                    s.setName("set-counter-channel").setDescription("Set the live counter channel.")
+                    s.setName("set-channel").setDescription("Set the live counter channel.")
                         .addChannelOption((o) => o.setName("channel").setDescription("Text channel").setRequired(true).addChannelTypes(ChannelType.GuildText)),
                 )
-                .addSubcommand((s) => s.setName("disable-counter").setDescription("Disable the live counter."))
-                .addSubcommand((s) => s.setName("test").setDescription("Check whether required configuration is complete."))
-                .addSubcommand((s) => s.setName("reset").setDescription("Reset all BiomeHunt configuration for this server.")),
+                .addSubcommand((s) => s.setName("disable").setDescription("Disable the live counter."))
+                .addSubcommand((s) => s.setName("force-update").setDescription("Immediately refresh the live activity counter.")),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("quota-roles").setDescription("Quota reward roles.")
+                .addSubcommand((s) =>
+                    s.setName("set").setDescription("Set (or update) a quota reward role.")
+                        .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true))
+                        .addStringOption((o) =>
+                            o.setName("mode").setDescription("Evaluation mode").setRequired(true)
+                                .addChoices({ name: "Fixed (daily check, timed access)", value: "F" }, { name: "Rolling Window (continuous)", value: "RW" }),
+                        )
+                        .addNumberOption((o) => o.setName("quota_hours").setDescription("Required active hours within the window").setRequired(true).setMinValue(0.1))
+                        .addIntegerOption((o) => o.setName("quota_window_hours").setDescription("Rolling window size, in hours").setRequired(true).setMinValue(1))
+                        .addIntegerOption((o) => o.setName("access_duration_days").setDescription("Access duration in days (Fixed mode only)").setMinValue(1)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("remove").setDescription("Remove a configured quota reward role.")
+                        .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true)),
+                )
+                .addSubcommand((s) => s.setName("list").setDescription("List all configured quota reward roles."))
+                .addSubcommand((s) =>
+                    s.setName("eval-hour").setDescription("Set the UTC hour Fixed-mode rewards are evaluated at.")
+                        .addIntegerOption((o) => o.setName("hour").setDescription("UTC hour (0-23)").setRequired(true).setMinValue(0).setMaxValue(23)),
+                ),
         )
         .addSubcommandGroup((g) =>
             g.setName("user").setDescription("Manage a specific user's BiomeHunt data.")
@@ -100,12 +148,23 @@ export default defineCommand({
                 .addSubcommand((s) =>
                     s.setName("session").setDescription("View a user's recent activity sessions.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("quota-progress").setDescription("View a user's progress toward configured quota rewards.")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 ),
         )
         .addSubcommand((s) => s.setName("guild-stats").setDescription("Show guild-wide BiomeHunt stats."))
-        .addSubcommand((s) => s.setName("leaderboard").setDescription("Show the activity leaderboard.")),
+        .addSubcommand((s) => s.setName("leaderboard").setDescription("Show the activity leaderboard."))
+        .addSubcommand((s) =>
+            s.setName("list-users").setDescription("List users, optionally filtered by status.")
+                .addStringOption((o) =>
+                    o.setName("status").setDescription("Filter by status")
+                        .addChoices({ name: "Active", value: "active" }, { name: "Idle", value: "idle" }, { name: "Inactive", value: "inactive" }),
+                ),
+        ),
 
-    async executeAsSlash(interaction, _client) {
+    async executeAsSlash(interaction, client) {
         if (!interaction.guild) {
             await interaction.reply({ content: "This command only works in a server.", ephemeral: true });
             return;
@@ -113,6 +172,17 @@ export default defineCommand({
         const group = interaction.options.getSubcommandGroup(false);
         const sub = interaction.options.getSubcommand(true);
         const routeKey = group ? `${group}-${sub}` : sub;
+
+        if (routeKey === "counter-force-update") {
+            await interaction.deferReply();
+            try {
+                const result = await forceCounterUpdateAction(client, interaction.guild.id);
+                await interaction.editReply(toReplyPayload(result));
+            } catch (err) {
+                await interaction.editReply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+            }
+            return;
+        }
 
         if (routeKey === "user-session") {
             const target = interaction.options.getUser("user");
@@ -126,9 +196,23 @@ export default defineCommand({
             return;
         }
 
+        if (routeKey === "ezsetup") {
+            await interaction.deferReply();
+            await runEzSetup(interaction.guild, interaction.user.id, (payload) => interaction.editReply(payload));
+            return;
+        }
+
+        if (routeKey === "list-users") {
+            const status = interaction.options.getString("status") as ActivityStatus | null;
+            await interaction.deferReply();
+            await replyUserList(interaction.guild.id, status, interaction.user.id, (payload) => interaction.editReply(payload));
+            return;
+        }
+
         await interaction.deferReply();
         try {
             const result = await runSubcommand(routeKey, interaction.guild, {
+                getString: (name) => interaction.options.getString(name),
                 getInteger: (name) => interaction.options.getInteger(name),
                 getNumber: (name) => interaction.options.getNumber(name),
                 getBoolean: (name) => interaction.options.getBoolean(name),
@@ -147,7 +231,7 @@ export default defineCommand({
         }
     },
 
-    async executeAsPrefix(message, args, _client) {
+    async executeAsPrefix(message, args, client) {
         if (!message.guild) {
             await message.reply("This command only works in a server.");
             return;
@@ -155,10 +239,20 @@ export default defineCommand({
         const group = args.getSubcommandGroup();
         const sub = args.getSubcommand();
         if (!sub) {
-            await message.reply({ embeds: [EmbedFormatter.info("Run `bh-admin config show` to see the current configuration.")] });
+            await message.reply({ embeds: [EmbedFormatter.info("Run `bh-admin show` to see the current configuration.")] });
             return;
         }
         const routeKey = group ? `${group}-${sub}` : sub;
+
+        if (routeKey === "counter-force-update") {
+            try {
+                const result = await forceCounterUpdateAction(client, message.guild.id);
+                await message.reply(toReplyPayload(result));
+            } catch (err) {
+                await message.reply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+            }
+            return;
+        }
 
         if (routeKey === "user-session") {
             const member = await args.getMember("user");
@@ -170,8 +264,20 @@ export default defineCommand({
             return;
         }
 
+        if (routeKey === "ezsetup") {
+            await runEzSetup(message.guild, message.author.id, (payload) => message.reply(payload));
+            return;
+        }
+
+        if (routeKey === "list-users") {
+            const status = args.getString("status")?.toLowerCase() as ActivityStatus | null;
+            await replyUserList(message.guild.id, status ?? null, message.author.id, (payload) => message.reply(payload));
+            return;
+        }
+
         try {
             const result = await runSubcommand(routeKey, message.guild, {
+                getString: (name) => args.getString(name),
                 getInteger: (name) => args.getNumber(name),
                 getNumber: (name) => args.getNumber(name),
                 getBoolean: (name) => args.getBoolean(name),
@@ -188,6 +294,7 @@ export default defineCommand({
 });
 
 interface ArgReader {
+    getString(name: string): string | null;
     getInteger(name: string): number | null;
     getNumber(name: string): number | null;
     getBoolean(name: string): boolean | null;
@@ -206,60 +313,95 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
     const guildId = guild.id;
 
     switch (sub) {
-        case "config-show":
+        case "show":
             return showConfig(guildId);
-        case "config-set-thresholds":
+        case "test":
+            return testConfigAction(guildId);
+        case "reset-all":
+            return resetConfigAction(guildId);
+        case "thresholds-set":
             return setThresholdsAction(
                 guildId,
                 requireNumber(args.getInteger("session_gap_minutes"), "session_gap_minutes"),
                 requireNumber(args.getInteger("idle_minutes"), "idle_minutes"),
                 requireNumber(args.getInteger("inactive_hours"), "inactive_hours"),
             );
-        case "config-reset-thresholds":
+        case "thresholds-reset":
             return resetThresholdsAction(guildId);
-        case "config-set-quota":
+        case "thresholds-set-auto-delete": {
+            const hours = args.getNumber("hours");
+            if (hours === null) throw new BiomeHuntError("Missing required argument: hours");
+            return setAutoDeleteAction(guildId, hours);
+        }
+        case "thresholds-disable-auto-delete":
+            return disableAutoDeleteAction(guildId);
+        case "quota-set":
             return setQuotaAction(
                 guildId,
                 requireNumber(args.getInteger("window_hours"), "window_hours"),
                 requireNumber(args.getNumber("target_hours"), "target_hours"),
             );
-        case "config-reset-quota":
+        case "quota-reset":
             return resetQuotaAction(guildId);
-        case "config-auto-create-categories": {
+        case "categories-auto-create": {
             const enabled = args.getBoolean("enabled");
             if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
             return setAutoCreateCategoriesAction(guildId, enabled);
         }
-        case "config-add-category": {
+        case "categories-add": {
             const id = await args.getChannelId("category");
             if (!id) throw new BiomeHuntError("Missing required argument: category");
             return addCategoryAction(guildId, id);
         }
-        case "config-remove-category": {
+        case "categories-remove": {
             const id = await args.getChannelId("category");
             if (!id) throw new BiomeHuntError("Missing required argument: category");
             return removeCategoryAction(guildId, id);
         }
-        case "config-set-roles": {
+        case "roles-set": {
             const active = await args.getRoleId("active");
             const idle = await args.getRoleId("idle");
             const inactive = await args.getRoleId("inactive");
             if (!active || !idle || !inactive) throw new BiomeHuntError("All three roles (active, idle, inactive) are required.");
             return setRolesAction(guildId, active, idle, inactive);
         }
-        case "config-clear-roles":
+        case "roles-clear":
             return clearRolesAction(guildId);
-        case "config-set-counter-channel": {
+        case "counter-set-channel": {
             const id = await args.getChannelId("channel");
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
             return setCounterChannelAction(guildId, id);
         }
-        case "config-disable-counter":
+        case "counter-disable":
             return disableCounterAction(guildId);
-        case "config-test":
-            return testConfigAction(guildId);
-        case "config-reset":
-            return resetConfigAction(guildId);
+        case "quota-roles-set": {
+            const roleId = await args.getRoleId("role");
+            const mode = args.getString("mode")?.toUpperCase() as QuotaRoleMode | null;
+            const quotaHours = args.getNumber("quota_hours");
+            const quotaWindowHours = args.getInteger("quota_window_hours");
+            const accessDurationDays = args.getInteger("access_duration_days");
+            if (!roleId || !mode) throw new BiomeHuntError("Missing required argument: role or mode.");
+            return setQuotaRoleAction(
+                guildId,
+                roleId,
+                mode,
+                requireNumber(quotaHours, "quota_hours"),
+                requireNumber(quotaWindowHours, "quota_window_hours"),
+                accessDurationDays,
+            );
+        }
+        case "quota-roles-remove": {
+            const roleId = await args.getRoleId("role");
+            if (!roleId) throw new BiomeHuntError("Missing required argument: role");
+            return removeQuotaRoleAction(guildId, roleId);
+        }
+        case "quota-roles-list":
+            return listQuotaRolesAction(guildId);
+        case "quota-roles-eval-hour": {
+            const hour = args.getInteger("hour");
+            if (hour === null) throw new BiomeHuntError("Missing required argument: hour");
+            return setQuotaEvalHourAction(guildId, hour);
+        }
         case "user-check": {
             const member = await args.getMember("user");
             if (!member) throw new BiomeHuntError("Missing required argument: user");
@@ -289,6 +431,11 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
             const member = await args.getMember("user");
             if (!member) throw new BiomeHuntError("Could not resolve that member.");
             return setupUserAction(guild, member);
+        }
+        case "user-quota-progress": {
+            const id = await args.getUserId("user");
+            if (!id) throw new BiomeHuntError("Missing required argument: user");
+            return quotaProgressAction(guildId, id);
         }
         case "guild-stats":
             return guildStatsAction(guildId);
@@ -336,6 +483,42 @@ async function replySessionHistory(
         await i.update({
             embeds: [buildHistoryEmbed(sessions, member, page)],
             components: [buildHistoryRow(page, pages)],
+        });
+    });
+
+    collector.on("end", async () => {
+        await msg.edit({ components: [] }).catch(() => { });
+    });
+}
+
+async function replyUserList(
+    guildId: string,
+    status: ActivityStatus | null,
+    invokerId: string,
+    respond: (payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof buildUserListRow>[] }) => Promise<Message>,
+): Promise<void> {
+    const users = await getUserListPage(guildId, status);
+    const pages = Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
+    let page = 0;
+    const msg = await respond({
+        embeds: [buildUserListEmbed(users, page, status)],
+        components: pages > 1 ? [buildUserListRow(page, pages)] : [],
+    });
+
+    if (pages <= 1) return;
+
+    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60_000 });
+
+    collector.on("collect", async (i) => {
+        if (i.user.id !== invokerId) {
+            await i.reply({ content: "These buttons aren't yours!", ephemeral: true });
+            return;
+        }
+        if (i.customId === "userlist-prev" && page > 0) page--;
+        if (i.customId === "userlist-next" && page < pages - 1) page++;
+        await i.update({
+            embeds: [buildUserListEmbed(users, page, status)],
+            components: [buildUserListRow(page, pages)],
         });
     });
 

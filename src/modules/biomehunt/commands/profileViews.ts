@@ -4,13 +4,14 @@ import { getOrCreateGuildConfig } from "../repository/guilds";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getComplianceRate, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
-import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
-import type { ActivitySessionRow } from "../types";
+import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
+import type { ActivitySessionRow, ActivityStatus, UserRow } from "../types";
 import { Logger } from "@/utils/logging";
 
 const logger = new Logger("biomehunt.profileViews");
 
 export const SESSIONS_PER_PAGE = 10;
+export const USERS_PER_PAGE = 10;
 
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
 
@@ -108,6 +109,37 @@ export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuild
     const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> — ${formatTime(r.activeSeconds)} (${r.sessionCount} sessions)`);
 
     return new EmbedBuilder().setColor(0x5865f2).setTitle("BiomeHunt Leaderboard").setDescription(lines.join("\n"));
+}
+
+export async function getUserListPage(guildId: string, status: ActivityStatus | null): Promise<UserRow[]> {
+    return getUsersByGuildStatus(guildId, status);
+}
+
+export function buildUserListEmbed(users: UserRow[], page: number, status: ActivityStatus | null): EmbedBuilder {
+    const pages = Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
+    const start = page * USERS_PER_PAGE;
+    const slice = users.slice(start, start + USERS_PER_PAGE);
+
+    const lines = slice.map((u) => {
+        const activity = u.last_activity_at ? `last active <t:${unix(u.last_activity_at)}:R>` : "no activity yet";
+        const pausedNote = u.paused_at ? " (paused)" : "";
+        return `${STATUS_EMOJI[u.current_status]} <@${u.discord_user_id}> — ${activity}${pausedNote}`;
+    });
+
+    const title = status ? `BiomeHunt Users — ${status[0].toUpperCase()}${status.slice(1)}` : "BiomeHunt Users — All";
+
+    return new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(title)
+        .setDescription(lines.length > 0 ? lines.join("\n") : "No users match this filter.")
+        .setFooter({ text: `Page ${page + 1} of ${pages} - ${users.length} user(s) total` });
+}
+
+export function buildUserListRow(page: number, pages: number): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId("userlist-prev").setEmoji("◀️").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+        new ButtonBuilder().setCustomId("userlist-next").setEmoji("▶️").setStyle(ButtonStyle.Secondary).setDisabled(page === pages - 1),
+    );
 }
 
 export async function buildGuildStatsEmbed(guildId: string): Promise<EmbedBuilder> {

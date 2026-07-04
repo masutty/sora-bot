@@ -20,9 +20,15 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
     counter_channel_id       VARCHAR(20),
     counter_message_id       VARCHAR(20),
 
+    quota_eval_hour_utc       SMALLINT NOT NULL DEFAULT 0,     /* 0-23, F-mode reward eval hour */
+    quota_last_evaluated_date DATE,                            /* last UTC date F-mode rewards ran */
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_eval_hour_utc SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_last_evaluated_date DATE;
 
 CREATE TABLE IF NOT EXISTS bh_guild_categories (
     id SERIAL PRIMARY KEY,
@@ -91,6 +97,31 @@ CREATE TABLE IF NOT EXISTS bh_activity_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS bh_activity_sessions_user ON bh_activity_sessions(user_id, started_at DESC);
+
+/* ───────────────────────────────────────────── */
+/* Quota rewards                                */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_quota_roles (
+    id SERIAL PRIMARY KEY,
+    guild_id VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    role_id VARCHAR(20) NOT NULL,
+    mode VARCHAR(2) NOT NULL CHECK (mode IN ('F', 'RW')),
+    quota_target_seconds INTEGER NOT NULL,
+    quota_window_hours INTEGER NOT NULL,
+    access_duration_days INTEGER,   /* NULL iff mode = 'RW'; required iff mode = 'F' */
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(guild_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS bh_user_quota_roles (
+    user_id INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    quota_role_id INTEGER NOT NULL REFERENCES bh_quota_roles(id) ON DELETE CASCADE,
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,   /* NULL for RW mode (no fixed expiry; revoked reactively) */
+    PRIMARY KEY (user_id, quota_role_id)
+);
 
 /* ───────────────────────────────────────────── */
 /* Role queue                                   */

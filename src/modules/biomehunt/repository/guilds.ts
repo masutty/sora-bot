@@ -63,6 +63,48 @@ export async function resetQuota(guildId: string): Promise<void> {
     await updateQuota(guildId, 24, 21600);
 }
 
+export async function setQuotaEvalHour(guildId: string, hourUtc: number): Promise<void> {
+    await query(
+        `UPDATE bh_guilds SET quota_eval_hour_utc = $2, updated_at = NOW() WHERE guild_id = $1`,
+        [guildId, hourUtc],
+    );
+    invalidate(guildId);
+}
+
+/** Marks a guild's F-mode quota rewards as evaluated for today (UTC), so the daily sweep doesn't re-run today. */
+export async function markQuotaEvaluated(guildId: string): Promise<void> {
+    await query(
+        `UPDATE bh_guilds SET quota_last_evaluated_date = (NOW() AT TIME ZONE 'UTC')::date WHERE guild_id = $1`,
+        [guildId],
+    );
+    invalidate(guildId);
+}
+
+/**
+ * Guilds with at least one F-mode quota role that are due for their daily
+ * evaluation right now: past today's configured UTC eval hour, and not
+ * already evaluated today. Computed entirely in SQL to avoid JS-side
+ * timezone handling of the stored DATE column.
+ */
+export async function getGuildsDueForFixedRewardEval(): Promise<GuildConfigRow[]> {
+    const result = await query<GuildConfigRow>(
+        `SELECT g.* FROM bh_guilds g
+         WHERE EXISTS (SELECT 1 FROM bh_quota_roles qr WHERE qr.guild_id = g.guild_id AND qr.mode = 'F')
+           AND (g.quota_last_evaluated_date IS NULL OR g.quota_last_evaluated_date < (NOW() AT TIME ZONE 'UTC')::date)
+           AND EXTRACT(HOUR FROM (NOW() AT TIME ZONE 'UTC')) >= g.quota_eval_hour_utc`,
+    );
+    return result.rows;
+}
+
+/** Sets (or disables, with `null`) auto-deletion of a user's macro channel after prolonged inactivity. */
+export async function setAutoDeleteAfter(guildId: string, seconds: number | null): Promise<void> {
+    await query(
+        `UPDATE bh_guilds SET delete_inactive_after_s = $2, updated_at = NOW() WHERE guild_id = $1`,
+        [guildId, seconds],
+    );
+    invalidate(guildId);
+}
+
 export async function setAutoCreateCategories(guildId: string, enabled: boolean): Promise<void> {
     await query(
         `UPDATE bh_guilds SET auto_create_categories = $2, updated_at = NOW() WHERE guild_id = $1`,

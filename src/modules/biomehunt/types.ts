@@ -1,5 +1,6 @@
 export type ActivityStatus = "active" | "idle" | "inactive";
 export type RoleJobAction = "add" | "remove";
+export type QuotaRoleMode = "F" | "RW";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
@@ -18,6 +19,8 @@ export interface GuildConfigRow {
     delete_inactive_after_s: number | null;
     counter_channel_id: string | null;
     counter_message_id: string | null;
+    quota_eval_hour_utc: number;
+    quota_last_evaluated_date: Date | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -70,6 +73,25 @@ export interface ActivitySessionRow {
     started_at: Date;
     ended_at: Date;
     duration_seconds: number;
+}
+
+export interface QuotaRoleRow {
+    id: number;
+    guild_id: string;
+    role_id: string;
+    mode: QuotaRoleMode;
+    quota_target_seconds: number;
+    quota_window_hours: number;
+    access_duration_days: number | null;
+    created_at: Date;
+    updated_at: Date;
+}
+
+export interface UserQuotaRoleRow {
+    user_id: number;
+    quota_role_id: number;
+    granted_at: Date;
+    expires_at: Date | null;
 }
 
 export interface RoleJobRow {

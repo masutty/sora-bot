@@ -4,6 +4,7 @@ import type { ActivityStatus } from "../types";
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds";
 import { deleteUserCascade, getUsersForStatusSweep, updateUserStatus } from "../repository/users";
 import { enqueueRoleJob } from "../repository/roleJobs";
+import { evaluateRollingRewards, runFixedRewardSweep } from "../services/RewardEngine";
 
 const logger = new Logger("biomehunt.StatusEngine");
 
@@ -36,6 +37,8 @@ function resolveStatus(inactiveSeconds: number, idleThresholdS: number, inactive
 }
 
 async function tick(client: BotClient): Promise<void> {
+    await runFixedRewardSweep().catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
+
     const users = await getUsersForStatusSweep();
     const now = Date.now();
 
@@ -47,6 +50,10 @@ async function tick(client: BotClient): Promise<void> {
         if (newStatus !== user.current_status) {
             await transitionUser(user.id, user.guild_id, newStatus);
         }
+
+        await evaluateRollingRewards(user).catch((err) =>
+            logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }),
+        );
 
         const shouldDelete =
             newStatus === "inactive" &&

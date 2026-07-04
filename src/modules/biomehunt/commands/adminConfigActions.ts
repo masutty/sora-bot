@@ -1,11 +1,14 @@
 import { EmbedBuilder } from "discord.js";
+import type { BotClient } from "@/core/BotClient";
 import { formatTime } from "@/utils/format";
 import {
     addCategory, clearGuildRoles, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
     isGuildReady, removeCategory, resetGuildConfig, resetQuota, resetThresholds, setAutoCreateCategories,
-    setCounterChannel, setGuildRoles, updateQuota, updateThresholds,
+    setAutoDeleteAfter, setCounterChannel, setGuildRoles, setQuotaEvalHour, updateQuota, updateThresholds,
 } from "../repository/guilds";
-import { BiomeHuntError } from "../types";
+import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
+import { BiomeHuntError, type QuotaRoleMode } from "../types";
+import { updateCounterForGuild } from "../workers/CounterEngine";
 
 export async function showConfig(guildId: string): Promise<EmbedBuilder> {
     const config = await getOrCreateGuildConfig(guildId);
@@ -48,6 +51,17 @@ export async function setThresholdsAction(
 export async function resetThresholdsAction(guildId: string): Promise<string> {
     await resetThresholds(guildId);
     return "Thresholds reset to defaults (session gap 20m, idle 30m, inactive 24h).";
+}
+
+export async function setAutoDeleteAction(guildId: string, hoursAfterInactive: number): Promise<string> {
+    if (hoursAfterInactive <= 0) throw new BiomeHuntError("Hours must be greater than zero.");
+    await setAutoDeleteAfter(guildId, Math.round(hoursAfterInactive * 3600));
+    return `Auto-delete enabled: a user's macro channel is removed ${hoursAfterInactive}h after they go inactive.`;
+}
+
+export async function disableAutoDeleteAction(guildId: string): Promise<string> {
+    await setAutoDeleteAfter(guildId, null);
+    return "Auto-delete disabled. Inactive users' channels are no longer removed automatically.";
 }
 
 export async function setQuotaAction(guildId: string, windowHours: number, targetHours: number): Promise<string> {
@@ -97,6 +111,15 @@ export async function disableCounterAction(guildId: string): Promise<string> {
     return "Live counter disabled.";
 }
 
+export async function forceCounterUpdateAction(client: BotClient, guildId: string): Promise<string> {
+    const guildConfig = await getOrCreateGuildConfig(guildId);
+    if (!guildConfig.counter_channel_id) {
+        throw new BiomeHuntError("Live counter isn't configured for this server. Set one with `counter set-channel`.");
+    }
+    await updateCounterForGuild(client, guildConfig);
+    return `Live counter updated in <#${guildConfig.counter_channel_id}>.`;
+}
+
 export async function testConfigAction(guildId: string): Promise<EmbedBuilder> {
     const { hasCategory, hasRoles } = await isGuildReady(guildId);
     const config = await getOrCreateGuildConfig(guildId);
@@ -120,4 +143,62 @@ export async function testConfigAction(guildId: string): Promise<EmbedBuilder> {
 export async function resetConfigAction(guildId: string): Promise<string> {
     await resetGuildConfig(guildId);
     return "All BiomeHunt configuration for this server has been reset.";
+}
+
+export async function setQuotaRoleAction(
+    guildId: string,
+    roleId: string,
+    mode: QuotaRoleMode,
+    quotaHours: number,
+    quotaWindowHours: number,
+    accessDurationDays: number | null,
+): Promise<string> {
+    if (mode !== "F" && mode !== "RW") {
+        throw new BiomeHuntError("mode must be either F (Fixed) or RW (Rolling Window).");
+    }
+    if (quotaHours <= 0 || quotaWindowHours <= 0) {
+        throw new BiomeHuntError("Quota hours and window must be greater than zero.");
+    }
+    if (mode === "F" && (!accessDurationDays || accessDurationDays <= 0)) {
+        throw new BiomeHuntError("access_duration_days is required and must be greater than zero when mode is F.");
+    }
+    if (mode === "RW" && accessDurationDays !== null) {
+        throw new BiomeHuntError("access_duration_days isn't used in RW mode — omit it.");
+    }
+
+    await upsertQuotaRole(guildId, roleId, mode, Math.round(quotaHours * 3600), quotaWindowHours, mode === "F" ? accessDurationDays : null);
+
+    const modeLabel = mode === "F" ? "Fixed" : "Rolling Window";
+    const durationNote = mode === "F" ? `, ${accessDurationDays} day(s) access` : "";
+    return `Quota role <@&${roleId}> set: ${modeLabel} mode, ${quotaHours}h within a ${quotaWindowHours}h window${durationNote}.`;
+}
+
+export async function removeQuotaRoleAction(guildId: string, roleId: string): Promise<string> {
+    const removed = await removeQuotaRole(guildId, roleId);
+    if (!removed) throw new BiomeHuntError("That quota role isn't configured.");
+    return `Quota role <@&${roleId}> removed. Members who already hold it keep it until it expires (Fixed mode) or is removed manually.`;
+}
+
+export async function listQuotaRolesAction(guildId: string): Promise<EmbedBuilder> {
+    const roles = await getQuotaRolesForGuild(guildId);
+    const embed = new EmbedBuilder().setColor(0x5865f2).setTitle("BiomeHunt Quota Roles");
+
+    if (roles.length === 0) {
+        embed.setDescription("No quota roles configured yet.");
+        return embed;
+    }
+
+    const lines = roles.map((r) => {
+        const modeLabel = r.mode === "F" ? "Fixed" : "Rolling Window";
+        const durationNote = r.mode === "F" ? `, ${r.access_duration_days}d access` : "";
+        return `<@&${r.role_id}> — ${modeLabel}: ${r.quota_target_seconds / 3600}h / ${r.quota_window_hours}h window${durationNote}`;
+    });
+    embed.setDescription(lines.join("\n"));
+    return embed;
+}
+
+export async function setQuotaEvalHourAction(guildId: string, hourUtc: number): Promise<string> {
+    if (hourUtc < 0 || hourUtc > 23) throw new BiomeHuntError("Hour must be between 0 and 23.");
+    await setQuotaEvalHour(guildId, hourUtc);
+    return `Fixed-mode quota rewards will now be evaluated daily at ${hourUtc}:00 UTC.`;
 }

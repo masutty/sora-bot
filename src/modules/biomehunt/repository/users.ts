@@ -102,6 +102,22 @@ export async function getUsersForStatusSweep(): Promise<UserRow[]> {
     return result.rows;
 }
 
+export async function getUsersForGuild(guildId: string): Promise<UserRow[]> {
+    const result = await query<UserRow>(`SELECT * FROM bh_users WHERE guild_id = $1`, [guildId]);
+    return result.rows;
+}
+
+/** Users in a guild, optionally filtered by status, ordered for a stable paginated listing. */
+export async function getUsersByGuildStatus(guildId: string, status: ActivityStatus | null): Promise<UserRow[]> {
+    const result = await query<UserRow>(
+        `SELECT * FROM bh_users
+         WHERE guild_id = $1 AND ($2::text IS NULL OR current_status = $2)
+         ORDER BY current_status, last_activity_at DESC NULLS LAST`,
+        [guildId, status],
+    );
+    return result.rows;
+}
+
 export async function getGuildUserCounts(guildId: string): Promise<Record<ActivityStatus, number>> {
     const result = await query<{ current_status: ActivityStatus; count: string }>(
         `SELECT current_status, COUNT(*) AS count FROM bh_users WHERE guild_id = $1 GROUP BY current_status`,
