@@ -7,21 +7,23 @@ import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import {
     addCategoryAction, clearBadgeRolesAction, clearRolesAction, disableAutoDeleteAction, disableCounterAction,
-    forceCounterUpdateAction, forceQuotaEvalAction, listQuotaRolesAction, removeCategoryAction, removeQuotaRoleAction,
-    resetConfigAction, resetThresholdsAction, setAutoCreateCategoriesAction, setAutoDeleteAction, setBadgeRoleAction,
-    setCounterChannelAction, setQuotaEvalHourAction, setQuotaRoleAction, setRolesAction, setThresholdsAction,
-    showConfig, testConfigAction,
+    forceCounterUpdateAction, forceQuotaEvalAction, listForwardsAction, listQuotaRolesAction, removeCategoryAction,
+    removeForwardAction, removeQuotaRoleAction, resetConfigAction, resetThresholdsAction,
+    setAutoCreateCategoriesAction, setAutoDeleteAction, setBadgeRoleAction, setCounterChannelAction,
+    setForwardAction, setForwardingEnabledAction, setQuotaEvalHourAction, setQuotaRoleAction, setRolesAction,
+    setThresholdsAction, showConfig, testConfigAction,
 } from "./adminConfigActions";
 import {
     addBadgeAction, checkUserAction, guildStatsAction, leaderboardAction, pauseUserAction, quotaProgressAction,
     removeBadgeAction, removeUserAction, resetUserAction, setupUserAction, unpauseUserAction,
 } from "./adminUserActions";
 import { runEzSetup } from "./ezsetup";
+import { runForwardMenu } from "./forwardMenu";
 import {
     buildHistoryEmbed, buildHistoryRow, buildUserListEmbed, buildUserListRow, getSessionHistory,
     getUserListPage, SESSIONS_PER_PAGE, USERS_PER_PAGE,
 } from "./profileViews";
-import { BiomeHuntError, type ActivityStatus, type Badge, type QuotaRoleMode } from "../types";
+import { BiomeHuntError, BIOME_SELECTOR_CHOICES, type ActivityStatus, type Badge, type QuotaRoleMode } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-admin");
 
@@ -123,6 +125,23 @@ export default defineCommand({
                     s.setName("eval-hour").setDescription("Set the UTC hour Fixed-mode rewards are evaluated at.")
                         .addIntegerOption((o) => o.setName("hour").setDescription("UTC hour (0-23)").setRequired(true).setMinValue(0).setMaxValue(23)),
                 ),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("forward").setDescription("Forward detected biomes to a channel.")
+                .addSubcommand((s) => s.setName("enable").setDescription("Start sending configured biome forwards."))
+                .addSubcommand((s) => s.setName("disable").setDescription("Stop sending biome forwards (keeps configuration)."))
+                .addSubcommand((s) =>
+                    s.setName("set").setDescription("Forward a biome to a channel, optionally pinging a role.")
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).addChoices(...BIOME_SELECTOR_CHOICES))
+                        .addChannelOption((o) => o.setName("channel").setDescription("Destination channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+                        .addRoleOption((o) => o.setName("role").setDescription("Role to ping (optional)")),
+                )
+                .addSubcommand((s) =>
+                    s.setName("unset").setDescription("Remove a biome's forward.")
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).addChoices(...BIOME_SELECTOR_CHOICES)),
+                )
+                .addSubcommand((s) => s.setName("list").setDescription("List all configured biome forwards."))
+                .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove biome forwards.")),
         )
         .addSubcommandGroup((g) =>
             g.setName("user").setDescription("Manage a specific user's BiomeHunt data.")
@@ -231,6 +250,12 @@ export default defineCommand({
             return;
         }
 
+        if (routeKey === "forward-menu") {
+            await interaction.deferReply();
+            await runForwardMenu(interaction.guild, interaction.user.id, (payload) => interaction.editReply(payload));
+            return;
+        }
+
         if (routeKey === "list-users") {
             const status = interaction.options.getString("status") as ActivityStatus | null;
             await interaction.deferReply();
@@ -268,6 +293,10 @@ export default defineCommand({
         const group = args.getSubcommandGroup();
         const sub = args.getSubcommand();
         if (!sub) {
+            if (group === "forward") {
+                await runForwardMenu(message.guild, message.author.id, (payload) => message.reply(payload));
+                return;
+            }
             await message.reply({ embeds: [EmbedFormatter.info("Run `bh-admin show` to see the current configuration.")] });
             return;
         }
@@ -295,6 +324,11 @@ export default defineCommand({
 
         if (routeKey === "ezsetup") {
             await runEzSetup(message.guild, message.author.id, (payload) => message.reply(payload));
+            return;
+        }
+
+        if (routeKey === "forward-menu") {
+            await runForwardMenu(message.guild, message.author.id, (payload) => message.reply(payload));
             return;
         }
 
@@ -407,6 +441,25 @@ async function runSubcommand(sub: string, guild: Guild, args: ArgReader): Promis
         }
         case "roles-clear-badges":
             return clearBadgeRolesAction(guildId);
+        case "forward-enable":
+            return setForwardingEnabledAction(guildId, true);
+        case "forward-disable":
+            return setForwardingEnabledAction(guildId, false);
+        case "forward-set": {
+            const biome = args.getString("biome");
+            const channelId = await args.getChannelId("channel");
+            const roleId = await args.getRoleId("role");
+            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
+            if (!channelId) throw new BiomeHuntError("Missing required argument: channel");
+            return setForwardAction(guildId, biome, channelId, roleId);
+        }
+        case "forward-unset": {
+            const biome = args.getString("biome");
+            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
+            return removeForwardAction(guildId, biome);
+        }
+        case "forward-list":
+            return listForwardsAction(guildId);
         case "counter-set-channel": {
             const id = await args.getChannelId("channel");
             if (!id) throw new BiomeHuntError("Missing required argument: channel");

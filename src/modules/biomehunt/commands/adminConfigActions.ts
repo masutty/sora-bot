@@ -4,12 +4,15 @@ import { formatTime } from "@/utils/format";
 import {
     addCategory, clearGuildRoles, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
     isGuildReady, markQuotaEvaluated, removeCategory, resetGuildConfig, resetThresholds, setAutoCreateCategories,
-    setAutoDeleteAfter, setCounterChannel, setGuildRoles, setQuotaEvalHour, updateThresholds,
+    setAutoDeleteAfter, setCounterChannel, setForwardingEnabled, setGuildRoles, setQuotaEvalHour, updateThresholds,
 } from "../repository/guilds";
 import { getGuildBadgeRoles, setGuildBadgeRole, clearGuildBadgeRoles } from "../repository/badges";
+import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
 import { evaluateFixedRewardsForGuild } from "../services/RewardEngine";
-import { ALL_BADGES, BADGE_META, BiomeHuntError, type Badge, type QuotaRoleMode } from "../types";
+import {
+    ALL_BADGES, BADGE_META, BiomeHuntError, formatBiomeName, resolveBiomeSelector, type Badge, type QuotaRoleMode,
+} from "../types";
 import { updateCounterForGuild } from "../workers/CounterEngine";
 
 export async function showConfig(guildId: string): Promise<EmbedBuilder> {
@@ -17,12 +20,17 @@ export async function showConfig(guildId: string): Promise<EmbedBuilder> {
     const roles = await getGuildRoles(guildId);
     const categories = await getEnabledCategories(guildId);
     const badgeRoles = await getGuildBadgeRoles(guildId);
+    const forwards = await getForwardConfigs(guildId);
 
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
     const badgeLines = ALL_BADGES.map((badge) => {
         const roleId = badgeRoleMap.get(badge);
         return `${BADGE_META[badge].emoji} ${BADGE_META[badge].label}: ${roleId ? `<@&${roleId}>` : "not set"}`;
     });
+
+    const forwardLines = forwards.length > 0
+        ? forwards.map((f) => `${formatBiomeName(f.biome)} — <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`)
+        : ["None configured."];
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
@@ -38,6 +46,10 @@ export async function showConfig(guildId: string): Promise<EmbedBuilder> {
                 value: `Active: ${roles.active ? `<@&${roles.active}>` : "not set"}\nIdle: ${roles.idle ? `<@&${roles.idle}>` : "not set"}\nInactive: ${roles.inactive ? `<@&${roles.inactive}>` : "not set"}`,
             },
             { name: "Special Biome Roles", value: badgeLines.join("\n") },
+            {
+                name: `Biome Forwards (${config.forwarding_enabled ? "enabled" : "disabled"})`,
+                value: forwardLines.join("\n"),
+            },
             { name: "Auto-create categories", value: config.auto_create_categories ? "Enabled" : "Disabled", inline: true },
             { name: "Auto-delete inactive users", value: config.delete_inactive_after_s ? formatTime(config.delete_inactive_after_s) : "Disabled", inline: true },
             { name: "Live counter", value: config.counter_channel_id ? `<#${config.counter_channel_id}>` : "Disabled", inline: true },
@@ -215,4 +227,44 @@ export async function setBadgeRoleAction(guildId: string, badge: Badge, roleId: 
 export async function clearBadgeRolesAction(guildId: string): Promise<string> {
     await clearGuildBadgeRoles(guildId);
     return "All special biome badge role configurations have been cleared.";
+}
+
+export async function setForwardingEnabledAction(guildId: string, enabled: boolean): Promise<string> {
+    await setForwardingEnabled(guildId, enabled);
+    return `Biome forwarding ${enabled ? "enabled" : "disabled"}.`;
+}
+
+export async function setForwardAction(guildId: string, selector: string, channelId: string, roleId: string | null): Promise<string> {
+    const biomes = resolveBiomeSelector(selector);
+    for (const biome of biomes) await setForwardConfig(guildId, biome, channelId, roleId);
+
+    const roleNote = roleId ? `, pinging <@&${roleId}>` : "";
+    if (biomes.length === 1) return `${formatBiomeName(biomes[0])} will now be forwarded to <#${channelId}>${roleNote}.`;
+    return `${biomes.length} biomes will now be forwarded to <#${channelId}>${roleNote}: ${biomes.map(formatBiomeName).join(", ")}.`;
+}
+
+export async function removeForwardAction(guildId: string, selector: string): Promise<string> {
+    const biomes = resolveBiomeSelector(selector);
+    const removed: string[] = [];
+    for (const biome of biomes) {
+        if (await removeForwardConfig(guildId, biome)) removed.push(biome);
+    }
+
+    if (removed.length === 0) throw new BiomeHuntError("No matching biome forward is configured.");
+    if (removed.length === 1) return `Forward for ${formatBiomeName(removed[0])} removed.`;
+    return `Removed ${removed.length} biome forward(s): ${removed.map(formatBiomeName).join(", ")}.`;
+}
+
+export async function listForwardsAction(guildId: string): Promise<EmbedBuilder> {
+    const forwards = await getForwardConfigs(guildId);
+    const embed = new EmbedBuilder().setColor(0x5865f2).setTitle("BiomeHunt Biome Forwards");
+
+    if (forwards.length === 0) {
+        embed.setDescription("No biome forwards configured yet.");
+        return embed;
+    }
+
+    const lines = forwards.map((f) => `${formatBiomeName(f.biome)} — <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`);
+    embed.setDescription(lines.join("\n"));
+    return embed;
 }

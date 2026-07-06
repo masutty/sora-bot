@@ -82,6 +82,14 @@ export async function getGuildsDueForFixedRewardEval(): Promise<GuildConfigRow[]
     return result.rows;
 }
 
+export async function setForwardingEnabled(guildId: string, enabled: boolean): Promise<void> {
+    await query(
+        `UPDATE bh_guilds SET forwarding_enabled = $2, updated_at = NOW() WHERE guild_id = $1`,
+        [guildId, enabled],
+    );
+    invalidate(guildId);
+}
+
 /** Sets (or disables, with `null`) auto-deletion of a user's macro channel after prolonged inactivity. */
 export async function setAutoDeleteAfter(guildId: string, seconds: number | null): Promise<void> {
     await query(

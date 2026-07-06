@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
 
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_eval_hour_utc SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_last_evaluated_date DATE;
+ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS forwarding_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 /* General guild-wide quota was replaced entirely by per-role quota rewards (bh_quota_roles). */
 ALTER TABLE bh_guilds DROP COLUMN IF EXISTS quota_window_hours;
@@ -143,6 +144,18 @@ CREATE TABLE IF NOT EXISTS bh_user_badges (
     badge      VARCHAR(20) NOT NULL,
     awarded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, badge)
+);
+
+/* ───────────────────────────────────────────── */
+/* Biome forwards                               */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_biome_forwards (
+    guild_id   VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    biome      VARCHAR(20) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    role_id    VARCHAR(20),
+    PRIMARY KEY (guild_id, biome)
 );
 
 /* ───────────────────────────────────────────── */

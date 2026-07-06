@@ -11,6 +11,7 @@ import {
     addCategoryAction, disableAutoDeleteAction, disableCounterAction, removeQuotaRoleAction, setAutoDeleteAction,
     setBadgeRoleAction, setCounterChannelAction, setQuotaRoleAction, setRolesAction, setThresholdsAction, showConfig,
 } from "./adminConfigActions";
+import { stepBiomeForwards } from "./forwardMenu";
 import { ALL_BADGES, BADGE_META, type Badge, type QuotaRoleMode, type QuotaRoleRow } from "../types";
 
 const STEP_TIMEOUT_MS = 5 * 60_000;
@@ -654,6 +655,7 @@ export async function runEzSetup(
         (canGoBack) => stepCounter(guild, adminId, msg, canGoBack),
         (canGoBack) => stepQuotaRoles(guild, adminId, msg, canGoBack),
         (canGoBack) => stepBadgeRoles(guild, adminId, msg, canGoBack),
+        (canGoBack) => stepBiomeForwards(guild, adminId, msg, canGoBack),
     ];
 
     let i = 0;

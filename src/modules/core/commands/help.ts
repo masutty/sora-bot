@@ -69,7 +69,7 @@ function formatArgList(options: RawOption[] | undefined): string {
 }
 
 function formatSubcommandLine(cmdName: string, path: string[], sub: RawOption): string {
-    return `\`/${cmdName} ${[...path, sub.name].join(" ")}${formatArgList(sub.options)}\` — ${sub.description}`;
+    return `\`/${cmdName} ${[...path, sub.name].join(" ")}${formatArgList(sub.options)}\` - ${sub.description}`;
 }
 
 /** Splits an already-newline-joined list of lines into <=1024-char embed field chunks. */
@@ -124,7 +124,7 @@ function buildSummaryEmbed(cmd: CommandDefinition, topLevel: RawOption[]): Embed
 
     if (groups.length || subcommands.length) {
         const lines = [
-            ...groups.map((g) => `\`/${cmd.name} ${g.name}\` (group) — ${g.description}`),
+            ...groups.map((g) => `\`/${cmd.name} ${g.name}\` (group) - ${g.description}`),
             ...subcommands.map((s) => formatSubcommandLine(cmd.name, [], s)),
         ];
         addFieldChunks(embed, "Subcommands", lines);
@@ -132,7 +132,7 @@ function buildSummaryEmbed(cmd: CommandDefinition, topLevel: RawOption[]): Embed
         addFieldChunks(
             embed,
             "Arguments",
-            plainArgs.map((a) => `\`${a.name}\`${a.required ? " \\*" : ""} — ${a.description}`),
+            plainArgs.map((a) => `\`${a.name}\`${a.required ? " \\*" : ""} - ${a.description}`),
         );
     }
 
@@ -168,7 +168,7 @@ function buildLeafEmbed(cmd: CommandDefinition, path: string[], leaf: RawOption)
         addFieldChunks(
             embed,
             "Arguments",
-            args.map((a) => `\`${a.name}\`${a.required ? " \\*" : ""} — ${a.description}`),
+            args.map((a) => `- \`${a.name}\`${a.required ? " (required)" : ""}\n> ${a.description}\n`),
         );
     }
 

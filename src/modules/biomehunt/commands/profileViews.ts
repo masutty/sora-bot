@@ -129,7 +129,7 @@ export function buildHistoryEmbed(sessions: ActivitySessionRow[], member: GuildM
     const lines: string[] = [];
     oldestFirst.forEach((session, i) => {
         lines.push(
-            `<t:${unix(session.started_at)}:F> - <t:${unix(session.ended_at)}:F> (${formatTime(session.duration_seconds)})`,
+            `<t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
         );
 
         const newer = oldestFirst[i + 1];

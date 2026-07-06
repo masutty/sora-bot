@@ -3,6 +3,7 @@ import { Logger } from "@/utils/logging";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users";
 import { processIncomingMessage } from "./services/ActivityEngine";
+import { handleVoteButtonClick } from "./services/VoteCheckEngine";
 import { startCounterEngine } from "./workers/CounterEngine";
 import { startRoleEngine } from "./workers/RoleEngine";
 import { startStatusEngine } from "./workers/StatusEngine";
@@ -25,6 +26,11 @@ export default defineCog({
             if (!message.guild) return;
             if (!message.webhookId) return;
             await processIncomingMessage(message).catch((err) => {
+                logger.error(err instanceof Error ? err : new Error(String(err)));
+            });
+        },
+        async interactionCreate(client, interaction) {
+            await handleVoteButtonClick(client, interaction).catch((err) => {
                 logger.error(err instanceof Error ? err : new Error(String(err)));
             });
         },

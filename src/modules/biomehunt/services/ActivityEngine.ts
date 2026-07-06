@@ -6,6 +6,7 @@ import { getUserById, lookupChannel, touchLastActivity } from "../repository/use
 import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity";
 import { parseEvent } from "../webhookParser";
 import { checkAndAwardBadge } from "./BadgeEngine";
+import { checkAndForward } from "./ForwardEngine";
 import { transitionUser } from "../workers/StatusEngine";
 
 const logger = new Logger("biomehunt.ActivityEngine");
@@ -36,6 +37,9 @@ export async function processIncomingMessage(message: Message): Promise<void> {
 
     const user = await getUserById(entry.userId);
     if (!user) return;
+
+    logger.debug(`checkAndForward: ${entry.guildId} ${user.discord_user_id} :: Parsed -> ${JSON.stringify(parsed)}`);
+    await checkAndForward(message, entry.guildId, parsed);
 
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
     const deltaSeconds = user.last_activity_at
