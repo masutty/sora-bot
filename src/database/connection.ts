@@ -21,11 +21,7 @@ export function getPool(): Pool {
 			connectionString: config.database.url,
 			max: config.database.poolMax,
 			idleTimeoutMillis: config.database.poolIdleTimeout,
-			// SSL automático em produção
-			ssl:
-				config.bot.env === "production"
-					? { rejectUnauthorized: false }
-					: undefined,
+			ssl: config.database.ssl ? { rejectUnauthorized: false } : undefined,
 		});
 
 		pool.on("error", (err) => {
