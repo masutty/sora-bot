@@ -650,6 +650,12 @@ export async function runEzSetup(
     const start = await awaitButton(msg, adminId);
     if (start.kind !== "ok") return finish(msg, start.kind === "cancel" ? "Setup cancelled." : "Setup timed out.");
 
+    // Ensures the bh_guilds row exists before any step runs - on a brand new guild, this wizard
+    // is often the very first command touching this module, and every later step either
+    // foreign-keys against bh_guilds (categories, roles) or silently no-ops an UPDATE on it
+    // (thresholds, counter) if the row isn't there yet.
+    await getOrCreateGuildConfig(guild.id);
+
     const steps: Array<(canGoBack: boolean) => Promise<Direction>> = [
         (canGoBack) => stepCategories(guild, adminId, msg, canGoBack),
         (canGoBack) => stepRoles(guild, adminId, msg, canGoBack),
