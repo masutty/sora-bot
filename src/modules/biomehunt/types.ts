@@ -83,6 +83,9 @@ export const BIOME_SELECTOR_CHOICES: Array<{ name: string; value: string }> = [
     ...Object.entries(BIOME_META).map(([value, meta]) => ({ name: meta.label, value })),
 ];
 
+/** Individual biomes only (no ALL/category shortcuts) - used where a single concrete biome is required, e.g. correcting one user's find count. */
+export const BIOME_ONLY_CHOICES: Array<{ name: string; value: string }> = Object.entries(BIOME_META).map(([value, meta]) => ({ name: meta.label, value }));
+
 const DEFAULT_BIOME_COLOR = 0x5865f2;
 
 export function getBiomeColor(biome: string): number {
@@ -91,15 +94,60 @@ export function getBiomeColor(biome: string): number {
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 
-export type Badge = "GLITCHED" | "CYBERSPACE" | "DREAMSPACE";
+export type Badge = "GLITCHED" | "CYBERSPACE" | "DREAMSPACE" | "DELETED";
 
-export const BADGE_META: Record<Badge, { emoji: string; label: string }> = {
-    GLITCHED: { emoji: "🔥", label: "Glitched" },
-    CYBERSPACE: { emoji: "🌐", label: "Cyberspace" },
-    DREAMSPACE: { emoji: "🌸", label: "Dreamspace" },
+interface BadgeMeta {
+    /** Lowercase, easy-to-type identifier - used as the wire value for prefix/slash badge options instead of the raw enum key. */
+    slug: string;
+    emoji: string;
+    display: string;
+    /** Full sentence shown on the profile embed, e.g. "Found the Glitched biome!" - phrasing varies per badge (found vs. bot-triggered), so it isn't derived from `display`. */
+    description: string;
+}
+
+export const BADGE_META: Record<Badge, BadgeMeta> = {
+    GLITCHED: { slug: "glitched", emoji: "🔥", display: "Glitched", description: "Found the Glitched biome!" },
+    CYBERSPACE: { slug: "cyberspace", emoji: "🌐", display: "Cyberspace", description: "Found the Cyberspace biome!" },
+    DREAMSPACE: { slug: "dreamspace", emoji: "🌸", display: "Dreamspace", description: "Found the Dreamspace biome!" },
+    DELETED: { slug: "deleted", emoji: "💀", display: "Deleted?!", description: "Got auto-deleted for inactivity... and lived to tell the tale." },
 };
 
+/** Role-configurable biome badges only. `DELETED` is bot-triggered and display-only - no role can be attached to it. */
 export const ALL_BADGES: Badge[] = ["GLITCHED", "CYBERSPACE", "DREAMSPACE"];
+
+/** Resolves a badge's `slug` (the value carried by badge command options) back to its `Badge` key. */
+export function resolveBadgeSlug(slug: string): Badge | null {
+    const lower = slug.toLowerCase();
+    return (Object.keys(BADGE_META) as Badge[]).find((b) => BADGE_META[b].slug === lower) ?? null;
+}
+
+export type FlagName = "REPORT_SESSION_ON_END" | "PING_ON_QUOTA_MET" | "CLEAR_PROFILE_ON_AUTODELETE" | "AUTO_DELETE_ENABLED";
+
+/** SINGLE SOURCE OF TRUTH for every guild feature flag - `flag list` reads name/description/default straight from here. */
+export const FLAG_DEFINITIONS: Record<FlagName, { label: string; description: string; default: boolean }> = {
+    REPORT_SESSION_ON_END: {
+        label: "Report Session On End",
+        description: "Post a session summary (duration + biome breakdown) to a user's macro channel when their session ends.",
+        default: false,
+    },
+    PING_ON_QUOTA_MET: {
+        label: "Ping On Quota Met",
+        description: "Post a notification to a user's macro channel the moment they freshly meet a quota role's requirement.",
+        default: false,
+    },
+    CLEAR_PROFILE_ON_AUTODELETE: {
+        label: "Clear Profile On Autodelete",
+        description: "ON: inactivity auto-delete fully wipes the user's data. OFF (default): auto-delete only removes their macro channel, keeping history/badges/quota status, and awards the 'Deleted?!' badge.",
+        default: false,
+    },
+    AUTO_DELETE_ENABLED: {
+        label: "Auto Delete Enabled",
+        description: "Whether inactive users' macro channels get auto-deleted at all. The number of hours after going inactive is set separately via `activity delete`.",
+        default: false,
+    },
+};
+
+export const ALL_FLAGS: FlagName[] = Object.keys(FLAG_DEFINITIONS) as FlagName[];
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
@@ -113,12 +161,12 @@ export interface GuildConfigRow {
     idle_threshold_s: number;
     inactive_threshold_s: number;
     auto_create_categories: boolean;
-    delete_inactive_after_s: number | null;
+    /** Hours-after-inactive threshold (in seconds) for auto-delete - always set; whether it's actually acted on is gated by the AUTO_DELETE_ENABLED flag, not by this being null. */
+    delete_inactive_after_s: number;
     counter_channel_id: string | null;
     counter_message_id: string | null;
     quota_eval_hour_utc: number;
     quota_last_evaluated_date: Date | null;
-    forwarding_enabled: boolean;
     created_at: Date;
     updated_at: Date;
 }

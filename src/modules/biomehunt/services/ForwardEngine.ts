@@ -2,7 +2,6 @@ import { MessageFlags } from "discord.js";
 import type { Message } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { getForwardConfig } from "../repository/forwards";
-import { getOrCreateGuildConfig } from "../repository/guilds";
 import { BIOME_META, type ParsedEvent } from "../types";
 import { buildForwardContainer } from "./forwardRender";
 import { startVoteCheck } from "./VoteCheckEngine";
@@ -18,9 +17,6 @@ const logger = new Logger("biomehunt.ForwardEngine");
  */
 export async function checkAndForward(message: Message, guildId: string, parsed: ParsedEvent): Promise<void> {
     if (parsed.eventType !== "started" || !parsed.biome) return;
-
-    const guildConfig = await getOrCreateGuildConfig(guildId);
-    if (!guildConfig.forwarding_enabled) return;
 
     const forward = await getForwardConfig(guildId, parsed.biome);
     if (!forward) return;

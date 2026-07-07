@@ -1,11 +1,14 @@
+import type { BotClient } from "@/core/BotClient";
 import { Logger } from "@/utils/logging";
 import { getActiveSecondsInWindow } from "../repository/activity";
+import { isFlagEnabled } from "../repository/flags";
 import { getGuildsDueForFixedRewardEval, markQuotaEvaluated } from "../repository/guilds";
 import {
     getQuotaRolesByMode, getUserQuotaRole, grantQuotaRole, revokeQuotaRole,
 } from "../repository/quotaRoles";
 import { enqueueRoleJob, scheduleRoleRemoval } from "../repository/roleJobs";
 import { getUsersForGuild } from "../repository/users";
+import { pingQuotaMet } from "./QuotaPingEngine";
 import type { QuotaRoleRow, UserRow } from "../types";
 
 const logger = new Logger("biomehunt.RewardEngine");
@@ -15,14 +18,14 @@ const logger = new Logger("biomehunt.RewardEngine");
  * tick (same 30s cadence, same per-user loop) — grants/revokes immediately on
  * a compliance state change, no-ops otherwise so it never spams the role queue.
  */
-export async function evaluateRollingRewards(user: UserRow): Promise<void> {
+export async function evaluateRollingRewards(client: BotClient, user: UserRow): Promise<void> {
     const roles = await getQuotaRolesByMode(user.guild_id, "RW");
     for (const role of roles) {
-        await evaluateRollingReward(user, role);
+        await evaluateRollingReward(client, user, role);
     }
 }
 
-async function evaluateRollingReward(user: UserRow, role: QuotaRoleRow): Promise<void> {
+async function evaluateRollingReward(client: BotClient, user: UserRow, role: QuotaRoleRow): Promise<void> {
     const activeSeconds = await getActiveSecondsInWindow(user.id, role.quota_window_hours);
     const compliant = activeSeconds >= role.quota_target_seconds;
     const held = await getUserQuotaRole(user.id, role.id);
@@ -30,6 +33,7 @@ async function evaluateRollingReward(user: UserRow, role: QuotaRoleRow): Promise
     if (compliant && !held) {
         await grantQuotaRole(user.id, role.id, null);
         await enqueueRoleJob(user.guild_id, user.id, role.role_id, "add");
+        if (await isFlagEnabled(user.guild_id, "PING_ON_QUOTA_MET")) await pingQuotaMet(client, user.id, role.role_id);
     } else if (!compliant && held) {
         await revokeQuotaRole(user.id, role.id);
         await enqueueRoleJob(user.guild_id, user.id, role.role_id, "remove");
@@ -43,11 +47,12 @@ async function evaluateRollingReward(user: UserRow, role: QuotaRoleRow): Promise
  * early, it just expires on its already-scheduled job.
  */
 /** Returns the number of Fixed-mode roles evaluated (0 if none are configured for this guild). */
-export async function evaluateFixedRewardsForGuild(guildId: string): Promise<number> {
+export async function evaluateFixedRewardsForGuild(client: BotClient, guildId: string): Promise<number> {
     const roles = await getQuotaRolesByMode(guildId, "F");
     if (roles.length === 0) return 0;
 
     const users = await getUsersForGuild(guildId);
+    const pingEnabled = await isFlagEnabled(guildId, "PING_ON_QUOTA_MET");
 
     for (const user of users) {
         for (const role of roles) {
@@ -58,7 +63,10 @@ export async function evaluateFixedRewardsForGuild(guildId: string): Promise<num
             const expiresAt = new Date(Date.now() + role.access_duration_days! * 86_400_000);
 
             await grantQuotaRole(user.id, role.id, expiresAt);
-            if (!held) await enqueueRoleJob(guildId, user.id, role.role_id, "add");
+            if (!held) {
+                await enqueueRoleJob(guildId, user.id, role.role_id, "add");
+                if (pingEnabled) await pingQuotaMet(client, user.id, role.role_id);
+            }
             await scheduleRoleRemoval(guildId, user.id, role.role_id, expiresAt);
         }
     }
@@ -66,11 +74,11 @@ export async function evaluateFixedRewardsForGuild(guildId: string): Promise<num
 }
 
 /** Runs the F-mode daily sweep for every guild that's currently due for it. Call once per Status Engine tick. */
-export async function runFixedRewardSweep(): Promise<void> {
+export async function runFixedRewardSweep(client: BotClient): Promise<void> {
     const dueGuilds = await getGuildsDueForFixedRewardEval();
     for (const guild of dueGuilds) {
         try {
-            await evaluateFixedRewardsForGuild(guild.guild_id);
+            await evaluateFixedRewardsForGuild(client, guild.guild_id);
             await markQuotaEvaluated(guild.guild_id);
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { guildId: guild.guild_id });

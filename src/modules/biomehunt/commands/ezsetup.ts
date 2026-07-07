@@ -6,11 +6,12 @@ import type { Guild, GuildTextBasedChannel, Message } from "discord.js";
 import { EmbedFormatter, formatTime } from "@/utils/format";
 import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds";
 import { getGuildBadgeRoles } from "../repository/badges";
+import { isFlagEnabled, setGuildFlag } from "../repository/flags";
 import { getQuotaRolesForGuild } from "../repository/quotaRoles";
-import {
-    addCategoryAction, disableAutoDeleteAction, disableCounterAction, removeQuotaRoleAction, setAutoDeleteAction,
-    setBadgeRoleAction, setCounterChannelAction, setQuotaRoleAction, setRolesAction, setThresholdsAction, showConfig,
-} from "./adminConfigActions";
+import { activityDeleteAction, activitySetAction } from "./adminActivityActions";
+import { badgesSetAction } from "./adminBadgeActions";
+import { addCategoryAction, disableCounterAction, setCounterChannelAction, setRolesAction, showConfig } from "./adminConfigActions";
+import { quotasCreateAction, removeQuotaRoleAction } from "./adminQuotaActions";
 import { stepBiomeForwards } from "./forwardMenu";
 import { ALL_BADGES, BADGE_META, type Badge, type QuotaRoleMode, type QuotaRoleRow } from "../types";
 
@@ -401,19 +402,20 @@ async function stepThresholds(guild: Guild, adminId: string, msg: Message, canGo
     );
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
     if (result.kind === "back") return "back";
-    if (result.kind === "ok") await setThresholdsAction(guild.id, result.value[0], result.value[1], result.value[2]);
+    if (result.kind === "ok") await activitySetAction(guild.id, result.value[0], result.value[1], result.value[2]);
     return "forward";
 }
 
 async function stepAutoDelete(guild: Guild, adminId: string, msg: Message, canGoBack: boolean): Promise<Direction> {
     while (true) {
         const config = await getOrCreateGuildConfig(guild.id);
+        const enabled = await isFlagEnabled(guild.id, "AUTO_DELETE_ENABLED");
         await msg.edit({
             embeds: [stepEmbed(
                 "Auto-Delete Inactive Channels (optional)",
                 "When enabled, I will automatically delete a user's macro channel once they've been __inactive__ for longer than the inactive threshold, plus this extra grace period. This keeps unused channels from piling up.\n\n" +
                 "Current settings:\n" +
-                `- Auto-delete: ${config.delete_inactive_after_s ? `\`enabled, ${formatTime(config.delete_inactive_after_s)} after going inactive\`` : "`disabled`"}`,
+                `- Auto-delete: ${enabled ? `\`enabled, ${formatTime(config.delete_inactive_after_s)} after going inactive\`` : `\`disabled (would be ${formatTime(config.delete_inactive_after_s)})\``}`,
             )],
             components: [navRow(
                 canGoBack, "Skip",
@@ -431,17 +433,18 @@ async function stepAutoDelete(guild: Guild, adminId: string, msg: Message, canGo
             const hoursResult = await promptNumberModal(
                 msg, adminId, "Auto-Delete Inactive Channels",
                 "Fill in how many hours after going inactive the channel should be deleted.",
-                [{ customId: "hours", label: "Hours after inactive", value: config.delete_inactive_after_s ? String(config.delete_inactive_after_s / 3600) : "24" }],
+                [{ customId: "hours", label: "Hours after inactive", value: String(config.delete_inactive_after_s / 3600) }],
                 true,
             );
             if (isTerminal(hoursResult)) { await finish(msg, terminalMessage(hoursResult.kind)); return hoursResult.kind; }
             if (hoursResult.kind === "back" || hoursResult.kind === "skip") continue;
-            await setAutoDeleteAction(guild.id, hoursResult.value[0]);
+            await activityDeleteAction(guild.id, hoursResult.value[0]);
+            await setGuildFlag(guild.id, "AUTO_DELETE_ENABLED", true);
             return "forward";
         }
 
         if (choice.kind === "ok" && choice.value === "ez-disable") {
-            await disableAutoDeleteAction(guild.id);
+            await setGuildFlag(guild.id, "AUTO_DELETE_ENABLED", false);
             return "forward";
         }
     }
@@ -588,7 +591,7 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
         if (isTerminal(nums)) { await finish(msg, terminalMessage(nums.kind)); return nums.kind; }
         if (nums.kind === "back" || nums.kind === "skip") continue;
 
-        await setQuotaRoleAction(guild.id, rewardRole.value, mode, nums.value[0], nums.value[1], needsDuration ? nums.value[2] : null);
+        await quotasCreateAction(guild.id, rewardRole.value, mode, nums.value[0], nums.value[1], needsDuration ? nums.value[2] : null);
     }
 }
 
@@ -602,7 +605,7 @@ async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGo
             "Some biomes are rare: Glitched, Cyberspace and Dreamspace. The first time a user's macro reports one of them, they permanently earn a badge on their profile.\n\n" +
             "You can optionally also grant a role for each one found. Pick a role for any (or none) of them below.\n\n" +
             "Currently:\n" +
-            ALL_BADGES.map((b) => roleLine(`${BADGE_META[b].emoji} ${BADGE_META[b].label}`, badgeRoleMap.get(b) ?? null)).join("\n"),
+            ALL_BADGES.map((b) => roleLine(`${BADGE_META[b].emoji} ${BADGE_META[b].display}`, badgeRoleMap.get(b) ?? null)).join("\n"),
         )],
         components: [
             new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-GLITCHED").setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`)),
@@ -618,7 +621,7 @@ async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGo
     if (result.kind === "ok") {
         for (const badge of ALL_BADGES) {
             const roleId = result.value[badge];
-            if (roleId) await setBadgeRoleAction(guild.id, badge, roleId);
+            if (roleId) await badgesSetAction(guild.id, badge, roleId);
         }
     }
     return "forward";

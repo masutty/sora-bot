@@ -70,6 +70,17 @@ export async function touchLastActivity(userId: number, when: Date): Promise<voi
     await query(`UPDATE bh_users SET last_activity_at = $2 WHERE id = $1`, [userId, when]);
 }
 
+/**
+ * Clears `last_activity_at` so the user drops out of `getUsersForStatusSweep`'s
+ * `WHERE last_activity_at IS NOT NULL` filter - mirrors what a brand new row already gets
+ * "for free". Used after a soft macro-channel delete: without this, the user keeps their
+ * stale `last_activity_at`, stays "inactive" every tick, and a freshly re-created channel
+ * gets deleted again before they can even set up their webhook.
+ */
+export async function resetActivityState(userId: number): Promise<void> {
+    await query(`UPDATE bh_users SET last_activity_at = NULL, current_status = 'inactive' WHERE id = $1`, [userId]);
+}
+
 export async function pauseUser(guildId: string, discordUserId: string): Promise<boolean> {
     const result = await query(
         `UPDATE bh_users SET paused_at = NOW() WHERE guild_id = $1 AND discord_user_id = $2`,
@@ -94,6 +105,17 @@ export async function deleteUserCascade(userId: number): Promise<{ channelId: st
     await query(`DELETE FROM bh_users WHERE id = $1`, [userId]);
     unregisterChannelByUserId(userId);
     const row = channel.rows[0];
+    return row ? { channelId: row.channel_id, webhookId: row.webhook_id } : null;
+}
+
+/** Removes only the macro channel/webhook DB row, keeping the user's row (and all their history/badges/quota state) intact. */
+export async function deleteMacroChannelOnly(userId: number): Promise<{ channelId: string; webhookId: string } | null> {
+    const result = await query<{ channel_id: string; webhook_id: string }>(
+        `DELETE FROM bh_user_macro_channels WHERE user_id = $1 RETURNING channel_id, webhook_id`,
+        [userId],
+    );
+    unregisterChannelByUserId(userId);
+    const row = result.rows[0];
     return row ? { channelId: row.channel_id, webhookId: row.webhook_id } : null;
 }
 

@@ -1,6 +1,6 @@
 import { query } from "@/database/connection";
 import { TTLCache } from "@/utils/cache";
-import type { GuildCategoryRow, GuildConfigRow, GuildRolesConfig } from "../types";
+import type { ActivityStatus, GuildCategoryRow, GuildConfigRow, GuildRolesConfig } from "../types";
 
 const configCache = new TTLCache<string, GuildConfigRow>(60 * 1000);
 const rolesCache = new TTLCache<string, GuildRolesConfig>(60 * 1000);
@@ -82,16 +82,8 @@ export async function getGuildsDueForFixedRewardEval(): Promise<GuildConfigRow[]
     return result.rows;
 }
 
-export async function setForwardingEnabled(guildId: string, enabled: boolean): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET forwarding_enabled = $2, updated_at = NOW() WHERE guild_id = $1`,
-        [guildId, enabled],
-    );
-    invalidate(guildId);
-}
-
-/** Sets (or disables, with `null`) auto-deletion of a user's macro channel after prolonged inactivity. */
-export async function setAutoDeleteAfter(guildId: string, seconds: number | null): Promise<void> {
+/** Sets how many hours after going inactive a user's macro channel is deleted. Whether that actually happens is gated by the AUTO_DELETE_ENABLED flag, not this value. */
+export async function setAutoDeleteHours(guildId: string, seconds: number): Promise<void> {
     await query(
         `UPDATE bh_guilds SET delete_inactive_after_s = $2, updated_at = NOW() WHERE guild_id = $1`,
         [guildId, seconds],
@@ -193,6 +185,20 @@ export async function clearGuildRoles(guildId: string): Promise<void> {
     invalidate(guildId);
 }
 
+const STATUS_ROLE_COLUMN: Record<ActivityStatus, string> = {
+    active: "active_role_id",
+    idle: "idle_role_id",
+    inactive: "inactive_role_id",
+};
+
+/** Sets (or unsets, with `null`) a single status role at a time - `column` is always one of the 3 hardcoded literals above, never user input. */
+export async function setGuildRoleForStatus(guildId: string, status: ActivityStatus, roleId: string | null): Promise<void> {
+    await getGuildRoles(guildId); // ensure the row exists
+    const column = STATUS_ROLE_COLUMN[status];
+    await query(`UPDATE bh_guild_roles SET ${column} = $2 WHERE guild_id = $1`, [guildId, roleId]);
+    invalidate(guildId);
+}
+
 export async function isGuildReady(
     guildId: string,
 ): Promise<{ ready: boolean; hasCategory: boolean; hasRoles: boolean }> {
@@ -210,7 +216,7 @@ export async function resetGuildConfig(guildId: string): Promise<void> {
     await query(
         `UPDATE bh_guilds
          SET session_gap_threshold_s = 1200, idle_threshold_s = 1800, inactive_threshold_s = 86400,
-             auto_create_categories = FALSE, delete_inactive_after_s = NULL,
+             auto_create_categories = FALSE, delete_inactive_after_s = 86400,
              counter_channel_id = NULL, counter_message_id = NULL, updated_at = NOW()
          WHERE guild_id = $1`,
         [guildId],

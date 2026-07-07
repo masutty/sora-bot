@@ -1,5 +1,5 @@
 import { ChannelType, PermissionFlagsBits } from "discord.js";
-import type { Guild, GuildMember } from "discord.js";
+import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable } from "discord.js";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds";
@@ -14,7 +14,9 @@ export interface SetupResult {
     webhookUrl: string;
 }
 
-export async function runUserSetup(guild: Guild, member: GuildMember): Promise<SetupResult> {
+export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dmUser?: boolean } = {}): Promise<SetupResult> {
+    const dmUser = opts.dmUser ?? true;
+
     const { ready } = await isGuildReady(guild.id);
     if (!ready) {
         throw new BiomeHuntError("It seems that this server is not fully configured yet! Please contact an administrator for more information.");
@@ -34,10 +36,7 @@ export async function runUserSetup(guild: Guild, member: GuildMember): Promise<S
         name: `・${safeName}`,
         type: ChannelType.GuildText,
         parent: category.id,
-        permissionOverwrites: [
-            { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-            { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages] },
-        ],
+        permissionOverwrites: buildMacroChannelOverwrites(category, member),
     });
 
     let webhook;
@@ -57,22 +56,42 @@ export async function runUserSetup(guild: Guild, member: GuildMember): Promise<S
         throw err;
     }
 
-    try {
-        await member.send(
-            `Here is your webhook for <#${channel.id}>:` +
-            `\n${webhook.url}\n\n` +
-            "-# Do not share this URL with anyone, nor use it for anything other than your macro.\n" +
-            "-# You can be punished for webhook misuse. If you believe that your webhook url has leaked, please contact an administrator as soon as possible.\n",
-        );
-    } catch {
-        await deleteUserCascade(user.id);
-        await webhook.delete().catch(() => {});
-        await channel.delete().catch(() => {});
-        throw new BiomeHuntError("I couldn't send you a DM. Please enable direct messages from server members and try `/bh setup` again.");
+    if (dmUser) {
+        try {
+            await member.send(
+                `Here is your webhook for <#${channel.id}>:` +
+                `\n${webhook.url}\n\n` +
+                "-# Do not share this URL with anyone, nor use it for anything other than your macro.\n" +
+                "-# You can be punished for webhook misuse. If you believe that your webhook url has leaked, please contact an administrator as soon as possible.\n",
+            );
+        } catch {
+            await deleteUserCascade(user.id);
+            await webhook.delete().catch(() => {});
+            await channel.delete().catch(() => {});
+            throw new BiomeHuntError("I couldn't send you a DM. Please enable direct messages from server members and try `/bh setup` again.");
+        }
     }
 
     registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId: webhook.id });
     return { channelId: channel.id, webhookUrl: webhook.url };
+}
+
+/**
+ * Clones the category's own permission overwrites onto the new macro channel - so admins
+ * control macro channel visibility entirely by configuring the category, the same way any
+ * other Discord channel under it works - then layers the owner's access on top. Discord
+ * doesn't auto-sync a freshly created channel to its parent's permissions (that only happens
+ * via the "Sync Permissions" UI action), so this has to be done explicitly.
+ */
+function buildMacroChannelOverwrites(category: CategoryChannel, member: GuildMember): OverwriteResolvable[] {
+    const cloned: OverwriteResolvable[] = category.permissionOverwrites.cache
+        .filter((overwrite) => overwrite.id !== member.id)
+        .map((overwrite) => ({ id: overwrite.id, type: overwrite.type, allow: overwrite.allow.bitfield, deny: overwrite.deny.bitfield }));
+
+    return [
+        ...cloned,
+        { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages] },
+    ];
 }
 
 async function findOrCreateCategory(guild: Guild, guildConfig: GuildConfigRow) {

@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
     inactive_threshold_s     INTEGER NOT NULL DEFAULT 86400,  /* 24h */
 
     auto_create_categories   BOOLEAN NOT NULL DEFAULT FALSE,
-    delete_inactive_after_s  INTEGER,                         /* NULL = disabled */
+    delete_inactive_after_s  INTEGER NOT NULL DEFAULT 86400,  /* hours-after-inactive threshold; whether it's acted on is gated by the AUTO_DELETE_ENABLED flag */
 
     counter_channel_id       VARCHAR(20),
     counter_message_id       VARCHAR(20),
@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
 
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_eval_hour_utc SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_last_evaluated_date DATE;
-ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS forwarding_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+/* Forwarding is now fully implicit (a biome forwards iff it has a configured channel) - no separate on/off switch. */
+ALTER TABLE bh_guilds DROP COLUMN IF EXISTS forwarding_enabled;
 
 /* General guild-wide quota was replaced entirely by per-role quota rewards (bh_quota_roles). */
 ALTER TABLE bh_guilds DROP COLUMN IF EXISTS quota_window_hours;
@@ -175,5 +177,31 @@ CREATE TABLE IF NOT EXISTS bh_role_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS bh_role_jobs_pending ON bh_role_jobs(execute_after) WHERE processed = FALSE;
+
+/* ───────────────────────────────────────────── */
+/* Feature flags                                */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_guild_flags (
+    guild_id   VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    flag_name  VARCHAR(40) NOT NULL,
+    enabled    BOOLEAN NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (guild_id, flag_name)
+);
+
+/*
+ * delete_inactive_after_s used to be nullable, with NULL meaning "auto-delete disabled".
+ * That's now controlled by the AUTO_DELETE_ENABLED flag instead, so the column becomes a
+ * plain always-set duration. Guilds that had a real (non-null) value get the flag turned on
+ * here, to preserve their existing behavior across the migration.
+ */
+INSERT INTO bh_guild_flags (guild_id, flag_name, enabled)
+SELECT guild_id, 'AUTO_DELETE_ENABLED', TRUE FROM bh_guilds WHERE delete_inactive_after_s IS NOT NULL
+ON CONFLICT (guild_id, flag_name) DO NOTHING;
+
+UPDATE bh_guilds SET delete_inactive_after_s = 86400 WHERE delete_inactive_after_s IS NULL;
+ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET DEFAULT 86400;
+ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET NOT NULL;
 
 `;

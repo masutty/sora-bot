@@ -7,7 +7,7 @@ import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import { runUserSetup } from "../guildSetup";
 import { BiomeHuntError } from "../types";
-import { buildHistoryEmbed, buildLeaderboardEmbed, buildProfileEmbed } from "./profileViews";
+import { runProfileView } from "./profileViews";
 
 const logger = new Logger("biomehunt.commands.bh");
 
@@ -29,6 +29,13 @@ export default defineCommand({
             return;
         }
         const sub = interaction.options.getSubcommand(true);
+
+        if (sub === "profile") {
+            await interaction.deferReply();
+            await runProfileView(interaction.guild.id, interaction.member as GuildMember, interaction.user.id, (payload) => interaction.editReply(payload));
+            return;
+        }
+
         await interaction.deferReply({ ephemeral: sub === "setup" });
         try {
             const embed = await runSubcommand(sub, interaction.guild, interaction.member as GuildMember);
@@ -48,6 +55,12 @@ export default defineCommand({
             await message.reply({ embeds: [EmbedFormatter.info("Usage: `bh <setup|profile>`")] });
             return;
         }
+
+        if (sub === "profile") {
+            await runProfileView(message.guild.id, message.member, message.author.id, (payload) => message.reply(payload));
+            return;
+        }
+
         try {
             const embed = await runSubcommand(sub, message.guild, message.member);
             await message.reply({ embeds: [embed] });
@@ -63,12 +76,6 @@ async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Pr
             const result = await runUserSetup(guild, member);
             return EmbedFormatter.success(`Created: <#${result.channelId}>`);
         }
-        case "profile":
-            return buildProfileEmbed(guild.id, member);
-        // case "history":
-        //     return buildHistoryEmbed(guild.id, member.id);
-        // case "leaderboard":
-        //     return buildLeaderboardEmbed(guild.id);
         default:
             throw new BiomeHuntError(`Unknown subcommand: ${sub}`);
     }

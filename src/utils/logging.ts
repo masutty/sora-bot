@@ -21,7 +21,21 @@ const shared = winston.createLogger({
 		colorize({ all: true }),
 		logFormat,
 	),
-	transports: [new winston.transports.Console()],
+	transports: [
+		new winston.transports.Console(),
+		// Plain-text (no ANSI color codes) mirror of every `error`-level log, so critical
+		// issues (rate limits, uncaught exceptions, etc.) are traceable on disk even if
+		// nobody was watching the console when they happened.
+		new winston.transports.File({
+			filename: "logs/error.log",
+			level: "error",
+			format: combine(
+				errors({ stack: true }),
+				timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+				logFormat,
+			),
+		}),
+	],
 });
 
 export class Logger {

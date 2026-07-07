@@ -1,10 +1,15 @@
 import type { BotClient } from "@/core/BotClient";
 import { Logger } from "@/utils/logging";
 import type { ActivityStatus } from "../types";
+import { grantUserBadge } from "../repository/badges";
+import { isFlagEnabled } from "../repository/flags";
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds";
-import { deleteUserCascade, getUsersForStatusSweep, updateUserStatus } from "../repository/users";
+import {
+    deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState, updateUserStatus,
+} from "../repository/users";
 import { enqueueRoleJob } from "../repository/roleJobs";
 import { evaluateRollingRewards, runFixedRewardSweep } from "../services/RewardEngine";
+import { reportSessionEnd } from "../services/SessionReportEngine";
 
 const logger = new Logger("biomehunt.StatusEngine");
 
@@ -37,7 +42,7 @@ function resolveStatus(inactiveSeconds: number, idleThresholdS: number, inactive
 }
 
 async function tick(client: BotClient): Promise<void> {
-    await runFixedRewardSweep().catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
+    await runFixedRewardSweep(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
 
     const users = await getUsersForStatusSweep();
     const now = Date.now();
@@ -46,27 +51,42 @@ async function tick(client: BotClient): Promise<void> {
         const guildConfig = await getOrCreateGuildConfig(user.guild_id);
         const inactiveSeconds = (now - user.last_activity_at!.getTime()) / 1000;
         const newStatus = resolveStatus(inactiveSeconds, guildConfig.idle_threshold_s, guildConfig.inactive_threshold_s);
+        const wasActive = user.current_status === "active";
 
         if (newStatus !== user.current_status) {
             await transitionUser(user.id, user.guild_id, newStatus);
+
+            if (wasActive && newStatus !== "active" && await isFlagEnabled(user.guild_id, "REPORT_SESSION_ON_END")) {
+                await reportSessionEnd(client, user.id).catch((err) =>
+                    logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }),
+                );
+            }
         }
 
-        await evaluateRollingRewards(user).catch((err) =>
+        await evaluateRollingRewards(client, user).catch((err) =>
             logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }),
         );
 
         const shouldDelete =
             newStatus === "inactive" &&
-            guildConfig.delete_inactive_after_s !== null &&
             user.paused_at === null &&
-            inactiveSeconds > guildConfig.inactive_threshold_s + guildConfig.delete_inactive_after_s;
+            inactiveSeconds > guildConfig.inactive_threshold_s + guildConfig.delete_inactive_after_s &&
+            await isFlagEnabled(user.guild_id, "AUTO_DELETE_ENABLED");
 
         if (shouldDelete) {
-            logger.info(`Auto-deleting user ${user.id} (guild ${user.guild_id}) after prolonged inactivity`);
-            const deleted = await deleteUserCascade(user.id);
+            const hardWipe = await isFlagEnabled(user.guild_id, "CLEAR_PROFILE_ON_AUTODELETE");
+            const deleted = hardWipe ? await deleteUserCascade(user.id) : await deleteMacroChannelOnly(user.id);
+
+            // `deleted` is null once there's nothing left to remove (already handled on a prior tick,
+            // or a hard-wiped row is simply gone) - skip side effects so this doesn't repeat forever.
             if (deleted) {
+                logger.info(`Auto-deleting user ${user.id} (guild ${user.guild_id}) after prolonged inactivity (${hardWipe ? "full wipe" : "channel only"})`);
                 const channel = await client.channels.fetch(deleted.channelId).catch(() => null);
                 if (channel) await channel.delete().catch(() => {});
+                if (!hardWipe) {
+                    await grantUserBadge(user.id, "DELETED");
+                    await resetActivityState(user.id);
+                }
             }
         }
     }

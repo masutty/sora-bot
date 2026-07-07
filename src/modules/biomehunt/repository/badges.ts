@@ -10,9 +10,8 @@ export async function setGuildBadgeRole(guildId: string, badge: Badge, roleId: s
     );
 }
 
-/** Clears all configured badge roles for a guild at once. */
-export async function clearGuildBadgeRoles(guildId: string): Promise<void> {
-    await query(`DELETE FROM bh_guild_badge_roles WHERE guild_id = $1`, [guildId]);
+export async function removeGuildBadgeRole(guildId: string, badge: Badge): Promise<void> {
+    await query(`DELETE FROM bh_guild_badge_roles WHERE guild_id = $1 AND badge = $2`, [guildId, badge]);
 }
 
 export async function getGuildBadgeRoles(guildId: string): Promise<GuildBadgeRoleRow[]> {
