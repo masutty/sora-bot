@@ -1,7 +1,8 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, GuildMember } from "discord.js";
 import type { Message } from "discord.js";
-import { runButtonView } from "@/utils/buttonView";
+import { runButtonView, type ButtonViewButton } from "@/utils/buttonView";
 import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
+import { Logger } from "@/utils/logging";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
@@ -12,6 +13,11 @@ import {
     ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName,
     type ActivitySessionRow, type ActivityStatus, type BiomeCategory, type UserRow,
 } from "../types";
+
+const logger = new Logger("biomehunt.profileViews");
+
+/** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks (see utils/buttonView.ts's own timing). */
+const SLOW_PROFILE_LOAD_MS = 500;
 
 export const SESSIONS_PER_PAGE = 10;
 export const USERS_PER_PAGE = 10;
@@ -37,10 +43,15 @@ export async function getQuotaRewardSummaryLines(guildId: string, userId: number
     return progress.map(({ p, qualifies }) => `${qualifies ? "✅" : "❌"} <@&${p.role_id}>`);
 }
 
-type ProfileTab = "profile" | "biomes" | "badges" | "quotas";
+type ProfileTab = "profile" | "biomes" | "badges" | "quotas" | "sessions";
 
-const TAB_ORDER: ProfileTab[] = ["profile", "biomes", "badges", "quotas"];
-const TAB_LABELS: Record<ProfileTab, string> = { profile: "Profile", biomes: "Biomes", badges: "Badges", quotas: "Quotas" };
+const TAB_ORDER: ProfileTab[] = ["profile", "biomes", "badges", "quotas", "sessions"];
+const TAB_LABELS: Record<ProfileTab, string> = { profile: "Profile", biomes: "Biomes", badges: "Badges", quotas: "Quotas", sessions: "Sessions" };
+
+interface ProfileState {
+    tab: ProfileTab;
+    sessionPage: number;
+}
 
 /** Order + captions for the Profile tab's bottom "biomes found" line - fixed and positional, unlike the Biomes tab's per-category fields. */
 const BIOME_TOTAL_ORDER: BiomeCategory[] = ["weather", "biome", "event", "rare"];
@@ -55,21 +66,29 @@ interface ProfileData {
     channelId: string | null;
     quotaSummaryLines: string[];
     badges: Awaited<ReturnType<typeof getUserBadges>>;
+    sessions: ActivitySessionRow[];
 }
 
 async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
+    const start = Date.now();
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) return null;
 
-    const [activeSeconds, biomes, channel, quotaSummaryLines, badges] = await Promise.all([
+    const [activeSeconds, biomes, channel, quotaSummaryLines, badges, sessions] = await Promise.all([
         getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
         getBiomeCounts(user.id),
         getMacroChannelByUserId(user.id),
         getQuotaRewardSummaryLines(guildId, user.id),
         getUserBadges(user.id),
+        getRecentSessions(user.id, 100),
     ]);
 
-    return { user, activeSeconds, biomes, channelId: channel?.channel_id ?? null, quotaSummaryLines, badges };
+    const elapsedMs = Date.now() - start;
+    if (elapsedMs > SLOW_PROFILE_LOAD_MS) {
+        logger.warn(`Slow profile data load: ${elapsedMs}ms (DB-bound - see database pool stats)`, { guildId, userId: user.id });
+    }
+
+    return { user, activeSeconds, biomes, channelId: channel?.channel_id ?? null, quotaSummaryLines, badges, sessions };
 }
 
 function baseEmbed(member: GuildMember, color: number): EmbedBuilder {
@@ -91,24 +110,22 @@ function totalBiomesFoundByCategory(biomes: Array<{ biome: string; count: number
 }
 
 function buildProfileTabEmbed(member: GuildMember, data: ProfileData): EmbedBuilder {
-    const { user, activeSeconds, biomes, channelId, badges } = data;
+    const { user, biomes, channelId, badges } = data;
+
+    const channelLine = channelId ? `<#${channelId}>` : "*not created*";
+    const statusLabel = user.current_status.charAt(0).toUpperCase() + user.current_status.slice(1);
 
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
-    const captionLine = `-# (${BIOME_TOTAL_ORDER.map((c) => BIOME_TOTAL_CAPTIONS[c]).join(", ")})`;
 
     const embed = baseEmbed(member, STATUS_COLOR[user.current_status])
         .setTitle(`\`${member.user.username}\`'s Hunter Profile`)
         .setDescription([
-            `- \`${formatTime(activeSeconds)}\` activity time in the last \`${RECENT_ACTIVITY_WINDOW_HOURS}h\`.`,
             `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
+            `- Channel: ${channelLine}`,
+            `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
             `- ${totalLine} biomes found.`,
-            captionLine,
-        ].join("\n"))
-        .addFields(
-            { name: "Macro Channel", value: channelId ? `<#${channelId}>` : formatCodeblock("No channel."), inline: true },
-            { name: "Current Status", value: formatCodeblock(STATUS_EMOJI[user.current_status] + " " + user.current_status.toUpperCase()), inline: true },
-        );
+        ].join("\n"));
 
     if (badges.length > 0) {
         embed.addFields({ name: "Badges", value: badges.map((b) => BADGE_META[b.badge].emoji).join(" "), inline: false });
@@ -134,6 +151,10 @@ function buildBiomesTabEmbed(member: GuildMember, data: ProfileData): EmbedBuild
     const embed = baseEmbed(member, 0x5865f2).setTitle(`\`${member.user.username}\`'s Biomes`);
 
     if (biomes.length === 0) return embed.setDescription("No biomes discovered yet.");
+
+    const totals = totalBiomesFoundByCategory(biomes);
+    const summaryLine = BIOME_TOTAL_ORDER.map((c) => `${BIOME_TOTAL_CAPTIONS[c]}: \`${totals[c]}\``).join(" · ");
+    embed.setDescription(summaryLine);
 
     for (const category of ALL_BIOME_CATEGORIES) {
         const inCategory = biomes.filter((b) => BIOME_META[b.biome]?.category === category);
@@ -164,17 +185,25 @@ function buildBadgesTabEmbed(member: GuildMember, data: ProfileData): EmbedBuild
     return embed;
 }
 
-function buildTabEmbed(tab: ProfileTab, member: GuildMember, data: ProfileData): EmbedBuilder {
-    if (tab === "biomes") return buildBiomesTabEmbed(member, data);
-    if (tab === "badges") return buildBadgesTabEmbed(member, data);
-    if (tab === "quotas") return buildQuotasTabEmbed(member, data);
+function buildSessionsTabEmbed(member: GuildMember, data: ProfileData, page: number): EmbedBuilder {
+    if (data.sessions.length === 0) {
+        return baseEmbed(member, 0x5865f2).setTitle(`\`${member.user.username}\`'s Sessions`).setDescription("No activity recorded yet.");
+    }
+    return buildHistoryEmbed(data.sessions, member, page);
+}
+
+function buildTabEmbed(state: ProfileState, member: GuildMember, data: ProfileData): EmbedBuilder {
+    if (state.tab === "biomes") return buildBiomesTabEmbed(member, data);
+    if (state.tab === "badges") return buildBadgesTabEmbed(member, data);
+    if (state.tab === "quotas") return buildQuotasTabEmbed(member, data);
+    if (state.tab === "sessions") return buildSessionsTabEmbed(member, data, state.sessionPage);
     return buildProfileTabEmbed(member, data);
 }
 
 /**
- * Interactive Profile/Biomes/Badges/Quotas tabbed view - data is fetched once upfront, tab
- * switches just re-render from it. Only `invokerId` can switch tabs (the profile owner for
- * `/bh profile`, the admin who ran it for `/bh-admin user profile`).
+ * Interactive Profile/Biomes/Badges/Quotas/Sessions tabbed view - data is fetched once upfront,
+ * tab switches (and session pagination) just re-render from it. Only `invokerId` can interact
+ * (the profile owner for `/bh profile`, the admin who ran it for `/bh-admin profile`).
  */
 export async function runProfileView(
     guildId: string,
@@ -188,20 +217,41 @@ export async function runProfileView(
         return;
     }
 
-    await runButtonView<ProfileTab>({
-        state: "profile",
+    await runButtonView<ProfileState>({
+        state: { tab: "profile", sessionPage: 0 },
         invokerId,
         respond,
-        render: (tab) => ({
-            embeds: [buildTabEmbed(tab, member, data)],
-            buttons: TAB_ORDER.map((t) => ({
+        render: (state) => {
+            const tabRow: ButtonViewButton<ProfileState>[] = TAB_ORDER.map((t) => ({
                 customId: `profile-tab-${t}`,
                 label: TAB_LABELS[t],
-                style: t === tab ? ButtonStyle.Primary : ButtonStyle.Secondary,
-                disabled: t === tab,
-                next: () => t,
-            })),
-        }),
+                style: t === state.tab ? ButtonStyle.Primary : ButtonStyle.Secondary,
+                disabled: t === state.tab,
+                next: (): ProfileState => ({ tab: t, sessionPage: 0 }),
+            }));
+
+            const rows: ButtonViewButton<ProfileState>[][] = [tabRow];
+
+            if (state.tab === "sessions") {
+                const pages = Math.max(Math.ceil(data.sessions.length / SESSIONS_PER_PAGE), 1);
+                if (pages > 1) {
+                    rows.push([
+                        {
+                            customId: "profile-sessions-prev", emoji: "◀️", style: ButtonStyle.Secondary,
+                            disabled: state.sessionPage === 0,
+                            next: (s): ProfileState => ({ ...s, sessionPage: Math.max(0, s.sessionPage - 1) }),
+                        },
+                        {
+                            customId: "profile-sessions-next", emoji: "▶️", style: ButtonStyle.Secondary,
+                            disabled: state.sessionPage >= pages - 1,
+                            next: (s): ProfileState => ({ ...s, sessionPage: Math.min(pages - 1, s.sessionPage + 1) }),
+                        },
+                    ]);
+                }
+            }
+
+            return { embeds: [buildTabEmbed(state, member, data)], buttons: rows };
+        },
     });
 }
 
@@ -217,25 +267,17 @@ export function buildHistoryEmbed(sessions: ActivitySessionRow[], member: GuildM
     const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
     const oldestFirst = [...slice].reverse();
 
-    const lines: string[] = [];
-    oldestFirst.forEach((session, i) => {
-        lines.push(
-            `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
-        );
-
-        const newer = oldestFirst[i + 1];
-        if (newer) {
-            const gapSeconds = Math.floor((newer.started_at.getTime() - session.ended_at.getTime()) / 1000);
-            if (gapSeconds > 0) lines.push(`-# ↳ gap: ${formatTime(gapSeconds)}`);
-        }
-    });
+    const lines = oldestFirst.map((session) =>
+        `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
+    );
 
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setThumbnail(member.displayAvatarURL())
         .setTitle(`\`${member.user.username}\`'s Session History`)
         .setDescription(lines.join("\n"))
-        .setFooter({ text: `Page ${page + 1} of ${pages} - ${sessions.length} session(s) total - use the #id with \`session delete\`` });
+        .setFooter({ text: `${member.user.username} · Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`, iconURL: member.displayAvatarURL() })
+        .setTimestamp();
 }
 
 export function buildHistoryRow(page: number, pages: number): ActionRowBuilder<ButtonBuilder> {

@@ -2,7 +2,7 @@ import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SectionBuilder, SeparatorBuilder,
     TextDisplayBuilder, ThumbnailBuilder,
 } from "discord.js";
-import { formatBiomeName, getBiomeColor, getBiomeIconUrl, type VoteCheckDecidedBy, type VoteCheckStatus } from "../types";
+import { getBiomeColor, getBiomeIconUrl, spoofBiomeName, type VoteCheckDecidedBy, type VoteCheckStatus } from "../types";
 
 export interface VoteRenderInfo {
     status: VoteCheckStatus;
@@ -15,6 +15,8 @@ export interface ForwardContainerParams {
     roleId: string | null;
     serverLink: string | null;
     jumpLink: string;
+    /** How many times (including this one) the finder has found this specific biome - shown as "this is the #N <biome> they found!". Omit to not show the line. */
+    findCount?: number;
     vote?: VoteRenderInfo;
 }
 
@@ -48,8 +50,9 @@ function voteStatusLine(vote: VoteRenderInfo): string | null {
  * message's own identity, or edits will make it point to itself.
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
-    const headingLines = [`# [${formatBiomeName(params.biome)}](${params.serverLink})`];
+    const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
     if (params.roleId) headingLines.push(`<@&${params.roleId}>`);
+    if (params.findCount) headingLines.push(`This is the #${params.findCount} ${spoofBiomeName(params.biome)} they found!`);
     if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);
 
     const container = new ContainerBuilder().setAccentColor(getBiomeColor(params.biome));

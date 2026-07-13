@@ -1,5 +1,7 @@
 import type { BotClient } from "@/core/BotClient";
+import { getPoolStats } from "@/database/connection";
 import { Logger } from "@/utils/logging";
+import { recordTickStats } from "@/utils/metrics";
 import type { ActivityStatus } from "../types";
 import { grantUserBadge } from "../repository/badges";
 import { isFlagEnabled } from "../repository/flags";
@@ -34,6 +36,8 @@ export async function transitionUser(userId: number, guildId: string, newStatus:
 }
 
 const TICK_INTERVAL_MS = 30_000;
+/** If a tick takes longer than this, the sweep is at real risk of falling behind its own interval - worth a heads-up before it actually overruns. */
+const SLOW_TICK_MS = 20_000;
 
 function resolveStatus(inactiveSeconds: number, idleThresholdS: number, inactiveThresholdS: number): ActivityStatus {
     if (inactiveSeconds < idleThresholdS) return "active";
@@ -42,12 +46,18 @@ function resolveStatus(inactiveSeconds: number, idleThresholdS: number, inactive
 }
 
 async function tick(client: BotClient): Promise<void> {
+    const tickStart = Date.now();
+
     await runFixedRewardSweep(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
 
     const users = await getUsersForStatusSweep();
     const now = Date.now();
 
     for (const user of users) {
+        // Bot isn't (or isn't yet) in this guild - skip entirely rather than doing pointless work
+        // (status transitions, quota checks, role job enqueuing) for a guild it can't act in.
+        if (!client.guilds.cache.has(user.guild_id)) continue;
+
         const guildConfig = await getOrCreateGuildConfig(user.guild_id);
         const inactiveSeconds = (now - user.last_activity_at!.getTime()) / 1000;
         const newStatus = resolveStatus(inactiveSeconds, guildConfig.idle_threshold_s, guildConfig.inactive_threshold_s);
@@ -89,6 +99,17 @@ async function tick(client: BotClient): Promise<void> {
                 }
             }
         }
+    }
+
+    const durationMs = Date.now() - tickStart;
+    recordTickStats(durationMs, users.length);
+    if (durationMs > SLOW_TICK_MS) {
+        logger.warn(`Status engine tick took ${durationMs}ms (interval is ${TICK_INTERVAL_MS}ms) for ${users.length} user(s) - bot may be falling behind`);
+    }
+
+    const poolStats = getPoolStats();
+    if (poolStats.waiting > 0) {
+        logger.warn(`DB pool has ${poolStats.waiting} client(s) waiting for a connection - consider raising DB_POOL_MAX`, poolStats);
     }
 }
 

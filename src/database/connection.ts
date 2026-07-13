@@ -83,3 +83,15 @@ export async function testConnection(): Promise<void> {
 export async function closePool(): Promise<void> {
 	if (pool) await pool.end();
 }
+
+export interface PoolStats {
+	total: number;
+	idle: number;
+	waiting: number;
+}
+
+/** Snapshot of connection pool saturation - a non-zero `waiting` means queries are queueing for a free connection, a clear scale-up signal. */
+export function getPoolStats(): PoolStats {
+	const p = getPool();
+	return { total: p.totalCount, idle: p.idleCount, waiting: p.waitingCount };
+}

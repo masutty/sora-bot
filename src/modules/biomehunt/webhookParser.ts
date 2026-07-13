@@ -16,9 +16,9 @@ export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
     const embed = message.embeds[0];
     if (!embed) return null;
 
-    logger.debug("Detecting macro type...")
+    logger.verbose("Detecting macro type...")
     const parser = detectMacroParser(embed.footer?.text);
-    logger.debug(`Detected macro type: ${parser.id ?? "undefined?"}`);
+    logger.verbose(`Detected macro type: ${parser.id ?? "undefined?"}`);
 
     if (parser.id === "unknown") {
         logger.warn(`Webhook ${message.webhookId} has unknown macro type: ${embed.footer?.text}`);

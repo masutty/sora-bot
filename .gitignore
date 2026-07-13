@@ -7,11 +7,13 @@ dist
 .env.production
 .env.test
 
+# Personal notes for the biomehunt (bh) module - not tracked
 TODO.md
 
 coverage
 
 *.log
+logs/*
 npm-debug.log*
 pnpm-debug.log*
 

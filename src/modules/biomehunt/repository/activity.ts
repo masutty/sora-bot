@@ -50,11 +50,20 @@ export async function extendSession(client: PoolClient, sessionId: number, at: D
     return result.rows[0];
 }
 
+/**
+ * Sums the portion of each session that actually falls within the last `windowHours` - not the
+ * full `duration_seconds` of every session that merely *started* inside the window. A long
+ * session that started before the cutoff but is still running (or ended just after it) used to
+ * be excluded entirely, undercounting active time right at the window boundary (this mattered
+ * for quota role grants specifically).
+ */
 export async function getActiveSecondsInWindow(userId: number, windowHours: number): Promise<number> {
     const result = await query<{ total: string | null }>(
-        `SELECT SUM(duration_seconds) AS total
+        `SELECT SUM(GREATEST(0, EXTRACT(EPOCH FROM (
+             LEAST(ended_at, NOW()) - GREATEST(started_at, NOW() - ($2 || ' hours')::interval)
+         )))) AS total
          FROM bh_activity_sessions
-         WHERE user_id = $1 AND started_at >= NOW() - ($2 || ' hours')::interval`,
+         WHERE user_id = $1 AND ended_at >= NOW() - ($2 || ' hours')::interval`,
         [userId, windowHours],
     );
     return Number(result.rows[0]?.total ?? 0);
@@ -127,6 +136,15 @@ export async function clearBiomeEvents(userId: number, biome: string): Promise<n
     return result.rowCount ?? 0;
 }
 
+/** Total confirmed "started" finds of one specific biome for a user - used to show "this is the #N <biome> they found!" on forwards. */
+export async function getBiomeCountForUser(userId: number, biome: string): Promise<number> {
+    const result = await query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM bh_activity_events WHERE user_id = $1 AND biome = $2 AND event_type = 'started'`,
+        [userId, biome],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+}
+
 /** Counts confirmed "started" events only — each biome session sends both a started and ended message, and counting both would double the total. */
 export async function getBiomeCounts(userId: number): Promise<Array<{ biome: string; count: number }>> {
     const result = await query<{ biome: string; count: string }>(
@@ -147,11 +165,13 @@ export async function getLeaderboard(
 ): Promise<Array<{ discordUserId: string; activeSeconds: number; sessionCount: number }>> {
     const result = await query<{ discord_user_id: string; active_seconds: string | null; session_count: string }>(
         `SELECT u.discord_user_id,
-                SUM(s.duration_seconds) AS active_seconds,
+                SUM(GREATEST(0, EXTRACT(EPOCH FROM (
+                    LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, NOW() - ($2 || ' hours')::interval)
+                )))) AS active_seconds,
                 COUNT(s.id) AS session_count
          FROM bh_users u
          JOIN bh_activity_sessions s ON s.user_id = u.id
-         WHERE u.guild_id = $1 AND s.started_at >= NOW() - ($2 || ' hours')::interval
+         WHERE u.guild_id = $1 AND s.ended_at >= NOW() - ($2 || ' hours')::interval
          GROUP BY u.discord_user_id
          ORDER BY active_seconds DESC
          LIMIT $3`,

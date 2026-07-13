@@ -54,6 +54,13 @@ async function tick(client: BotClient): Promise<void> {
     for (const guildConfig of guilds) {
         if (!guildConfig.counter_channel_id) continue;
 
+        // Bot isn't (or isn't yet) in this guild - skip quietly instead of hitting the API and
+        // logging "Missing Access" forever for a guild it was removed from.
+        if (!client.guilds.cache.has(guildConfig.guild_id)) {
+            logger.debug(`Skipping counter update for guild ${guildConfig.guild_id} - not in this guild`);
+            continue;
+        }
+
         try {
             logger.debug(`Updating counter for guild ${guildConfig.guild_id}`);
             await updateCounterForGuild(client, guildConfig);

@@ -75,23 +75,23 @@ export class DefaultMacroParser extends MacroParser {
             ...(embed.fields?.map((f) => f.value) ?? []),
         ];
 
-        logger.debug(`Parsing embed (${candidates.length} candidate(s))`);
+        logger.verbose(`Parsing embed (${candidates.length} candidate(s))`);
 
         for (const text of candidates) {
             if (!text) continue;
 
-            logger.debug(`Candidate: ${JSON.stringify(text)}`);
+            logger.verbose(`Candidate: ${JSON.stringify(text)}`);
 
             const cleaned = stripMarkdown(text);
-            logger.debug(`Cleaned: ${JSON.stringify(cleaned)}`);
+            logger.verbose(`Cleaned: ${JSON.stringify(cleaned)}`);
 
             const match = cleaned.match(this.biomeRegex);
             if (!match?.groups) {
-                logger.debug("No regex match.");
+                logger.verbose("No regex match.");
                 continue;
             }
 
-            logger.debug(`Regex matched: ${JSON.stringify(match)}`);
+            logger.verbose(`Regex matched: ${JSON.stringify(match)}`);
 
             const eventType: "started" | "ended" = match.groups.event.toLowerCase() === "started" ? "started" : "ended";
             const words = match.groups.words.trim().split(/\s+/);
@@ -100,19 +100,19 @@ export class DefaultMacroParser extends MacroParser {
             // just the first word (e.g. "SINGULARITY" followed by unrelated trailing text).
             if (words.length > 1) {
                 const combined = normalizeBiomeName(words.join(" "));
-                logger.debug(`Trying combined biome "${combined}" (${eventType})`);
+                logger.verbose(`Trying combined biome "${combined}" (${eventType})`);
 
                 if (VALID_BIOMES.has(combined)) {
-                    logger.debug(`Matched biome "${combined}"`);
+                    logger.verbose(`Matched biome "${combined}"`);
                     return { biome: combined, eventType };
                 }
             }
 
             const single = normalizeBiomeName(words[0]);
-            logger.debug(`Trying single biome "${single}" (${eventType})`);
+            logger.verbose(`Trying single biome "${single}" (${eventType})`);
 
             if (VALID_BIOMES.has(single)) {
-                logger.debug(`Matched biome "${single}"`);
+                logger.verbose(`Matched biome "${single}"`);
                 return { biome: single, eventType };
             }
 
@@ -121,31 +121,31 @@ export class DefaultMacroParser extends MacroParser {
         }
 
         // fallback → thumbnail
-        logger.debug("Falling back to thumbnail.");
+        logger.verbose("Falling back to thumbnail.");
 
         const thumb = embed.thumbnail?.url;
         if (thumb) {
-            logger.debug(`Thumbnail URL: ${thumb}`);
+            logger.verbose(`Thumbnail URL: ${thumb}`);
 
             const match = thumb.match(this.thumbnailRegex);
             if (match) {
                 const biome = normalizeBiomeName(match[1]);
-                logger.debug(`Thumbnail resolved biome "${biome}"`);
+                logger.verbose(`Thumbnail resolved biome "${biome}"`);
 
                 if (VALID_BIOMES.has(biome)) {
-                    logger.debug(`Matched biome "${biome}" from thumbnail`);
+                    logger.verbose(`Matched biome "${biome}" from thumbnail`);
                     return { biome, eventType: null };
                 }
 
                 logger.warn(`Unknown biome "${biome}" from thumbnail`);
             } else {
-                logger.debug("Thumbnail regex did not match.");
+                logger.verbose("Thumbnail regex did not match.");
             }
         } else {
-            logger.debug("No thumbnail present.");
+            logger.verbose("No thumbnail present.");
         }
 
-        logger.debug("Failed to extract biome.");
+        logger.verbose("Failed to extract biome.");
         return { biome: null, eventType: null };
     }
 

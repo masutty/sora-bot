@@ -22,7 +22,7 @@ export async function processIncomingMessage(message: Message): Promise<void> {
 
     const parsed = parseEvent(message);
     if (!parsed) {
-        logger.debug(`No biome event parsed for message ${message.id}`);
+        logger.verbose(`No biome event parsed for message ${message.id}`);
         return;
     }
 
@@ -38,8 +38,8 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     const user = await getUserById(entry.userId);
     if (!user) return;
 
-    logger.debug(`checkAndForward: ${entry.guildId} ${user.discord_user_id} :: Parsed -> ${JSON.stringify(parsed)}`);
-    await checkAndForward(message, entry.guildId, parsed);
+    logger.verbose(`checkAndForward: ${entry.guildId} ${user.discord_user_id} :: Parsed -> ${JSON.stringify(parsed)}`);
+    await checkAndForward(message, entry.guildId, entry.userId, parsed);
 
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
     const deltaSeconds = user.last_activity_at

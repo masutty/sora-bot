@@ -60,6 +60,23 @@ export function formatBiomeName(biome: string): string {
     return biome.charAt(0) + biome.slice(1).toLowerCase();
 }
 
+const ZERO_WIDTH_SPACE = "​";
+
+/**
+ * Same display name as `formatBiomeName`, but with a zero-width space spliced into the middle -
+ * invisible to a human reader, but breaks naive exact-substring text scraping ("snipe bots"
+ * watching forward channels for a biome name). Only "somewhat" effective - anything that
+ * strips zero-width characters before matching defeats it. Used only where a forward is
+ * actually rendered, not for internal displays (profile, admin listings, etc.) where spoofing
+ * would just be pointless clutter.
+ */
+export function spoofBiomeName(biome: string): string {
+    const label = formatBiomeName(biome);
+    if (label.length < 2) return label;
+    const mid = Math.ceil(label.length / 2);
+    return label.slice(0, mid) + ZERO_WIDTH_SPACE + label.slice(mid);
+}
+
 export function getBiomesByCategory(category: BiomeCategory): string[] {
     return Object.entries(BIOME_META).filter(([, meta]) => meta.category === category).map(([biome]) => biome);
 }

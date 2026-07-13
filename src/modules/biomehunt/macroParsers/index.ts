@@ -26,7 +26,7 @@ export function detectMacroParser(footer?: string | null): MacroParser {
         const found = KNOWN_PARSERS.find((parser) => {
             const id = parser.id;
             const hasId = f.includes(id);
-            logger.debug(`Looking for ${id} in ${f} -> ${hasId}`);
+            logger.verbose(`Looking for ${id} in ${f} -> ${hasId}`);
             return hasId
         });
         if (found) return found;
