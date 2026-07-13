@@ -18,7 +18,7 @@ import {
 import { flagListAction, flagSetAction } from "./adminFlagActions";
 import {
     memberClearBiomesAction, memberDecrementBiomeAction, memberForceSetupAction, memberHardDeleteAction,
-    memberResetChannelAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction,
+    memberResetChannelAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction, type AdoptParams,
 } from "./adminMemberActions";
 import {
     quotasCreateAction, quotasForceEvalAction, quotasListAction, quotasSetEvalHourAction, runQuotasDelete,
@@ -198,9 +198,14 @@ export default defineCommand({
         .addSubcommandGroup((g) =>
             g.setName("member").setDescription("Manage a specific member's BiomeHunt data.")
                 .addSubcommand((s) =>
-                    s.setName("force-setup").setDescription("Force-run setup on behalf of a user.")
+                    s.setName("force-setup").setDescription("Force-run setup on behalf of a user - resets any existing channel/webhook first.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addBooleanOption((o) => o.setName("dm_user").setDescription("DM them the webhook URL? Default true. If false, it's shown to you instead.")),
+                        .addBooleanOption((o) => o.setName("dm_user").setDescription("DM them the webhook URL? Default false. Ignored when adopting an existing channel."))
+                        .addChannelOption((o) =>
+                            o.setName("channel").setDescription("Adopt this EXISTING channel instead of creating a new one (requires webhook_url too)")
+                                .addChannelTypes(ChannelType.GuildText),
+                        )
+                        .addStringOption((o) => o.setName("webhook_url").setDescription("The existing channel's webhook URL (required if channel is given)")),
                 )
                 .addSubcommand((s) =>
                     s.setName("hard-delete").setDescription("Wipe ALL of a user's data (channel, sessions, badges, quota status).")
@@ -574,8 +579,21 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "member-force-setup": {
             const member = await args.getMember("user");
             if (!member) throw new BiomeHuntError("Could not resolve that member.");
-            const dmUser = args.getBoolean("dm_user") ?? true;
-            return memberForceSetupAction(guild, member, dmUser);
+            const dmUser = args.getBoolean("dm_user") ?? false;
+            const channelId = await args.getChannelId("channel");
+            const webhookUrl = args.getString("webhook_url");
+
+            if (channelId && !webhookUrl) throw new BiomeHuntError("webhook_url is required when adopting an existing channel.");
+            if (webhookUrl && !channelId) throw new BiomeHuntError("channel is required when providing a webhook_url.");
+
+            let adopt: AdoptParams | null = null;
+            if (channelId && webhookUrl) {
+                const channel = await guild.channels.fetch(channelId).catch(() => null);
+                if (!channel || channel.type !== ChannelType.GuildText) throw new BiomeHuntError("That channel isn't a valid text channel.");
+                adopt = { channel, webhookUrl };
+            }
+
+            return memberForceSetupAction(client, guild, member, dmUser, adopt);
         }
         case "member-hard-delete": {
             const id = await args.getUserId("user");

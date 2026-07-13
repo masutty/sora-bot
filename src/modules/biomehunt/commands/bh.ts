@@ -19,7 +19,10 @@ export default defineCommand({
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
-        .addSubcommand((sub) => sub.setName("profile").setDescription("View your hunt profile.")),
+        .addSubcommand((sub) =>
+            sub.setName("profile").setDescription("View your hunt profile, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose profile to view (defaults to yourself)")),
+        ),
         // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
         // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
@@ -31,8 +34,16 @@ export default defineCommand({
         const sub = interaction.options.getSubcommand(true);
 
         if (sub === "profile") {
+            const targetUser = interaction.options.getUser("user");
+            const target = targetUser
+                ? await interaction.guild.members.fetch(targetUser.id).catch(() => null)
+                : (interaction.member as GuildMember);
+            if (!target) {
+                await interaction.reply({ content: "Could not resolve that member.", ephemeral: true });
+                return;
+            }
             await interaction.deferReply();
-            await runProfileView(interaction.guild.id, interaction.member as GuildMember, interaction.user.id, (payload) => interaction.editReply(payload));
+            await runProfileView(interaction.guild.id, target, interaction.user.id, (payload) => interaction.editReply(payload));
             return;
         }
 
@@ -57,7 +68,8 @@ export default defineCommand({
         }
 
         if (sub === "profile") {
-            await runProfileView(message.guild.id, message.member, message.author.id, (payload) => message.reply(payload));
+            const target = (await args.getMember("user")) ?? message.member;
+            await runProfileView(message.guild.id, target, message.author.id, (payload) => message.reply(payload));
             return;
         }
 

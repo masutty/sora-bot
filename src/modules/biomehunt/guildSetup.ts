@@ -1,9 +1,11 @@
 import { ChannelType, PermissionFlagsBits } from "discord.js";
-import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable } from "discord.js";
+import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel } from "discord.js";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds";
-import { createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId, registerChannel } from "./repository/users";
+import {
+    createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId, lookupChannel, registerChannel,
+} from "./repository/users";
 import { BiomeHuntError } from "./types";
 import type { GuildConfigRow } from "./types";
 
@@ -12,6 +14,11 @@ const logger = new Logger("biomehunt.guildSetup");
 export interface SetupResult {
     channelId: string;
     webhookUrl: string;
+}
+
+/** The bot's macro channel naming convention - shared by fresh setup and admin-adopted existing channels. */
+export function macroChannelName(username: string): string {
+    return `・${username.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 80)}`;
 }
 
 export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dmUser?: boolean } = {}): Promise<SetupResult> {
@@ -31,9 +38,8 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
     const guildConfig = await getOrCreateGuildConfig(guild.id);
     const category = await findOrCreateCategory(guild, guildConfig);
 
-    const safeName = member.user.username.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 80);
     const channel = await guild.channels.create({
-        name: `・${safeName}`,
+        name: macroChannelName(member.user.username),
         type: ChannelType.GuildText,
         parent: category.id,
         permissionOverwrites: buildMacroChannelOverwrites(category, member),
@@ -74,6 +80,60 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
 
     registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId: webhook.id });
     return { channelId: channel.id, webhookUrl: webhook.url };
+}
+
+/**
+ * Registers a channel + webhook that already exist (created outside the bot, e.g. by a macro
+ * tool before the member was ever tracked) as a member's macro channel, instead of creating a
+ * fresh one. Discord only exposes a webhook's token/URL to whoever created it, so there's no way
+ * for the bot to look this up itself - the caller must supply the exact URL, which is validated
+ * against the channel's actual webhooks before anything is renamed or registered.
+ *
+ * The caller is expected to have already cleared any prior registration for this member (see
+ * `memberForceSetupAction`) - this function does not check for or remove an existing channel.
+ */
+export async function adoptExistingChannel(
+    guild: Guild,
+    member: GuildMember,
+    channel: TextChannel,
+    webhookUrl: string,
+): Promise<SetupResult> {
+    const { ready } = await isGuildReady(guild.id);
+    if (!ready) {
+        throw new BiomeHuntError("This server isn't fully configured yet - set up categories and status roles first.");
+    }
+
+    const user = await ensureUser(guild.id, member.id);
+
+    if (lookupChannel(channel.id)) {
+        throw new BiomeHuntError("That channel is already registered to a different member.");
+    }
+
+    const webhookId = parseWebhookId(webhookUrl);
+    if (!webhookId) {
+        throw new BiomeHuntError("That doesn't look like a valid Discord webhook URL.");
+    }
+
+    const webhooks = await channel.fetchWebhooks().catch(() => null);
+    if (!webhooks?.has(webhookId)) {
+        throw new BiomeHuntError("That webhook wasn't found on the given channel - double check the URL and channel.");
+    }
+
+    try {
+        await channel.setName(macroChannelName(member.user.username));
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)));
+        throw new BiomeHuntError("Failed to rename the channel - check my permissions there and try again.");
+    }
+
+    await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl));
+    registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId });
+
+    return { channelId: channel.id, webhookUrl };
+}
+
+function parseWebhookId(url: string): string | null {
+    return url.match(/\/webhooks\/(\d+)\//)?.[1] ?? null;
 }
 
 /**
