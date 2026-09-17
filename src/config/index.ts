@@ -39,6 +39,11 @@ export const config = {
             process.env.DISABLED_COGS?.split(",")
                 .map((name) => name.trim())
                 .filter(Boolean) ?? [],
+
+        // Experimental: lets prefix commands accept an option via `--name`/`--name=value`
+        // (CLI-style), in any position, in addition to the normal positional arg (see
+        // PrefixArgs). Off by default until validated in real use.
+        allowArgsAsFlags: process.env.DEV_ALLOW_ARGS_AS_FLAGS === "true",
     },
 } as const;
 
