@@ -1,11 +1,13 @@
-import { EmbedBuilder, OAuth2Scopes, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
+import { ContainerBuilder, MessageFlags, OAuth2Scopes, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { loadCog, unloadCog, reloadCog, hotReloadBot } from "@/core/CogLoader";
 import { registerSlashCommands } from "@/core/CommandHandler";
+import type { BotClient } from "@/core/BotClient";
 import { config } from "@/config";
 import { getPoolStats, query } from "@/database/connection";
 import { join } from "path";
+import { EmbedFormatter } from "@/utils/format";
 import { getLogLevels, LOG_LEVELS, Logger, setLogLevel, type LogLevel } from "@/utils/logging";
 import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
 
@@ -81,6 +83,17 @@ export default defineCommand({
         const group = interaction.options.getSubcommandGroup(false);
         const sub = interaction.options.getSubcommand(true);
         const routeKey = group ? `${group}-${sub}` : sub;
+
+        // ComponentsV2 can't coexist with embed/content in the same message - own reply, outside
+        // the generic string -> EmbedFormatter pipeline used by the rest of the subcommands.
+        if (routeKey === "status") {
+            await interaction.reply({
+                flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+                components: [buildStatusContainer(client)],
+            });
+            return;
+        }
+
         await interaction.deferReply({ ephemeral: true });
 
         try {
@@ -89,12 +102,12 @@ export default defineCommand({
                 level: interaction.options.getString("level"),
                 target: interaction.options.getString("target"),
             }, client);
-            const embed = READONLY_SUBCOMMANDS.has(routeKey) ? plainEmbed(result) : successEmbed(result);
-            await interaction.editReply({ embeds: [embed] });
+            const formatted = READONLY_SUBCOMMANDS.has(routeKey) ? EmbedFormatter.plain(result) : EmbedFormatter.success(result);
+            await interaction.editReply(formatted);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logger.error(err instanceof Error ? err : new Error(msg));
-            await interaction.editReply({ embeds: [errorEmbed(msg)] });
+            await interaction.editReply(EmbedFormatter.error(msg));
         }
     },
 
@@ -103,10 +116,15 @@ export default defineCommand({
         const group = args.getSubcommandGroup();
         const sub = args.getSubcommand();
         if (!sub) {
-            await message.reply({ embeds: [usageEmbed()] });
+            await message.reply({ flags: MessageFlags.IsComponentsV2, components: [usageContainer()] });
             return;
         }
         const routeKey = group ? `${group}-${sub}` : sub;
+
+        if (routeKey === "status") {
+            await message.reply({ flags: MessageFlags.IsComponentsV2, components: [buildStatusContainer(client)] });
+            return;
+        }
 
         try {
             const result = await runSubcommand(routeKey, {
@@ -114,12 +132,12 @@ export default defineCommand({
                 level: args.getString("level"),
                 target: args.getString("target"),
             }, client);
-            const embed = READONLY_SUBCOMMANDS.has(routeKey) ? plainEmbed(result) : successEmbed(result);
-            await message.reply({ embeds: [embed] });
+            const formatted = READONLY_SUBCOMMANDS.has(routeKey) ? EmbedFormatter.plain(result) : EmbedFormatter.success(result);
+            await message.reply(formatted);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logger.error(err instanceof Error ? err : new Error(msg));
-            await message.reply({ embeds: [errorEmbed(msg)] });
+            await message.reply(EmbedFormatter.error(msg));
         }
     },
 });
@@ -135,7 +153,7 @@ interface SubcommandArgs {
 async function runSubcommand(
     sub: string,
     { name, level, target }: SubcommandArgs,
-    client: import("@/core/BotClient").BotClient,
+    client: BotClient,
 ): Promise<string> {
     switch (sub) {
         case "mod-load":
@@ -186,29 +204,6 @@ async function runSubcommand(
                 : undefined;
             await registerSlashCommands(client, guildId);
             return `Slash command tree synced (${client.commands.size} commands).`;
-        }
-
-        case "status": {
-            const mem = process.memoryUsage();
-            const pool = getPoolStats();
-            const eventLoop = getEventLoopLag();
-            const lastTick = getLastTickStats();
-
-            const lines = [
-                `**Uptime:** ${formatUptime(process.uptime())}`,
-                `**Cogs:** ${client.cogs.size}`,
-                `**Commands:** ${client.commands.size}`,
-                `**Guilds:** ${client.guilds.cache.size}`,
-                `**Ping:** ${client.ws.ping}ms`,
-                `**Memory:** ${formatMb(mem.rss)} RSS, ${formatMb(mem.heapUsed)}/${formatMb(mem.heapTotal)} heap`,
-                "",
-                `- DB pool: ${pool.total} total, ${pool.idle} idle, ${pool.waiting} waiting${pool.waiting > 0 ? " ⚠️" : ""}`,
-                `- Event loop lag: ${eventLoop.meanMs}ms mean, ${eventLoop.maxMs}ms max${eventLoop.maxMs > 100 ? " ⚠️" : ""}`,
-                lastTick
-                    ? `- Last activity sweep: ${lastTick.durationMs}ms for ${lastTick.userCount} user(s), <t:${Math.floor(lastTick.ranAt.getTime() / 1000)}:R>`
-                    : "- Last activity sweep: none yet",
-            ];
-            return lines.join("\n");
         }
 
         case "shutdown":
@@ -284,46 +279,76 @@ async function runSubcommand(
     }
 }
 
+// ─── Status (ComponentsV2) ──────────────────────────────────────────────────────
+
+function addSection(container: ContainerBuilder, content: string): void {
+    container.addTextDisplayComponents((td) => td.setContent(content));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+}
+
+function buildStatusContainer(client: BotClient): ContainerBuilder {
+    const mem = process.memoryUsage();
+    const pool = getPoolStats();
+    const eventLoop = getEventLoopLag();
+    const lastTick = getLastTickStats();
+
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+
+    container.addTextDisplayComponents((td) => td.setContent("## 🤖 Bot Status"));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+    addSection(
+        container,
+        [
+            `**Uptime:** ${formatUptime(process.uptime())}`,
+            `**Cogs:** ${client.cogs.size}`,
+            `**Commands:** ${client.commands.size}`,
+            `**Guilds:** ${client.guilds.cache.size}`,
+        ].join("\n"),
+    );
+
+    addSection(
+        container,
+        [
+            `**Ping:** ${client.ws.ping}ms`,
+            `**Memory:** ${formatMb(mem.rss)} RSS, ${formatMb(mem.heapUsed)}/${formatMb(mem.heapTotal)} heap`,
+        ].join("\n"),
+    );
+
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            [
+                `-# DB pool: ${pool.total} total, ${pool.idle} idle, ${pool.waiting} waiting${pool.waiting > 0 ? " ⚠️" : ""}`,
+                `-# Event loop lag: ${eventLoop.meanMs}ms mean, ${eventLoop.maxMs}ms max${eventLoop.maxMs > 100 ? " ⚠️" : ""}`,
+                lastTick
+                    ? `-# Last activity sweep: ${lastTick.durationMs}ms for ${lastTick.userCount} user(s), <t:${Math.floor(lastTick.ranAt.getTime() / 1000)}:R>`
+                    : "-# Last activity sweep: none yet",
+            ].join("\n"),
+        ),
+    );
+
+    return container;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function usageEmbed(): EmbedBuilder {
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("🤖 Bot Administration")
-        .addFields([
-            {
-                name: "Cog management",
-                value: "`!bot mod load <name>`\n`!bot mod unload <name>`\n`!bot mod reload <name>`",
-            },
-            {
-                name: "Bot",
-                value: "`!bot sync` - sync slash commands\n`!bot reload-all` - hot reload the whole bot (no restart)\n`!bot status` - bot info\n`!bot shutdown` - graceful shutdown",
-            },
-            {
-                name: "Logging",
-                value: "`!bot log set <level> [target]` - change console/file log level (runtime only)\n`!bot log show` - show current levels",
-            },
-            {
-                name: "Debug",
-                value: "`!bot commands` - commands per cog\n`!bot servers` - server list\n`!bot ping` - WebSocket + database\n`!bot memory` - detailed memory/CPU\n`!bot db` - connection pool\n`!bot event-loop` - lag percentiles\n`!bot uptime` - just the uptime\n`!bot invite` - invite link",
-            },
-        ]);
+function usageContainer(): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent("## 🤖 Bot Administration"));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+    addSection(container, "**Cog management**\n`!bot mod load <name>`\n`!bot mod unload <name>`\n`!bot mod reload <name>`");
+    addSection(container, "**Bot**\n`!bot sync` - sync slash commands\n`!bot reload-all` - hot reload the whole bot (no restart)\n`!bot status` - bot info\n`!bot shutdown` - graceful shutdown");
+    addSection(container, "**Logging**\n`!bot log set <level> [target]` - change console/file log level (runtime only)\n`!bot log show` - show current levels");
+    container.addTextDisplayComponents((td) =>
+        td.setContent("**Debug**\n`!bot commands` - commands per cog\n`!bot servers` - server list\n`!bot ping` - WebSocket + database\n`!bot memory` - detailed memory/CPU\n`!bot db` - connection pool\n`!bot event-loop` - lag percentiles\n`!bot uptime` - just the uptime\n`!bot invite` - invite link"),
+    );
+
+    return container;
 }
 
 function formatMb(bytes: number): string {
     return `${Math.round(bytes / 1024 / 1024)}MB`;
-}
-
-function successEmbed(msg: string): EmbedBuilder {
-    return new EmbedBuilder().setColor(0x57f287).setDescription(`✅ ${msg}`);
-}
-
-function plainEmbed(msg: string): EmbedBuilder {
-    return new EmbedBuilder().setColor(0x5865f2).setDescription(msg);
-}
-
-function errorEmbed(msg: string): EmbedBuilder {
-    return new EmbedBuilder().setColor(0xff0000).setDescription(`❌ ${msg}`);
 }
 
 function formatUptime(seconds: number): string {
