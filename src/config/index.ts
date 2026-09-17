@@ -12,12 +12,19 @@ export const config = {
         clientId: require_env("DISCORD_CLIENT_ID"),
     },
     database: {
-        url: require_env("DATABASE_URL"),
-        // Pool sizing: regra prática = (núcleos * 2) + 1
+        // Discrete fields instead of a hand-built DATABASE_URL - `pg` accepts either, and discrete
+        // avoids having to deal with escaping/URL-encoding if the password has a special character.
+        host: process.env.POSTGRES_HOST ?? "localhost",
+        port: parseInt(process.env.POSTGRES_PORT ?? "5432", 10),
+        database: require_env("POSTGRES_DB"),
+        user: process.env.POSTGRES_USER ?? "postgres",
+        password: require_env("POSTGRES_PASSWORD"),
+        // Pool sizing rule of thumb: (cores * 2) + 1
         poolMax: parseInt(process.env.DB_POOL_MAX ?? "10", 10),
         poolIdleTimeout: 30_000,
-        // Independente de NODE_ENV - managed Postgres (Heroku, RDS, Supabase...) geralmente exige SSL,
-        // mas um Postgres local/self-hosted (incluindo o serviço do docker-compose) geralmente não tem.
+        // Independent of NODE_ENV - managed Postgres (Heroku, RDS, Supabase...) usually requires
+        // SSL, but a local/self-hosted Postgres (including the bundled docker-compose service)
+        // usually doesn't.
         ssl: process.env.DATABASE_SSL === "true",
     },
     bot: {
