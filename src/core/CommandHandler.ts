@@ -29,7 +29,11 @@ function parseArgs(input: string): string[] {
 
     for (const char of input) {
         if (char === '"') { inQuotes = !inQuotes; continue; }
-        if (char === " " && !inQuotes) {
+        // Any whitespace splits a token, not just a literal space - otherwise a command followed
+        // by a newline (e.g. "!request\n```json\n...") glues everything up to the first real
+        // space, which can land in the middle of the payload (JSON indentation) instead of right
+        // after the command name. The command is never found, and it fails silently.
+        if (/\s/.test(char) && !inQuotes) {
             if (current.length) { args.push(current); current = ""; }
             continue;
         }
