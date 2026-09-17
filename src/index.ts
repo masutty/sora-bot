@@ -24,7 +24,11 @@ async function bootstrap(): Promise<void> {
     const client = new BotClient();
 
     const cogsPath = join(__dirname, "modules");
-    stopCogs = await loadCogs(client, cogsPath);
+    const { stop, failures } = await loadCogs(client, cogsPath);
+    stopCogs = stop;
+    if (failures.length) {
+        logger.warn(`${failures.length} cog(s) failed to load: ${failures.map((f) => f.cog).join(", ")}`);
+    }
 
     registerCommandHandlers(client);
 

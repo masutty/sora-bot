@@ -1,6 +1,7 @@
 import { Events } from "discord.js";
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
+import { config } from "@/config";
 import { Logger } from "@/utils/logging";
 import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
@@ -13,32 +14,57 @@ const cogListeners = new Map<string, Array<{ event: string; handler: Function }>
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+export interface CogLoadFailure {
+    cog: string;
+    error: string;
+}
+
+export interface LoadCogsResult {
+    /** Calls `stop()` on every loaded cog - for graceful shutdown. */
+    stop: () => Promise<void>;
+    /**
+     * Cogs that failed to load (already logged as warn/error here) - a broken cog does NOT bring
+     * down the rest of the boot, but whoever calls this interactively (`!bot reload-all`) needs to
+     * know that "reloaded" doesn't mean "reloaded everything successfully".
+     */
+    failures: CogLoadFailure[];
+}
+
 /**
  * Loads all cogs found in `cogsPath` (one directory = one cog).
- * Returns a shutdown function that calls `stop()` on every loaded cog.
  */
 export async function loadCogs(
     client: BotClient,
     cogsPath: string,
-): Promise<() => Promise<void>> {
+): Promise<LoadCogsResult> {
     const entries = readdirSync(cogsPath);
+    const failures: CogLoadFailure[] = [];
 
     for (const entry of entries) {
         const fullPath = join(cogsPath, entry);
         if (!statSync(fullPath).isDirectory()) continue;
 
+        if (config.bot.disabledCogs.includes(entry)) {
+            logger.info(`Cog "${entry}" skipped (DISABLED_COGS).`);
+            continue;
+        }
+
         await loadCog(client, cogsPath, entry).catch((err) => {
             const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
             logger.warn(`Failed to load cog "${entry}": ${msg}`);
             logger.error(err);
+            failures.push({ cog: entry, error: msg });
         });
     }
 
-    return async () => {
-        for (const [name, cog] of client.cogs) {
-            await cog.stop?.(client)?.catch(() => { });
-            logger.info(`Stopped cog: ${name}`);
-        }
+    return {
+        failures,
+        stop: async () => {
+            for (const [name, cog] of client.cogs) {
+                await cog.stop?.(client)?.catch(() => { });
+                logger.info(`Stopped cog: ${name}`);
+            }
+        },
     };
 }
 

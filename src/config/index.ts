@@ -32,6 +32,13 @@ export const config = {
             process.env.OWNER_IDS?.split(",")
                 .map((id) => id.trim())
                 .filter(Boolean) ?? [],
+
+        // Folder names under src/modules (e.g. "zabbix,autobloqueador") - these cogs are skipped
+        // at boot, never even imported. Lets you disable a module without touching its code/config.
+        disabledCogs:
+            process.env.DISABLED_COGS?.split(",")
+                .map((name) => name.trim())
+                .filter(Boolean) ?? [],
     },
 } as const;
 
