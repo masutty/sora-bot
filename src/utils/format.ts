@@ -1,4 +1,4 @@
-import { EmbedBuilder } from "discord.js";
+import { ContainerBuilder, MessageFlags } from "discord.js";
 
 export function formatTime(seconds: number): string {
     const d = Math.floor(seconds / 86400);
@@ -20,27 +20,39 @@ export function unix(date: Date): number {
     return Math.floor(date.getTime() / 1000);
 }
 
-export class EmbedFormatter {
-    public static error(msg: string): EmbedBuilder {
-        return new EmbedBuilder().setColor(0xff0000).setDescription(`❌ ${msg}`);
-    }
-
-    public static success(msg: string): EmbedBuilder {
-        return new EmbedBuilder().setColor(0x57f287).setDescription(`✅ ${msg}`);
-    }
-
-    public static info(msg: string): EmbedBuilder {
-        return new EmbedBuilder().setColor(0x5865f2).setDescription(`ℹ️ ${msg}`);
-    }
-
-    public static warn(msg: string): EmbedBuilder {
-        return new EmbedBuilder().setColor(0xffff00).setDescription(`⚠️ ${msg}`);
-    }
-
-    public static usage(title: string, description: string, fields: { name: string; value: string }[]): EmbedBuilder {
-        return new EmbedBuilder().setColor(0x5865f2).setTitle(title).setDescription(description).addFields(fields);
-    }
+/** Already the whole reply/send payload - `await message.reply(EmbedFormatter.error(msg))`, no need to wrap in `{ embeds: [...] }`. */
+export interface FormattedReply {
+    components: ContainerBuilder[];
+    flags: MessageFlags.IsComponentsV2;
 }
+
+export interface FormattedReplyOptions {
+    /** Type emoji on its own line, above the message. Default: `true`. */
+    emoji?: boolean;
+}
+
+function statusReply(
+    accent: number | undefined,
+    emoji: string | null,
+    msg: string,
+    { emoji: showEmoji = true }: FormattedReplyOptions = {},
+): FormattedReply {
+    const container = new ContainerBuilder();
+    if (accent !== undefined) container.setAccentColor(accent);
+    if (emoji && showEmoji) container.addTextDisplayComponents((td) => td.setContent(`-# ${emoji}`));
+    container.addTextDisplayComponents((td) => td.setContent(msg));
+    return { components: [container], flags: MessageFlags.IsComponentsV2 };
+}
+
+export const EmbedFormatter = {
+    error: (msg: string, options?: FormattedReplyOptions) => statusReply(0xff0000, "❌", msg, options),
+    success: (msg: string, options?: FormattedReplyOptions) => statusReply(0x57f287, "✅", msg, options),
+    info: (msg: string, options?: FormattedReplyOptions) => statusReply(0x5865f2, "ℹ️", msg, options),
+    warn: (msg: string, options?: FormattedReplyOptions) => statusReply(0xffff00, "⚠️", msg, options),
+    /** No color, no emoji - for plain reading (a listing, a queried value), when labeling as
+     * success/error/warning/info doesn't make sense. */
+    plain: (msg: string): FormattedReply => statusReply(undefined, null, msg),
+};
 
 export function roleMention(id: string): string {
     return `<@&${id}>`;
