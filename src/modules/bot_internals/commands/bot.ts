@@ -1,15 +1,20 @@
-import { EmbedBuilder, SlashCommandBuilder } from "discord.js";
+import { EmbedBuilder, OAuth2Scopes, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { loadCog, unloadCog, reloadCog, hotReloadBot } from "@/core/CogLoader";
 import { registerSlashCommands } from "@/core/CommandHandler";
-import { getPoolStats } from "@/database/connection";
+import { config } from "@/config";
+import { getPoolStats, query } from "@/database/connection";
 import { join } from "path";
 import { getLogLevels, LOG_LEVELS, Logger, setLogLevel, type LogLevel } from "@/utils/logging";
-import { getEventLoopLag, getLastTickStats } from "@/utils/metrics";
+import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
 
 const logger = new Logger("admin.commands.bot");
 const COGS_PATH = join(__dirname, "../../");
+
+// Pure-read subcommands (as opposed to reload-all/log-set/sync/shutdown, which change state) -
+// these get a neutral embed instead of a green success checkmark, since nothing was "done".
+const READONLY_SUBCOMMANDS = new Set(["commands", "servers", "ping", "memory", "db", "event-loop", "uptime", "invite"]);
 
 export default defineCommand({
     name: "bot",
@@ -61,7 +66,15 @@ export default defineCommand({
         )
         .addSubcommand((sub) =>
             sub.setName("shutdown").setDescription("Shut down the bot gracefully."),
-        ),
+        )
+        .addSubcommand((sub) => sub.setName("uptime").setDescription("Shows how long the process has been running."))
+        .addSubcommand((sub) => sub.setName("invite").setDescription("Generates the bot's invite link (with Administrator permission)."))
+        .addSubcommand((sub) => sub.setName("commands").setDescription("Lists registered commands, grouped by cog."))
+        .addSubcommand((sub) => sub.setName("servers").setDescription("Lists the servers the bot is in."))
+        .addSubcommand((sub) => sub.setName("ping").setDescription("WebSocket and database latency."))
+        .addSubcommand((sub) => sub.setName("memory").setDescription("Detailed process memory and CPU usage."))
+        .addSubcommand((sub) => sub.setName("db").setDescription("Connection pool detail."))
+        .addSubcommand((sub) => sub.setName("event-loop").setDescription("Event-loop lag detail (percentiles).")),
 
     // ── Slash ─────────────────────────────────────────────────────────────────
     async executeAsSlash(interaction, client) {
@@ -76,7 +89,8 @@ export default defineCommand({
                 level: interaction.options.getString("level"),
                 target: interaction.options.getString("target"),
             }, client);
-            await interaction.editReply({ embeds: [successEmbed(result)] });
+            const embed = READONLY_SUBCOMMANDS.has(routeKey) ? plainEmbed(result) : successEmbed(result);
+            await interaction.editReply({ embeds: [embed] });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logger.error(err instanceof Error ? err : new Error(msg));
@@ -100,7 +114,8 @@ export default defineCommand({
                 level: args.getString("level"),
                 target: args.getString("target"),
             }, client);
-            await message.reply({ embeds: [successEmbed(result)] });
+            const embed = READONLY_SUBCOMMANDS.has(routeKey) ? plainEmbed(result) : successEmbed(result);
+            await message.reply({ embeds: [embed] });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logger.error(err instanceof Error ? err : new Error(msg));
@@ -200,6 +215,70 @@ async function runSubcommand(
             setTimeout(() => process.emit("SIGTERM"), 500);
             return "Shutting down... 👋";
 
+        case "uptime":
+            return `Uptime: ${formatUptime(process.uptime())}`;
+
+        // Administrator because the bot already runs with that trust level in this Discord server
+        // (guards.ts already treats Administrator as the "admin" gate everywhere else) - avoids
+        // keeping a fine-grained permission list in sync every time a new cog wants a new scope.
+        case "invite":
+            return client.generateInvite({
+                scopes: [OAuth2Scopes.Bot, OAuth2Scopes.ApplicationsCommands],
+                permissions: PermissionFlagsBits.Administrator,
+            });
+
+        case "commands": {
+            const lines = [...client.cogs.values()].map(
+                (c) => `**${c.name}** (${c.commands?.length ?? 0}): ${c.commands?.map((cmd) => `\`${cmd.name}\``).join(", ") || "-"}`,
+            );
+            return [`**Total:** ${client.commands.size} command(s)`, "", ...lines].join("\n");
+        }
+
+        case "servers": {
+            const guilds = [...client.guilds.cache.values()];
+            const shown = guilds.slice(0, 20).map((g) => `- **${g.name}** (\`${g.id}\`) - ${g.memberCount} member(s)`);
+            const extra = guilds.length > 20 ? `\n... and ${guilds.length - 20} more` : "";
+            return `${[`**Total:** ${guilds.length} server(s)`, "", ...shown].join("\n")}${extra}`;
+        }
+
+        case "ping": {
+            const dbStart = Date.now();
+            await query("SELECT 1");
+            const dbMs = Date.now() - dbStart;
+            return `**WebSocket:** ${client.ws.ping}ms\n**Database:** ${dbMs}ms (\`SELECT 1\`)`;
+        }
+
+        case "memory": {
+            const mem = process.memoryUsage();
+            const cpu = process.resourceUsage();
+            return [
+                `**RSS:** ${formatMb(mem.rss)}`,
+                `**Heap:** ${formatMb(mem.heapUsed)} / ${formatMb(mem.heapTotal)}`,
+                `**External:** ${formatMb(mem.external)}`,
+                `**Array buffers:** ${formatMb(mem.arrayBuffers)}`,
+                `**CPU (user/system):** ${Math.round(cpu.userCPUTime / 1000)}ms / ${Math.round(cpu.systemCPUTime / 1000)}ms`,
+            ].join("\n");
+        }
+
+        case "db": {
+            const pool = getPoolStats();
+            return [
+                `**Connections:** ${pool.total} total, ${pool.idle} idle, ${pool.waiting} waiting`,
+                `**Config:** max ${config.database.poolMax}, idle timeout ${config.database.poolIdleTimeout}ms`,
+                `**Target:** \`${config.database.user}@${config.database.host}:${config.database.port}/${config.database.database}\`${config.database.ssl ? " (SSL)" : ""}`,
+            ].join("\n");
+        }
+
+        case "event-loop": {
+            const d = getEventLoopLagDetail();
+            return [
+                `**Mean:** ${d.meanMs}ms`,
+                `**Min / Max:** ${d.minMs}ms / ${d.maxMs}ms`,
+                `**p50 / p95 / p99:** ${d.p50Ms}ms / ${d.p95Ms}ms / ${d.p99Ms}ms`,
+                `**Std dev:** ${d.stddevMs}ms`,
+            ].join("\n");
+        }
+
         default:
             throw new Error(`Unknown subcommand: ${sub}`);
     }
@@ -224,6 +303,10 @@ function usageEmbed(): EmbedBuilder {
                 name: "Logging",
                 value: "`!bot log set <level> [target]` - change console/file log level (runtime only)\n`!bot log show` - show current levels",
             },
+            {
+                name: "Debug",
+                value: "`!bot commands` - commands per cog\n`!bot servers` - server list\n`!bot ping` - WebSocket + database\n`!bot memory` - detailed memory/CPU\n`!bot db` - connection pool\n`!bot event-loop` - lag percentiles\n`!bot uptime` - just the uptime\n`!bot invite` - invite link",
+            },
         ]);
 }
 
@@ -233,6 +316,10 @@ function formatMb(bytes: number): string {
 
 function successEmbed(msg: string): EmbedBuilder {
     return new EmbedBuilder().setColor(0x57f287).setDescription(`✅ ${msg}`);
+}
+
+function plainEmbed(msg: string): EmbedBuilder {
+    return new EmbedBuilder().setColor(0x5865f2).setDescription(msg);
 }
 
 function errorEmbed(msg: string): EmbedBuilder {
