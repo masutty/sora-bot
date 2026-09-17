@@ -3,7 +3,7 @@ import type { Guild, GuildMember, Message } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { EmbedFormatter } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import {
@@ -272,7 +272,7 @@ export default defineCommand({
                 const result = await forceCounterUpdateAction(client, interaction.guild.id);
                 await interaction.editReply(toReplyPayload(result));
             } catch (err) {
-                await interaction.editReply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+                await interaction.editReply(EmbedFormatter.error(errorMessage(err)));
             }
             return;
         }
@@ -339,7 +339,7 @@ export default defineCommand({
             });
             await interaction.editReply(toReplyPayload(result));
         } catch (err) {
-            await interaction.editReply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+            await interaction.editReply(EmbedFormatter.error(errorMessage(err)));
         }
     },
 
@@ -355,7 +355,7 @@ export default defineCommand({
                 await runForwardMenu(message.guild, message.author.id, (payload) => message.reply(payload));
                 return;
             }
-            await message.reply({ embeds: [EmbedFormatter.info("Run `bh-admin config show` to see the current configuration.")] });
+            await message.reply(EmbedFormatter.info("Run `bh-admin config show` to see the current configuration."));
             return;
         }
         const routeKey = group ? `${group}-${sub}` : sub;
@@ -365,7 +365,7 @@ export default defineCommand({
                 const result = await forceCounterUpdateAction(client, message.guild.id);
                 await message.reply(toReplyPayload(result));
             } catch (err) {
-                await message.reply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+                await message.reply(EmbedFormatter.error(errorMessage(err)));
             }
             return;
         }
@@ -425,7 +425,7 @@ export default defineCommand({
             });
             await message.reply(toReplyPayload(result));
         } catch (err) {
-            await message.reply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+            await message.reply(EmbedFormatter.error(errorMessage(err)));
         }
     },
 });
@@ -644,15 +644,15 @@ async function replySessionHistory(
     guildId: string,
     member: GuildMember,
     invokerId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof buildHistoryRow>[] }) => Promise<Message>,
+    respond: (payload: FormattedReply | { embeds: EmbedBuilder[]; components: ReturnType<typeof buildHistoryRow>[] }) => Promise<Message>,
 ): Promise<void> {
     const sessions = await getSessionHistory(guildId, member.id);
     if (sessions === null) {
-        await respond({ embeds: [EmbedFormatter.info(`<@${member.id}> doesn't have a profile yet.`)], components: [] });
+        await respond(EmbedFormatter.info(`<@${member.id}> doesn't have a profile yet.`));
         return;
     }
     if (sessions.length === 0) {
-        await respond({ embeds: [EmbedFormatter.info(`<@${member.id}> has no activity recorded yet.`)], components: [] });
+        await respond(EmbedFormatter.info(`<@${member.id}> has no activity recorded yet.`));
         return;
     }
 
@@ -721,9 +721,9 @@ async function replyUserList(
     });
 }
 
-function toReplyPayload(result: string | EmbedBuilder): { embeds: EmbedBuilder[] } {
-    const embed = typeof result === "string" ? EmbedFormatter.success(result) : result;
-    return { embeds: [embed] };
+function toReplyPayload(result: string | EmbedBuilder): FormattedReply | { embeds: EmbedBuilder[] } {
+    if (typeof result === "string") return EmbedFormatter.success(result);
+    return { embeds: [result] };
 }
 
 function errorMessage(err: unknown): string {

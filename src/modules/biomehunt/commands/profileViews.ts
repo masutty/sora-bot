@@ -1,7 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, GuildMember } from "discord.js";
 import type { Message } from "discord.js";
 import { runButtonView, type ButtonViewButton } from "@/utils/buttonView";
-import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
@@ -209,11 +209,11 @@ export async function runProfileView(
     guildId: string,
     member: GuildMember,
     invokerId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
+    respond: (payload: FormattedReply | { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
 ): Promise<void> {
     const data = await loadProfileData(guildId, member.id);
     if (!data) {
-        await respond({ embeds: [EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started.")], components: [] });
+        await respond(EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started."));
         return;
     }
 
@@ -289,7 +289,7 @@ export function buildHistoryRow(page: number, pages: number): ActionRowBuilder<B
 
 export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuilder> {
     const rows = await getLeaderboard(guildId, RECENT_ACTIVITY_WINDOW_HOURS, 10);
-    if (rows.length === 0) return EmbedFormatter.info("No activity recorded yet.");
+    if (rows.length === 0) return new EmbedBuilder().setColor(0x5865f2).setDescription("ℹ️ No activity recorded yet.");
 
     const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> — ${formatTime(r.activeSeconds)} (${r.sessionCount} sessions)`);
 
