@@ -1,7 +1,7 @@
 import { EmbedBuilder, SlashCommandBuilder } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { loadCog, unloadCog, reloadCog } from "@/core/CogLoader";
+import { loadCog, unloadCog, reloadCog, hotReloadBot } from "@/core/CogLoader";
 import { registerSlashCommands } from "@/core/CommandHandler";
 import { getPoolStats } from "@/database/connection";
 import { join } from "path";
@@ -49,6 +49,9 @@ export default defineCommand({
                         ),
                 )
                 .addSubcommand((s) => s.setName("show").setDescription("Show the current console/file log levels.")),
+        )
+        .addSubcommand((sub) =>
+            sub.setName("reload-all").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
         )
         .addSubcommand((sub) =>
             sub.setName("sync").setDescription("Sync slash commands with Discord."),
@@ -149,6 +152,19 @@ async function runSubcommand(
             return `**Console:** \`${levels.console}\`\n**File (logs/combined-*.log):** \`${levels.file}\``;
         }
 
+        case "reload-all": {
+            const failures = await hotReloadBot(client, COGS_PATH);
+            const summary = `Bot reloaded: ${client.cogs.size} cog(s), ${client.commands.size} command(s).`;
+            // hotReloadBot doesn't abort the whole reload if ONE cog fails (same resilience as
+            // boot) - but here, unlike boot, someone's waiting on a response: reporting success
+            // when a cog got left behind would be a lie. Turns into an error even though the rest
+            // reloaded fine.
+            if (failures.length) {
+                throw new Error(`${summary}\n⚠️ Failed to load: ${failures.map((f) => `\`${f.cog}\` (${f.error})`).join(", ")}`);
+            }
+            return summary;
+        }
+
         case "sync": {
             const guildId = process.env.NODE_ENV === "development"
                 ? process.env.DEV_GUILD_ID
@@ -202,7 +218,7 @@ function usageEmbed(): EmbedBuilder {
             },
             {
                 name: "Bot",
-                value: "`!bot sync` - sync slash commands\n`!bot status` - bot info\n`!bot shutdown` - graceful shutdown",
+                value: "`!bot sync` - sync slash commands\n`!bot reload-all` - hot reload the whole bot (no restart)\n`!bot status` - bot info\n`!bot shutdown` - graceful shutdown",
             },
             {
                 name: "Logging",
