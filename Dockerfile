@@ -14,6 +14,10 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json pnpm-lock.yaml tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
+# check:commands (part of `pnpm run build`) imports @/config, which requires these env vars just
+# to be imported - fake build-time values so validating the command tree doesn't need real secrets.
+ENV DISCORD_TOKEN=build DISCORD_CLIENT_ID=build POSTGRES_DB=build POSTGRES_PASSWORD=build
 RUN pnpm run build
 
 # ---- production-only deps for the final image ----

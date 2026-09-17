@@ -5,10 +5,11 @@
 	"main": "dist/index.js",
 	"packageManager": "pnpm@10.33.2",
 	"scripts": {
-		"build": "tsc && tsc-alias",
+		"build": "pnpm run check:commands && tsc && tsc-alias",
 		"dev": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/index.ts",
 		"start": "cross-env NODE_ENV=production node dist/index.js",
 		"db:migrate": "ts-node src/database/migrate.ts",
+		"check:commands": "ts-node -r tsconfig-paths/register scripts/check-commands.ts",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"format": "biome format --write ."
