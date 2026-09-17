@@ -62,14 +62,17 @@ interface RawOption {
     options?: RawOption[];
 }
 
-function formatArgList(options: RawOption[] | undefined): string {
+function formatArgList(options: RawOption[] | undefined, useFlagStyle: boolean): string {
     const args = (options ?? []).filter((o) => ARG_TYPES.includes(o.type));
     if (!args.length) return "";
-    return " " + args.map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`)).join(" ");
+    return " " + args.map((a) => {
+        if (a.required) return `<${a.name}>`;
+        return useFlagStyle ? `[--${a.name}]` : `[${a.name}]`;
+    }).join(" ");
 }
 
-function formatSubcommandLine(cmdName: string, path: string[], sub: RawOption): string {
-    return `\`/${cmdName} ${[...path, sub.name].join(" ")}${formatArgList(sub.options)}\` - ${sub.description}`;
+function formatSubcommandLine(invokeName: string, cmdName: string, path: string[], sub: RawOption, useFlagStyle: boolean): string {
+    return `\`${invokeName}${cmdName} ${[...path, sub.name].join(" ")}${formatArgList(sub.options, useFlagStyle)}\` - ${sub.description}`;
 }
 
 /** Splits an already-newline-joined list of lines into <=1024-char embed field chunks. */
@@ -111,21 +114,21 @@ function addRestrictions(embed: EmbedBuilder, cmd: CommandDefinition): void {
  * are listed by name only (drill in with `/help <command> <group>`), loose
  * subcommands are listed in full since there's nothing further to drill into.
  */
-function buildSummaryEmbed(cmd: CommandDefinition, topLevel: RawOption[]): EmbedBuilder {
+function buildSummaryEmbed(invokeName: string, cmd: CommandDefinition, topLevel: RawOption[], useFlagStyle: boolean): EmbedBuilder {
     const groups = topLevel.filter((o) => o.type === SUB_COMMAND_GROUP);
     const subcommands = topLevel.filter((o) => o.type === SUB_COMMAND);
     const plainArgs = topLevel.filter((o) => ARG_TYPES.includes(o.type));
 
     const description = groups.length
-        ? `${cmd.description}\n\nUse \`/help ${cmd.name} <group>\` to see a group's subcommands.`
+        ? `${cmd.description}\n\nUse \`${invokeName}help ${cmd.name} <group>\` to see a group's subcommands.`
         : cmd.description;
 
-    const embed = new EmbedBuilder().setColor(0x5865f2).setTitle(`/${cmd.name}`).setDescription(description);
+    const embed = new EmbedBuilder().setColor(0x5865f2).setTitle(`${invokeName}${cmd.name}`).setDescription(description);
 
     if (groups.length || subcommands.length) {
         const lines = [
-            ...groups.map((g) => `\`/${cmd.name} ${g.name}\` (group) - ${g.description}`),
-            ...subcommands.map((s) => formatSubcommandLine(cmd.name, [], s)),
+            ...groups.map((g) => `\`${invokeName}${cmd.name} ${g.name}\` (group) - ${g.description}`),
+            ...subcommands.map((s) => formatSubcommandLine(invokeName, cmd.name, [], s, useFlagStyle)),
         ];
         addFieldChunks(embed, "Subcommands", lines);
     } else if (plainArgs.length) {
@@ -141,15 +144,15 @@ function buildSummaryEmbed(cmd: CommandDefinition, topLevel: RawOption[]): Embed
 }
 
 /** Group view (`/help <command> <group>`) — lists that group's subcommands. */
-function buildGroupEmbed(cmd: CommandDefinition, group: RawOption): EmbedBuilder {
+function buildGroupEmbed(invokeName: string, cmd: CommandDefinition, group: RawOption, useFlagStyle: boolean): EmbedBuilder {
     const embed = new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle(`/${cmd.name} ${group.name}`)
+        .setTitle(`${invokeName}${cmd.name} ${group.name}`)
         .setDescription(group.description);
 
     const lines = (group.options ?? [])
         .filter((s) => s.type === SUB_COMMAND)
-        .map((s) => formatSubcommandLine(cmd.name, [group.name], s));
+        .map((s) => formatSubcommandLine(invokeName, cmd.name, [group.name], s, useFlagStyle));
     addFieldChunks(embed, "Subcommands", lines);
 
     addRestrictions(embed, cmd);
@@ -157,10 +160,10 @@ function buildGroupEmbed(cmd: CommandDefinition, group: RawOption): EmbedBuilder
 }
 
 /** Leaf view (`/help <command> [group] <subcommand>`) — a single subcommand's arguments. */
-function buildLeafEmbed(cmd: CommandDefinition, path: string[], leaf: RawOption): EmbedBuilder {
+function buildLeafEmbed(invokeName: string, cmd: CommandDefinition, path: string[], leaf: RawOption, useFlagStyle: boolean): EmbedBuilder {
     const embed = new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle(`/${[cmd.name, ...path, leaf.name].join(" ")}`)
+        .setTitle(`${invokeName}${[cmd.name, ...path, leaf.name].join(" ")}`)
         .setDescription(leaf.description);
 
     const args = (leaf.options ?? []).filter((o) => ARG_TYPES.includes(o.type));
@@ -168,7 +171,10 @@ function buildLeafEmbed(cmd: CommandDefinition, path: string[], leaf: RawOption)
         addFieldChunks(
             embed,
             "Arguments",
-            args.map((a) => `- \`${a.name}\`${a.required ? " (required)" : ""}\n> ${a.description}\n`),
+            args.map((a) => {
+                const label = a.required ? `\`${a.name}\` (required)` : useFlagStyle ? `\`--${a.name}\`` : `\`${a.name}\``;
+                return `- ${label}\n> ${a.description}\n`;
+            }),
         );
     }
 
@@ -182,23 +188,23 @@ function buildLeafEmbed(cmd: CommandDefinition, path: string[], leaf: RawOption)
  * one level down, and `[group, subcommand]` for a leaf under a group.
  * Returns `null` if `path` doesn't resolve to anything.
  */
-function buildHelpEmbed(cmd: CommandDefinition, path: string[]): EmbedBuilder | null {
+function buildHelpEmbed(invokeName: string, cmd: CommandDefinition, path: string[], useFlagStyle: boolean): EmbedBuilder | null {
     const json = cmd.options?.toJSON() as { options?: RawOption[] } | undefined;
     const topLevel = json?.options ?? [];
 
-    if (path.length === 0) return buildSummaryEmbed(cmd, topLevel);
+    if (path.length === 0) return buildSummaryEmbed(invokeName, cmd, topLevel, useFlagStyle);
 
     const [first, second] = path;
     const group = topLevel.find((o) => o.type === SUB_COMMAND_GROUP && o.name === first);
     if (group) {
-        if (path.length === 1) return buildGroupEmbed(cmd, group);
+        if (path.length === 1) return buildGroupEmbed(invokeName, cmd, group, useFlagStyle);
         if (path.length !== 2) return null;
         const leaf = (group.options ?? []).find((s) => s.type === SUB_COMMAND && s.name === second);
-        return leaf ? buildLeafEmbed(cmd, [first], leaf) : null;
+        return leaf ? buildLeafEmbed(invokeName, cmd, [first], leaf, useFlagStyle) : null;
     }
 
     const topSub = topLevel.find((o) => o.type === SUB_COMMAND && o.name === first);
-    if (topSub && path.length === 1) return buildLeafEmbed(cmd, [], topSub);
+    if (topSub && path.length === 1) return buildLeafEmbed(invokeName, cmd, [], topSub, useFlagStyle);
 
     return null;
 }
@@ -241,7 +247,7 @@ export default defineCommand({
                 await interaction.reply({ content: `❌ Command \`${cmdName}\` not found.`, ephemeral: true });
                 return;
             }
-            const embed = buildHelpEmbed(cmd, path);
+            const embed = buildHelpEmbed("/", cmd, path, false);
             if (!embed) {
                 await interaction.reply({ content: `❌ Subcommand \`${cmdName}\` not found.`, ephemeral: true });
                 return;
@@ -299,7 +305,7 @@ export default defineCommand({
                 await message.reply(`❌ Command \`${cmdName}\` not found.`);
                 return;
             }
-            const embed = buildHelpEmbed(cmd, path);
+            const embed = buildHelpEmbed(prefix, cmd, path, config.bot.allowArgsAsFlags);
             if (!embed) {
                 await message.reply(`❌ Subcommand \`${cmdName}\` not found.`);
                 return;
