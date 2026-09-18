@@ -94,21 +94,29 @@ export function getLogLevels(): { console: string; file: string } {
 	return { console: consoleTransport.level ?? "info", file: shared.level };
 }
 
-/** `fetch()` only throws a generic "TypeError: fetch failed" - the real reason lives in `err.cause`. */
-function formatErrorChain(err: Error): string {
-	const lines = [err.stack ?? err.message];
-	let cause = (err as { cause?: unknown }).cause;
-	let depth = 0;
+/**
+ * `fetch()` only throws a generic "TypeError: fetch failed" - the real reason lives in `err.cause`.
+ * A failed TCP connect (e.g. a hostname that resolves to both IPv4 and IPv6, and both attempts
+ * fail - Node's "happy eyeballs" algorithm) can also surface as an `AggregateError` whose own
+ * `.message` is empty - the real per-attempt reasons live in `.errors`, not `.cause`. Both are
+ * walked here, recursively, since either can nest further (an `.errors` entry can itself have a
+ * `.cause`, or be another `AggregateError`).
+ */
+function formatErrorChain(err: Error, depth = 0): string {
+	if (depth >= 5) return "...";
 
-	while (cause !== undefined && depth < 5) {
-		if (cause instanceof Error) {
-			lines.push(`Caused by: ${cause.stack ?? cause.message}`);
-			cause = (cause as { cause?: unknown }).cause;
-		} else {
-			lines.push(`Caused by: ${Logger.stringify(cause)}`);
-			break;
+	const lines = [err.stack ?? err.message];
+
+	const subErrors = (err as { errors?: unknown[] }).errors;
+	if (Array.isArray(subErrors)) {
+		for (const sub of subErrors) {
+			lines.push(sub instanceof Error ? `- ${formatErrorChain(sub, depth + 1)}` : `- ${Logger.stringify(sub)}`);
 		}
-		depth++;
+	}
+
+	const cause = (err as { cause?: unknown }).cause;
+	if (cause !== undefined) {
+		lines.push(cause instanceof Error ? `Caused by: ${formatErrorChain(cause, depth + 1)}` : `Caused by: ${Logger.stringify(cause)}`);
 	}
 
 	return lines.join("\n");
