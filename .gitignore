@@ -12,6 +12,9 @@ TODO.md
 
 coverage
 
+# docker-compose bind-mounted data (bot logs, postgres data dir)
+data/
+
 *.log
 logs/*
 npm-debug.log*
