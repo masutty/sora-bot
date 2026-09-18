@@ -26,16 +26,18 @@ export function macroChannelName(username: string): string {
 }
 
 /**
- * Draws a Flower and applies it to the webhook's name/avatar - failure here is non-fatal (the
- * webhook still works for tracking, it just keeps whatever name/avatar it already had) since the
- * Flower is purely cosmetic. Callers still persist the returned key via `createMacroChannel`.
+ * Draws a Flower and applies it to the webhook's name/avatar - `null` if the edit itself failed
+ * (permissions, rate limit, channel gone mid-flight, etc). Callers in this file treat this as
+ * best-effort: on `null` they persist no Flower (`NULL`) rather than lying about one that was
+ * never actually applied - the next boot's `backfillMissingFlowers` will retry that row.
  */
-async function assignFlower(webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> }, logger: Logger): Promise<string> {
+async function assignFlower(webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> }, logger: Logger): Promise<string | null> {
     const flower = drawRandomFlower();
     try {
         await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)));
+        return null;
     }
     return flower;
 }
@@ -223,6 +225,10 @@ export async function backfillMissingFlowers(client: BotClient): Promise<void> {
         }
 
         const flower = await assignFlower(webhook, logger);
+        if (!flower) {
+            logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - webhook.edit() failed, will retry next boot.`);
+            continue;
+        }
         await setUserFlower(row.user_id, flower);
     }
     logger.info("Flower backfill complete.");

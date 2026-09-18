@@ -155,7 +155,7 @@ export async function createMacroChannel(
     channelId: string,
     webhookId: string,
     encryptedWebhookUrl: string,
-    flower: string,
+    flower: string | null,
 ): Promise<UserMacroChannelRow> {
     const result = await query<UserMacroChannelRow>(
         `INSERT INTO bh_user_macro_channels (user_id, channel_id, webhook_id, webhook_url, flower)
