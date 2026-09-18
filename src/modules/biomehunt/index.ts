@@ -1,5 +1,6 @@
 import { defineCog } from "@/define";
 import { Logger } from "@/utils/logging";
+import { backfillMissingFlowers } from "./guildSetup";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users";
 import { processIncomingMessage } from "./services/ActivityEngine";
@@ -40,6 +41,10 @@ export default defineCog({
     async onReady(client) {
         logger.info("Loading channel index...");
         await loadChannelIndex();
+
+        await backfillMissingFlowers(client).catch((err) => {
+            logger.error(err instanceof Error ? err : new Error(String(err)));
+        });
 
         logger.info("Starting workers...");
         startStatusEngine(client);

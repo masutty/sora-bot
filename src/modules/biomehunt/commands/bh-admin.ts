@@ -18,7 +18,7 @@ import {
 import { flagListAction, flagSetAction } from "./adminFlagActions";
 import {
     memberClearBiomesAction, memberDecrementBiomeAction, memberForceSetupAction, memberHardDeleteAction,
-    memberResetChannelAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction, type AdoptParams,
+    memberResetChannelAction, memberRerollFlowerAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction, type AdoptParams,
 } from "./adminMemberActions";
 import {
     quotasCreateAction, quotasForceEvalAction, quotasListAction, quotasSetEvalHourAction, runQuotasDelete,
@@ -217,6 +217,10 @@ export default defineCommand({
                 )
                 .addSubcommand((s) =>
                     s.setName("reset-channel").setDescription("Remove only a user's macro channel - all other data stays.")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
+                )
+                .addSubcommand((s) =>
+                    s.setName("reroll-flower").setDescription("Rerolls a user's macro channel Flower - edits the existing webhook in place.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
@@ -609,6 +613,11 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return memberResetChannelAction(client, guildId, id);
+        }
+        case "member-reroll-flower": {
+            const id = await args.getUserId("user");
+            if (!id) throw new BiomeHuntError("Missing required argument: user");
+            return memberRerollFlowerAction(client, guildId, id);
         }
         case "member-pause": {
             const id = await args.getUserId("user");

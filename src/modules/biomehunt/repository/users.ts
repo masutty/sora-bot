@@ -155,12 +155,13 @@ export async function createMacroChannel(
     channelId: string,
     webhookId: string,
     encryptedWebhookUrl: string,
+    flower: string,
 ): Promise<UserMacroChannelRow> {
     const result = await query<UserMacroChannelRow>(
-        `INSERT INTO bh_user_macro_channels (user_id, channel_id, webhook_id, webhook_url)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO bh_user_macro_channels (user_id, channel_id, webhook_id, webhook_url, flower)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING *`,
-        [userId, channelId, webhookId, encryptedWebhookUrl],
+        [userId, channelId, webhookId, encryptedWebhookUrl, flower],
     );
     return result.rows[0];
 }
@@ -168,4 +169,24 @@ export async function createMacroChannel(
 export async function getMacroChannelByUserId(userId: number): Promise<UserMacroChannelRow | null> {
     const result = await query<UserMacroChannelRow>(`SELECT * FROM bh_user_macro_channels WHERE user_id = $1`, [userId]);
     return result.rows[0] ?? null;
+}
+
+/** Reroll: swaps the Flower in place. Never touches the webhook's id/token/URL - callers only edit the already-existing Discord webhook's name/avatar. */
+export async function setUserFlower(userId: number, flower: string): Promise<UserMacroChannelRow | null> {
+    const result = await query<UserMacroChannelRow>(
+        `UPDATE bh_user_macro_channels SET flower = $2 WHERE user_id = $1 RETURNING *`,
+        [userId, flower],
+    );
+    return result.rows[0] ?? null;
+}
+
+/** MacroChannels still missing a Flower (created before the Flower feature existed) - for the one-time backfill in index.ts's onReady. */
+export async function getMacroChannelsMissingFlower(): Promise<Array<UserMacroChannelRow & { guild_id: string; discord_user_id: string }>> {
+    const result = await query<UserMacroChannelRow & { guild_id: string; discord_user_id: string }>(
+        `SELECT mc.*, u.guild_id, u.discord_user_id
+         FROM bh_user_macro_channels mc
+         JOIN bh_users u ON u.id = mc.user_id
+         WHERE mc.flower IS NULL`,
+    );
+    return result.rows;
 }

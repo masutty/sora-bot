@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from "discord.js";
-import type { EmbedBuilder, Message } from "discord.js";
+import type { ContainerBuilder, EmbedBuilder, Message, MessageFlags } from "discord.js";
 import { Logger } from "./logging";
 
 const logger = new Logger("utils.buttonView");
@@ -23,8 +23,26 @@ export interface ButtonViewButton<S> {
     next: (state: S) => S;
 }
 
+/**
+ * Full message content, minus buttons - either classic embeds or a ComponentsV2 container set.
+ * Deliberately narrower than discord.js's own `MessageEditOptions`: that type's `flags` field is
+ * NOT interchangeable between `message.reply()` and `interaction.editReply()` (different sibling
+ * types, `MessageReplyOptions` vs `MessageEditOptions`), so a single generic `respond` callback
+ * bridging both call styles can't be typed through it. This union is exactly the two shapes this
+ * module actually produces, and both `.reply()`/`.editReply()`/`.update()`/`.edit()` accept either.
+ */
+export type ButtonViewPayload =
+    | { embeds: EmbedBuilder[] }
+    | { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[] };
+
+/** `ButtonViewPayload` plus its button rows merged in - what `respond`/`i.update()` are actually called with. */
+export type ButtonViewFinalPayload =
+    | { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }
+    | { flags: MessageFlags.IsComponentsV2; components: (ContainerBuilder | ActionRowBuilder<ButtonBuilder>)[] };
+
 export interface ButtonViewRender<S> {
-    embeds: EmbedBuilder[];
+    /** Content only - button rows are appended separately, not part of this. */
+    payload: ButtonViewPayload;
     /** Each inner array is one row (ActionRow, max 5 buttons); up to 5 rows - Discord's own limits. Omit or leave empty for a static message with no interactive follow-up. */
     buttons?: ButtonViewButton<S>[][];
 }
@@ -34,7 +52,7 @@ export interface RunButtonViewOptions<S> {
     state: S;
     /** Only this user's clicks are honored - everyone else gets an ephemeral "not yours" reply. */
     invokerId: string;
-    respond: (payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>;
+    respond: (payload: ButtonViewFinalPayload) => Promise<Message>;
     /** Pure function: state -> what to show. Called on initial render and after every click. */
     render: (state: S) => ButtonViewRender<S>;
     /** Defaults to 60s, matching the rest of the bot's interactive menus. */
@@ -57,12 +75,22 @@ function buttonRows<S>(render: ButtonViewRender<S>): ButtonViewButton<S>[][] {
     return (render.buttons ?? []).filter((row) => row.length > 0);
 }
 
-function componentsFor<S>(render: ButtonViewRender<S>): ActionRowBuilder<ButtonBuilder>[] {
-    return buttonRows(render).map(buildRow);
+/**
+ * Merges a render's content payload with its button rows into one final message payload.
+ * ComponentsV2 content and its buttons share the SAME `components` array (there's no separate
+ * `embeds` slot on a ComponentsV2 message) - classic embed content puts the button rows in
+ * `components` alongside `embeds`, so this one merge works for both shapes.
+ */
+function mergePayload<S>(render: ButtonViewRender<S>) {
+    const rows = buttonRows(render).map(buildRow);
+    if ("embeds" in render.payload) {
+        return { ...render.payload, components: rows };
+    }
+    return { ...render.payload, components: [...render.payload.components, ...rows] };
 }
 
 /**
- * Generic stateful button-driven view: renders an embed + buttons from a state value, and on
+ * Generic stateful button-driven view: renders a payload + buttons from a state value, and on
  * each click re-derives state/render from the clicked button - no manual collector wiring
  * needed at call sites. Covers both classic pagination (state = page index) and named tabs
  * (state = tab key); see `buildHistoryRow`/`buildUserListRow` for the pre-existing bespoke
@@ -76,7 +104,7 @@ export async function runButtonView<S>(opts: RunButtonViewOptions<S>): Promise<v
     const renderMs = Date.now() - renderStart;
 
     const respondStart = Date.now();
-    const msg = await opts.respond({ embeds: current.embeds, components: componentsFor(current) });
+    const msg = await opts.respond(mergePayload(current));
     const respondMs = Date.now() - respondStart;
     logSlowness("initial", renderMs, respondMs);
 
@@ -106,13 +134,16 @@ export async function runButtonView<S>(opts: RunButtonViewOptions<S>): Promise<v
         const clickRenderMs = Date.now() - clickRenderStart;
 
         const updateStart = Date.now();
-        await i.update({ embeds: current.embeds, components: componentsFor(current) });
+        await i.update(mergePayload(current));
         const updateMs = Date.now() - updateStart;
         logSlowness(`click:${i.customId}`, clickRenderMs, updateMs);
     });
 
     collector.on("end", async () => {
-        await msg.edit({ components: [] }).catch(() => {});
+        // Re-render the current state's content WITHOUT buttons, rather than truncating
+        // `components` to `[]` - on a ComponentsV2 message that would wipe the content itself,
+        // since content and buttons share the same array there.
+        await msg.edit(current.payload).catch(() => { });
     });
 }
 

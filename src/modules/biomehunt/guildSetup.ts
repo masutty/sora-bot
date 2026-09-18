@@ -1,10 +1,14 @@
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel } from "discord.js";
+import { readFileSync } from "fs";
+import type { BotClient } from "@/core/BotClient";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
+import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./flowers";
 import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds";
 import {
-    createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId, lookupChannel, registerChannel,
+    createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
+    getMacroChannelsMissingFlower, lookupChannel, registerChannel, setUserFlower,
 } from "./repository/users";
 import { BiomeHuntError } from "./types";
 import type { GuildConfigRow } from "./types";
@@ -19,6 +23,21 @@ export interface SetupResult {
 /** The bot's macro channel naming convention - shared by fresh setup and admin-adopted existing channels. */
 export function macroChannelName(username: string): string {
     return `・${username.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 80)}`;
+}
+
+/**
+ * Draws a Flower and applies it to the webhook's name/avatar - failure here is non-fatal (the
+ * webhook still works for tracking, it just keeps whatever name/avatar it already had) since the
+ * Flower is purely cosmetic. Callers still persist the returned key via `createMacroChannel`.
+ */
+async function assignFlower(webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> }, logger: Logger): Promise<string> {
+    const flower = drawRandomFlower();
+    try {
+        await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)));
+    }
+    return flower;
 }
 
 export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dmUser?: boolean } = {}): Promise<SetupResult> {
@@ -54,8 +73,10 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
         throw new BiomeHuntError("Failed to create a webhook for your channel. Please try again.");
     }
 
+    const flower = await assignFlower(webhook, logger);
+
     try {
-        await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url));
+        await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url), flower);
     } catch (err) {
         await webhook.delete().catch(() => {});
         await channel.delete().catch(() => {});
@@ -115,7 +136,8 @@ export async function adoptExistingChannel(
     }
 
     const webhooks = await channel.fetchWebhooks().catch(() => null);
-    if (!webhooks?.has(webhookId)) {
+    const webhook = webhooks?.get(webhookId);
+    if (!webhook) {
         throw new BiomeHuntError("That webhook wasn't found on the given channel - double check the URL and channel.");
     }
 
@@ -126,7 +148,9 @@ export async function adoptExistingChannel(
         throw new BiomeHuntError("Failed to rename the channel - check my permissions there and try again.");
     }
 
-    await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl));
+    const flower = await assignFlower(webhook, logger);
+
+    await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl), flower);
     registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId });
 
     return { channelId: channel.id, webhookUrl };
@@ -171,4 +195,35 @@ async function findOrCreateCategory(guild: Guild, guildConfig: GuildConfigRow) {
     const newCategory = await guild.channels.create({ name: "BiomeHunt Macros", type: ChannelType.GuildCategory });
     await addCategory(guild.id, newCategory.id);
     return newCategory;
+}
+
+/**
+ * One-time (per boot) backfill for MacroChannels created before the Flower feature existed -
+ * idempotent by construction: only rows still missing a Flower are touched, so this is a no-op on
+ * every boot after the first one that finds any. Runs from the cog's `onReady` (needs a live
+ * client to edit each webhook's name/avatar - plain SQL can't do that).
+ */
+export async function backfillMissingFlowers(client: BotClient): Promise<void> {
+    const rows = await getMacroChannelsMissingFlower();
+    if (rows.length === 0) return;
+
+    logger.info(`Backfilling Flower for ${rows.length} macro channel(s) created before the Flower feature existed.`);
+    for (const row of rows) {
+        const channel = await client.channels.fetch(row.channel_id).catch(() => null);
+        if (!channel || channel.type !== ChannelType.GuildText) {
+            logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - channel not found or not text.`);
+            continue;
+        }
+
+        const webhooks = await channel.fetchWebhooks().catch(() => null);
+        const webhook = webhooks?.get(row.webhook_id);
+        if (!webhook) {
+            logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - webhook not found.`);
+            continue;
+        }
+
+        const flower = await assignFlower(webhook, logger);
+        await setUserFlower(row.user_id, flower);
+    }
+    logger.info("Flower backfill complete.");
 }
