@@ -1,46 +1,46 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS base
+FROM oven/bun:1-alpine AS base
 WORKDIR /app
-RUN corepack enable
 
-# ---- all deps (dev + prod), needed to compile ----
+# ---- all deps, needed to validate the command tree before shipping ----
 FROM base AS deps
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache,id=bun-install-cache \
+	bun install --frozen-lockfile
 
-# ---- compile TypeScript, rewrite @/ aliases to relative paths ----
-FROM base AS build
+# ---- validate the command tree + type-check (no compiled output - bun runs .ts directly) ----
+FROM base AS check
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json pnpm-lock.yaml tsconfig.json ./
+COPY package.json bun.lock tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
-# check:commands (part of `pnpm run build`) imports @/config, which requires these env vars just
-# to be imported - fake build-time values so validating the command tree doesn't need real secrets.
+# check:commands (part of `bun run build`) imports @/config, which requires these env vars just to
+# be imported - fake build-time values so validating the command tree doesn't need real secrets.
 ENV BOT_TOKEN=build BOT_CLIENT_ID=build POSTGRES_DB=build POSTGRES_PASSWORD=build
-RUN pnpm run build
+RUN bun run build
 
 # ---- production-only deps for the final image ----
 FROM base AS prod-deps
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
+COPY package.json bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache,id=bun-install-cache \
+	bun install --frozen-lockfile --production
 
 # ---- runtime ----
-FROM node:20-alpine
-WORKDIR /app
+FROM base
 ENV NODE_ENV=production
 
 # su-exec: lets the entrypoint start as root (needed to fix /app/logs ownership if it's a
-# bind-mounted host directory), then drop to the unprivileged "node" user to actually run the app.
+# bind-mounted host directory), then drop to the unprivileged "bun" user to actually run the app.
 RUN apk add --no-cache su-exec
 
-COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/dist ./dist
-COPY --chown=node:node package.json ./
+COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
+COPY --chown=bun:bun src ./src
+COPY --chown=bun:bun package.json tsconfig.json ./
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Deliberately no USER here - the container starts as root so the entrypoint can chown
-# /app/logs, then it execs the app as "node" itself. Don't run application code as root.
+# /app/logs, then it execs the app as "bun" itself. Don't run application code as root.
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["node", "dist/index.js"]
+CMD ["bun", "run", "src/index.ts"]
