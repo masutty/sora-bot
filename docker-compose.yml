@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: sorabot
+    container_name: ${INSTANCE_NAME:-sorabot}
     restart: unless-stopped
     env_file:
       - .env
@@ -14,21 +14,21 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
-      - ./data/sora-bot/logs:/app/logs
+      - ./data/${INSTANCE_NAME:-sorabot}/logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
 
   db:
     image: postgres:16-alpine
-    container_name: sorabot-db
+    container_name: ${INSTANCE_NAME:-sorabot}-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-botdb}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
-      - ./data/postgresql:/var/lib/postgresql/data
+      - ./data/${INSTANCE_NAME:-sorabot}/postgresql:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
