@@ -28,9 +28,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
-      - ./data/${INSTANCE_NAME:-sorabot}/postgresql:/var/lib/postgresql/data
+      # NAMED volume, not a bind mount under ./data - some deploy tools (Dokploy included) do a
+      # clean/fresh checkout of the compose project's own directory on every deploy, which would
+      # silently wipe a bind-mounted ./data/... path (real prod data loss, confirmed the hard way).
+      # A named volume lives in Docker's own storage (/var/lib/docker/volumes/<name>/_data),
+      # entirely outside that checkout, so it survives redeploys regardless of what the deploy tool
+      # does to the project directory. Find its host path any time with:
+      #   docker volume inspect <project>_pgdata
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+volumes:
+  pgdata:
