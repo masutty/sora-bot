@@ -20,6 +20,21 @@ export function unix(date: Date): number {
     return Math.floor(date.getTime() / 1000);
 }
 
+/**
+ * Undoes a markdown code fence, if the WHOLE text is wrapped in one - returns it raw otherwise.
+ * Only looks at the outer edge (start/end of the text), not the first/next ``` that shows up, so
+ * it doesn't get confused when the content itself has a code block embedded in it (e.g. a JSON
+ * whose field value is `"```txt\n...\n```"`, which a "non-greedy" regex would cut at the wrong spot).
+ */
+export function extractCodeBlock(text: string): string {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("```")) return trimmed;
+
+    const withoutOpenFence = trimmed.replace(/^```\w*\n?/, "");
+    const closeIdx = withoutOpenFence.lastIndexOf("```");
+    return (closeIdx === -1 ? withoutOpenFence : withoutOpenFence.slice(0, closeIdx)).trim();
+}
+
 /** Already the whole reply/send payload - `await message.reply(EmbedFormatter.error(msg))`, no need to wrap in `{ embeds: [...] }`. */
 export interface FormattedReply {
     components: ContainerBuilder[];

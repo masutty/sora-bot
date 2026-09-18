@@ -1,5 +1,5 @@
 import { Events } from "discord.js";
-import { readdirSync, statSync } from "fs";
+import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { config } from "@/config";
 import { Logger } from "@/utils/logging";
@@ -138,6 +138,88 @@ export async function reloadCog(
     await unloadCog(client, cogName);
     await loadCog(client, basePath, cogName);
     logger.info(`Reloaded cog: ${cogName}`);
+}
+
+export interface InstallCogResult {
+    name: string;
+    commands: number;
+    /** true = a cog with this name was already loaded in memory and got replaced (not deleted). */
+    overwritten: boolean;
+}
+
+const DCL_RUNTIME_DIRNAME = ".dcl-runtime";
+
+/**
+ * Sandbox directory for cogs installed via `!dcl run` - a SIBLING of `cogsPath` (`src/modules`),
+ * not a child of it, on purpose: `readdirSync(cogsPath)` (used by `loadCogs`/`hotReloadBot` to
+ * rescan everything) never lists what's in here. That's what guarantees a cog installed via DCL
+ * never "sticks around" - it disappears completely on a full reload or a process restart, with no
+ * exclusion list required.
+ */
+export function getDclRuntimeDir(cogsPath: string): string {
+    return join(cogsPath, "..", DCL_RUNTIME_DIRNAME);
+}
+
+/**
+ * Installs/updates a cog at RUNTIME from the source of a single `index.ts` (`!dcl run`) - ALWAYS
+ * inside the `getDclRuntimeDir` sandbox, NEVER in the real `cogsPath` (`src/modules`).
+ *
+ * Writes to a staging directory (inside the sandbox itself) and REQUIRES (doesn't trust
+ * regex/text) that `require()` + `defineCog()` actually produce a valid Cog before touching any
+ * bot state - if the require fails (syntax error, no `export default`, whatever), nothing already
+ * running is affected, the staging dir is deleted, and the error bubbles up to the caller.
+ *
+ * "Overwrite" (`cog.name` already loaded, even if it's a real cog from the repo) ONLY swaps what's
+ * in MEMORY (`unloadCog` - removes commands/listeners, doesn't touch any file). The real
+ * `index.ts` in `src/modules/<name>`, if it exists, is NEVER read, moved, or deleted by this
+ * function - it stays exactly as it was. A full reload (`!bot reload-all`) or restarting the
+ * process goes back to loading that real cog from disk normally; the version installed via DCL is
+ * forgotten (the whole sandbox is wiped on boot, see `src/index.ts`).
+ */
+export async function installCogFromSource(
+    client: BotClient,
+    cogsPath: string,
+    source: string,
+): Promise<InstallCogResult> {
+    const runtimeDir = getDclRuntimeDir(cogsPath);
+    const stagingDir = join(runtimeDir, ".staging");
+    const stagingIndex = join(stagingDir, "index");
+
+    rmSync(stagingDir, { recursive: true, force: true });
+    mkdirSync(stagingDir, { recursive: true });
+    writeFileSync(`${stagingIndex}.ts`, source, "utf8");
+
+    let cog: Cog;
+    try {
+        clearRequireCache(stagingIndex);
+        const imported = require(stagingIndex);
+        cog = imported.default ?? imported;
+    } catch (err) {
+        rmSync(stagingDir, { recursive: true, force: true });
+        throw err;
+    }
+
+    if (!cog || typeof cog.name !== "string" || !cog.name) {
+        rmSync(stagingDir, { recursive: true, force: true });
+        throw new Error('The file did not export a valid Cog - it needs `export default defineCog({ name: "...", ... })`.');
+    }
+
+    // Memory only - the real cog in `cogsPath` (if the name collides with one) is left untouched.
+    const overwritten = client.cogs.has(cog.name);
+    if (overwritten) await unloadCog(client, cog.name);
+
+    // Sandbox only - never in `cogsPath`.
+    const finalDir = join(runtimeDir, cog.name);
+    rmSync(finalDir, { recursive: true, force: true });
+    renameSync(stagingDir, finalDir);
+
+    const loaded = await loadCog(client, runtimeDir, cog.name);
+    logger.info(`Cog installed via DCL (runtime, ${runtimeDir}): ${loaded.name}${overwritten ? " (replaced the in-memory version)" : ""}`);
+    return {
+        name: loaded.name,
+        commands: loaded.commands?.length ?? 0,
+        overwritten,
+    };
 }
 
 // Files with live state that CANNOT be reinstantiated out from under whoever already holds a
