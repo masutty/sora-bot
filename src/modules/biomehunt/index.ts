@@ -9,6 +9,7 @@ import { startRoleEngine } from "./workers/RoleEngine";
 import { startStatusEngine } from "./workers/StatusEngine";
 import _bh from "./commands/bh";
 import _bhAdmin from "./commands/bh-admin";
+import _bhOwner from "./commands/bh-owner";
 
 const logger = new Logger("biomehunt");
 
@@ -17,7 +18,7 @@ export default defineCog({
     description: "Tracks macro-driven activity, enforces quotas, and automates roles.",
     authors: [{ name: "masutty", id: 188851299255713792n }],
 
-    commands: [_bh, _bhAdmin],
+    commands: [_bh, _bhAdmin, _bhOwner],
 
     migrations: [BIOMEHUNT_SCHEMA],
 
