@@ -209,4 +209,13 @@ UPDATE bh_guilds SET delete_inactive_after_s = 86400 WHERE delete_inactive_after
 ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET DEFAULT 86400;
 ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET NOT NULL;
 
+/*
+ * The backfill above turned AUTO_DELETE_ENABLED on for every existing guild to preserve legacy
+ * behavior - but auto-delete acting on stale last_activity_at timestamps (e.g. right after
+ * restoring an older database backup) deleted several users' macro channels for real. The flag's
+ * own default is already false (see FLAG_DEFINITIONS) - reset every guild back to that actual
+ * default here, unconditionally. Admins who want it back on: "!bh-admin flag set flag:AUTO_DELETE_ENABLED enabled:true".
+ */
+UPDATE bh_guild_flags SET enabled = FALSE WHERE flag_name = 'AUTO_DELETE_ENABLED';
+
 `;
