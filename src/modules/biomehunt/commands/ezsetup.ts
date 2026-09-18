@@ -87,7 +87,7 @@ function roleLine(label: string, roleId: string | null): string {
 }
 
 async function finish(msg: Message, text: string): Promise<void> {
-    await msg.edit({ embeds: [EmbedFormatter.info(text)], components: [] }).catch(() => {});
+    await msg.edit(EmbedFormatter.info(text)).catch(() => {});
 }
 
 // ─── Low-level input waiters ────────────────────────────────────────────────

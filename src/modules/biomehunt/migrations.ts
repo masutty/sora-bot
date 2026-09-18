@@ -73,8 +73,13 @@ CREATE TABLE IF NOT EXISTS bh_user_macro_channels (
     channel_id VARCHAR(20) NOT NULL UNIQUE,
     webhook_id VARCHAR(20) NOT NULL,
     webhook_url TEXT NOT NULL,
+    flower VARCHAR(32),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+/* Existing rows predate the Flower feature - left NULL here, backfilled by BiomeHunt's onReady
+   (needs a live Discord client to edit each webhook's name/avatar, which plain SQL can't do). */
+ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS flower VARCHAR(32);
 
 /* ───────────────────────────────────────────── */
 /* Activity                                     */

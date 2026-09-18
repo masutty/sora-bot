@@ -210,6 +210,48 @@ export async function isGuildReady(
     return { ready: hasCategory && hasRoles, hasCategory, hasRoles };
 }
 
+export interface StaleGuildSummary {
+    guild_id: string;
+    user_count: number;
+    macro_channel_count: number;
+}
+
+/** Every guild_id this module has data for, regardless of whether the bot is still in that guild. */
+export async function getAllGuildIds(): Promise<string[]> {
+    const result = await query<{ guild_id: string }>(`SELECT guild_id FROM bh_guilds`);
+    return result.rows.map((r) => r.guild_id);
+}
+
+/** User/macro-channel counts for a set of guilds - context for deciding whether a cleanup is safe. */
+export async function getGuildDataSummary(guildIds: string[]): Promise<StaleGuildSummary[]> {
+    if (guildIds.length === 0) return [];
+    const result = await query<{ guild_id: string; user_count: string; macro_channel_count: string }>(
+        `SELECT
+            g.guild_id,
+            COUNT(DISTINCT u.id) AS user_count,
+            COUNT(DISTINCT mc.user_id) AS macro_channel_count
+         FROM bh_guilds g
+         LEFT JOIN bh_users u ON u.guild_id = g.guild_id
+         LEFT JOIN bh_user_macro_channels mc ON mc.user_id = u.id
+         WHERE g.guild_id = ANY($1)
+         GROUP BY g.guild_id`,
+        [guildIds],
+    );
+    // COUNT(...) comes back as a string from pg (bigint) - cast to number for a summary this small.
+    return result.rows.map((r) => ({
+        guild_id: r.guild_id,
+        user_count: Number(r.user_count),
+        macro_channel_count: Number(r.macro_channel_count),
+    }));
+}
+
+/** Deletes entire guilds' BiomeHunt data (users, macro channels, quotas, badges, etc - all cascade off bh_guilds). Returns how many guild rows were removed. */
+export async function deleteGuildData(guildIds: string[]): Promise<number> {
+    if (guildIds.length === 0) return 0;
+    const result = await query(`DELETE FROM bh_guilds WHERE guild_id = ANY($1)`, [guildIds]);
+    return result.rowCount ?? 0;
+}
+
 export async function resetGuildConfig(guildId: string): Promise<void> {
     await query(`DELETE FROM bh_guild_categories WHERE guild_id = $1`, [guildId]);
     await clearGuildRoles(guildId);

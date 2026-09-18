@@ -12,6 +12,9 @@ TODO.md
 
 coverage
 
+# docker-compose bind-mounted data (bot logs, postgres data dir)
+data/
+
 *.log
 logs/*
 npm-debug.log*
@@ -26,5 +29,8 @@ pnpm-debug.log*
 
 .claude
 docs
+
+# !dcl run sandbox (src/core/CogLoader.ts) - runtime-only, wiped on every boot
+.dcl-runtime
 
 

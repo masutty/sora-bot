@@ -1,8 +1,8 @@
-import { EmbedBuilder, SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder } from "discord.js";
 import type { Guild, GuildMember } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { EmbedFormatter } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import { runUserSetup } from "../guildSetup";
@@ -49,10 +49,10 @@ export default defineCommand({
 
         await interaction.deferReply({ ephemeral: sub === "setup" });
         try {
-            const embed = await runSubcommand(sub, interaction.guild, interaction.member as GuildMember);
-            await interaction.editReply({ embeds: [embed] });
+            const result = await runSubcommand(sub, interaction.guild, interaction.member as GuildMember);
+            await interaction.editReply(result);
         } catch (err) {
-            await interaction.editReply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+            await interaction.editReply(EmbedFormatter.error(errorMessage(err)));
         }
     },
 
@@ -63,7 +63,7 @@ export default defineCommand({
         }
         const sub = args.getSubcommand();
         if (!sub) {
-            await message.reply({ embeds: [EmbedFormatter.info("Usage: `bh <setup|profile>`")] });
+            await message.reply(EmbedFormatter.info("Usage: `bh <setup|profile>`"));
             return;
         }
 
@@ -74,15 +74,15 @@ export default defineCommand({
         }
 
         try {
-            const embed = await runSubcommand(sub, message.guild, message.member);
-            await message.reply({ embeds: [embed] });
+            const result = await runSubcommand(sub, message.guild, message.member);
+            await message.reply(result);
         } catch (err) {
-            await message.reply({ embeds: [EmbedFormatter.error(errorMessage(err))] });
+            await message.reply(EmbedFormatter.error(errorMessage(err)));
         }
     },
 });
 
-async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Promise<EmbedBuilder> {
+async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Promise<FormattedReply> {
     switch (sub) {
         case "setup": {
             const result = await runUserSetup(guild, member);

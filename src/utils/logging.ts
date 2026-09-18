@@ -94,6 +94,26 @@ export function getLogLevels(): { console: string; file: string } {
 	return { console: consoleTransport.level ?? "info", file: shared.level };
 }
 
+/** `fetch()` only throws a generic "TypeError: fetch failed" - the real reason lives in `err.cause`. */
+function formatErrorChain(err: Error): string {
+	const lines = [err.stack ?? err.message];
+	let cause = (err as { cause?: unknown }).cause;
+	let depth = 0;
+
+	while (cause !== undefined && depth < 5) {
+		if (cause instanceof Error) {
+			lines.push(`Caused by: ${cause.stack ?? cause.message}`);
+			cause = (cause as { cause?: unknown }).cause;
+		} else {
+			lines.push(`Caused by: ${Logger.stringify(cause)}`);
+			break;
+		}
+		depth++;
+	}
+
+	return lines.join("\n");
+}
+
 export class Logger {
 	private readonly child: winston.Logger;
 
@@ -111,7 +131,7 @@ export class Logger {
 
 	error(message: string | Error, meta?: object): void {
 		if (message instanceof Error) {
-			this.child.error(message.message, { stack: message.stack, ...meta });
+			this.child.error(message.message, { stack: formatErrorChain(message), ...meta });
 		} else {
 			this.child.error(message, meta);
 		}

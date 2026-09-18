@@ -211,7 +211,7 @@ export async function runForwardMenu(
     );
 
     if (direction === "timeout") {
-        await msg.edit({ embeds: [EmbedFormatter.info("Menu timed out.")], components: [] }).catch(() => {});
+        await msg.edit(EmbedFormatter.info("Menu timed out.")).catch(() => {});
         return;
     }
 
