@@ -8,6 +8,7 @@ import type {
     User,
 } from "discord.js";
 import { GuildMember } from "discord.js";
+import { config } from "@/config";
 import type { BotClient } from "./BotClient";
 
 // ─── Schema derivation ────────────────────────────────────────────────────────
@@ -111,6 +112,30 @@ function extractId(input: string, pattern: RegExp): string | null {
     return null;
 }
 
+// ─── CLI-style flags (--name / --name=value) ───────────────────────────────────
+
+const FLAG_PATTERN = /^--([A-Za-z][\w-]*)(?:=(.*))?$/;
+
+/**
+ * Gated behind DEV_ALLOW_ARGS_AS_FLAGS (config.bot.allowArgsAsFlags) - with the flag off, returns
+ * the tokens untouched and no command changes behavior. When on, splits `--name`/`--name=value`
+ * tokens out from the positional ones (in any position), so a value can be set without "spending"
+ * the position of the last greedy argument (e.g. a search command keeps its full free-text query
+ * intact even when a trailing `--includeInactive` flag is present).
+ */
+function extractFlags(raw: string[]): { positional: string[]; flags: Map<string, string> } {
+    const flags = new Map<string, string>();
+    if (!config.bot.allowArgsAsFlags) return { positional: raw, flags };
+
+    const positional: string[] = [];
+    for (const token of raw) {
+        const m = token.match(FLAG_PATTERN);
+        if (m) flags.set(m[1].toLowerCase(), m[2] ?? "true");
+        else positional.push(token);
+    }
+    return { positional, flags };
+}
+
 // ─── PrefixArgs ───────────────────────────────────────────────────────────────
 
 /**
@@ -132,6 +157,7 @@ function extractId(input: string, pattern: RegExp): string | null {
 export class PrefixArgs {
     private readonly activeSchema: ArgSchema[];
     private readonly activeRaw: string[];
+    private readonly flags: Map<string, string>;
     private readonly _subcommand: string | null;
     private readonly _subcommandGroup: string | null;
 
@@ -142,11 +168,14 @@ export class PrefixArgs {
         private readonly client: BotClient,
         subcommandMap?: Map<string, SubcommandSchema>,
     ) {
+        const { positional, flags } = extractFlags(raw);
+        this.flags = flags;
+
         if (subcommandMap && subcommandMap.size > 0) {
             // Subcommand mode. Try a grouped match first (2 tokens: group + sub),
             // then fall back to a flat match (1 token).
-            const first = raw[0]?.toLowerCase() ?? null;
-            const second = raw[1]?.toLowerCase() ?? null;
+            const first = positional[0]?.toLowerCase() ?? null;
+            const second = positional[1]?.toLowerCase() ?? null;
             const grouped = first && second ? subcommandMap.get(`${first}:${second}`) : undefined;
 
             const sub = grouped ?? (first ? subcommandMap.get(first) : undefined);
@@ -155,13 +184,13 @@ export class PrefixArgs {
             this._subcommand = sub?.name ?? null;
             this._subcommandGroup = sub?.group ?? null;
             this.activeSchema = sub?.options ?? [];
-            this.activeRaw = sub ? raw.slice(consumed) : raw.slice(1);
+            this.activeRaw = sub ? positional.slice(consumed) : positional.slice(1);
         } else {
             // Flat mode
             this._subcommand = null;
             this._subcommandGroup = null;
             this.activeSchema = schema;
-            this.activeRaw = raw;
+            this.activeRaw = positional;
         }
     }
 
@@ -181,7 +210,18 @@ export class PrefixArgs {
         return this._subcommandGroup;
     }
 
+    /**
+     * Remaining raw tokens (post-subcommand), unresolved against the schema. For commands that
+     * mix free text with an optional trailing positional parameter - the derived schema only
+     * makes the LAST field greedy, which can't handle "free message + optional trailing channel".
+     */
+    getRawArgs(): string[] {
+        return this.activeRaw;
+    }
+
     private getRaw(name: string): string | null {
+        const flagValue = this.flags.get(name.toLowerCase());
+        if (flagValue !== undefined) return flagValue;
         const idx = this.activeSchema.findIndex((a) => a.name === name);
         if (idx === -1) return null;
         // Last arg is greedy — joins all remaining tokens

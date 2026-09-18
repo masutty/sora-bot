@@ -1,6 +1,5 @@
 import {
     type ChatInputCommandInteraction,
-    EmbedBuilder,
     Events,
     type Message,
     REST,
@@ -10,6 +9,7 @@ import {
 import { Logger } from "@/utils/logging";
 import { config } from "@/config";
 import { getGuildPrefix } from "@/database/guildRepository";
+import { EmbedFormatter } from "@/utils/format";
 import type { BotClient } from "./BotClient";
 import { PrefixArgs, deriveSchema, deriveSubcommandSchema } from "./PrefixArgs";
 import { checkGuards } from "./guards";
@@ -29,7 +29,11 @@ function parseArgs(input: string): string[] {
 
     for (const char of input) {
         if (char === '"') { inQuotes = !inQuotes; continue; }
-        if (char === " " && !inQuotes) {
+        // Any whitespace splits a token, not just a literal space - otherwise a command followed
+        // by a newline (e.g. "!request\n```json\n...") glues everything up to the first real
+        // space, which can land in the middle of the payload (JSON indentation) instead of right
+        // after the command name. The command is never found, and it fails silently.
+        if (/\s/.test(char) && !inQuotes) {
             if (current.length) { args.push(current); current = ""; }
             continue;
         }
@@ -67,13 +71,29 @@ export function registerCommandHandlers(client: BotClient): void {
         try {
             const guardError = await checkGuards({ user: message.author, member: message.member }, command);
             if (guardError) {
-                await message.reply({ embeds: [errorEmbed("Error! " + getFailureQuip() + "\n" + guardError)] }).catch(() => { });
+                await message.reply(EmbedFormatter.error(`Error! ${getFailureQuip()}\n${guardError}`)).catch(() => { });
                 return;
             }
             await handler(message, args, client);
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { command: commandName });
-            await message.reply({ embeds: [errorEmbed(getFailureQuip())] }).catch(() => { });
+            await message.reply(EmbedFormatter.error(getFailureQuip())).catch(() => { });
+        }
+    });
+
+    // ── Autocomplete ──────────────────────────────────────────────────────────
+    client.on(Events.InteractionCreate, async (interaction) => {
+        if (!interaction.isAutocomplete()) return;
+
+        const command = client.commands.get(interaction.commandName);
+        const handler = command?.executeAutocomplete;
+        if (!handler) return;
+
+        try {
+            await handler(interaction, client);
+        } catch (err) {
+            logger.error(err instanceof Error ? err : new Error(String(err)), { command: interaction.commandName });
+            await interaction.respond([]).catch(() => { });
         }
     });
 
@@ -99,7 +119,7 @@ export function registerCommandHandlers(client: BotClient): void {
                 command,
             );
             if (guardError) {
-                const payload = { embeds: [errorEmbed(getFailureQuip() + "\n" + guardError)], ephemeral: true };
+                const payload = { ...EmbedFormatter.error(`${getFailureQuip()}\n${guardError}`), ephemeral: true };
                 await interaction.reply(payload).catch(() => { });
                 return;
             }
@@ -107,7 +127,7 @@ export function registerCommandHandlers(client: BotClient): void {
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { command: interaction.commandName });
 
-            const payload = { embeds: [errorEmbed(getFailureQuip())], ephemeral: true };
+            const payload = { ...EmbedFormatter.error(getFailureQuip()), ephemeral: true };
             if (interaction.replied || interaction.deferred) {
                 await interaction.followUp(payload).catch(() => { });
             } else {
@@ -144,10 +164,4 @@ export async function registerSlashCommands(
         slashLogger.error(err instanceof Error ? err : new Error(String(err)));
         throw err;
     }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function errorEmbed(msg: string): EmbedBuilder {
-    return new EmbedBuilder().setColor(0xff0000).setDescription(`❌ ${msg}`);
 }

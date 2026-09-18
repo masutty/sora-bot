@@ -1,8 +1,12 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, GuildMember } from "discord.js";
+import {
+    ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, EmbedBuilder, GuildMember,
+    MessageFlags, SeparatorSpacingSize,
+} from "discord.js";
 import type { Message } from "discord.js";
-import { runButtonView, type ButtonViewButton } from "@/utils/buttonView";
-import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
+import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/buttonView";
+import { EmbedFormatter, type FormattedReply, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { Logger } from "@/utils/logging";
+import { FLOWER_META } from "../flowers";
 import {
     getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
@@ -64,6 +68,7 @@ interface ProfileData {
     activeSeconds: number;
     biomes: Array<{ biome: string; count: number }>;
     channelId: string | null;
+    flower: string | null;
     quotaSummaryLines: string[];
     badges: Awaited<ReturnType<typeof getUserBadges>>;
     sessions: ActivitySessionRow[];
@@ -88,7 +93,10 @@ async function loadProfileData(guildId: string, discordUserId: string): Promise<
         logger.warn(`Slow profile data load: ${elapsedMs}ms (DB-bound - see database pool stats)`, { guildId, userId: user.id });
     }
 
-    return { user, activeSeconds, biomes, channelId: channel?.channel_id ?? null, quotaSummaryLines, badges, sessions };
+    return {
+        user, activeSeconds, biomes, channelId: channel?.channel_id ?? null, flower: channel?.flower ?? null,
+        quotaSummaryLines, badges, sessions,
+    };
 }
 
 function baseEmbed(member: GuildMember, color: number): EmbedBuilder {
@@ -109,95 +117,149 @@ function totalBiomesFoundByCategory(biomes: Array<{ biome: string; count: number
     return totals;
 }
 
-function buildProfileTabEmbed(member: GuildMember, data: ProfileData): EmbedBuilder {
-    const { user, biomes, channelId, badges } = data;
+function baseContainer(color: number): ContainerBuilder {
+    return new ContainerBuilder().setAccentColor(color);
+}
+
+function addDivider(container: ContainerBuilder): void {
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+}
+
+function buildProfileTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
+    const { user, biomes, channelId, flower, badges } = data;
+    const container = baseContainer(STATUS_COLOR[user.current_status]);
 
     const channelLine = channelId ? `<#${channelId}>` : "*not created*";
     const statusLabel = user.current_status.charAt(0).toUpperCase() + user.current_status.slice(1);
+    const flowerLine = flower && FLOWER_META[flower]
+        ? `\`${FLOWER_META[flower].label}\` (${FLOWER_META[flower].rarity})`
+        : "*none yet*";
 
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
 
-    const embed = baseEmbed(member, STATUS_COLOR[user.current_status])
-        .setTitle(`\`${member.user.username}\`'s Hunter Profile`)
-        .setDescription([
-            `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
-            `- Channel: ${channelLine}`,
-            `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
-            `- ${totalLine} biomes found.`,
-        ].join("\n"));
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            [
+                `**\`${member.user.username}\`'s Hunter Profile**`,
+                `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
+                `- Channel: ${channelLine}`,
+                `- Flower: ${flowerLine}`,
+                `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
+                `- ${totalLine} biomes found.`,
+            ].join("\n"),
+        ),
+    );
 
     if (badges.length > 0) {
-        embed.addFields({ name: "Badges", value: badges.map((b) => BADGE_META[b.badge].emoji).join(" "), inline: false });
+        addDivider(container);
+        container.addTextDisplayComponents((td) => td.setContent(`**Badges**\n${badges.map((b) => BADGE_META[b.badge].emoji).join(" ")}`));
     }
 
-    return embed;
+    return container;
 }
 
-function buildQuotasTabEmbed(member: GuildMember, data: ProfileData): EmbedBuilder {
+function buildQuotasTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { activeSeconds, quotaSummaryLines } = data;
-    const embed = baseEmbed(member, 0x5865f2).setTitle(`\`${member.user.username}\`'s Quotas`);
+    const container = baseContainer(0x5865f2);
 
-    const header = `You have \`${formatTime(activeSeconds)}\` in the last ${RECENT_ACTIVITY_WINDOW_HOURS} hours.`;
+    const header = `**\`${member.user.username}\`'s Quotas**\nYou have \`${formatTime(activeSeconds)}\` in the last ${RECENT_ACTIVITY_WINDOW_HOURS} hours.`;
+    const body = quotaSummaryLines.length === 0
+        ? "-# There's no quotas to meet in this server!"
+        : quotaSummaryLines.join("\n");
 
-    if (quotaSummaryLines.length === 0) {
-        return embed.setDescription([header, "", "-# There's no quotas to meet in this server!"].join("\n"));
-    }
-    return embed.setDescription([header, "", ...quotaSummaryLines].join("\n"));
+    container.addTextDisplayComponents((td) => td.setContent(`${header}\n\n${body}`));
+    return container;
 }
 
-function buildBiomesTabEmbed(member: GuildMember, data: ProfileData): EmbedBuilder {
+function buildBiomesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { biomes } = data;
-    const embed = baseEmbed(member, 0x5865f2).setTitle(`\`${member.user.username}\`'s Biomes`);
+    const container = baseContainer(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Biomes**`));
 
-    if (biomes.length === 0) return embed.setDescription("No biomes discovered yet.");
+    if (biomes.length === 0) {
+        container.addTextDisplayComponents((td) => td.setContent("No biomes discovered yet."));
+        return container;
+    }
 
     const totals = totalBiomesFoundByCategory(biomes);
     const summaryLine = BIOME_TOTAL_ORDER.map((c) => `${BIOME_TOTAL_CAPTIONS[c]}: \`${totals[c]}\``).join(" · ");
-    embed.setDescription(summaryLine);
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(summaryLine));
 
     for (const category of ALL_BIOME_CATEGORIES) {
         const inCategory = biomes.filter((b) => BIOME_META[b.biome]?.category === category);
         if (inCategory.length === 0) continue;
         const lines = [...inCategory].sort((a, b) => b.count - a.count).map((b) => `${formatBiomeName(b.biome)}: ${b.count}`);
-        embed.addFields({ name: BIOME_CATEGORY_LABELS[category], value: formatCodeblock(lines.join("\n")), inline: true });
+        addDivider(container);
+        container.addTextDisplayComponents((td) => td.setContent(`**${BIOME_CATEGORY_LABELS[category]}**\n${formatCodeblock(lines.join("\n"))}`));
     }
 
     const uncategorized = biomes.filter((b) => !BIOME_META[b.biome]);
     if (uncategorized.length > 0) {
-        embed.addFields({ name: "Other", value: formatCodeblock(uncategorized.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n")), inline: true });
+        addDivider(container);
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`**Other**\n${formatCodeblock(uncategorized.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n"))}`),
+        );
     }
 
-    return embed;
+    return container;
 }
 
-function buildBadgesTabEmbed(member: GuildMember, data: ProfileData): EmbedBuilder {
+function buildBadgesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { badges } = data;
-    const embed = baseEmbed(member, 0x5865f2).setTitle(`\`${member.user.username}\`'s Badges`);
+    const container = baseContainer(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Badges**`));
 
-    if (badges.length === 0) return embed.setDescription("No badges yet.");
+    if (badges.length === 0) {
+        container.addTextDisplayComponents((td) => td.setContent("No badges yet."));
+        return container;
+    }
 
     for (const b of badges) {
         const meta = BADGE_META[b.badge];
-        embed.addFields({ name: `${meta.emoji} ${meta.display}`, value: `${meta.description}\n-# Earned <t:${unix(b.awarded_at)}:R>` });
+        addDivider(container);
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`**${meta.emoji} ${meta.display}**\n${meta.description}\n-# Earned <t:${unix(b.awarded_at)}:R>`),
+        );
     }
 
-    return embed;
+    return container;
 }
 
-function buildSessionsTabEmbed(member: GuildMember, data: ProfileData, page: number): EmbedBuilder {
-    if (data.sessions.length === 0) {
-        return baseEmbed(member, 0x5865f2).setTitle(`\`${member.user.username}\`'s Sessions`).setDescription("No activity recorded yet.");
+/** Container version of buildHistoryEmbed's content, for the ComponentsV2 profile view - the
+ * classic embed version stays as-is for `!bh-admin member session-view`'s own pagination. */
+function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page: number): ContainerBuilder {
+    const container = baseContainer(0x5865f2);
+    const { sessions } = data;
+
+    if (sessions.length === 0) {
+        container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Sessions**\nNo activity recorded yet.`));
+        return container;
     }
-    return buildHistoryEmbed(data.sessions, member, page);
+
+    const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
+    const start = page * SESSIONS_PER_PAGE;
+    const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
+    const oldestFirst = [...slice].reverse();
+
+    const lines = oldestFirst.map((session) =>
+        `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
+    );
+
+    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`));
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`));
+
+    return container;
 }
 
-function buildTabEmbed(state: ProfileState, member: GuildMember, data: ProfileData): EmbedBuilder {
-    if (state.tab === "biomes") return buildBiomesTabEmbed(member, data);
-    if (state.tab === "badges") return buildBadgesTabEmbed(member, data);
-    if (state.tab === "quotas") return buildQuotasTabEmbed(member, data);
-    if (state.tab === "sessions") return buildSessionsTabEmbed(member, data, state.sessionPage);
-    return buildProfileTabEmbed(member, data);
+function buildTabContainer(state: ProfileState, member: GuildMember, data: ProfileData): ContainerBuilder {
+    if (state.tab === "biomes") return buildBiomesTabContainer(member, data);
+    if (state.tab === "badges") return buildBadgesTabContainer(member, data);
+    if (state.tab === "quotas") return buildQuotasTabContainer(member, data);
+    if (state.tab === "sessions") return buildSessionsTabContainer(member, data, state.sessionPage);
+    return buildProfileTabContainer(member, data);
 }
 
 /**
@@ -209,11 +271,11 @@ export async function runProfileView(
     guildId: string,
     member: GuildMember,
     invokerId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
+    respond: (payload: ButtonViewFinalPayload) => Promise<Message>,
 ): Promise<void> {
     const data = await loadProfileData(guildId, member.id);
     if (!data) {
-        await respond({ embeds: [EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started.")], components: [] });
+        await respond(EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started."));
         return;
     }
 
@@ -221,7 +283,7 @@ export async function runProfileView(
         state: { tab: "profile", sessionPage: 0 },
         invokerId,
         respond,
-        render: (state) => {
+        render: (state): ButtonViewRender<ProfileState> => {
             const tabRow: ButtonViewButton<ProfileState>[] = TAB_ORDER.map((t) => ({
                 customId: `profile-tab-${t}`,
                 label: TAB_LABELS[t],
@@ -250,7 +312,10 @@ export async function runProfileView(
                 }
             }
 
-            return { embeds: [buildTabEmbed(state, member, data)], buttons: rows };
+            return {
+                payload: { flags: MessageFlags.IsComponentsV2, components: [buildTabContainer(state, member, data)] },
+                buttons: rows,
+            };
         },
     });
 }
@@ -289,7 +354,7 @@ export function buildHistoryRow(page: number, pages: number): ActionRowBuilder<B
 
 export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuilder> {
     const rows = await getLeaderboard(guildId, RECENT_ACTIVITY_WINDOW_HOURS, 10);
-    if (rows.length === 0) return EmbedFormatter.info("No activity recorded yet.");
+    if (rows.length === 0) return new EmbedBuilder().setColor(0x5865f2).setDescription("ℹ️ No activity recorded yet.");
 
     const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> — ${formatTime(r.activeSeconds)} (${r.sessionCount} sessions)`);
 

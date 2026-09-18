@@ -10,15 +10,19 @@ import { config } from "../config";
 const logger = new Logger("core.database");
 
 // ─── Pool singleton ───────────────────────────────────────────────────────────
-// Pool é thread-safe e gerencia conexões automaticamente.
-// Usamos pg diretamente (sem ORM) para controle total sobre queries.
+// Pool is thread-safe and manages connections automatically.
+// We use pg directly (no ORM) for full control over queries.
 
 let pool: Pool;
 
 export function getPool(): Pool {
 	if (!pool) {
 		pool = new Pool({
-			connectionString: config.database.url,
+			host: config.database.host,
+			port: config.database.port,
+			database: config.database.database,
+			user: config.database.user,
+			password: config.database.password,
 			max: config.database.poolMax,
 			idleTimeoutMillis: config.database.poolIdleTimeout,
 			ssl: config.database.ssl ? { rejectUnauthorized: false } : undefined,
@@ -32,11 +36,11 @@ export function getPool(): Pool {
 }
 
 // ─── Query abstraction ────────────────────────────────────────────────────────
-// Interface simples: query() para operações comuns, transaction() para atomicidade.
+// Simple interface: query() for common operations, transaction() for atomicity.
 
 /**
- * Executa uma query parametrizada.
- * Usa $1, $2... para params (proteção nativa contra SQL injection).
+ * Runs a parameterized query.
+ * Uses $1, $2... for params (native protection against SQL injection).
  */
 export async function query<T extends QueryResultRow = QueryResultRow>(
 	sql: string,
@@ -47,8 +51,8 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
 }
 
 /**
- * Executa múltiplas queries em uma transação atômica.
- * Em caso de erro, faz rollback automático.
+ * Runs multiple queries in an atomic transaction.
+ * Rolls back automatically on error.
  */
 export async function transaction<T>(
 	fn: (client: PoolClient) => Promise<T>,
@@ -70,7 +74,7 @@ export async function transaction<T>(
 }
 
 /**
- * Testa a conexão com o banco. Chamado no bootstrap.
+ * Tests the database connection. Called during bootstrap.
  */
 export async function testConnection(): Promise<void> {
 	const result = await query<{ now: Date }>("SELECT NOW() as now");
@@ -78,7 +82,7 @@ export async function testConnection(): Promise<void> {
 }
 
 /**
- * Fecha o pool graciosamente (para testes / shutdown).
+ * Closes the pool gracefully (for tests / shutdown).
  */
 export async function closePool(): Promise<void> {
 	if (pool) await pool.end();

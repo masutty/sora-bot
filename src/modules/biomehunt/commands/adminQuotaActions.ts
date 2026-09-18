@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
 import type { ActionRowBuilder, ButtonBuilder, GuildTextBasedChannel, Message } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
-import { EmbedFormatter } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { markQuotaEvaluated, setQuotaEvalHour } from "../repository/guilds";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
 import { evaluateFixedRewardsForGuild } from "../services/RewardEngine";
@@ -55,17 +55,17 @@ export async function runQuotasDelete(
     guildId: string,
     roleId: string | null,
     invokerId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
+    respond: (payload: FormattedReply | { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
 ): Promise<void> {
     if (roleId) {
         const message = await removeQuotaRoleAction(guildId, roleId);
-        await respond({ embeds: [EmbedFormatter.success(message)], components: [] });
+        await respond(EmbedFormatter.success(message));
         return;
     }
 
     const roles = await getQuotaRolesForGuild(guildId);
     if (roles.length === 0) {
-        await respond({ embeds: [EmbedFormatter.info("No quota roles configured yet.")], components: [] });
+        await respond(EmbedFormatter.info("No quota roles configured yet."));
         return;
     }
 
@@ -86,11 +86,11 @@ export async function runQuotasDelete(
         }
         const target = roles[n - 1];
         const message = await removeQuotaRoleAction(guildId, target.role_id);
-        await msg.edit({ embeds: [EmbedFormatter.success(message)] }).catch(() => {});
+        await msg.edit(EmbedFormatter.success(message)).catch(() => {});
     });
 
     collector.on("end", (collected) => {
-        if (collected.size === 0) msg.edit({ embeds: [EmbedFormatter.info("Timed out, nothing removed.")] }).catch(() => {});
+        if (collected.size === 0) msg.edit(EmbedFormatter.info("Timed out, nothing removed.")).catch(() => {});
     });
 }
 

@@ -1,8 +1,14 @@
+import { ChannelType } from "discord.js";
 import type { Guild, GuildMember, TextChannel } from "discord.js";
+import { readFileSync } from "fs";
 import type { BotClient } from "@/core/BotClient";
+import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity";
-import { deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId, pauseUser, unpauseUser } from "../repository/users";
+import {
+    deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
+    pauseUser, setUserFlower, unpauseUser,
+} from "../repository/users";
 import { BiomeHuntError, formatBiomeName } from "../types";
 
 async function deleteDiscordChannel(client: BotClient, channelId: string): Promise<void> {
@@ -120,4 +126,32 @@ export async function memberClearBiomesAction(guildId: string, discordUserId: st
     const removed = await clearBiomeEvents(user.id, biome);
     if (removed === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded events for ${formatBiomeName(biome)}.`);
     return `Cleared all ${formatBiomeName(biome)} records for <@${discordUserId}> (${removed} event(s) removed).`;
+}
+
+/**
+ * Rerolls a member's Flower: draws a new one, edits their EXISTING webhook's name/avatar in place.
+ * Never creates, deletes, or recreates the channel or webhook - the webhook's id/token/URL (which
+ * their macro tool already has configured) stay exactly as they were, in every case.
+ */
+export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    if (!user) throw new BiomeHuntError("That user has no data.");
+
+    const macroChannel = await getMacroChannelByUserId(user.id);
+    if (!macroChannel) throw new BiomeHuntError("That user doesn't have a macro channel.");
+
+    const channel = await client.channels.fetch(macroChannel.channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) {
+        throw new BiomeHuntError("Couldn't access that user's macro channel.");
+    }
+
+    const webhooks = await channel.fetchWebhooks().catch(() => null);
+    const webhook = webhooks?.get(macroChannel.webhook_id);
+    if (!webhook) throw new BiomeHuntError("Couldn't find that user's webhook - it may have been deleted manually.");
+
+    const flower = drawRandomFlower();
+    await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
+    await setUserFlower(user.id, flower);
+
+    return `<@${discordUserId}>'s flower rerolled: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`;
 }

@@ -217,6 +217,7 @@ export interface UserMacroChannelRow {
     channel_id: string;
     webhook_id: string;
     webhook_url: string;
+    flower: string | null;
     created_at: Date;
 }
 
