@@ -8,8 +8,8 @@ function require_env(key: string): string {
 
 export const config = {
     discord: {
-        token: require_env("DISCORD_TOKEN"),
-        clientId: require_env("DISCORD_CLIENT_ID"),
+        token: require_env("BOT_TOKEN"),
+        clientId: require_env("BOT_CLIENT_ID"),
     },
     database: {
         // Discrete fields instead of a hand-built DATABASE_URL - `pg` accepts either, and discrete

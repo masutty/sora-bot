@@ -34,11 +34,11 @@ src/
 
 ```bash
 cp .env.example .env
-# Preencha DISCORD_TOKEN, DISCORD_CLIENT_ID, DATABASE_URL
+# Fill in BOT_TOKEN, BOT_CLIENT_ID, POSTGRES_DB, POSTGRES_PASSWORD
 
-npm install
-npm run db:migrate
-npm run dev
+pnpm install
+pnpm run db:migrate
+pnpm run dev
 ```
 
 ## Adicionar um comando built-in
