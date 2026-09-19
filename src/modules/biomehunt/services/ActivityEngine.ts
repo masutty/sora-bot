@@ -5,7 +5,8 @@ import { getOrCreateGuildConfig } from "../repository/guilds";
 import { getUserById, lookupChannel, touchLastActivity } from "../repository/users";
 import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity";
 import { parseEvent } from "../webhookParser";
-import { checkAndAwardBadge } from "./BadgeEngine";
+import { BIOME_META } from "../types";
+import { grantBiomeReward } from "./BiomeRewardEngine";
 import { checkAndForward } from "./ForwardEngine";
 import { transitionUser } from "../workers/StatusEngine";
 
@@ -28,18 +29,21 @@ export async function processIncomingMessage(message: Message): Promise<void> {
 
     const now = new Date();
 
-    const inserted = await transaction((client) =>
+    const eventId = await transaction((client) =>
         insertEventIfNew(client, entry.userId, message.id, parsed.biome, parsed.macroType, parsed.eventType, parsed.eventTimestamp),
     );
-    if (!inserted) return;
-
-    await checkAndAwardBadge(entry.guildId, entry.userId, parsed.biome, parsed.eventType);
+    if (eventId === null) return;
 
     const user = await getUserById(entry.userId);
     if (!user) return;
 
+    if (parsed.eventType === "started" && parsed.biome) {
+        const category = BIOME_META[parsed.biome]?.category;
+        if (category !== "rare") await grantBiomeReward(entry.guildId, entry.userId, eventId, parsed.biome);
+    }
+
     logger.verbose(`checkAndForward: ${entry.guildId} ${user.discord_user_id} :: Parsed -> ${JSON.stringify(parsed)}`);
-    await checkAndForward(message, entry.guildId, entry.userId, parsed);
+    await checkAndForward(message, entry.guildId, entry.userId, parsed, eventId);
 
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
     const deltaSeconds = user.last_activity_at
