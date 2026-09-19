@@ -125,6 +125,17 @@ function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 }
 
+/** ComponentsV2 equivalent of an embed's `.setThumbnail()` - a Section pairs text with a small
+ * side image (its "accessory"). Used for each tab's header line so the member's avatar still
+ * shows, matching the classic-embed profile view this replaced. */
+function addHeaderSection(container: ContainerBuilder, member: GuildMember, content: string): void {
+    container.addSectionComponents((section) =>
+        section
+            .addTextDisplayComponents((td) => td.setContent(content))
+            .setThumbnailAccessory((thumb) => thumb.setURL(member.displayAvatarURL())),
+    );
+}
+
 function buildProfileTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { user, biomes, channelId, flower, badges } = data;
     const container = baseContainer(STATUS_COLOR[user.current_status]);
@@ -138,17 +149,17 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
 
-    container.addTextDisplayComponents((td) =>
-        td.setContent(
-            [
-                `**\`${member.user.username}\`'s Hunter Profile**`,
-                `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
-                `- Channel: ${channelLine}`,
-                `- Flower: ${flowerLine}`,
-                `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
-                `- ${totalLine} biomes found.`,
-            ].join("\n"),
-        ),
+    addHeaderSection(
+        container,
+        member,
+        [
+            `**\`${member.user.username}\`'s Hunter Profile**`,
+            `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
+            `- Channel: ${channelLine}`,
+            `- Flower: ${flowerLine}`,
+            `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
+            `- ${totalLine} biomes found.`,
+        ].join("\n"),
     );
 
     if (badges.length > 0) {
@@ -168,14 +179,14 @@ function buildQuotasTabContainer(member: GuildMember, data: ProfileData): Contai
         ? "-# There's no quotas to meet in this server!"
         : quotaSummaryLines.join("\n");
 
-    container.addTextDisplayComponents((td) => td.setContent(`${header}\n\n${body}`));
+    addHeaderSection(container, member, `${header}\n\n${body}`);
     return container;
 }
 
 function buildBiomesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { biomes } = data;
     const container = baseContainer(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Biomes**`));
+    addHeaderSection(container, member, `**\`${member.user.username}\`'s Biomes**`);
 
     if (biomes.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No biomes discovered yet."));
@@ -209,7 +220,7 @@ function buildBiomesTabContainer(member: GuildMember, data: ProfileData): Contai
 function buildBadgesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { badges } = data;
     const container = baseContainer(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Badges**`));
+    addHeaderSection(container, member, `**\`${member.user.username}\`'s Badges**`);
 
     if (badges.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No badges yet."));
@@ -234,7 +245,7 @@ function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page:
     const { sessions } = data;
 
     if (sessions.length === 0) {
-        container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Sessions**\nNo activity recorded yet.`));
+        addHeaderSection(container, member, `**\`${member.user.username}\`'s Sessions**\nNo activity recorded yet.`);
         return container;
     }
 
@@ -247,7 +258,7 @@ function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page:
         `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
     );
 
-    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`));
+    addHeaderSection(container, member, `**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`);
     addDivider(container);
     container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`));
 
