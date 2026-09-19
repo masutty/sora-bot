@@ -7,8 +7,16 @@ import { confirmAction, type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds";
+import { getUserByDiscordId } from "../repository/users";
+import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/BiomeRewardEngine";
+import {
+    ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory,
+    type BiomeCategory,
+} from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-owner");
+
+const BIOME_CATEGORY_CHOICES = ALL_BIOME_CATEGORIES.map((c) => ({ name: BIOME_CATEGORY_LABELS[c], value: c }));
 
 /** Guilds with BiomeHunt data (bh_guilds) the bot is no longer a member of. */
 async function findStaleGuilds(client: BotClient): Promise<StaleGuildSummary[]> {
@@ -41,6 +49,16 @@ export default defineCommand({
                 .addStringOption((o) =>
                     o.setName("guild_id").setDescription("Specific guild ID to clean up (omit for all stale guilds)").setRequired(false),
                 ),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("recalculate-user")
+                .setDescription("Backfills Seeds/XP for a user's confirmed biome finds that don't have a reward yet.")
+                .addStringOption((o) => o.setName("guild_id").setDescription("Guild ID the user's profile is in").setRequired(true))
+                .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
+                .addStringOption((o) => o.setName("after_date").setDescription("Only events on/after this date (YYYY-MM-DD)"))
+                .addStringOption((o) => o.setName("biome").setDescription("Only this specific biome").addChoices(...BIOME_ONLY_CHOICES))
+                .addStringOption((o) => o.setName("category").setDescription("Only this biome category (ignored if biome is given)").addChoices(...BIOME_CATEGORY_CHOICES)),
         ),
 
     // ── Slash ─────────────────────────────────────────────────────────────────
@@ -50,6 +68,22 @@ export default defineCommand({
 
         if (sub === "stale") {
             await interaction.editReply(await renderStaleList(client));
+            return;
+        }
+
+        if (sub === "recalculate-user") {
+            await runRecalculateUser(
+                {
+                    guildId: interaction.options.getString("guild_id", true),
+                    discordUserId: interaction.options.getString("discord_user_id", true),
+                    afterDateStr: interaction.options.getString("after_date"),
+                    biome: interaction.options.getString("biome"),
+                    category: interaction.options.getString("category") as BiomeCategory | null,
+                },
+                interaction.user.id,
+                (payload) => interaction.editReply(payload),
+                (reply) => interaction.editReply(reply),
+            );
             return;
         }
 
@@ -68,7 +102,8 @@ export default defineCommand({
         if (!sub) {
             await message.reply(
                 EmbedFormatter.warn(
-                    "`!bh-owner stale` - list stale guilds\n`!bh-owner stale-cleanup [guild_id]` - clean up one guild, or every stale guild if omitted",
+                    "`!bh-owner stale` - list stale guilds\n`!bh-owner stale-cleanup [guild_id]` - clean up one guild, or every stale guild if omitted\n" +
+                    "`!bh-owner recalculate-user <guild_id> <discord_user_id> [after_date] [biome] [category]` - backfill missing Seeds/XP",
                 ),
             );
             return;
@@ -76,6 +111,22 @@ export default defineCommand({
 
         if (sub === "stale") {
             await message.reply(await renderStaleList(client));
+            return;
+        }
+
+        if (sub === "recalculate-user") {
+            await runRecalculateUser(
+                {
+                    guildId: args.getString("guild_id"),
+                    discordUserId: args.getString("discord_user_id"),
+                    afterDateStr: args.getString("after_date"),
+                    biome: args.getString("biome"),
+                    category: args.getString("category") as BiomeCategory | null,
+                },
+                message.author.id,
+                (payload) => message.reply(payload),
+                (reply) => message.reply(reply),
+            );
             return;
         }
 
@@ -88,6 +139,83 @@ export default defineCommand({
         );
     },
 });
+
+interface RecalculateUserArgs {
+    guildId: string | null;
+    discordUserId: string | null;
+    afterDateStr: string | null;
+    biome: string | null;
+    category: BiomeCategory | null;
+}
+
+/**
+ * Additive-only backfill: grants Seeds/XP for a user's confirmed biome finds that don't already
+ * have a `bh_biome_rewards` row (e.g. finds from before EXPERIMENT_BIOME_ECONOMY was turned on),
+ * optionally narrowed by date and/or biome/category. Deliberately ignores that flag entirely - see
+ * `planUserRewardBackfill`'s doc comment. Badges are out of scope; never touched here.
+ */
+async function runRecalculateUser(
+    args: RecalculateUserArgs,
+    invokerId: string,
+    send: (payload: ConfirmPayload) => Promise<Message>,
+    replyPlain: (reply: FormattedReply) => Promise<unknown>,
+): Promise<void> {
+    if (!args.guildId || !args.discordUserId) {
+        await replyPlain(EmbedFormatter.error("Missing required argument: guild_id and discord_user_id are both required."));
+        return;
+    }
+
+    let afterDate: Date | null = null;
+    if (args.afterDateStr) {
+        afterDate = new Date(args.afterDateStr);
+        if (isNaN(afterDate.getTime())) {
+            await replyPlain(EmbedFormatter.error("Invalid after_date - use YYYY-MM-DD."));
+            return;
+        }
+    }
+
+    const user = await getUserByDiscordId(args.guildId, args.discordUserId);
+    if (!user) {
+        await replyPlain(EmbedFormatter.info(`<@${args.discordUserId}> has no profile in guild \`${args.guildId}\`.`));
+        return;
+    }
+
+    const biomes = args.biome ? [args.biome] : args.category ? getBiomesByCategory(args.category) : null;
+
+    const plan = await planUserRewardBackfill(user.id, { afterDate, biomes });
+    if (plan.events.length === 0) {
+        await replyPlain(EmbedFormatter.info(`<@${args.discordUserId}> has no un-rewarded biome finds matching those filters.`));
+        return;
+    }
+
+    const filterParts = [
+        afterDate ? `since ${afterDate.toISOString().slice(0, 10)}` : null,
+        args.biome ? formatBiomeName(args.biome) : args.category ? BIOME_CATEGORY_LABELS[args.category] : null,
+    ].filter((p): p is string => p !== null);
+
+    const { guildId, discordUserId } = args;
+
+    await confirmAction({
+        invokerId,
+        title: `Backfill Seeds/XP for <@${discordUserId}> in guild \`${guildId}\`?`,
+        fields: [
+            { label: "Events to backfill", value: String(plan.events.length) },
+            { label: "Seeds to grant", value: String(plan.totalSeeds) },
+            { label: "XP to grant", value: String(plan.totalXp) },
+            { label: "Filters", value: filterParts.length > 0 ? filterParts.join(", ") : "none" },
+            ...(plan.skippedUnknownCount > 0 ? [{ label: "Skipped (unknown biome)", value: String(plan.skippedUnknownCount) }] : []),
+        ],
+        send,
+        onConfirm: async () => {
+            const updated = await applyUserRewardBackfill(user.id, plan);
+            logger.info(`Backfilled ${plan.events.length} event(s) for user ${user.id} in guild ${guildId}: +${plan.totalSeeds} seeds, +${plan.totalXp} xp`);
+            return EmbedFormatter.success(
+                `Backfilled ${plan.events.length} event(s) for <@${discordUserId}>: +${plan.totalSeeds} 🌱, +${plan.totalXp} XP.\n` +
+                `New balance: ${updated.seeds} 🌱, ${updated.xp} XP.`,
+            );
+        },
+    });
+}
 
 async function renderStaleList(client: BotClient): Promise<FormattedReply> {
     const stale = await findStaleGuilds(client);

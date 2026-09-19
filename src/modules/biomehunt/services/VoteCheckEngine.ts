@@ -1,6 +1,8 @@
 import { MessageFlags, PermissionFlagsBits } from "discord.js";
 import type { Client, GuildMember, Interaction, Message } from "discord.js";
+import { deleteEventById } from "../repository/activity";
 import { buildForwardContainer } from "./forwardRender";
+import { grantBiomeReward } from "./BiomeRewardEngine";
 import type { VoteCheckState } from "../types";
 
 /**
@@ -18,6 +20,8 @@ const activeVotes = new Map<string, VoteCheckState>();
 export function startVoteCheck(
     sentMessage: Message,
     guildId: string,
+    userId: number,
+    eventId: number,
     biome: string,
     roleId: string | null,
     serverLink: string | null,
@@ -26,6 +30,8 @@ export function startVoteCheck(
     activeVotes.set(sentMessage.id, {
         messageId: sentMessage.id,
         guildId,
+        userId,
+        eventId,
         channelId: sentMessage.channelId,
         biome,
         roleId,
@@ -57,6 +63,12 @@ export async function handleVoteButtonClick(_client: Client, interaction: Intera
     state.status = interaction.customId === "bh-vote-confirm" ? "confirmed" : "denied";
     state.decidedBy = "admin";
     state.decidedByUserId = interaction.user.id;
+
+    if (state.status === "confirmed") {
+        await grantBiomeReward(state.guildId, state.userId, state.eventId, state.biome);
+    } else {
+        await deleteEventById(state.eventId);
+    }
 
     const container = buildForwardContainer({
         biome: state.biome,

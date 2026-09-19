@@ -1,5 +1,6 @@
 import {
     ActionRowBuilder,
+    type AttachmentBuilder,
     ButtonBuilder,
     ButtonStyle,
     ComponentType,
@@ -24,6 +25,7 @@ export interface ConfirmField {
 export interface ConfirmPayload {
     flags: MessageFlags.IsComponentsV2;
     components: (ContainerBuilder | ActionRowBuilder<ButtonBuilder>)[];
+    files?: AttachmentBuilder[];
 }
 
 /** Row [Confirm] [Cancel] - fixed customId, no conflict between concurrent confirmations because
@@ -48,12 +50,22 @@ export function buildConfirmContainer(
     title: string,
     fields: ConfirmField[],
     color: number = DEFAULT_COLOR,
+    thumbnailAttachment?: string,
 ): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(color);
     const lines = fields.map((f) => `- ${f.label}: \`${f.value}\``).join("\n");
-    container.addTextDisplayComponents((td) =>
-        td.setContent(`**${title}**\n${lines}`),
-    );
+    const content = `**${title}**\n${lines}`;
+
+    if (thumbnailAttachment) {
+        container.addSectionComponents((section) =>
+            section
+                .addTextDisplayComponents((td) => td.setContent(content))
+                .setThumbnailAccessory((thumb) => thumb.setURL(`attachment://${thumbnailAttachment}`)),
+        );
+    } else {
+        container.addTextDisplayComponents((td) => td.setContent(content));
+    }
+
     return container;
 }
 
@@ -67,6 +79,10 @@ export interface ConfirmActionOptions {
     fields: ConfirmField[];
     /** Container accent - defaults to blurple. Use to signal severity (orange/red). */
     color?: number;
+    /** Attachments to upload alongside the confirmation (e.g. an image referenced by `thumbnailAttachment`). */
+    files?: AttachmentBuilder[];
+    /** Filename (matching one of `files`' `.name`) to show as a small thumbnail next to the summary. */
+    thumbnailAttachment?: string;
     /**
      * Sends the initial payload (summary + buttons) and returns the `Message` - `(p) =>
      * interaction.editReply(p)` on an already-deferred interaction, or `(p) => message.reply(p)`
@@ -99,9 +115,10 @@ export async function confirmAction(opts: ConfirmActionOptions): Promise<void> {
     const sent = await send({
         flags: MessageFlags.IsComponentsV2,
         components: [
-            buildConfirmContainer(title, fields, color),
+            buildConfirmContainer(title, fields, color, opts.thumbnailAttachment),
             buildConfirmRow(),
         ],
+        ...(opts.files ? { files: opts.files } : {}),
     });
 
     let handled = false;

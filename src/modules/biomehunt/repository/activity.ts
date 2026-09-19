@@ -10,15 +10,15 @@ export async function insertEventIfNew(
     macroType: string | null,
     eventType: "started" | "ended" | null,
     eventTimestamp: Date | null,
-): Promise<boolean> {
-    const result = await client.query(
+): Promise<number | null> {
+    const result = await client.query<{ id: number }>(
         `INSERT INTO bh_activity_events (user_id, discord_message_id, biome, macro_type, event_type, event_timestamp)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (discord_message_id) DO NOTHING
          RETURNING id`,
         [userId, discordMessageId, biome, macroType, eventType, eventTimestamp],
     );
-    return (result.rowCount ?? 0) > 0;
+    return result.rows[0]?.id ?? null;
 }
 
 export async function getLatestSession(client: PoolClient, userId: number): Promise<ActivitySessionRow | null> {
@@ -116,24 +116,33 @@ export async function deleteAllSessionsForUser(userId: number): Promise<number> 
  * count `getBiomeCounts` reports without needing to touch any paired "ended" rows (those are
  * never counted). Returns the number of events actually removed.
  */
-export async function decrementBiomeEvents(userId: number, biome: string, amount: number): Promise<number> {
-    const result = await query(
+export async function decrementBiomeEvents(userId: number, biome: string, amount: number): Promise<number[]> {
+    const result = await query<{ id: number }>(
         `DELETE FROM bh_activity_events
          WHERE id IN (
              SELECT id FROM bh_activity_events
              WHERE user_id = $1 AND biome = $2 AND event_type = 'started'
              ORDER BY received_at DESC
              LIMIT $3
-         )`,
+         )
+         RETURNING id`,
         [userId, biome, amount],
     );
-    return result.rowCount ?? 0;
+    return result.rows.map((r) => r.id);
 }
 
 /** Removes every recorded event (both "started" and "ended") for a biome, fully resetting its count to 0. */
-export async function clearBiomeEvents(userId: number, biome: string): Promise<number> {
-    const result = await query(`DELETE FROM bh_activity_events WHERE user_id = $1 AND biome = $2`, [userId, biome]);
-    return result.rowCount ?? 0;
+export async function clearBiomeEvents(userId: number, biome: string): Promise<number[]> {
+    const result = await query<{ id: number }>(
+        `DELETE FROM bh_activity_events WHERE user_id = $1 AND biome = $2 RETURNING id`,
+        [userId, biome],
+    );
+    return result.rows.map((r) => r.id);
+}
+
+/** Deletes a single event by id - used by the rare-biome vote check's Deny button, which needs the report to fully disappear (not just get relabeled). */
+export async function deleteEventById(eventId: number): Promise<void> {
+    await query(`DELETE FROM bh_activity_events WHERE id = $1`, [eventId]);
 }
 
 /** Total confirmed "started" finds of one specific biome for a user - used to show "this is the #N <biome> they found!" on forwards. */

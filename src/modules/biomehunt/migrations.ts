@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS bh_users (
 CREATE INDEX IF NOT EXISTS bh_users_status ON bh_users(guild_id, current_status);
 CREATE INDEX IF NOT EXISTS bh_users_last_activity ON bh_users(last_activity_at) WHERE last_activity_at IS NOT NULL;
 
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS seeds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS bh_user_macro_channels (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL UNIQUE REFERENCES bh_users(id) ON DELETE CASCADE,
@@ -109,6 +112,22 @@ CREATE TABLE IF NOT EXISTS bh_activity_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS bh_activity_sessions_user ON bh_activity_sessions(user_id, started_at DESC);
+
+/* ───────────────────────────────────────────── */
+/* Biome rewards (Seeds/XP/badge ledger)        */
+/* ───────────────────────────────────────────── */
+
+CREATE TABLE IF NOT EXISTS bh_biome_rewards (
+    event_id       INTEGER PRIMARY KEY REFERENCES bh_activity_events(id) ON DELETE CASCADE,
+    user_id        INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    biome          VARCHAR(64) NOT NULL,
+    seeds_awarded  INTEGER NOT NULL,
+    xp_awarded     INTEGER NOT NULL,
+    badge_awarded  VARCHAR(32),
+    awarded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bh_biome_rewards_user_badge ON bh_biome_rewards(user_id, badge_awarded) WHERE badge_awarded IS NOT NULL;
 
 /* ───────────────────────────────────────────── */
 /* Quota rewards                                */

@@ -16,7 +16,7 @@ const logger = new Logger("biomehunt.ForwardEngine");
  * embed so we get a real Separator between the heading and the details. Rare-category biomes
  * additionally get admin confirm/deny buttons (see VoteCheckEngine).
  */
-export async function checkAndForward(message: Message, guildId: string, userId: number, parsed: ParsedEvent): Promise<void> {
+export async function checkAndForward(message: Message, guildId: string, userId: number, parsed: ParsedEvent, eventId: number): Promise<void> {
     if (parsed.eventType !== "started" || !parsed.biome) return;
 
     const forward = await getForwardConfig(guildId, parsed.biome);
@@ -40,7 +40,7 @@ export async function checkAndForward(message: Message, guildId: string, userId:
 
     try {
         const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
-        if (isRare) startVoteCheck(sent, guildId, parsed.biome, forward.role_id, parsed.serverLink, jumpLink);
+        if (isRare) startVoteCheck(sent, guildId, userId, eventId, parsed.biome, forward.role_id, parsed.serverLink, jumpLink);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome: parsed.biome });
     }
