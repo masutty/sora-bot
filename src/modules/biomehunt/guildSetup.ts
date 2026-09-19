@@ -5,6 +5,7 @@ import type { BotClient } from "@/core/BotClient";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./flowers";
+import { isFlagEnabled } from "./repository/flags";
 import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds";
 import {
     createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
@@ -75,7 +76,8 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
         throw new BiomeHuntError("Failed to create a webhook for your channel. Please try again.");
     }
 
-    const flower = await assignFlower(webhook, logger);
+    const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
+    const flower = flowersEnabled ? await assignFlower(webhook, logger) : null;
 
     try {
         await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url), flower);
@@ -150,7 +152,8 @@ export async function adoptExistingChannel(
         throw new BiomeHuntError("Failed to rename the channel - check my permissions there and try again.");
     }
 
-    const flower = await assignFlower(webhook, logger);
+    const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
+    const flower = flowersEnabled ? await assignFlower(webhook, logger) : null;
 
     await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl), flower);
     registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId });
@@ -211,6 +214,8 @@ export async function backfillMissingFlowers(client: BotClient): Promise<void> {
 
     logger.info(`Backfilling Flower for ${rows.length} macro channel(s) created before the Flower feature existed.`);
     for (const row of rows) {
+        if (!(await isFlagEnabled(row.guild_id, "EXPERIMENT_WEBHOOK_FLOWERS"))) continue;
+
         const channel = await client.channels.fetch(row.channel_id).catch(() => null);
         if (!channel || channel.type !== ChannelType.GuildText) {
             logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - channel not found or not text.`);

@@ -5,11 +5,21 @@ import type { BotClient } from "@/core/BotClient";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity";
+import { isFlagEnabled } from "../repository/flags";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
     pauseUser, setUserFlower, unpauseUser,
 } from "../repository/users";
-import { BiomeHuntError, formatBiomeName } from "../types";
+import { revertBiomeRewards, revokeOrphanedBadges } from "../services/BiomeRewardEngine";
+import { BADGE_META, BiomeHuntError, formatBiomeName, type Badge } from "../types";
+
+function formatRewardRevertSuffix(reverted: { seedsReverted: number; xpReverted: number }, revokedBadges: Badge[]): string {
+    const parts: string[] = [];
+    if (reverted.seedsReverted > 0) parts.push(`-${reverted.seedsReverted} 🌱`);
+    if (reverted.xpReverted > 0) parts.push(`-${reverted.xpReverted} XP`);
+    if (revokedBadges.length > 0) parts.push(`${revokedBadges.map((b) => BADGE_META[b].display).join(", ")} badge revoked`);
+    return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
 
 async function deleteDiscordChannel(client: BotClient, channelId: string): Promise<void> {
     const channel = await client.channels.fetch(channelId).catch(() => null);
@@ -114,18 +124,26 @@ export async function memberDecrementBiomeAction(guildId: string, discordUserId:
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
-    const removed = await decrementBiomeEvents(user.id, biome, amount);
-    if (removed === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded finds for ${formatBiomeName(biome)}.`);
-    return `Removed ${removed} recorded find(s) of ${formatBiomeName(biome)} for <@${discordUserId}>.`;
+    const removedIds = await decrementBiomeEvents(user.id, biome, amount);
+    if (removedIds.length === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded finds for ${formatBiomeName(biome)}.`);
+
+    const { badgeCandidates, ...reverted } = await revertBiomeRewards(user.id, removedIds);
+    const revokedBadges = await revokeOrphanedBadges(guildId, user.id, badgeCandidates);
+
+    return `Removed ${removedIds.length} recorded find(s) of ${formatBiomeName(biome)} for <@${discordUserId}>.${formatRewardRevertSuffix(reverted, revokedBadges)}`;
 }
 
 export async function memberClearBiomesAction(guildId: string, discordUserId: string, biome: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
-    const removed = await clearBiomeEvents(user.id, biome);
-    if (removed === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded events for ${formatBiomeName(biome)}.`);
-    return `Cleared all ${formatBiomeName(biome)} records for <@${discordUserId}> (${removed} event(s) removed).`;
+    const removedIds = await clearBiomeEvents(user.id, biome);
+    if (removedIds.length === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded events for ${formatBiomeName(biome)}.`);
+
+    const { badgeCandidates, ...reverted } = await revertBiomeRewards(user.id, removedIds);
+    const revokedBadges = await revokeOrphanedBadges(guildId, user.id, badgeCandidates);
+
+    return `Cleared all ${formatBiomeName(biome)} records for <@${discordUserId}> (${removedIds.length} event(s) removed).${formatRewardRevertSuffix(reverted, revokedBadges)}`;
 }
 
 /**
@@ -133,11 +151,11 @@ export async function memberClearBiomesAction(guildId: string, discordUserId: st
  * Never creates, deletes, or recreates the channel or webhook - the webhook's id/token/URL (which
  * their macro tool already has configured) stay exactly as they were, in every case.
  */
-export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) throw new BiomeHuntError("That user has no data.");
-
-    const macroChannel = await getMacroChannelByUserId(user.id);
+/** Draws a new Flower and applies it to a user's EXISTING macro webhook - shared by the free
+ * admin command and the paid self-service one. Throws BiomeHuntError on any precondition failure
+ * (no macro channel, channel/webhook inaccessible). */
+export async function applyFlowerReroll(client: BotClient, userId: number): Promise<{ flower: string }> {
+    const macroChannel = await getMacroChannelByUserId(userId);
     if (!macroChannel) throw new BiomeHuntError("That user doesn't have a macro channel.");
 
     const channel = await client.channels.fetch(macroChannel.channel_id).catch(() => null);
@@ -151,7 +169,19 @@ export async function memberRerollFlowerAction(client: BotClient, guildId: strin
 
     const flower = drawRandomFlower();
     await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
-    await setUserFlower(user.id, flower);
+    await setUserFlower(userId, flower);
 
+    return { flower };
+}
+
+export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
+    if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
+        throw new BiomeHuntError("Flowers aren't enabled for this server. Enable `EXPERIMENT_WEBHOOK_FLOWERS` first (`flag set`).");
+    }
+
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    if (!user) throw new BiomeHuntError("That user has no data.");
+
+    const { flower } = await applyFlowerReroll(client, user.id);
     return `<@${discordUserId}>'s flower rerolled: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`;
 }
