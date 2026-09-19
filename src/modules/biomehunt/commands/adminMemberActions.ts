@@ -151,15 +151,11 @@ export async function memberClearBiomesAction(guildId: string, discordUserId: st
  * Never creates, deletes, or recreates the channel or webhook - the webhook's id/token/URL (which
  * their macro tool already has configured) stay exactly as they were, in every case.
  */
-export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
-    if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
-        throw new BiomeHuntError("Flowers aren't enabled for this server. Enable `EXPERIMENT_WEBHOOK_FLOWERS` first (`flag set`).");
-    }
-
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) throw new BiomeHuntError("That user has no data.");
-
-    const macroChannel = await getMacroChannelByUserId(user.id);
+/** Draws a new Flower and applies it to a user's EXISTING macro webhook - shared by the free
+ * admin command and the paid self-service one. Throws BiomeHuntError on any precondition failure
+ * (no macro channel, channel/webhook inaccessible). */
+export async function applyFlowerReroll(client: BotClient, userId: number): Promise<{ flower: string }> {
+    const macroChannel = await getMacroChannelByUserId(userId);
     if (!macroChannel) throw new BiomeHuntError("That user doesn't have a macro channel.");
 
     const channel = await client.channels.fetch(macroChannel.channel_id).catch(() => null);
@@ -173,7 +169,19 @@ export async function memberRerollFlowerAction(client: BotClient, guildId: strin
 
     const flower = drawRandomFlower();
     await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
-    await setUserFlower(user.id, flower);
+    await setUserFlower(userId, flower);
 
+    return { flower };
+}
+
+export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
+    if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
+        throw new BiomeHuntError("Flowers aren't enabled for this server. Enable `EXPERIMENT_WEBHOOK_FLOWERS` first (`flag set`).");
+    }
+
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    if (!user) throw new BiomeHuntError("That user has no data.");
+
+    const { flower } = await applyFlowerReroll(client, user.id);
     return `<@${discordUserId}>'s flower rerolled: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`;
 }
