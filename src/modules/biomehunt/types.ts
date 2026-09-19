@@ -331,6 +331,8 @@ export interface VoteCheckState {
     /** The forward/vote message's own identity - needed to fetch and edit it, NOT for the jump link (see originalJumpLink). */
     messageId: string;
     guildId: string;
+    userId: number;
+    eventId: number;
     channelId: string;
     biome: string;
     roleId: string | null;
