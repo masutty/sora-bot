@@ -1,4 +1,4 @@
-import { ChannelType, EmbedBuilder } from "discord.js";
+import { ChannelType, ContainerBuilder, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
 import { Logger } from "@/utils/logging";
 import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/guilds";
@@ -9,16 +9,20 @@ const logger = new Logger("biomehunt.CounterEngine");
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000;
 
-function buildCounterEmbed(counts: Record<"active" | "idle" | "inactive", number>): EmbedBuilder {
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("Macro Activity Counter")
-        .setDescription(`-# Last updated: <t:${Math.floor(Date.now() / 1000)}:R>`)
-        .addFields(
-            { name: `🟢 \`${String(counts.active)}\``, value: "Active", inline: true },
-            { name: `🟡 \`${String(counts.idle)}\``, value: "Idle", inline: true },
-            { name: `🔴 \`${String(counts.inactive)}\``, value: "Inactive", inline: true },
-        )
+function buildCounterContainer(counts: Record<"active" | "idle" | "inactive", number>): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            [
+                "**Macro Activity Counter**",
+                `- 🟢 Active: \`${counts.active}\``,
+                `- 🟡 Idle: \`${counts.idle}\``,
+                `- 🔴 Inactive: \`${counts.inactive}\``,
+                `-# Last updated: <t:${Math.floor(Date.now() / 1000)}:R>`,
+            ].join("\n"),
+        ),
+    );
+    return container;
 }
 
 /** Updates (or creates) the live counter message for a single guild. Guild must have `counter_channel_id` set. */
@@ -29,13 +33,13 @@ export async function updateCounterForGuild(client: BotClient, guildConfig: Guil
     if (channel?.type !== ChannelType.GuildText) throw new Error(`Counter channel for guild ${guildConfig.guild_id} isn't a text channel`);
 
     const counts = await getGuildUserCounts(guildConfig.guild_id);
-    const embed = buildCounterEmbed(counts);
+    const payload = { flags: MessageFlags.IsComponentsV2 as const, components: [buildCounterContainer(counts)] };
 
     let updated = false;
     if (guildConfig.counter_message_id) {
         try {
             const existing = await channel.messages.fetch(guildConfig.counter_message_id);
-            await existing.edit({ embeds: [embed] });
+            await existing.edit(payload);
             updated = true;
         } catch {
             updated = false;
@@ -43,7 +47,7 @@ export async function updateCounterForGuild(client: BotClient, guildConfig: Guil
     }
 
     if (!updated) {
-        const sent = await channel.send({ embeds: [embed] });
+        const sent = await channel.send(payload);
         await setCounterMessageId(guildConfig.guild_id, sent.id);
     }
 }

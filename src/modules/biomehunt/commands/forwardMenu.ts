@@ -1,9 +1,10 @@
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, ComponentType,
-    EmbedBuilder, RoleSelectMenuBuilder, StringSelectMenuBuilder,
+    ContainerBuilder, MessageFlags, RoleSelectMenuBuilder, SeparatorSpacingSize, StringSelectMenuBuilder,
 } from "discord.js";
-import type { Guild, GuildTextBasedChannel, Message } from "discord.js";
-import { EmbedFormatter } from "@/utils/format";
+import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
+import { EmbedFormatter, NO_ROLE_PINGS } from "@/utils/format";
+import { buildPaginationRow, handlePaginationButton } from "@/utils/pagination";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards";
 import { BIOME_SELECTOR_CHOICES, formatBiomeName, resolveBiomeSelector, type BiomeForwardRow } from "../types";
 
@@ -16,11 +17,12 @@ function formatForwardLine(f: BiomeForwardRow): string {
     return `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`;
 }
 
-function listEmbed(forwards: BiomeForwardRow[], title = "Biome Forwards"): EmbedBuilder {
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle(title)
-        .setDescription(forwards.length > 0 ? forwards.map(formatForwardLine).join("\n") : "None configured yet.");
+function listContainer(forwards: BiomeForwardRow[], title = "Biome Forwards"): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(`**${title}**\n${forwards.length > 0 ? forwards.map(formatForwardLine).join("\n") : "None configured yet."}`),
+    );
+    return container;
 }
 
 async function awaitButton(msg: Message, adminId: string): Promise<string | null> {
@@ -43,24 +45,30 @@ async function promptRemoveForward(msg: Message, adminId: string, forwards: Biom
     const pages = Math.max(Math.ceil(forwards.length / FORWARDS_PER_PAGE), 1);
     let page = 0;
 
-    const render = () => {
-        const start = page * FORWARDS_PER_PAGE;
+    const render = (p: number): MessageEditOptions => {
+        const start = p * FORWARDS_PER_PAGE;
         const slice = forwards.slice(start, start + FORWARDS_PER_PAGE);
         const lines = slice.map((f, i) => `${start + i + 1}. ${formatForwardLine(f)}`);
-        return new EmbedBuilder()
-            .setColor(0x5865f2)
-            .setTitle("Remove Forward")
-            .setDescription(`Type the number of the forward you want to remove:\n\n${lines.join("\n")}`)
-            .setFooter({ text: `Page ${page + 1} of ${pages}` });
+
+        const container = new ContainerBuilder().setAccentColor(0x5865f2);
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`**Remove Forward**\nType the number of the forward you want to remove:\n\n${lines.join("\n")}`),
+        );
+        container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        container.addTextDisplayComponents((td) => td.setContent(`-# Page ${p + 1} of ${pages}`));
+
+        return {
+            flags: MessageFlags.IsComponentsV2,
+            components: [
+                container,
+                new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId("fwd-back").setLabel("Back").setStyle(ButtonStyle.Secondary)),
+                ...(pages > 1 ? [buildPaginationRow(p, pages)] : []),
+            ],
+            allowedMentions: NO_ROLE_PINGS,
+        };
     };
 
-    const components = () => [new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId("fwd-back").setLabel("Back").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("fwd-prev").setLabel("◀️").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-        new ButtonBuilder().setCustomId("fwd-next").setLabel("▶️").setStyle(ButtonStyle.Secondary).setDisabled(page === pages - 1),
-    )];
-
-    await msg.edit({ embeds: [render()], components: components() });
+    await msg.edit(render(page));
 
     return new Promise((resolve) => {
         let settled = false;
@@ -77,9 +85,8 @@ async function promptRemoveForward(msg: Message, adminId: string, forwards: Biom
 
         buttonCollector.on("collect", async (i) => {
             if (i.customId === "fwd-back") { await i.deferUpdate(); settle(null); return; }
-            if (i.customId === "fwd-prev" && page > 0) { page--; await i.update({ embeds: [render()], components: components() }); return; }
-            if (i.customId === "fwd-next" && page < pages - 1) { page++; await i.update({ embeds: [render()], components: components() }); return; }
-            await i.deferUpdate();
+            const next = await handlePaginationButton(i, page, pages, render);
+            if (next !== null) page = next;
         });
 
         textCollector.on("collect", (m) => {
@@ -114,11 +121,15 @@ async function promptCreateForward(msg: Message, adminId: string): Promise<Creat
         const roleMenu = new RoleSelectMenuBuilder().setCustomId("fwd-role").setPlaceholder("Select role to ping (optional)");
         if (picked.roleId) roleMenu.setDefaultRoles(picked.roleId);
 
+        const container = new ContainerBuilder().setAccentColor(0x5865f2);
+        container.addTextDisplayComponents((td) =>
+            td.setContent("**Create Biome Forward**\nPick a biome (or a whole category, or All), a destination channel, and optionally a role to ping. Role is optional."),
+        );
+
         return {
-            embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Create Biome Forward").setDescription(
-                "Pick a biome (or a whole category, or All), a destination channel, and optionally a role to ping. Role is optional.",
-            )],
+            flags: MessageFlags.IsComponentsV2 as const,
             components: [
+                container,
                 new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(biomeMenu),
                 new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(channelMenu),
                 new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(roleMenu),
@@ -127,6 +138,7 @@ async function promptCreateForward(msg: Message, adminId: string): Promise<Creat
                     new ButtonBuilder().setCustomId("fwd-cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger),
                 ),
             ],
+            allowedMentions: NO_ROLE_PINGS,
         };
     };
 
@@ -165,12 +177,16 @@ async function forwardLoop(
     while (true) {
         const forwards = await getForwardConfigs(guild.id);
         await msg.edit({
-            embeds: [listEmbed(forwards)],
-            components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
-                new ButtonBuilder().setCustomId("fwd-add").setLabel("Create").setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId("fwd-remove").setLabel("Remove").setStyle(ButtonStyle.Danger).setDisabled(forwards.length === 0),
-                ...extraButtons(),
-            )],
+            flags: MessageFlags.IsComponentsV2,
+            components: [
+                listContainer(forwards),
+                new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId("fwd-add").setLabel("Create").setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId("fwd-remove").setLabel("Remove").setStyle(ButtonStyle.Danger).setDisabled(forwards.length === 0),
+                    ...extraButtons(),
+                ),
+            ],
+            allowedMentions: NO_ROLE_PINGS,
         });
 
         const choice = await awaitButton(msg, adminId);
@@ -200,9 +216,9 @@ async function forwardLoop(
 export async function runForwardMenu(
     guild: Guild,
     adminId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
+    respond: (payload: { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[] }) => Promise<Message>,
 ): Promise<void> {
-    const msg = await respond({ embeds: [listEmbed([], "Biome Forwards")], components: [] });
+    const msg = await respond({ flags: MessageFlags.IsComponentsV2, components: [listContainer([], "Biome Forwards")] });
 
     const direction = await forwardLoop(
         guild, adminId, msg,
@@ -216,7 +232,7 @@ export async function runForwardMenu(
     }
 
     const forwards = await getForwardConfigs(guild.id);
-    await msg.edit({ embeds: [listEmbed(forwards)], components: [] }).catch(() => {});
+    await msg.edit({ flags: MessageFlags.IsComponentsV2, components: [listContainer(forwards)], allowedMentions: NO_ROLE_PINGS }).catch(() => {});
 }
 
 /** ezsetup wizard step - same Create/Remove loop, with Back/Skip/Cancel instead of Close. */

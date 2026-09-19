@@ -1,4 +1,5 @@
 import type { BotClient } from "@/core/BotClient";
+import { NO_ROLE_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getMacroChannelByUserId, getUserById } from "../repository/users";
 
@@ -16,7 +17,7 @@ export async function pingQuotaMet(client: BotClient, userId: number, roleId: st
     if (!channel || channel.isDMBased() || !channel.isTextBased()) return;
 
     try {
-        await channel.send(`🎉 <@${user.discord_user_id}> just met the quota for <@&${roleId}>!`);
+        await channel.send({ content: `🎉 <@${user.discord_user_id}> just met the quota for <@&${roleId}>!`, allowedMentions: { ...NO_ROLE_PINGS, users: [user.discord_user_id] } });
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { userId, roleId });
     }
