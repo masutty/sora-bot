@@ -9,7 +9,16 @@ import {
     deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
     pauseUser, setUserFlower, unpauseUser,
 } from "../repository/users";
-import { BiomeHuntError, formatBiomeName } from "../types";
+import { revertBiomeRewards, revokeOrphanedBadges } from "../services/BiomeRewardEngine";
+import { BADGE_META, BiomeHuntError, formatBiomeName, type Badge } from "../types";
+
+function formatRewardRevertSuffix(reverted: { seedsReverted: number; xpReverted: number }, revokedBadges: Badge[]): string {
+    const parts: string[] = [];
+    if (reverted.seedsReverted > 0) parts.push(`-${reverted.seedsReverted} 🌱`);
+    if (reverted.xpReverted > 0) parts.push(`-${reverted.xpReverted} XP`);
+    if (revokedBadges.length > 0) parts.push(`${revokedBadges.map((b) => BADGE_META[b].display).join(", ")} badge revoked`);
+    return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
 
 async function deleteDiscordChannel(client: BotClient, channelId: string): Promise<void> {
     const channel = await client.channels.fetch(channelId).catch(() => null);
@@ -114,18 +123,26 @@ export async function memberDecrementBiomeAction(guildId: string, discordUserId:
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
-    const removed = await decrementBiomeEvents(user.id, biome, amount);
-    if (removed === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded finds for ${formatBiomeName(biome)}.`);
-    return `Removed ${removed} recorded find(s) of ${formatBiomeName(biome)} for <@${discordUserId}>.`;
+    const removedIds = await decrementBiomeEvents(user.id, biome, amount);
+    if (removedIds.length === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded finds for ${formatBiomeName(biome)}.`);
+
+    const { badgeCandidates, ...reverted } = await revertBiomeRewards(user.id, removedIds);
+    const revokedBadges = await revokeOrphanedBadges(guildId, user.id, badgeCandidates);
+
+    return `Removed ${removedIds.length} recorded find(s) of ${formatBiomeName(biome)} for <@${discordUserId}>.${formatRewardRevertSuffix(reverted, revokedBadges)}`;
 }
 
 export async function memberClearBiomesAction(guildId: string, discordUserId: string, biome: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
-    const removed = await clearBiomeEvents(user.id, biome);
-    if (removed === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded events for ${formatBiomeName(biome)}.`);
-    return `Cleared all ${formatBiomeName(biome)} records for <@${discordUserId}> (${removed} event(s) removed).`;
+    const removedIds = await clearBiomeEvents(user.id, biome);
+    if (removedIds.length === 0) throw new BiomeHuntError(`<@${discordUserId}> has no recorded events for ${formatBiomeName(biome)}.`);
+
+    const { badgeCandidates, ...reverted } = await revertBiomeRewards(user.id, removedIds);
+    const revokedBadges = await revokeOrphanedBadges(guildId, user.id, badgeCandidates);
+
+    return `Cleared all ${formatBiomeName(biome)} records for <@${discordUserId}> (${removedIds.length} event(s) removed).${formatRewardRevertSuffix(reverted, revokedBadges)}`;
 }
 
 /**
