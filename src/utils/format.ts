@@ -60,10 +60,10 @@ function statusReply(
 }
 
 export const EmbedFormatter = {
-    error: (msg: string, options?: FormattedReplyOptions) => statusReply(0xff0000, "❌", msg, options),
-    success: (msg: string, options?: FormattedReplyOptions) => statusReply(0x57f287, "✅", msg, options),
-    info: (msg: string, options?: FormattedReplyOptions) => statusReply(0x5865f2, "ℹ️", msg, options),
-    warn: (msg: string, options?: FormattedReplyOptions) => statusReply(0xffff00, "⚠️", msg, options),
+    error: (msg: string, options?: FormattedReplyOptions) => statusReply(0xF43F5E, "❌", msg, options), // rose-500
+    success: (msg: string, options?: FormattedReplyOptions) => statusReply(0x10B981, "✅", msg, options), // emerald-500
+    info: (msg: string, options?: FormattedReplyOptions) => statusReply(0x0EA5E9, "ℹ️", msg, options), // sky-500
+    warn: (msg: string, options?: FormattedReplyOptions) => statusReply(0xEAB308, "⚠️", msg, options), // yellow-500
     /** No color, no emoji - for plain reading (a listing, a queried value), when labeling as
      * success/error/warning/info doesn't make sense. */
     plain: (msg: string): FormattedReply => statusReply(undefined, null, msg),
