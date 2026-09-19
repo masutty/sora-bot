@@ -33,4 +33,6 @@ docs
 # !dcl run sandbox (src/core/CogLoader.ts) - runtime-only, wiped on every boot
 .dcl-runtime
 
+dev/
+
 
