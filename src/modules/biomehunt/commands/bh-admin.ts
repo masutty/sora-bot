@@ -1,10 +1,12 @@
-import { ChannelType, ComponentType, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
+import { ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { Guild, GuildMember, Message } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { EmbedFormatter, type FormattedReply } from "@/utils/format";
+import type { ConfirmPayload } from "@/utils/confirm";
+import { EmbedFormatter, type FormattedReply, NO_ROLE_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
+import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { getFailureQuip } from "@/utils/quips";
 import {
     activityDeleteAction, activityResetAction, activitySetAction, activitySetRoleAction,
@@ -27,8 +29,8 @@ import { sessionClearAction, sessionDeleteAction } from "./adminSessionActions";
 import { runEzSetup } from "./ezsetup";
 import { runForwardMenu } from "./forwardMenu";
 import {
-    buildGuildStatsEmbed, buildHistoryEmbed, buildHistoryRow, buildLeaderboardEmbed, buildUserListEmbed,
-    buildUserListRow, getSessionHistory, getUserListPage, runProfileView, SESSIONS_PER_PAGE, USERS_PER_PAGE,
+    buildGuildStatsContainer, buildHistoryContainer, buildLeaderboardContainer, buildUserListContainer,
+    getSessionHistory, getUserListPage, runProfileView, SESSIONS_PER_PAGE, USERS_PER_PAGE,
 } from "./profileViews";
 import {
     ALL_BADGES, ALL_FLAGS, BADGE_META, BiomeHuntError, BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES, FLAG_DEFINITIONS,
@@ -299,26 +301,26 @@ export default defineCommand({
                 return;
             }
             await interaction.deferReply();
-            await runProfileView(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply(payload));
+            await runProfileView(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "quotas-delete") {
             await interaction.deferReply();
             const roleId = interaction.options.getRole("role")?.id ?? null;
-            await runQuotasDelete(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply(payload));
+            await runQuotasDelete(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "setup") {
             await interaction.deferReply();
-            await runEzSetup(interaction.guild, interaction.user.id, (payload) => interaction.editReply(payload));
+            await runEzSetup(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "forward-menu") {
             await interaction.deferReply();
-            await runForwardMenu(interaction.guild, interaction.user.id, (payload) => interaction.editReply(payload));
+            await runForwardMenu(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
@@ -356,7 +358,7 @@ export default defineCommand({
         const sub = args.getSubcommand();
         if (!sub) {
             if (group === "forward") {
-                await runForwardMenu(message.guild, message.author.id, (payload) => message.reply(payload));
+                await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
                 return;
             }
             await message.reply(EmbedFormatter.info("Run `bh-admin config show` to see the current configuration."));
@@ -380,7 +382,7 @@ export default defineCommand({
                 await message.reply("Could not resolve that member. Try pinging them instead.");
                 return;
             }
-            await replySessionHistory(message.guild.id, member, message.author.id, (payload) => message.reply(payload));
+            await replySessionHistory(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
@@ -390,29 +392,29 @@ export default defineCommand({
                 await message.reply("Could not resolve that member. Try pinging them instead.");
                 return;
             }
-            await runProfileView(message.guild.id, member, message.author.id, (payload) => message.reply(payload));
+            await runProfileView(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "quotas-delete") {
             const role = await args.getRole("role");
-            await runQuotasDelete(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply(payload));
+            await runQuotasDelete(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "setup") {
-            await runEzSetup(message.guild, message.author.id, (payload) => message.reply(payload));
+            await runEzSetup(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "forward-menu") {
-            await runForwardMenu(message.guild, message.author.id, (payload) => message.reply(payload));
+            await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
         if (routeKey === "stats-users") {
             const status = args.getString("status")?.toLowerCase() as ActivityStatus | null;
-            await replyUserList(message.guild.id, status ?? null, message.author.id, (payload) => message.reply(payload));
+            await replyUserList(message.guild.id, status ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
@@ -450,7 +452,7 @@ function requireNumber(value: number | null, name: string): number {
     return value;
 }
 
-async function runSubcommand(sub: string, guild: Guild, client: BotClient, args: ArgReader): Promise<string | EmbedBuilder> {
+async function runSubcommand(sub: string, guild: Guild, client: BotClient, args: ArgReader): Promise<string | ContainerBuilder> {
     const guildId = guild.id;
 
     switch (sub) {
@@ -461,9 +463,9 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "config-reset":
             return resetConfigAction(guildId);
         case "stats-guild":
-            return buildGuildStatsEmbed(guildId);
+            return buildGuildStatsContainer(guildId);
         case "stats-leaderboard":
-            return buildLeaderboardEmbed(guildId);
+            return buildLeaderboardContainer(guildId);
         case "activity-set":
             return activitySetAction(
                 guildId,
@@ -653,7 +655,7 @@ async function replySessionHistory(
     guildId: string,
     member: GuildMember,
     invokerId: string,
-    respond: (payload: FormattedReply | { embeds: EmbedBuilder[]; components: ReturnType<typeof buildHistoryRow>[] }) => Promise<Message>,
+    respond: (payload: ConfirmPayload | FormattedReply) => Promise<Message>,
 ): Promise<void> {
     const sessions = await getSessionHistory(guildId, member.id);
     if (sessions === null) {
@@ -666,73 +668,47 @@ async function replySessionHistory(
     }
 
     const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
-    let page = 0;
-    const msg = await respond({
-        embeds: [buildHistoryEmbed(sessions, member, page)],
-        components: pages > 1 ? [buildHistoryRow(page, pages)] : [],
+    const render = (page: number, interactive: boolean): ConfirmPayload => ({
+        flags: MessageFlags.IsComponentsV2,
+        components: [
+            buildHistoryContainer(sessions, member, page),
+            ...(interactive ? [buildPaginationRow(page, pages)] : []),
+        ],
     });
 
+    const msg = await respond(render(0, pages > 1));
     if (pages <= 1) return;
 
-    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60_000 });
-
-    collector.on("collect", async (i) => {
-        if (i.user.id !== invokerId) {
-            await i.reply({ content: "These buttons aren't yours!", ephemeral: true });
-            return;
-        }
-        if (i.customId === "history-prev" && page > 0) page--;
-        if (i.customId === "history-next" && page < pages - 1) page++;
-        await i.update({
-            embeds: [buildHistoryEmbed(sessions, member, page)],
-            components: [buildHistoryRow(page, pages)],
-        });
-    });
-
-    collector.on("end", async () => {
-        await msg.edit({ components: [] }).catch(() => { });
-    });
+    attachPagination(msg, { invokerId, pages, render });
 }
 
 async function replyUserList(
     guildId: string,
     status: ActivityStatus | null,
     invokerId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof buildUserListRow>[] }) => Promise<Message>,
+    respond: (payload: ConfirmPayload) => Promise<Message>,
 ): Promise<void> {
     const users = await getUserListPage(guildId, status);
     const pages = Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
-    let page = 0;
-    const msg = await respond({
-        embeds: [buildUserListEmbed(users, page, status)],
-        components: pages > 1 ? [buildUserListRow(page, pages)] : [],
+    const render = (page: number, interactive: boolean): ConfirmPayload => ({
+        flags: MessageFlags.IsComponentsV2,
+        components: [
+            buildUserListContainer(users, page, status),
+            ...(interactive ? [buildPaginationRow(page, pages)] : []),
+        ],
     });
 
+    const msg = await respond(render(0, pages > 1));
     if (pages <= 1) return;
 
-    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60_000 });
-
-    collector.on("collect", async (i) => {
-        if (i.user.id !== invokerId) {
-            await i.reply({ content: "These buttons aren't yours!", ephemeral: true });
-            return;
-        }
-        if (i.customId === "userlist-prev" && page > 0) page--;
-        if (i.customId === "userlist-next" && page < pages - 1) page++;
-        await i.update({
-            embeds: [buildUserListEmbed(users, page, status)],
-            components: [buildUserListRow(page, pages)],
-        });
-    });
-
-    collector.on("end", async () => {
-        await msg.edit({ components: [] }).catch(() => { });
-    });
+    attachPagination(msg, { invokerId, pages, render });
 }
 
-function toReplyPayload(result: string | EmbedBuilder): FormattedReply | { embeds: EmbedBuilder[] } {
-    if (typeof result === "string") return EmbedFormatter.success(result);
-    return { embeds: [result] };
+/** Admin/config results routinely echo a role back (`"The role is now <@&...>"`) - `NO_ROLE_PINGS`
+ * keeps the mention visible without actually pinging the role just because it showed up on a report. */
+function toReplyPayload(result: string | ContainerBuilder): FormattedReply {
+    if (typeof result === "string") return { ...EmbedFormatter.success(result), allowedMentions: NO_ROLE_PINGS };
+    return { flags: MessageFlags.IsComponentsV2, components: [result], allowedMentions: NO_ROLE_PINGS };
 }
 
 function errorMessage(err: unknown): string {

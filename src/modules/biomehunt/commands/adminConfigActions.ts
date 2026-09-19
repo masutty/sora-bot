@@ -1,4 +1,4 @@
-import { EmbedBuilder } from "discord.js";
+import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
 import { formatTime } from "@/utils/format";
 import {
@@ -11,7 +11,11 @@ import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../rep
 import { ALL_BADGES, BADGE_META, BiomeHuntError, formatBiomeName, resolveBiomeSelector } from "../types";
 import { updateCounterForGuild } from "../workers/CounterEngine";
 
-export async function showConfig(guildId: string): Promise<EmbedBuilder> {
+function addDivider(container: ContainerBuilder): void {
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+}
+
+export async function showConfig(guildId: string): Promise<ContainerBuilder> {
     const config = await getOrCreateGuildConfig(guildId);
     const roles = await getGuildRoles(guildId);
     const categories = await getEnabledCategories(guildId);
@@ -26,31 +30,45 @@ export async function showConfig(guildId: string): Promise<EmbedBuilder> {
     });
 
     const forwardLines = forwards.length > 0
-        ? forwards.map((f) => `${formatBiomeName(f.biome)} — <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`)
+        ? forwards.map((f) => `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`)
         : ["None configured."];
 
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("BiomeHunt Configuration")
-        .addFields(
-            {
-                name: "Activity Thresholds",
-                value: `Session gap: ${formatTime(config.session_gap_threshold_s)}\nIdle: ${formatTime(config.idle_threshold_s)}\nInactive: ${formatTime(config.inactive_threshold_s)}`,
-            },
-            { name: "Categories", value: categories.length > 0 ? categories.map((c) => `<#${c.discord_category_id}>`).join(", ") : "None" },
-            {
-                name: "Roles",
-                value: `Active: ${roles.active ? `<@&${roles.active}>` : "not set"}\nIdle: ${roles.idle ? `<@&${roles.idle}>` : "not set"}\nInactive: ${roles.inactive ? `<@&${roles.inactive}>` : "not set"}`,
-            },
-            { name: "Special Biome Roles", value: badgeLines.join("\n") },
-            {
-                name: "Biome Forwards",
-                value: forwardLines.join("\n"),
-            },
-            { name: "Auto-create categories", value: config.auto_create_categories ? "Enabled" : "Disabled", inline: true },
-            { name: "Auto-delete inactive users", value: autoDeleteEnabled ? `Enabled, ${formatTime(config.delete_inactive_after_s)} after going inactive` : `Disabled (would be ${formatTime(config.delete_inactive_after_s)})`, inline: true },
-            { name: "Live counter", value: config.counter_channel_id ? `<#${config.counter_channel_id}>` : "Disabled", inline: true },
-        );
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent("**Configuration**"));
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(`**Activity Thresholds**\nSession gap: ${formatTime(config.session_gap_threshold_s)}\nIdle: ${formatTime(config.idle_threshold_s)}\nInactive: ${formatTime(config.inactive_threshold_s)}`),
+    );
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(`**Categories**\n${categories.length > 0 ? categories.map((c) => `<#${c.discord_category_id}>`).join(", ") : "None"}`),
+    );
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(`**Roles**\nActive: ${roles.active ? `<@&${roles.active}>` : "not set"}\nIdle: ${roles.idle ? `<@&${roles.idle}>` : "not set"}\nInactive: ${roles.inactive ? `<@&${roles.inactive}>` : "not set"}`),
+    );
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(`**Special Biome Roles**\n${badgeLines.join("\n")}`));
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(`**Biome Forwards**\n${forwardLines.join("\n")}`));
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            [
+                `- **Auto-create categories:** ${config.auto_create_categories ? "Enabled" : "Disabled"}`,
+                `- **Auto-delete inactive users:** ${autoDeleteEnabled ? `Enabled, ${formatTime(config.delete_inactive_after_s)} after going inactive` : `Disabled (would be ${formatTime(config.delete_inactive_after_s)})`}`,
+                `- **Live counter:** ${config.counter_channel_id ? `<#${config.counter_channel_id}>` : "Disabled"}`,
+            ].join("\n"),
+        ),
+    );
+
+    return container;
 }
 
 export async function setAutoCreateCategoriesAction(guildId: string, enabled: boolean): Promise<string> {
@@ -94,7 +112,7 @@ export async function forceCounterUpdateAction(client: BotClient, guildId: strin
     return `Live counter updated in <#${guildConfig.counter_channel_id}>.`;
 }
 
-export async function testConfigAction(guildId: string): Promise<EmbedBuilder> {
+export async function testConfigAction(guildId: string): Promise<ContainerBuilder> {
     const { hasCategory, hasRoles } = await isGuildReady(guildId);
     const config = await getOrCreateGuildConfig(guildId);
     const ready = hasCategory && hasRoles;
@@ -106,11 +124,13 @@ export async function testConfigAction(guildId: string): Promise<EmbedBuilder> {
         `ℹ️ Live counter: ${config.counter_channel_id ? "enabled (optional)" : "disabled (optional)"}`,
     ];
 
-    return new EmbedBuilder()
-        .setColor(ready ? 0x57f287 : 0xed4245)
-        .setTitle("BiomeHunt Configuration Check")
-        .setDescription(lines.join("\n"))
-        .setFooter({ text: ready ? "System ready — /bh setup is enabled." : "System incomplete — /bh setup is blocked until required items are set." });
+    const container = new ContainerBuilder().setAccentColor(ready ? 0x57f287 : 0xed4245);
+    container.addTextDisplayComponents((td) => td.setContent(`**Configuration Check**\n${lines.join("\n")}`));
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(`-# ${ready ? "System ready - /bh setup is enabled." : "System incomplete - /bh setup is blocked until required items are set."}`),
+    );
+    return container;
 }
 
 export async function resetConfigAction(guildId: string): Promise<string> {
@@ -151,16 +171,16 @@ async function removeForwardAction(guildId: string, selector: string): Promise<s
     return `Removed ${removed.length} biome forward(s): ${removed.map(formatBiomeName).join(", ")}.`;
 }
 
-export async function listForwardsAction(guildId: string): Promise<EmbedBuilder> {
+export async function listForwardsAction(guildId: string): Promise<ContainerBuilder> {
     const forwards = await getForwardConfigs(guildId);
-    const embed = new EmbedBuilder().setColor(0x5865f2).setTitle("BiomeHunt Biome Forwards");
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
     if (forwards.length === 0) {
-        embed.setDescription("No biome forwards configured yet.");
-        return embed;
+        container.addTextDisplayComponents((td) => td.setContent("**Biome Forwards**\nNo biome forwards configured yet."));
+        return container;
     }
 
-    const lines = forwards.map((f) => `${formatBiomeName(f.biome)} — <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`);
-    embed.setDescription(lines.join("\n"));
-    return embed;
+    const lines = forwards.map((f) => `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`);
+    container.addTextDisplayComponents((td) => td.setContent(`**Biome Forwards**\n${lines.join("\n")}`));
+    return container;
 }

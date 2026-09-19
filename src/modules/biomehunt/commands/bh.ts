@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from "discord.js";
 import type { Guild, GuildMember } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { EmbedFormatter, type FormattedReply } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_ROLE_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import { runUserSetup } from "../guildSetup";
@@ -43,7 +43,7 @@ export default defineCommand({
                 return;
             }
             await interaction.deferReply();
-            await runProfileView(interaction.guild.id, target, interaction.user.id, (payload) => interaction.editReply(payload));
+            await runProfileView(interaction.guild.id, target, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 
@@ -69,7 +69,7 @@ export default defineCommand({
 
         if (sub === "profile") {
             const target = (await args.getMember("user")) ?? message.member;
-            await runProfileView(message.guild.id, target, message.author.id, (payload) => message.reply(payload));
+            await runProfileView(message.guild.id, target, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
             return;
         }
 

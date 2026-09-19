@@ -1,7 +1,7 @@
-import { EmbedBuilder } from "discord.js";
-import type { ActionRowBuilder, ButtonBuilder, GuildTextBasedChannel, Message } from "discord.js";
+import { ContainerBuilder, MessageFlags } from "discord.js";
+import type { GuildTextBasedChannel, Message } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
-import { EmbedFormatter, type FormattedReply } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_ROLE_PINGS } from "@/utils/format";
 import { markQuotaEvaluated, setQuotaEvalHour } from "../repository/guilds";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
 import { evaluateFixedRewardsForGuild } from "../services/RewardEngine";
@@ -10,7 +10,7 @@ import { BiomeHuntError, type QuotaRoleMode, type QuotaRoleRow } from "../types"
 function formatQuotaRoleLine(r: QuotaRoleRow): string {
     const modeLabel = r.mode === "F" ? "Fixed" : "Rolling Window";
     const durationNote = r.mode === "F" ? `, ${r.access_duration_days}d access` : "";
-    return `<@&${r.role_id}> — ${modeLabel}: ${r.quota_target_seconds / 3600}h / ${r.quota_window_hours}h window${durationNote}`;
+    return `<@&${r.role_id}> - ${modeLabel}: ${r.quota_target_seconds / 3600}h / ${r.quota_window_hours}h window${durationNote}`;
 }
 
 export async function quotasCreateAction(
@@ -31,7 +31,7 @@ export async function quotasCreateAction(
         throw new BiomeHuntError("access_duration_days is required and must be greater than zero when mode is F.");
     }
     if (mode === "RW" && accessDurationDays !== null) {
-        throw new BiomeHuntError("access_duration_days isn't used in RW mode — omit it.");
+        throw new BiomeHuntError("access_duration_days isn't used in RW mode - omit it.");
     }
 
     await upsertQuotaRole(guildId, roleId, mode, Math.round(quotaHours * 3600), quotaWindowHours, mode === "F" ? accessDurationDays : null);
@@ -55,11 +55,11 @@ export async function runQuotasDelete(
     guildId: string,
     roleId: string | null,
     invokerId: string,
-    respond: (payload: FormattedReply | { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
+    respond: (payload: FormattedReply | { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[] }) => Promise<Message>,
 ): Promise<void> {
     if (roleId) {
         const message = await removeQuotaRoleAction(guildId, roleId);
-        await respond(EmbedFormatter.success(message));
+        await respond({ ...EmbedFormatter.success(message), allowedMentions: NO_ROLE_PINGS });
         return;
     }
 
@@ -70,10 +70,11 @@ export async function runQuotasDelete(
     }
 
     const lines = roles.map((r, i) => `${i + 1}. ${formatQuotaRoleLine(r)}`);
-    const msg = await respond({
-        embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle("Delete Quota Role").setDescription(`Type the number of the quota role you want to delete:\n\n${lines.join("\n")}`)],
-        components: [],
-    });
+    const listContainer = new ContainerBuilder().setAccentColor(0x5865f2);
+    listContainer.addTextDisplayComponents((td) =>
+        td.setContent(`**Delete Quota Role**\nType the number of the quota role you want to delete:\n\n${lines.join("\n")}`),
+    );
+    const msg = await respond({ flags: MessageFlags.IsComponentsV2, components: [listContainer] });
 
     const channel = msg.channel as GuildTextBasedChannel;
     const collector = channel.createMessageCollector({ filter: (m) => m.author.id === invokerId, time: 60_000, max: 1 });
@@ -86,7 +87,7 @@ export async function runQuotasDelete(
         }
         const target = roles[n - 1];
         const message = await removeQuotaRoleAction(guildId, target.role_id);
-        await msg.edit(EmbedFormatter.success(message)).catch(() => {});
+        await msg.edit({ ...EmbedFormatter.success(message), allowedMentions: NO_ROLE_PINGS }).catch(() => {});
     });
 
     collector.on("end", (collected) => {
@@ -94,17 +95,17 @@ export async function runQuotasDelete(
     });
 }
 
-export async function quotasListAction(guildId: string): Promise<EmbedBuilder> {
+export async function quotasListAction(guildId: string): Promise<ContainerBuilder> {
     const roles = await getQuotaRolesForGuild(guildId);
-    const embed = new EmbedBuilder().setColor(0x5865f2).setTitle("BiomeHunt Quotas");
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
     if (roles.length === 0) {
-        embed.setDescription("No quota roles configured yet.");
-        return embed;
+        container.addTextDisplayComponents((td) => td.setContent("**Quotas**\nNo quota roles configured yet."));
+        return container;
     }
 
-    embed.setDescription(roles.map(formatQuotaRoleLine).join("\n"));
-    return embed;
+    container.addTextDisplayComponents((td) => td.setContent(`**Quotas**\n${roles.map(formatQuotaRoleLine).join("\n")}`));
+    return container;
 }
 
 export async function quotasSetEvalHourAction(guildId: string, hourUtc: number): Promise<string> {
