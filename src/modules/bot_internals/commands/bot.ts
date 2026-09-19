@@ -121,6 +121,14 @@ export default defineCommand({
         }
         const routeKey = group ? `${group}-${sub}` : sub;
 
+        logger.info(`Executing ${routeKey} command...`);
+
+        const BLOCKED_AS_PREFIX = ['db', 'event-loop', 'uptime', 'invite', 'commands', 'servers', 'ping', 'memory']
+        if (BLOCKED_AS_PREFIX.includes(routeKey)) {
+            await message.reply(EmbedFormatter.error("I cannot run that as prefix! Use slash instead."));
+            return;
+        }
+
         if (routeKey === "status") {
             await message.reply({ flags: MessageFlags.IsComponentsV2, components: [buildStatusContainer(client)] });
             return;
