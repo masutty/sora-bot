@@ -15,6 +15,7 @@ import {
     removeCategoryAction, resetConfigAction, setAutoCreateCategoriesAction, setCounterChannelAction,
     disableCounterAction, showConfig, testConfigAction,
 } from "./adminConfigActions";
+import { economyGrantAction } from "./adminEconomyActions";
 import { flagListAction, flagSetAction } from "./adminFlagActions";
 import {
     memberClearBiomesAction, memberDecrementBiomeAction, memberForceSetupAction, memberHardDeleteAction,
@@ -145,6 +146,15 @@ export default defineCommand({
                         .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all flags, their description, default, and current value.")),
+        )
+        .addSubcommandGroup((g) =>
+            g.setName("economy").setDescription("Manual Seeds/XP balance adjustments.")
+                .addSubcommand((s) =>
+                    s.setName("grant").setDescription("Grant (or take, with a negative number) Seeds/XP.")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
+                        .addIntegerOption((o) => o.setName("seeds").setDescription("Seeds delta (negative to take away)"))
+                        .addIntegerOption((o) => o.setName("xp").setDescription("XP delta (negative to take away)")),
+                ),
         )
         .addSubcommandGroup((g) =>
             g.setName("counter").setDescription("Live activity counter.")
@@ -527,6 +537,11 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "flag-list":
             return flagListAction(guildId);
+        case "economy-grant": {
+            const id = await args.getUserId("user");
+            if (!id) throw new BiomeHuntError("Missing required argument: user");
+            return economyGrantAction(guildId, id, args.getInteger("seeds"), args.getInteger("xp"));
+        }
         case "forward-set": {
             const biome = args.getString("biome");
             const channelId = await args.getChannelId("channel");
