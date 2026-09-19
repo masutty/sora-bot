@@ -179,14 +179,14 @@ function buildQuotasTabContainer(member: GuildMember, data: ProfileData): Contai
         ? "-# There's no quotas to meet in this server!"
         : quotaSummaryLines.join("\n");
 
-    addHeaderSection(container, member, `${header}\n\n${body}`);
+    container.addTextDisplayComponents((td) => td.setContent(`${header}\n\n${body}`));
     return container;
 }
 
 function buildBiomesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { biomes } = data;
     const container = baseContainer(0x5865f2);
-    addHeaderSection(container, member, `**\`${member.user.username}\`'s Biomes**`);
+    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Biomes**`));
 
     if (biomes.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No biomes discovered yet."));
@@ -220,7 +220,7 @@ function buildBiomesTabContainer(member: GuildMember, data: ProfileData): Contai
 function buildBadgesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { badges } = data;
     const container = baseContainer(0x5865f2);
-    addHeaderSection(container, member, `**\`${member.user.username}\`'s Badges**`);
+    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Badges**`));
 
     if (badges.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No badges yet."));
@@ -245,7 +245,7 @@ function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page:
     const { sessions } = data;
 
     if (sessions.length === 0) {
-        addHeaderSection(container, member, `**\`${member.user.username}\`'s Sessions**\nNo activity recorded yet.`);
+        container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Sessions**\nNo activity recorded yet.`));
         return container;
     }
 
@@ -258,7 +258,7 @@ function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page:
         `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
     );
 
-    addHeaderSection(container, member, `**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`);
+    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`));
     addDivider(container);
     container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`));
 
