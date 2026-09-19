@@ -38,6 +38,36 @@ export async function countRewardsWithBadge(userId: number, badge: Badge): Promi
     return Number(result.rows[0]?.count ?? 0);
 }
 
+export interface UnrewardedEvent {
+    id: number;
+    biome: string;
+}
+
+/**
+ * Confirmed (`started`, non-null biome) events for a user that DON'T yet have a `bh_biome_rewards`
+ * row - i.e. biome finds that predate the economy being turned on, or were otherwise missed.
+ * `afterDate`/`biomes` are optional narrowing filters (`null` = no restriction on that axis); used
+ * by `bh-owner recalculate-user`'s backfill, which is additive only - it never touches an event
+ * that already has a ledger row.
+ */
+export async function getUnrewardedEventsForUser(
+    userId: number,
+    afterDate: Date | null,
+    biomes: string[] | null,
+): Promise<UnrewardedEvent[]> {
+    const result = await query<UnrewardedEvent>(
+        `SELECT e.id, e.biome
+         FROM bh_activity_events e
+         LEFT JOIN bh_biome_rewards r ON r.event_id = e.id
+         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome IS NOT NULL AND r.event_id IS NULL
+           AND ($2::timestamptz IS NULL OR e.received_at >= $2)
+           AND ($3::text[] IS NULL OR e.biome = ANY($3))
+         ORDER BY e.received_at ASC`,
+        [userId, afterDate, biomes],
+    );
+    return result.rows;
+}
+
 const ADJUST_BALANCE_SQL = `UPDATE bh_users SET seeds = GREATEST(0, seeds + $2), xp = GREATEST(0, xp + $3) WHERE id = $1 RETURNING *`;
 
 /** Applies a Seeds/XP delta (either sign), floored at 0. Runs inside `client`'s transaction when given one (grant/revert paths), or standalone (the admin manual-adjustment command). */

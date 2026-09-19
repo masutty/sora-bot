@@ -3,8 +3,10 @@ import { getUserById } from "../repository/users";
 import { grantUserBadge, revokeUserBadge, getGuildBadgeRole } from "../repository/badges";
 import { enqueueRoleJob } from "../repository/roleJobs";
 import { isFlagEnabled } from "../repository/flags";
-import { adjustUserBalance, countRewardsWithBadge, getRewardsByEventIds, insertReward } from "../repository/rewards";
-import { ALL_BADGES, BIOME_META, REWARD_BY_CATEGORY, getLevelForXp, type Badge } from "../types";
+import {
+    adjustUserBalance, countRewardsWithBadge, getRewardsByEventIds, getUnrewardedEventsForUser, insertReward,
+} from "../repository/rewards";
+import { ALL_BADGES, BIOME_META, REWARD_BY_CATEGORY, getLevelForXp, type Badge, type UserRow } from "../types";
 
 function isBadgeBiome(biome: string): biome is Badge {
     return (ALL_BADGES as string[]).includes(biome);
@@ -107,4 +109,61 @@ export async function revokeOrphanedBadges(guildId: string, userId: number, cand
         if (roleId) await enqueueRoleJob(guildId, userId, roleId, "remove");
     }
     return revoked;
+}
+
+export interface RewardBackfillFilters {
+    /** `null` = no restriction on that axis. */
+    afterDate: Date | null;
+    biomes: string[] | null;
+}
+
+export interface RewardBackfillPlan {
+    events: Array<{ id: number; biome: string; seeds: number; xp: number }>;
+    totalSeeds: number;
+    totalXp: number;
+    /** Confirmed events matching the filters whose biome isn't in BIOME_META (no category -> no
+     * reward value to compute) - reported so `bh-owner recalculate-user` can surface them instead
+     * of silently doing nothing for them. */
+    skippedUnknownCount: number;
+}
+
+/**
+ * Computes (without writing anything) what an ADDITIVE Seeds/XP backfill would grant: every
+ * confirmed (`started`, non-null biome) event this user has that doesn't already have a
+ * `bh_biome_rewards` row, optionally narrowed by date/biome. Deliberately does NOT check
+ * `EXPERIMENT_BIOME_ECONOMY` - this is an explicit bot-owner correction tool, not the live
+ * detection path, and needs to work even for a guild that has the economy turned off (e.g. to
+ * pre-credit history before turning it on). Badges are out of scope here entirely.
+ */
+export async function planUserRewardBackfill(userId: number, filters: RewardBackfillFilters): Promise<RewardBackfillPlan> {
+    const candidates = await getUnrewardedEventsForUser(userId, filters.afterDate, filters.biomes);
+
+    const events: RewardBackfillPlan["events"] = [];
+    let totalSeeds = 0;
+    let totalXp = 0;
+    let skippedUnknownCount = 0;
+
+    for (const c of candidates) {
+        const category = BIOME_META[c.biome]?.category;
+        if (!category) {
+            skippedUnknownCount++;
+            continue;
+        }
+        const { seeds, xp } = REWARD_BY_CATEGORY[category];
+        events.push({ id: c.id, biome: c.biome, seeds, xp });
+        totalSeeds += seeds;
+        totalXp += xp;
+    }
+
+    return { events, totalSeeds, totalXp, skippedUnknownCount };
+}
+
+/** Writes exactly the plan a prior `planUserRewardBackfill` call computed - one ledger row per event plus a single aggregate balance update, all in one transaction. */
+export async function applyUserRewardBackfill(userId: number, plan: RewardBackfillPlan): Promise<UserRow> {
+    return transaction(async (client) => {
+        for (const e of plan.events) {
+            await insertReward(client, { eventId: e.id, userId, biome: e.biome, seeds: e.seeds, xp: e.xp, badge: null });
+        }
+        return adjustUserBalance(client, userId, plan.totalSeeds, plan.totalXp);
+    });
 }
