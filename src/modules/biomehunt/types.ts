@@ -108,6 +108,27 @@ const DEFAULT_BIOME_COLOR = 0x5865f2;
 export function getBiomeColor(biome: string): number {
     return BIOME_META[biome]?.color ?? DEFAULT_BIOME_COLOR;
 }
+/** Seeds/XP granted per biome detection, keyed by category - not per individual biome. Global constants for now (same posture as flowers.ts's RARITY_CHANCE). */
+export const REWARD_BY_CATEGORY: Record<BiomeCategory, { seeds: number; xp: number }> = {
+    weather: { seeds: 1, xp: 2 },
+    biome: { seeds: 2, xp: 4 },
+    event: { seeds: 3, xp: 6 },
+    rare: { seeds: 25, xp: 50 },
+};
+
+/** Cumulative XP required to REACH level `n` (n=1 is the starting level, requires 0 XP). Quadratic: early levels come fast, later ones stretch out. Pure/derived - there is no stored `level` column anywhere. */
+export function xpForLevel(n: number): number {
+    if (n <= 1) return 0;
+    return 50 * (n - 1) * (n - 1);
+}
+
+/** Derives level + progress-within-level from a raw XP total. */
+export function getLevelForXp(xp: number): { level: number; currentLevelXp: number; nextLevelXp: number } {
+    let level = 1;
+    while (xpForLevel(level + 1) <= xp) level++;
+    return { level, currentLevelXp: xpForLevel(level), nextLevelXp: xpForLevel(level + 1) };
+}
+
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 
@@ -138,7 +159,9 @@ export function resolveBadgeSlug(slug: string): Badge | null {
     return (Object.keys(BADGE_META) as Badge[]).find((b) => BADGE_META[b].slug === lower) ?? null;
 }
 
-export type FlagName = "REPORT_SESSION_ON_END" | "PING_ON_QUOTA_MET" | "CLEAR_PROFILE_ON_AUTODELETE" | "AUTO_DELETE_ENABLED";
+export type FlagName =
+    | "REPORT_SESSION_ON_END" | "PING_ON_QUOTA_MET" | "CLEAR_PROFILE_ON_AUTODELETE" | "AUTO_DELETE_ENABLED"
+    | "EXPERIMENT_WEBHOOK_FLOWERS" | "EXPERIMENT_BIOME_ECONOMY";
 
 /** SINGLE SOURCE OF TRUTH for every guild feature flag - `flag list` reads name/description/default straight from here. */
 export const FLAG_DEFINITIONS: Record<FlagName, { label: string; description: string; default: boolean }> = {
@@ -160,6 +183,16 @@ export const FLAG_DEFINITIONS: Record<FlagName, { label: string; description: st
     AUTO_DELETE_ENABLED: {
         label: "Auto Delete Enabled",
         description: "Whether inactive users' macro channels get auto-deleted at all. The number of hours after going inactive is set separately via `activity delete`.",
+        default: false,
+    },
+    EXPERIMENT_WEBHOOK_FLOWERS: {
+        label: "Experiment: Webhook Flowers",
+        description: "ON: macro webhooks get a random Flower name/avatar on setup, and can be rerolled (admin or paid self-service). OFF (default): webhooks keep their plain name, no Flower is ever assigned or shown.",
+        default: false,
+    },
+    EXPERIMENT_BIOME_ECONOMY: {
+        label: "Experiment: Biome Economy",
+        description: "ON: finding biomes earns Seeds and XP (shown on the profile), and Seeds can be spent (e.g. a paid Flower reroll). OFF (default): biome badges still work normally, but no Seeds/XP are earned or shown.",
         default: false,
     },
 };
@@ -209,6 +242,8 @@ export interface UserRow {
     last_activity_at: Date | null;
     paused_at: Date | null;
     created_at: Date;
+    seeds: number;
+    xp: number;
 }
 
 export interface UserMacroChannelRow {
@@ -230,6 +265,16 @@ export interface ActivityEventRow {
     event_type: "started" | "ended" | null;
     event_timestamp: Date | null;
     received_at: Date;
+}
+
+export interface BiomeRewardRow {
+    event_id: number;
+    user_id: number;
+    biome: string;
+    seeds_awarded: number;
+    xp_awarded: number;
+    badge_awarded: Badge | null;
+    awarded_at: Date;
 }
 
 export interface ActivitySessionRow {
