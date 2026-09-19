@@ -11,10 +11,11 @@ import {
     getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
 import { getUserBadges } from "../repository/badges";
+import { isFlagEnabled } from "../repository/flags";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quotaRoles";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
 import {
-    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName,
+    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getLevelForXp,
     type ActivitySessionRow, type ActivityStatus, type BiomeCategory, type UserRow,
 } from "../types";
 
@@ -72,6 +73,8 @@ interface ProfileData {
     quotaSummaryLines: string[];
     badges: Awaited<ReturnType<typeof getUserBadges>>;
     sessions: ActivitySessionRow[];
+    flowersEnabled: boolean;
+    economyEnabled: boolean;
 }
 
 async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
@@ -79,13 +82,15 @@ async function loadProfileData(guildId: string, discordUserId: string): Promise<
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) return null;
 
-    const [activeSeconds, biomes, channel, quotaSummaryLines, badges, sessions] = await Promise.all([
+    const [activeSeconds, biomes, channel, quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled] = await Promise.all([
         getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
         getBiomeCounts(user.id),
         getMacroChannelByUserId(user.id),
         getQuotaRewardSummaryLines(guildId, user.id),
         getUserBadges(user.id),
         getRecentSessions(user.id, 100),
+        isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"),
+        isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"),
     ]);
 
     const elapsedMs = Date.now() - start;
@@ -95,7 +100,7 @@ async function loadProfileData(guildId: string, discordUserId: string): Promise<
 
     return {
         user, activeSeconds, biomes, channelId: channel?.channel_id ?? null, flower: channel?.flower ?? null,
-        quotaSummaryLines, badges, sessions,
+        quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled,
     };
 }
 
@@ -149,6 +154,11 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
 
+    const seedsLevelLine = (() => {
+        const { level, currentLevelXp, nextLevelXp } = getLevelForXp(user.xp);
+        return `- 🌱 \`${user.seeds}\` Seeds · Level ${level} (${user.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`;
+    })();
+
     addHeaderSection(
         container,
         member,
@@ -156,9 +166,10 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
             `**\`${member.user.username}\`'s Hunter Profile**`,
             `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
             `- Channel: ${channelLine}`,
-            `- Flower: ${flowerLine}`,
+            ...(data.flowersEnabled ? [`- Flower: ${flowerLine}`] : []),
             `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
             `- ${totalLine} biomes found.`,
+            ...(data.economyEnabled ? [seedsLevelLine] : []),
         ].join("\n"),
     );
 
