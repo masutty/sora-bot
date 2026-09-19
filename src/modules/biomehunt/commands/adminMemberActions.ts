@@ -5,6 +5,7 @@ import type { BotClient } from "@/core/BotClient";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity";
+import { isFlagEnabled } from "../repository/flags";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
     pauseUser, setUserFlower, unpauseUser,
@@ -151,6 +152,10 @@ export async function memberClearBiomesAction(guildId: string, discordUserId: st
  * their macro tool already has configured) stay exactly as they were, in every case.
  */
 export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
+    if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
+        throw new BiomeHuntError("Flowers aren't enabled for this server. Enable `EXPERIMENT_WEBHOOK_FLOWERS` first (`flag set`).");
+    }
+
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no data.");
 
