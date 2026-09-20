@@ -15,7 +15,7 @@ import { isFlagEnabled } from "../repository/flags";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quotaRoles";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
 import {
-    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getLevelForXp,
+    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, formatSeedsFooter,
     type ActivitySessionRow, type ActivityStatus, type BiomeCategory, type UserRow,
 } from "../types";
 
@@ -154,10 +154,7 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
 
-    const seedsLevelLine = (() => {
-        const { level, currentLevelXp, nextLevelXp } = getLevelForXp(user.xp);
-        return `- 🌱 \`${user.seeds}\` Seeds · Level ${level} (${user.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`;
-    })();
+    const seedsLevelLine = formatSeedsFooter(user.seeds, user.xp);
 
     addHeaderSection(
         container,

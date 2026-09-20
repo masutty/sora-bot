@@ -1,20 +1,23 @@
-import { AttachmentBuilder, SlashCommandBuilder } from "discord.js";
+import {
+    ActionRowBuilder, AttachmentBuilder, type ButtonInteraction, ButtonBuilder, ButtonStyle, ComponentType,
+    ContainerBuilder, MessageFlags, SlashCommandBuilder,
+} from "discord.js";
 import type { Guild, GuildMember, Message } from "discord.js";
 import { readFileSync } from "fs";
 import type { BotClient } from "@/core/BotClient";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { confirmAction, type ConfirmPayload } from "@/utils/confirm";
+import { type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
-import { applyFlowerReroll } from "./adminMemberActions";
-import { FLOWER_META, flowerAssetPath } from "../flowers";
+import { applyFlowerToWebhook } from "./adminMemberActions";
+import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { runUserSetup } from "../guildSetup";
 import { isFlagEnabled } from "../repository/flags";
 import { adjustUserBalance } from "../repository/rewards";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
-import { BiomeHuntError } from "../types";
+import { BiomeHuntError, formatSeedsFooter } from "../types";
 import { runProfileView } from "./profileViews";
 
 const logger = new Logger("biomehunt.commands.bh");
@@ -114,7 +117,93 @@ async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Pr
 }
 
 const REROLL_COST = 50;
+const REROLL_IDLE_MS = 20_000;
 
+const REROLL_CONFIRM_ID = "reroll-confirm";
+const REROLL_CANCEL_ID = "reroll-cancel";
+const REROLL_AGAIN_ID = "reroll-again";
+const REROLL_APPLY_ID = "reroll-apply";
+
+function flowerAttachment(flower: string | null): { files: AttachmentBuilder[]; thumbnailAttachment?: string } {
+    if (!flower || !FLOWER_META[flower]) return { files: [] };
+    const fileName = `${flower.toLowerCase()}.png`;
+    return {
+        files: [new AttachmentBuilder(readFileSync(flowerAssetPath(flower)), { name: fileName })],
+        thumbnailAttachment: fileName,
+    };
+}
+
+function flowerLabel(flower: string | null): string {
+    return flower && FLOWER_META[flower] ? `**${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity})` : "*none yet*";
+}
+
+/** Shared render for every stage of the reroll flow - a headline, the Flower in question (with
+ * its image as a thumbnail), and the Seeds/Level footer so the balance is always visible while
+ * rolling, not just at the very start. */
+function buildRerollPayload(
+    headline: string,
+    flower: string | null,
+    seeds: number,
+    xp: number,
+    buttons?: ActionRowBuilder<ButtonBuilder>,
+): ConfirmPayload {
+    const { files, thumbnailAttachment } = flowerAttachment(flower);
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    const content = `${headline}\n${flowerLabel(flower)}\n${formatSeedsFooter(seeds, xp)}`;
+
+    if (thumbnailAttachment) {
+        container.addSectionComponents((section) =>
+            section
+                .addTextDisplayComponents((td) => td.setContent(content))
+                .setThumbnailAccessory((thumb) => thumb.setURL(`attachment://${thumbnailAttachment}`)),
+        );
+    } else {
+        container.addTextDisplayComponents((td) => td.setContent(content));
+    }
+
+    return { flags: MessageFlags.IsComponentsV2, components: buttons ? [container, buttons] : [container], files };
+}
+
+function buildConfirmButtons(): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(REROLL_CONFIRM_ID).setLabel("Reroll").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(REROLL_CANCEL_ID).setLabel("Cancel").setStyle(ButtonStyle.Danger),
+    );
+}
+
+function buildRollButtons(canRollAgain: boolean): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(REROLL_AGAIN_ID).setEmoji("🎲").setLabel("Roll Again").setStyle(ButtonStyle.Primary).setDisabled(!canRollAgain),
+        new ButtonBuilder().setCustomId(REROLL_APPLY_ID).setEmoji("✅").setLabel("Apply Now").setStyle(ButtonStyle.Success),
+    );
+}
+
+/** Waits for a single button click from `invokerId` on `msg` - resolves the interaction (so the
+ * caller acks it) or `null` on idle timeout. One-shot, matching this codebase's `awaitButton`
+ * convention (see ezsetup.ts/forwardMenu.ts) rather than a long-lived collector, since each
+ * reroll stage needs its own fresh wait. */
+function awaitRerollButton(msg: Message, invokerId: string): Promise<ButtonInteraction | null> {
+    return new Promise((resolve) => {
+        const collector = msg.createMessageComponentCollector({
+            componentType: ComponentType.Button,
+            filter: (i) => i.user.id === invokerId,
+            time: REROLL_IDLE_MS,
+            max: 1,
+        });
+        collector.on("collect", (i) => resolve(i));
+        collector.on("end", (collected) => {
+            if (collected.size === 0) resolve(null);
+        });
+    });
+}
+
+/**
+ * Self-service paid Flower reroll. Deliberately never calls the actual (rate-limited) webhook
+ * edit more than once per session: every "Roll Again" click only redraws and re-renders THIS
+ * message client-side, each redraw still costing Seeds like the first one - the real
+ * `webhook.edit()` only happens once, on "Apply Now" or on idle timeout (so Seeds already spent
+ * are never wasted just because the user walked away).
+ */
 async function runReroll(
     client: BotClient,
     guildId: string,
@@ -146,39 +235,66 @@ async function runReroll(
         return;
     }
 
-    const currentFlower = macroChannel.flower;
-    const files: AttachmentBuilder[] = [];
-    let thumbnailAttachment: string | undefined;
-    if (currentFlower && FLOWER_META[currentFlower]) {
-        const fileName = `${currentFlower.toLowerCase()}.png`;
-        files.push(new AttachmentBuilder(readFileSync(flowerAssetPath(currentFlower)), { name: fileName }));
-        thumbnailAttachment = fileName;
+    let seeds = user.seeds;
+
+    // ── Stage 1: confirm, showing the CURRENT flower - nothing is spent yet. ──
+    const msg = await respond(
+        buildRerollPayload(`Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`, macroChannel.flower, seeds, user.xp, buildConfirmButtons()),
+    );
+
+    const start = await awaitRerollButton(msg, discordUserId);
+    if (!start) {
+        await msg.edit(EmbedFormatter.warn("Reroll timed out - nothing was spent.")).catch(() => {});
+        return;
     }
+    if (start.customId === REROLL_CANCEL_ID) {
+        await start.update(EmbedFormatter.warn("Reroll cancelled - nothing was spent.")).catch(() => {});
+        return;
+    }
+    await start.deferUpdate().catch(() => {});
 
-    const currentFlowerLabel = currentFlower && FLOWER_META[currentFlower]
-        ? `${FLOWER_META[currentFlower].label} (${FLOWER_META[currentFlower].rarity})`
-        : "none yet";
+    // ── Stage 2: charge, draw, then Roll Again (charges again) / Apply Now, looping until one
+    // sticks - either by choice or by idle timeout, which auto-applies the last draw. ──
+    const spendOne = async (): Promise<boolean> => {
+        const fresh = await getUserByDiscordId(guildId, discordUserId);
+        if (!fresh || fresh.seeds < REROLL_COST) return false;
+        await adjustUserBalance(null, user.id, -REROLL_COST, 0);
+        seeds = fresh.seeds - REROLL_COST;
+        return true;
+    };
 
-    await confirmAction({
-        invokerId: discordUserId,
-        title: `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`,
-        fields: [
-            { label: "Current Flower", value: currentFlowerLabel },
-            { label: "Your Seeds", value: String(user.seeds) },
-        ],
-        files,
-        thumbnailAttachment,
-        send: respond,
-        onConfirm: async (): Promise<FormattedReply> => {
-            const fresh = await getUserByDiscordId(guildId, discordUserId);
-            if (!fresh || fresh.seeds < REROLL_COST) {
-                return EmbedFormatter.error("You no longer have enough Seeds.");
-            }
-            await adjustUserBalance(null, user.id, -REROLL_COST, 0);
-            const { flower } = await applyFlowerReroll(client, user.id);
-            return EmbedFormatter.success(`Flower rerolled: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`);
-        },
-    });
+    if (!(await spendOne())) {
+        await msg.edit(EmbedFormatter.error("You no longer have enough Seeds.")).catch(() => {});
+        return;
+    }
+    let drawn = drawRandomFlower();
+
+    while (true) {
+        await msg.edit(
+            buildRerollPayload("🎲 New Flower!", drawn, seeds, user.xp, buildRollButtons(seeds >= REROLL_COST)),
+        ).catch(() => {});
+
+        const click = await awaitRerollButton(msg, discordUserId);
+
+        if (click && click.customId === REROLL_AGAIN_ID) {
+            await click.deferUpdate().catch(() => {});
+            if (!(await spendOne())) continue; // button is disabled once this can't succeed, but stay safe
+            drawn = drawRandomFlower();
+            continue;
+        }
+
+        // Apply Now, or idle timeout - either way, commit what's currently shown.
+        if (click) await click.deferUpdate().catch(() => {});
+        try {
+            await applyFlowerToWebhook(client, user.id, drawn);
+        } catch (err) {
+            const text = err instanceof BiomeHuntError ? err.message : "Something went wrong applying your Flower.";
+            await msg.edit(EmbedFormatter.error(text)).catch(() => {});
+            return;
+        }
+        await msg.edit(buildRerollPayload("✅ Flower applied!", drawn, seeds, user.xp)).catch(() => {});
+        return;
+    }
 }
 
 function errorMessage(err: unknown): string {

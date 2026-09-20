@@ -151,10 +151,13 @@ export async function memberClearBiomesAction(guildId: string, discordUserId: st
  * Never creates, deletes, or recreates the channel or webhook - the webhook's id/token/URL (which
  * their macro tool already has configured) stay exactly as they were, in every case.
  */
-/** Draws a new Flower and applies it to a user's EXISTING macro webhook - shared by the free
- * admin command and the paid self-service one. Throws BiomeHuntError on any precondition failure
- * (no macro channel, channel/webhook inaccessible). */
-export async function applyFlowerReroll(client: BotClient, userId: number): Promise<{ flower: string }> {
+/** Applies a SPECIFIC Flower to a user's EXISTING macro webhook (name+avatar) and persists it -
+ * the actual rate-limited Discord API call. Used both by `applyFlowerReroll` (draws one and
+ * applies it immediately) and by `/bh reroll`'s roll-again/apply-now flow (which draws - and lets
+ * the user re-draw - several times client-side before ever calling this, so the webhook itself
+ * only gets edited once per session instead of once per draw). Throws BiomeHuntError on any
+ * precondition failure (no macro channel, channel/webhook inaccessible). */
+export async function applyFlowerToWebhook(client: BotClient, userId: number, flower: string): Promise<void> {
     const macroChannel = await getMacroChannelByUserId(userId);
     if (!macroChannel) throw new BiomeHuntError("That user doesn't have a macro channel.");
 
@@ -167,10 +170,15 @@ export async function applyFlowerReroll(client: BotClient, userId: number): Prom
     const webhook = webhooks?.get(macroChannel.webhook_id);
     if (!webhook) throw new BiomeHuntError("Couldn't find that user's webhook - it may have been deleted manually.");
 
-    const flower = drawRandomFlower();
     await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
     await setUserFlower(userId, flower);
+}
 
+/** Draws a new Flower and applies it immediately - the free admin path, which has no
+ * roll-again preview step. */
+export async function applyFlowerReroll(client: BotClient, userId: number): Promise<{ flower: string }> {
+    const flower = drawRandomFlower();
+    await applyFlowerToWebhook(client, userId, flower);
     return { flower };
 }
 
