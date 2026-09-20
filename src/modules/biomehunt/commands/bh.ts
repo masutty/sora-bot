@@ -147,7 +147,6 @@ function flowerSectionContent(flower: string | null): string {
 /**
  * Shared render for every stage of the reroll flow:
  * `-# Roll #N · X 🌱 spent this session` (tracking line)
- * ---
  * `## {heading}`
  * Flower name + rarity subheading, with its image as a thumbnail
  * ---
@@ -167,8 +166,6 @@ function buildRerollPayload(
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
     container.addTextDisplayComponents((td) => td.setContent(`-# Roll #${rollCount} · ${totalSpent} 🌱 spent this session`));
-    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-
     container.addTextDisplayComponents((td) => td.setContent(`## ${heading}`));
     const flowerContent = flowerSectionContent(flower);
     if (thumbnailAttachment) {
