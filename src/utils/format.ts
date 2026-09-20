@@ -1,4 +1,10 @@
 import { ContainerBuilder, MessageFlags } from "discord.js";
+import type { MessageMentionOptions } from "discord.js";
+
+/** Renders `<@&roleId>` mentions as the normal clickable role chip, but suppresses the actual
+ * ping - for admin/config screens that display a role (e.g. "Active role: <@&123>") where
+ * nobody asked to be notified just because their role got printed on a report. */
+export const NO_ROLE_PINGS: MessageMentionOptions = { roles: [] };
 
 export function formatTime(seconds: number): string {
     const d = Math.floor(seconds / 86400);
@@ -39,6 +45,7 @@ export function extractCodeBlock(text: string): string {
 export interface FormattedReply {
     components: ContainerBuilder[];
     flags: MessageFlags.IsComponentsV2;
+    allowedMentions?: MessageMentionOptions;
 }
 
 export interface FormattedReplyOptions {

@@ -1,9 +1,10 @@
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, ComponentType,
-    EmbedBuilder, ModalBuilder, RoleSelectMenuBuilder, TextInputBuilder, TextInputStyle,
+    ContainerBuilder, MessageFlags, ModalBuilder, RoleSelectMenuBuilder, SeparatorSpacingSize,
+    TextDisplayBuilder, TextInputBuilder, TextInputStyle,
 } from "discord.js";
-import type { Guild, GuildTextBasedChannel, Message } from "discord.js";
-import { EmbedFormatter, formatTime } from "@/utils/format";
+import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
+import { EmbedFormatter, formatTime, NO_ROLE_PINGS } from "@/utils/format";
 import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds";
 import { getGuildBadgeRoles } from "../repository/badges";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags";
@@ -59,8 +60,30 @@ function navRow(canGoBack: boolean, skipLabel: string, ...middle: ButtonBuilder[
     );
 }
 
-function stepEmbed(title: string, description: string): EmbedBuilder {
-    return new EmbedBuilder().setColor(0x5865f2).setTitle(`bh-ezsetup - ${title}`).setDescription(description);
+function stepContainer(title: string, description: string): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent(`## bh-admin setup: ${title}`));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents((td) => td.setContent(description));
+    return container;
+}
+
+/** Narrower than `MessageEditOptions` (single `flags` literal, not the wider bitfield type) so it
+ * structurally matches BOTH `interaction.editReply()` and `message.reply()` when spread - same
+ * trick `FormattedReply`/`ConfirmPayload` use (see `utils/format.ts`/`utils/confirm.ts`). */
+export interface StepPayload {
+    flags: MessageFlags.IsComponentsV2;
+    components: NonNullable<MessageEditOptions["components"]>;
+    allowedMentions: typeof NO_ROLE_PINGS;
+}
+
+/**
+ * Every wizard screen routes through this - bakes in the ComponentsV2 flag plus `NO_ROLE_PINGS`
+ * once, since most of these screens echo a role back (`roleLine`, badge/quota role summaries)
+ * just to show its current value, not to notify anyone.
+ */
+function stepPayload(components: StepPayload["components"]): StepPayload {
+    return { flags: MessageFlags.IsComponentsV2, components, allowedMentions: NO_ROLE_PINGS };
 }
 
 function formatQuotaRoleLine(qr: QuotaRoleRow): string {
@@ -201,10 +224,10 @@ async function promptNumberModal(
     fields: ModalFieldSpec[],
     canGoBack: boolean,
 ): Promise<StepResult<number[]>> {
-    await msg.edit({
-        embeds: [stepEmbed(title, description)],
-        components: [navRow(canGoBack, "Skip", new ButtonBuilder().setCustomId("ez-fill").setLabel("Fill Form").setStyle(ButtonStyle.Primary))],
-    });
+    await msg.edit(stepPayload([
+        stepContainer(title, description),
+        navRow(canGoBack, "Skip", new ButtonBuilder().setCustomId("ez-fill").setLabel("Fill Form").setStyle(ButtonStyle.Primary)),
+    ]));
 
     let resultValues: number[] | undefined;
 
@@ -264,13 +287,13 @@ async function promptNumberModal(
 async function promptRemoveIndex(msg: Message, adminId: string, roles: QuotaRoleRow[]): Promise<number | null> {
     const channel = msg.channel as GuildTextBasedChannel;
 
-    await msg.edit({
-        embeds: [stepEmbed(
+    await msg.edit(stepPayload([
+        stepContainer(
             "Quota Reward Roles",
             `Type the number of the quota role you want to remove:\n\n${formatNumberedQuotaRoleList(roles)}`,
-        )],
-        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(backButton())],
-    });
+        ),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(backButton()),
+    ]));
 
     return new Promise((resolve) => {
         let settled = false;
@@ -320,23 +343,21 @@ async function stepCategories(guild: Guild, adminId: string, msg: Message, canGo
         ? enabledCategories.map((c) => `<#${c.discord_category_id}>`).join(", ")
         : "`no categories selected`";
 
-    await msg.edit({
-        embeds: [stepEmbed(
+    await msg.edit(stepPayload([
+        stepContainer(
             "Categories",
             "Every time an user runs `bh setup`, I will pick one of the __selected categories__ and create their channel there!\n" +
             "Please select which categories I can use to create __user's macro channels__.\n" +
             "> Note: Click outside the selector to submit.\n\n" +
             ":warning: Discord has a limit of 50 channels per category. If you have a lot of members, please select multiple categories!\n\n" +
             `Currently selected categories:\n${categoryList}`,
-        )],
-        components: [
-            new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-                new ChannelSelectMenuBuilder().setCustomId("ez-categories").setChannelTypes(ChannelType.GuildCategory)
-                    .setMinValues(1).setMaxValues(25).setPlaceholder("Select categories"),
-            ),
-            navRow(canGoBack, "Skip"),
-        ],
-    });
+        ),
+        new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+            new ChannelSelectMenuBuilder().setCustomId("ez-categories").setChannelTypes(ChannelType.GuildCategory)
+                .setMinValues(1).setMaxValues(25).setPlaceholder("Select categories"),
+        ),
+        navRow(canGoBack, "Skip"),
+    ]));
 
     const result = await awaitChannelSelect(msg, adminId);
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
@@ -348,21 +369,19 @@ async function stepCategories(guild: Guild, adminId: string, msg: Message, canGo
 async function stepRoles(guild: Guild, adminId: string, msg: Message, canGoBack: boolean): Promise<Direction> {
     const roles = await getGuildRoles(guild.id);
 
-    await msg.edit({
-        embeds: [stepEmbed(
+    await msg.edit(stepPayload([
+        stepContainer(
             "Activity Roles",
             "We categorize users in ACTIVE / IDLE / INACTIVE.\n" +
             "Please select which role should represent each state.\n\n" +
             "Currently, I have these:\n" +
             `${roleLine("Active", roles.active)}\n${roleLine("Idle", roles.idle)}\n${roleLine("Inactive", roles.inactive)}`,
-        )],
-        components: [
-            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-role-active").setPlaceholder("Active role")),
-            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-role-idle").setPlaceholder("Idle role")),
-            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-role-inactive").setPlaceholder("Inactive role")),
-            navRow(canGoBack, "Skip"),
-        ],
-    });
+        ),
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-role-active").setPlaceholder("Active role")),
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-role-idle").setPlaceholder("Idle role")),
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-role-inactive").setPlaceholder("Inactive role")),
+        navRow(canGoBack, "Skip"),
+    ]));
 
     const result = await awaitRoleTriplet(msg, adminId);
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
@@ -410,19 +429,19 @@ async function stepAutoDelete(guild: Guild, adminId: string, msg: Message, canGo
     while (true) {
         const config = await getOrCreateGuildConfig(guild.id);
         const enabled = await isFlagEnabled(guild.id, "AUTO_DELETE_ENABLED");
-        await msg.edit({
-            embeds: [stepEmbed(
+        await msg.edit(stepPayload([
+            stepContainer(
                 "Auto-Delete Inactive Channels (optional)",
                 "When enabled, I will automatically delete a user's macro channel once they've been __inactive__ for longer than the inactive threshold, plus this extra grace period. This keeps unused channels from piling up.\n\n" +
                 "Current settings:\n" +
                 `- Auto-delete: ${enabled ? `\`enabled, ${formatTime(config.delete_inactive_after_s)} after going inactive\`` : `\`disabled (would be ${formatTime(config.delete_inactive_after_s)})\``}`,
-            )],
-            components: [navRow(
+            ),
+            navRow(
                 canGoBack, "Skip",
                 new ButtonBuilder().setCustomId("ez-enable").setLabel("Enable").setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId("ez-disable").setLabel("Disable").setStyle(ButtonStyle.Secondary),
-            )],
-        });
+            ),
+        ]));
 
         const choice = await awaitButton(msg, adminId);
         if (isTerminal(choice)) { await finish(msg, terminalMessage(choice.kind)); return choice.kind; }
@@ -453,19 +472,19 @@ async function stepAutoDelete(guild: Guild, adminId: string, msg: Message, canGo
 async function stepCounter(guild: Guild, adminId: string, msg: Message, canGoBack: boolean): Promise<Direction> {
     while (true) {
         const config = await getOrCreateGuildConfig(guild.id);
-        await msg.edit({
-            embeds: [stepEmbed(
+        await msg.edit(stepPayload([
+            stepContainer(
                 "Live Counter (optional)",
                 "I can post a live message showing how many members are active, idle, and inactive right now, and keep it updated automatically every few minutes.\n\n" +
                 "Current settings:\n" +
                 `- Live counter: ${config.counter_channel_id ? `\`enabled\` in <#${config.counter_channel_id}>` : "`disabled`"}`,
-            )],
-            components: [navRow(
+            ),
+            navRow(
                 canGoBack, "Skip",
                 new ButtonBuilder().setCustomId("ez-set").setLabel("Set Channel").setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId("ez-disable").setLabel("Disable").setStyle(ButtonStyle.Secondary),
-            )],
-        });
+            ),
+        ]));
 
         const choice = await awaitButton(msg, adminId);
         if (isTerminal(choice)) { await finish(msg, terminalMessage(choice.kind)); return choice.kind; }
@@ -473,15 +492,13 @@ async function stepCounter(guild: Guild, adminId: string, msg: Message, canGoBac
         if (choice.kind === "skip") return "forward";
 
         if (choice.kind === "ok" && choice.value === "ez-set") {
-            await msg.edit({
-                embeds: [stepEmbed("Live Counter", "Pick the text channel for the live counter.")],
-                components: [
-                    new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-                        new ChannelSelectMenuBuilder().setCustomId("ez-counter-channel").setChannelTypes(ChannelType.GuildText).setPlaceholder("Select a channel"),
-                    ),
-                    navRow(true, "Skip"),
-                ],
-            });
+            await msg.edit(stepPayload([
+                stepContainer("Live Counter", "Pick the text channel for the live counter."),
+                new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+                    new ChannelSelectMenuBuilder().setCustomId("ez-counter-channel").setChannelTypes(ChannelType.GuildText).setPlaceholder("Select a channel"),
+                ),
+                navRow(true, "Skip"),
+            ]));
             const channelResult = await awaitChannelSelect(msg, adminId);
             if (isTerminal(channelResult)) { await finish(msg, terminalMessage(channelResult.kind)); return channelResult.kind; }
             if (channelResult.kind === "back" || channelResult.kind === "skip") continue;
@@ -499,21 +516,21 @@ async function stepCounter(guild: Guild, adminId: string, msg: Message, canGoBac
 async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGoBack: boolean): Promise<Direction> {
     while (true) {
         const existingRewards = await getQuotaRolesForGuild(guild.id);
-        await msg.edit({
-            embeds: [stepEmbed(
+        await msg.edit(stepPayload([
+            stepContainer(
                 "Quota Reward Roles (optional)",
                 "Reward roles are granted automatically to users who meet a __quota__ you set per role, separate from general activity tracking. You can configure as many as you like, each with its own requirement.\n\n" +
                 `Currently configured:\n${formatQuotaRoleList(existingRewards)}\n\n` +
                 "Add another, or remove one?",
-            )],
-            components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+            ),
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
                 backButton().setDisabled(!canGoBack),
                 new ButtonBuilder().setCustomId("ez-yes").setLabel("Add").setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId("ez-remove").setLabel("Remove").setStyle(ButtonStyle.Danger).setDisabled(existingRewards.length === 0),
                 skipButton("Skip"),
                 cancelButton(),
-            )],
-        });
+            ),
+        ]));
 
         const choice = await awaitButton(msg, adminId);
         if (isTerminal(choice)) { await finish(msg, terminalMessage(choice.kind)); return choice.kind; }
@@ -529,13 +546,11 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
         if (choice.kind !== "ok" || choice.value !== "ez-yes") continue;
 
         // ── Add a new reward role ──
-        await msg.edit({
-            embeds: [stepEmbed("Quota Reward Roles", "Pick the role to grant.")],
-            components: [
-                new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-reward-role").setPlaceholder("Reward role")),
-                navRow(true, "Skip"),
-            ],
-        });
+        await msg.edit(stepPayload([
+            stepContainer("Quota Reward Roles", "Pick the role to grant."),
+            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-reward-role").setPlaceholder("Reward role")),
+            navRow(true, "Skip"),
+        ]));
         const rewardRole = await new Promise<StepResult<string>>((resolve) => {
             const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: STEP_TIMEOUT_MS, max: 1 });
             collector.on("collect", async (i) => {
@@ -550,21 +565,21 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
         if (isTerminal(rewardRole)) { await finish(msg, terminalMessage(rewardRole.kind)); return rewardRole.kind; }
         if (rewardRole.kind === "back" || rewardRole.kind === "skip") continue;
 
-        await msg.edit({
-            embeds: [stepEmbed(
+        await msg.edit(stepPayload([
+            stepContainer(
                 "Quota Reward Roles",
                 "How should this role be evaluated?\n\n" +
                 "- Fixed\n" +
                 "> Checked once a day. If the user meets quota, they get the role for a fixed number of days, renewed if they still meet quota before it expires.\n\n" +
                 "- Rolling Window\n" +
                 "> Checked continuously. The role is granted or removed automatically the moment the user's rolling activity crosses the target, no fixed duration.",
-            )],
-            components: [navRow(
+            ),
+            navRow(
                 true, "Skip",
                 new ButtonBuilder().setCustomId("ez-mode-f").setLabel("Fixed").setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId("ez-mode-rw").setLabel("Rolling Window").setStyle(ButtonStyle.Primary),
-            )],
-        });
+            ),
+        ]));
         const modeResult = await awaitButton(msg, adminId);
         if (isTerminal(modeResult)) { await finish(msg, terminalMessage(modeResult.kind)); return modeResult.kind; }
         if (modeResult.kind === "back" || modeResult.kind === "skip") continue;
@@ -599,21 +614,19 @@ async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGo
     const badgeRoles = await getGuildBadgeRoles(guild.id);
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
 
-    await msg.edit({
-        embeds: [stepEmbed(
+    await msg.edit(stepPayload([
+        stepContainer(
             "Special Biome Badges (optional)",
             "Some biomes are rare: Glitched, Cyberspace and Dreamspace. The first time a user's macro reports one of them, they permanently earn a badge on their profile.\n\n" +
             "You can optionally also grant a role for each one found. Pick a role for any (or none) of them below.\n\n" +
             "Currently:\n" +
             ALL_BADGES.map((b) => roleLine(`${BADGE_META[b].emoji} ${BADGE_META[b].display}`, badgeRoleMap.get(b) ?? null)).join("\n"),
-        )],
-        components: [
-            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-GLITCHED").setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`)),
-            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-CYBERSPACE").setPlaceholder(`${BADGE_META.CYBERSPACE.emoji} Cyberspace role`)),
-            new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-DREAMSPACE").setPlaceholder(`${BADGE_META.DREAMSPACE.emoji} Dreamspace role`)),
-            navRow(canGoBack, "Skip", new ButtonBuilder().setCustomId("ez-done").setLabel("Done").setStyle(ButtonStyle.Primary)),
-        ],
-    });
+        ),
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-GLITCHED").setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`)),
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-CYBERSPACE").setPlaceholder(`${BADGE_META.CYBERSPACE.emoji} Cyberspace role`)),
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(new RoleSelectMenuBuilder().setCustomId("ez-badge-DREAMSPACE").setPlaceholder(`${BADGE_META.DREAMSPACE.emoji} Dreamspace role`)),
+        navRow(canGoBack, "Skip", new ButtonBuilder().setCustomId("ez-done").setLabel("Done").setStyle(ButtonStyle.Primary)),
+    ]));
 
     const result = await awaitBadgeRoleSelects(msg, adminId);
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
@@ -632,20 +645,20 @@ async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGo
 export async function runEzSetup(
     guild: Guild,
     adminId: string,
-    respond: (payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) => Promise<Message>,
+    respond: (payload: StepPayload) => Promise<Message>,
 ): Promise<void> {
-    const msg = await respond({
-        embeds: [stepEmbed(
+    const msg = await respond(stepPayload([
+        stepContainer(
             "Welcome!",
             "This wizard will walk you through every relevant setting, step by step.\n\n" +
             "If this is the first time you're running this wizard, you should answer every question that does not have the `(optional)` header. If you don't answer them, your setup will be unfinished and not work!\n\n" +
             "If this is __NOT__ the first time you're running this wizard, feel free to skip any setting you already configured.",
-        )],
-        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder().setCustomId("ez-yes").setLabel("Start").setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId("ez-cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger),
-        )],
-    });
+        ),
+    ]));
 
     const start = await awaitButton(msg, adminId);
     if (start.kind !== "ok") return finish(msg, start.kind === "cancel" ? "Setup cancelled." : "Setup timed out.");
@@ -682,14 +695,20 @@ export async function runEzSetup(
     ]);
 
     summary
-        .setColor(readiness.ready ? 0x57f287 : 0xed4245)
-        .setTitle("bh-ezsetup - Complete")
-        .spliceFields(0, 0, {
-            name: "Setup Status",
-            value: `${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\n${readiness.hasRoles ? "✅" : "❌"} All 3 status roles configured`,
-        })
-        .addFields({ name: "Quota Reward Roles", value: formatQuotaRoleList(quotaRoles) })
-        .setFooter({ text: readiness.ready ? "Setup finished. /bh setup is enabled." : "Setup finished, but something's still missing - check above." });
+        .setAccentColor(readiness.ready ? 0x57f287 : 0xed4245)
+        .spliceComponents(0, 1, new TextDisplayBuilder().setContent("## bh-admin setup: Complete"))
+        .spliceComponents(
+            1, 0,
+            new TextDisplayBuilder().setContent(
+                `**Setup Status**\n${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\n${readiness.hasRoles ? "✅" : "❌"} All 3 status roles configured`,
+            ),
+        )
+        .addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents((td) => td.setContent(`**Quota Reward Roles**\n${formatQuotaRoleList(quotaRoles)}`))
+        .addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents((td) =>
+            td.setContent(`-# ${readiness.ready ? "Setup finished. /bh setup is enabled." : "Setup finished, but something's still missing - check above."}`),
+        );
 
-    await msg.edit({ embeds: [summary], components: [] });
+    await msg.edit(stepPayload([summary]));
 }

@@ -1,4 +1,4 @@
-import { EmbedBuilder } from "discord.js";
+import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
 import { formatTime } from "@/utils/format";
 import { Logger } from "@/utils/logging";
@@ -24,14 +24,13 @@ export async function reportSessionEnd(client: BotClient, userId: number): Promi
         ? biomes.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n")
         : "No biomes recorded.";
 
-    const embed = new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("Session Ended")
-        .setDescription(`Duration: \`${formatTime(session.duration_seconds)}\``)
-        .addFields({ name: "Biomes", value: biomeLines });
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(`**Session Ended**\nDuration: \`${formatTime(session.duration_seconds)}\`\n\n**Biomes**\n${biomeLines}`),
+    );
 
     try {
-        await channel.send({ embeds: [embed] });
+        await channel.send({ flags: MessageFlags.IsComponentsV2, components: [container] });
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { userId });
     }
