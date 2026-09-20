@@ -141,7 +141,7 @@ function capitalize(text: string): string {
  * name is the point, rarity is context, so name has to read bigger, not the other way around. */
 function flowerSectionContent(flower: string | null): string {
     if (!flower || !FLOWER_META[flower]) return "*none yet*";
-    return `### ${FLOWER_META[flower].label}\n**${capitalize(FLOWER_META[flower].rarity)}**`;
+    return `### ${FLOWER_META[flower].label}\n-# ${capitalize(FLOWER_META[flower].rarity)}`;
 }
 
 /**
@@ -160,12 +160,14 @@ function buildRerollPayload(
     xp: number,
     rollCount: number,
     buttons?: ActionRowBuilder<ButtonBuilder>,
+    note?: string,
 ): ConfirmPayload {
     const { files, thumbnailAttachment } = flowerAttachment(flower);
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
     container.addTextDisplayComponents((td) => td.setContent(`-# Roll #${rollCount}`));
     container.addTextDisplayComponents((td) => td.setContent(`## ${heading}`));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
     const flowerContent = flowerSectionContent(flower);
     if (thumbnailAttachment) {
         container.addSectionComponents((section) =>
@@ -176,8 +178,9 @@ function buildRerollPayload(
     } else {
         container.addTextDisplayComponents((td) => td.setContent(flowerContent));
     }
+    if (note) container.addTextDisplayComponents((td) => td.setContent(`-# ${note}`));
 
-    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
     container.addTextDisplayComponents((td) => td.setContent(formatSeedsFooter(seeds, xp)));
 
     return { flags: MessageFlags.IsComponentsV2, components: buttons ? [container, buttons] : [container], files };
@@ -318,7 +321,10 @@ async function runRerollSession(
 
     while (true) {
         await msg.edit(
-            buildRerollPayload("🎲 New Flower!", drawn, seeds, user.xp, rollCount, buildRollButtons(seeds >= REROLL_COST)),
+            buildRerollPayload(
+                "🎲 New Flower!", drawn, seeds, user.xp, rollCount, buildRollButtons(seeds >= REROLL_COST),
+                `If you don't pick one within ${REROLL_IDLE_MS / 1000}s, this Flower is applied automatically.`,
+            ),
         ).catch(() => {});
 
         const click = await awaitRerollButton(msg, discordUserId);
