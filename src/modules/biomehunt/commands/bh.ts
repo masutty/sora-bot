@@ -137,18 +137,18 @@ function capitalize(text: string): string {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Bold Flower name, its rarity as a `###` subheading right beneath it - the Section's own
- * "data" block, between the tracking line and the Seeds footer. */
+/** The Flower's name as the prominent heading, its rarity as a smaller bold line underneath -
+ * name is the point, rarity is context, so name has to read bigger, not the other way around. */
 function flowerSectionContent(flower: string | null): string {
     if (!flower || !FLOWER_META[flower]) return "*none yet*";
-    return `**${FLOWER_META[flower].label}**\n### ${capitalize(FLOWER_META[flower].rarity)}`;
+    return `### ${FLOWER_META[flower].label}\n**${capitalize(FLOWER_META[flower].rarity)}**`;
 }
 
 /**
  * Shared render for every stage of the reroll flow:
- * `-# Roll #N · X 🌱 spent this session` (tracking line)
+ * `-# Roll #N` (tracking line)
  * `## {heading}`
- * Flower name + rarity subheading, with its image as a thumbnail
+ * Flower name + rarity, with its image as a thumbnail
  * ---
  * `-# 🌱 Seeds: ... · Level ...` (same footer the profile uses, so the balance is always visible
  * while rolling, not just at the very start)
@@ -159,13 +159,12 @@ function buildRerollPayload(
     seeds: number,
     xp: number,
     rollCount: number,
-    totalSpent: number,
     buttons?: ActionRowBuilder<ButtonBuilder>,
 ): ConfirmPayload {
     const { files, thumbnailAttachment } = flowerAttachment(flower);
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
-    container.addTextDisplayComponents((td) => td.setContent(`-# Roll #${rollCount} · ${totalSpent} 🌱 spent this session`));
+    container.addTextDisplayComponents((td) => td.setContent(`-# Roll #${rollCount}`));
     container.addTextDisplayComponents((td) => td.setContent(`## ${heading}`));
     const flowerContent = flowerSectionContent(flower);
     if (thumbnailAttachment) {
@@ -217,6 +216,11 @@ function awaitRerollButton(msg: Message, invokerId: string): Promise<ButtonInter
     });
 }
 
+/** Discord user ids with a reroll session currently open - guards against a second concurrent
+ * `/bh reroll` for the same user, which would otherwise race two independent draw/apply loops
+ * against the same webhook (and let two idle timeouts each try to apply their own Flower). */
+const activeRerolls = new Set<string>();
+
 /**
  * Self-service paid Flower reroll. Deliberately never calls the actual (rate-limited) webhook
  * edit more than once per session: every "Roll Again" click only redraws and re-renders THIS
@@ -225,6 +229,24 @@ function awaitRerollButton(msg: Message, invokerId: string): Promise<ButtonInter
  * are never wasted just because the user walked away).
  */
 async function runReroll(
+    client: BotClient,
+    guildId: string,
+    discordUserId: string,
+    respond: (payload: ConfirmPayload | FormattedReply) => Promise<Message>,
+): Promise<void> {
+    if (activeRerolls.has(discordUserId)) {
+        await respond(EmbedFormatter.error("You already have a reroll in progress - finish that one first."));
+        return;
+    }
+    activeRerolls.add(discordUserId);
+    try {
+        await runRerollSession(client, guildId, discordUserId, respond);
+    } finally {
+        activeRerolls.delete(discordUserId);
+    }
+}
+
+async function runRerollSession(
     client: BotClient,
     guildId: string,
     discordUserId: string,
@@ -257,13 +279,12 @@ async function runReroll(
 
     let seeds = user.seeds;
     let rollCount = 0;
-    let totalSpent = 0;
 
     // ── Stage 1: confirm, showing the CURRENT flower - nothing is spent yet. ──
     const msg = await respond(
         buildRerollPayload(
             `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`, macroChannel.flower, seeds, user.xp,
-            rollCount, totalSpent, buildConfirmButtons(),
+            rollCount, buildConfirmButtons(),
         ),
     );
 
@@ -286,7 +307,6 @@ async function runReroll(
         await adjustUserBalance(null, user.id, -REROLL_COST, 0);
         seeds = fresh.seeds - REROLL_COST;
         rollCount++;
-        totalSpent += REROLL_COST;
         return true;
     };
 
@@ -298,7 +318,7 @@ async function runReroll(
 
     while (true) {
         await msg.edit(
-            buildRerollPayload("🎲 New Flower!", drawn, seeds, user.xp, rollCount, totalSpent, buildRollButtons(seeds >= REROLL_COST)),
+            buildRerollPayload("🎲 New Flower!", drawn, seeds, user.xp, rollCount, buildRollButtons(seeds >= REROLL_COST)),
         ).catch(() => {});
 
         const click = await awaitRerollButton(msg, discordUserId);
@@ -319,7 +339,7 @@ async function runReroll(
             await msg.edit(EmbedFormatter.error(text)).catch(() => {});
             return;
         }
-        await msg.edit(buildRerollPayload("✅ Flower applied!", drawn, seeds, user.xp, rollCount, totalSpent)).catch(() => {});
+        await msg.edit(buildRerollPayload("✅ Flower applied!", drawn, seeds, user.xp, rollCount)).catch(() => {});
         return;
     }
 }
