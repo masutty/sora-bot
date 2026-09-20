@@ -1,4 +1,4 @@
-import { EmbedBuilder } from "discord.js";
+import { ContainerBuilder } from "discord.js";
 import { getGuildBadgeRole, getGuildBadgeRoles, grantUserBadge, removeGuildBadgeRole, revokeUserBadge, setGuildBadgeRole } from "../repository/badges";
 import { enqueueRoleJob } from "../repository/roleJobs";
 import { getUserByDiscordId } from "../repository/users";
@@ -40,7 +40,7 @@ export async function badgesSetAction(guildId: string, badge: Badge, roleId: str
     return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display} will now grant <@&${roleId}>.`;
 }
 
-export async function badgesListAction(guildId: string): Promise<EmbedBuilder> {
+export async function badgesListAction(guildId: string): Promise<ContainerBuilder> {
     const badgeRoles = await getGuildBadgeRoles(guildId);
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
 
@@ -51,8 +51,7 @@ export async function badgesListAction(guildId: string): Promise<EmbedBuilder> {
         return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display}: ${roleNote}`;
     });
 
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("BiomeHunt Badges")
-        .setDescription(lines.join("\n"));
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent(`**Badges**\n${lines.join("\n")}`));
+    return container;
 }

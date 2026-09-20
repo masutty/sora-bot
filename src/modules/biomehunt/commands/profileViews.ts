@@ -1,10 +1,10 @@
 import {
-    ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, EmbedBuilder, GuildMember,
+    ButtonStyle, ContainerBuilder, GuildMember,
     MessageFlags, SeparatorSpacingSize,
 } from "discord.js";
 import type { Message } from "discord.js";
 import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/buttonView";
-import { EmbedFormatter, type FormattedReply, formatCodeblock, formatTime, unix } from "@/utils/format";
+import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { FLOWER_META } from "../flowers";
 import {
@@ -104,14 +104,6 @@ async function loadProfileData(guildId: string, discordUserId: string): Promise<
     };
 }
 
-function baseEmbed(member: GuildMember, color: number): EmbedBuilder {
-    return new EmbedBuilder()
-        .setColor(color)
-        .setThumbnail(member.displayAvatarURL())
-        .setFooter({ text: member.user.username, iconURL: member.displayAvatarURL() })
-        .setTimestamp();
-}
-
 /** Sums per-biome counts (total sightings, not distinct biomes discovered) into their category buckets. */
 function totalBiomesFoundByCategory(biomes: Array<{ biome: string; count: number }>): Record<BiomeCategory, number> {
     const totals: Record<BiomeCategory, number> = { biome: 0, weather: 0, rare: 0, event: 0 };
@@ -160,7 +152,7 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
         container,
         member,
         [
-            `**\`${member.user.username}\`'s Hunter Profile**`,
+            `**\`${member.user.username}\`'s Profile**`,
             `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
             `- Channel: ${channelLine}`,
             ...(data.flowersEnabled ? [`- Flower: ${flowerLine}`] : []),
@@ -345,7 +337,8 @@ export async function getSessionHistory(guildId: string, discordUserId: string, 
     return getRecentSessions(user.id, limit);
 }
 
-export function buildHistoryEmbed(sessions: ActivitySessionRow[], member: GuildMember, page: number): EmbedBuilder {
+/** Standalone (non-tab) container for `!bh-admin session view` - paginated via `attachPagination`. */
+export function buildHistoryContainer(sessions: ActivitySessionRow[], member: GuildMember, page: number): ContainerBuilder {
     const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
     const start = page * SESSIONS_PER_PAGE;
     const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
@@ -355,36 +348,32 @@ export function buildHistoryEmbed(sessions: ActivitySessionRow[], member: GuildM
         `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
     );
 
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setThumbnail(member.displayAvatarURL())
-        .setTitle(`\`${member.user.username}\`'s Session History`)
-        .setDescription(lines.join("\n"))
-        .setFooter({ text: `${member.user.username} · Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`, iconURL: member.displayAvatarURL() })
-        .setTimestamp();
+    const container = baseContainer(0x5865f2);
+    addHeaderSection(container, member, `**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`);
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`));
+    return container;
 }
 
-export function buildHistoryRow(page: number, pages: number): ActionRowBuilder<ButtonBuilder> {
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId("history-prev").setEmoji("◀️").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-        new ButtonBuilder().setCustomId("history-next").setEmoji("▶️").setStyle(ButtonStyle.Secondary).setDisabled(page === pages - 1),
-    );
-}
-
-export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuilder> {
+export async function buildLeaderboardContainer(guildId: string): Promise<ContainerBuilder> {
     const rows = await getLeaderboard(guildId, RECENT_ACTIVITY_WINDOW_HOURS, 10);
-    if (rows.length === 0) return new EmbedBuilder().setColor(0x5865f2).setDescription("ℹ️ No activity recorded yet.");
+    const container = baseContainer(0x5865f2);
 
-    const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> — ${formatTime(r.activeSeconds)} (${r.sessionCount} sessions)`);
+    if (rows.length === 0) {
+        container.addTextDisplayComponents((td) => td.setContent("-# ℹ️ No activity recorded yet."));
+        return container;
+    }
 
-    return new EmbedBuilder().setColor(0x5865f2).setTitle("BiomeHunt Leaderboard").setDescription(lines.join("\n"));
+    const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> - ${formatTime(r.activeSeconds)} (${r.sessionCount} sessions)`);
+    container.addTextDisplayComponents((td) => td.setContent(`**Leaderboard**\n${lines.join("\n")}`));
+    return container;
 }
 
 export async function getUserListPage(guildId: string, status: ActivityStatus | null): Promise<UserRow[]> {
     return getUsersByGuildStatus(guildId, status);
 }
 
-export function buildUserListEmbed(users: UserRow[], page: number, status: ActivityStatus | null): EmbedBuilder {
+export function buildUserListContainer(users: UserRow[], page: number, status: ActivityStatus | null): ContainerBuilder {
     const pages = Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
     const start = page * USERS_PER_PAGE;
     const slice = users.slice(start, start + USERS_PER_PAGE);
@@ -392,34 +381,32 @@ export function buildUserListEmbed(users: UserRow[], page: number, status: Activ
     const lines = slice.map((u) => {
         const activity = u.last_activity_at ? `last active <t:${unix(u.last_activity_at)}:R>` : "no activity yet";
         const pausedNote = u.paused_at ? " (paused)" : "";
-        return `${STATUS_EMOJI[u.current_status]} <@${u.discord_user_id}> — ${activity}${pausedNote}`;
+        return `${STATUS_EMOJI[u.current_status]} <@${u.discord_user_id}> - ${activity}${pausedNote}`;
     });
 
-    const title = status ? `BiomeHunt Users — ${status[0].toUpperCase()}${status.slice(1)}` : "BiomeHunt Users — All";
+    const title = status ? `Users - ${status[0].toUpperCase()}${status.slice(1)}` : "Users - All";
+    const body = lines.length > 0 ? lines.join("\n") : "No users match this filter.";
 
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle(title)
-        .setDescription(lines.length > 0 ? lines.join("\n") : "No users match this filter.")
-        .setFooter({ text: `Page ${page + 1} of ${pages} - ${users.length} user(s) total` });
+    const container = baseContainer(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent(`**${title}**\n${body}`));
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${users.length} user(s) total`));
+    return container;
 }
 
-export function buildUserListRow(page: number, pages: number): ActionRowBuilder<ButtonBuilder> {
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId("userlist-prev").setEmoji("◀️").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-        new ButtonBuilder().setCustomId("userlist-next").setEmoji("▶️").setStyle(ButtonStyle.Secondary).setDisabled(page === pages - 1),
-    );
-}
-
-export async function buildGuildStatsEmbed(guildId: string): Promise<EmbedBuilder> {
+export async function buildGuildStatsContainer(guildId: string): Promise<ContainerBuilder> {
     const counts = await getGuildUserCounts(guildId);
 
-    return new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("BiomeHunt Guild Stats")
-        .addFields(
-            { name: "🟢 Active", value: String(counts.active), inline: true },
-            { name: "🟡 Idle", value: String(counts.idle), inline: true },
-            { name: "🔴 Inactive", value: String(counts.inactive), inline: true },
-        );
+    const container = baseContainer(0x5865f2);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            [
+                "**Guild Stats**",
+                `- 🟢 Active: \`${counts.active}\``,
+                `- 🟡 Idle: \`${counts.idle}\``,
+                `- 🔴 Inactive: \`${counts.inactive}\``,
+            ].join("\n"),
+        ),
+    );
+    return container;
 }

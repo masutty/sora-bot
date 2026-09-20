@@ -1,5 +1,6 @@
 import {
     ActionRowBuilder,
+    type ButtonInteraction,
     ButtonBuilder,
     ButtonStyle,
     ComponentType,
@@ -67,6 +68,57 @@ export interface AttachPaginationOptions {
     render: (page: number, interactive: boolean) => MessageEditOptions;
 }
 
+/**
+ * Handles a single click on one of `buildPaginationRow()`'s buttons (first/prev/next/last, or
+ * jump via modal) - calling `render`/`i.update()` (or the modal submission's own `.update()`)
+ * itself, and resolving to the page it landed on. Resolves `null` if `customId` isn't one of this
+ * row's buttons (so it can sit alongside other buttons in a bigger flow - check those first, fall
+ * through to this one otherwise - see `forwardMenu.ts`'s own Back button), or if the jump modal
+ * was cancelled or given bad input (nothing to update in that case either).
+ */
+export async function handlePaginationButton(
+    i: ButtonInteraction,
+    page: number,
+    pages: number,
+    render: (page: number) => MessageEditOptions,
+): Promise<number | null> {
+    if (i.customId === FIRST_ID) {
+        await i.update(render(0));
+        return 0;
+    }
+    if (i.customId === PREV_ID) {
+        const next = page > 0 ? page - 1 : pages - 1;
+        await i.update(render(next));
+        return next;
+    }
+    if (i.customId === NEXT_ID) {
+        const next = page < pages - 1 ? page + 1 : 0;
+        await i.update(render(next));
+        return next;
+    }
+    if (i.customId === LAST_ID) {
+        await i.update(render(pages - 1));
+        return pages - 1;
+    }
+    if (i.customId !== JUMP_ID) return null;
+
+    const modal = buildJumpModal(pages);
+    await i.showModal(modal);
+    const submitted = await i
+        .awaitModalSubmit({ time: MODAL_TIMEOUT_MS, filter: (m) => m.customId === modal.data.custom_id })
+        .catch(() => null);
+    if (!submitted?.isFromMessage()) return null;
+
+    const target = Number(submitted.fields.getTextInputValue(JUMP_INPUT_ID));
+    if (!Number.isInteger(target) || target < 1 || target > pages) {
+        await submitted.reply({ content: `Enter a number between 1 and ${pages}.`, ephemeral: true }).catch(() => { });
+        return null;
+    }
+    const next = target - 1;
+    await submitted.update(render(next));
+    return next;
+}
+
 /** Prev/next with wraparound (first page + "<" goes to the last, and vice-versa) + direct jump via modal. */
 export function attachPagination(msg: Message, opts: AttachPaginationOptions): void {
     const { pages, invokerId, render, timeoutMs = 20_000 } = opts;
@@ -83,46 +135,8 @@ export function attachPagination(msg: Message, opts: AttachPaginationOptions): v
             return;
         }
 
-        if (i.customId === FIRST_ID) {
-            page = 0;
-            await i.update(render(page, true));
-            return;
-        }
-
-        if (i.customId === PREV_ID) {
-            page = page > 0 ? page - 1 : pages - 1;
-            await i.update(render(page, true));
-            return;
-        }
-
-        if (i.customId === NEXT_ID) {
-            page = page < pages - 1 ? page + 1 : 0;
-            await i.update(render(page, true));
-            return;
-        }
-
-        if (i.customId === LAST_ID) {
-            page = pages - 1;
-            await i.update(render(page, true));
-            return;
-        }
-
-        if (i.customId !== JUMP_ID) return;
-
-        const modal = buildJumpModal(pages);
-        await i.showModal(modal);
-        const submitted = await i
-            .awaitModalSubmit({ time: MODAL_TIMEOUT_MS, filter: (m) => m.customId === modal.data.custom_id })
-            .catch(() => null);
-        if (!submitted?.isFromMessage()) return;
-
-        const target = Number(submitted.fields.getTextInputValue(JUMP_INPUT_ID));
-        if (!Number.isInteger(target) || target < 1 || target > pages) {
-            await submitted.reply({ content: `Enter a number between 1 and ${pages}.`, ephemeral: true }).catch(() => { });
-            return;
-        }
-        page = target - 1;
-        await submitted.update(render(page, true));
+        const next = await handlePaginationButton(i, page, pages, (p) => render(p, true));
+        if (next !== null) page = next;
     });
 
     collector.on("end", async () => {
