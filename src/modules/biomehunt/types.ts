@@ -45,6 +45,7 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     PUMPKINMOON: { label: "Pumpkin Moon", category: "event", color: 0xff8c00, iconUrl: "https://i.imgur.com/wEdcqqI.png" },
     GRAVEYARD: { label: "Graveyard", category: "event", color: 0x556b2f, iconUrl: "https://i.imgur.com/MrKZqUx.png" },
     BLAZINGSUN: { label: "Blazing Sun", category: "event", color: 0xff4500, iconUrl: "https://i.imgur.com/BMKWWJ3.png" },
+    INCINERATOR: { label: "Incinerator", category: "event", color: 0xff4500, iconUrl: "" },
     BLOODRAIN: { label: "Blood Rain", category: "event", color: 0x8b0000, iconUrl: "https://i.imgur.com/w8oVQ8e.png" },
     AURORA: { label: "Aurora", category: "event", color: 0x00fa9a, iconUrl: "https://i.imgur.com/nS7GTo1.png" },
     EGGLAND: { label: "Eggland", category: "event", color: 0xf5deb3, iconUrl: "https://i.imgur.com/vkQwGrz.png" },
