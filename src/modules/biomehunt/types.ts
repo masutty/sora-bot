@@ -129,6 +129,13 @@ export function getLevelForXp(xp: number): { level: number; currentLevelXp: numb
     return { level, currentLevelXp: xpForLevel(level), nextLevelXp: xpForLevel(level + 1) };
 }
 
+/** Small `-#` footer line showing a user's current Seeds/Level - shared by the profile and
+ * anywhere else a balance needs to stay visible (e.g. mid-reroll, so spending it down is obvious). */
+export function formatSeedsFooter(seeds: number, xp: number): string {
+    const { level, currentLevelXp, nextLevelXp } = getLevelForXp(xp);
+    return `-# 🌱 Seeds: ${seeds} · Level ${level} (${xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`;
+}
+
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 
