@@ -69,6 +69,21 @@ export async function getActiveSecondsInWindow(userId: number, windowHours: numb
     return Number(result.rows[0]?.total ?? 0);
 }
 
+/** Same clamped-overlap math as `getActiveSecondsInWindow`, but against an explicit `[start, end]`
+ * range instead of a rolling "last N hours" one - used for the Quotas tab's "today" figure, whose
+ * boundary is the guild's `quota_eval_hour_utc` rollover rather than a fixed lookback. */
+export async function getActiveSecondsBetween(userId: number, start: Date, end: Date): Promise<number> {
+    const result = await query<{ total: string | null }>(
+        `SELECT SUM(GREATEST(0, EXTRACT(EPOCH FROM (
+             LEAST(ended_at, $3) - GREATEST(started_at, $2)
+         )))) AS total
+         FROM bh_activity_sessions
+         WHERE user_id = $1 AND ended_at >= $2 AND started_at <= $3`,
+        [userId, start, end],
+    );
+    return Number(result.rows[0]?.total ?? 0);
+}
+
 export async function getLatestSessionForUser(userId: number): Promise<ActivitySessionRow | null> {
     const result = await query<ActivitySessionRow>(
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
@@ -191,5 +206,110 @@ export async function getLeaderboard(
         activeSeconds: Number(r.active_seconds ?? 0),
         sessionCount: Number(r.session_count),
     }));
+}
+
+/** Guild-wide version of `getBiomeCounts` - every confirmed "started" find across every member of the guild, keyed by biome. */
+export async function getGuildBiomeCounts(guildId: string): Promise<Array<{ biome: string; count: number }>> {
+    const result = await query<{ biome: string; count: string }>(
+        `SELECT e.biome, COUNT(*) AS count
+         FROM bh_activity_events e
+         JOIN bh_users u ON u.id = e.user_id
+         WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+         GROUP BY e.biome
+         ORDER BY count DESC`,
+        [guildId],
+    );
+    return result.rows.map((r) => ({ biome: r.biome, count: Number(r.count) }));
+}
+
+/** For every biome the guild has ever found, the single member with the most confirmed finds of
+ * it (ties broken arbitrarily by Postgres) - one row per biome via a per-biome rank window. */
+export async function getBiomeTopContributors(guildId: string): Promise<Array<{ biome: string; discordUserId: string; count: number }>> {
+    const result = await query<{ biome: string; discord_user_id: string; count: string }>(
+        `SELECT biome, discord_user_id, count FROM (
+             SELECT e.biome, u.discord_user_id, COUNT(*) AS count,
+                    ROW_NUMBER() OVER (PARTITION BY e.biome ORDER BY COUNT(*) DESC) AS rn
+             FROM bh_activity_events e
+             JOIN bh_users u ON u.id = e.user_id
+             WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+             GROUP BY e.biome, u.discord_user_id
+         ) ranked
+         WHERE rn = 1
+         ORDER BY count DESC`,
+        [guildId],
+    );
+    return result.rows.map((r) => ({ biome: r.biome, discordUserId: r.discord_user_id, count: Number(r.count) }));
+}
+
+export interface GuildSessionOverview {
+    totalSessions: number;
+    totalSeconds: number;
+    avgSeconds: number;
+    distinctUsers: number;
+}
+
+/** Aggregate session stats across the whole guild - total sessions logged, total/average time spent, and how many distinct members have ever logged one. */
+export async function getGuildSessionOverview(guildId: string): Promise<GuildSessionOverview> {
+    const result = await query<{ total_sessions: string; total_seconds: string | null; avg_seconds: string | null; distinct_users: string }>(
+        `SELECT COUNT(*) AS total_sessions,
+                COALESCE(SUM(s.duration_seconds), 0) AS total_seconds,
+                COALESCE(AVG(s.duration_seconds), 0) AS avg_seconds,
+                COUNT(DISTINCT s.user_id) AS distinct_users
+         FROM bh_activity_sessions s
+         JOIN bh_users u ON u.id = s.user_id
+         WHERE u.guild_id = $1`,
+        [guildId],
+    );
+    const row = result.rows[0];
+    return {
+        totalSessions: Number(row?.total_sessions ?? 0),
+        totalSeconds: Number(row?.total_seconds ?? 0),
+        avgSeconds: Number(row?.avg_seconds ?? 0),
+        distinctUsers: Number(row?.distinct_users ?? 0),
+    };
+}
+
+export interface GuildSessionRow {
+    id: number;
+    discordUserId: string;
+    started_at: Date;
+    ended_at: Date;
+    duration_seconds: number;
+}
+
+/** The `limit` longest single sessions ever logged in the guild, regardless of who logged them. */
+export async function getLongestSessions(guildId: string, limit: number): Promise<GuildSessionRow[]> {
+    const result = await query<{ id: number; discord_user_id: string; started_at: Date; ended_at: Date; duration_seconds: number }>(
+        `SELECT s.id, u.discord_user_id, s.started_at, s.ended_at, s.duration_seconds
+         FROM bh_activity_sessions s
+         JOIN bh_users u ON u.id = s.user_id
+         WHERE u.guild_id = $1
+         ORDER BY s.duration_seconds DESC
+         LIMIT $2`,
+        [guildId, limit],
+    );
+    return result.rows.map((r) => ({
+        id: r.id, discordUserId: r.discord_user_id, started_at: r.started_at, ended_at: r.ended_at, duration_seconds: r.duration_seconds,
+    }));
+}
+
+/** Where a user's single longest session ranks against every other session in the guild (1 = the longest session anyone has ever logged). `null` if they have no sessions at all. */
+export async function getUserLongestSessionRank(guildId: string, userId: number): Promise<{ rank: number; totalSessions: number; longestSeconds: number } | null> {
+    const longest = await query<{ duration_seconds: number }>(
+        `SELECT MAX(duration_seconds) AS duration_seconds FROM bh_activity_sessions WHERE user_id = $1`,
+        [userId],
+    );
+    const longestSeconds = longest.rows[0]?.duration_seconds;
+    if (longestSeconds === null || longestSeconds === undefined) return null;
+
+    const result = await query<{ rank: string; total: string }>(
+        `SELECT
+             (SELECT COUNT(*) + 1 FROM bh_activity_sessions s2 JOIN bh_users u2 ON u2.id = s2.user_id
+              WHERE u2.guild_id = $1 AND s2.duration_seconds > $2) AS rank,
+             (SELECT COUNT(*) FROM bh_activity_sessions s3 JOIN bh_users u3 ON u3.id = s3.user_id
+              WHERE u3.guild_id = $1) AS total`,
+        [guildId, longestSeconds],
+    );
+    return { rank: Number(result.rows[0].rank), totalSessions: Number(result.rows[0].total), longestSeconds };
 }
 

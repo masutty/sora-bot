@@ -5,7 +5,6 @@ import type { BotClient } from "@/core/BotClient";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity";
-import { isFlagEnabled } from "../repository/flags";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
     pauseUser, setUserFlower, unpauseUser,
@@ -147,16 +146,16 @@ export async function memberClearBiomesAction(guildId: string, discordUserId: st
 }
 
 /**
- * Rerolls a member's Flower: draws a new one, edits their EXISTING webhook's name/avatar in place.
- * Never creates, deletes, or recreates the channel or webhook - the webhook's id/token/URL (which
- * their macro tool already has configured) stay exactly as they were, in every case.
- */
-/** Applies a SPECIFIC Flower to a user's EXISTING macro webhook (name+avatar) and persists it -
+ * Applies a SPECIFIC Flower to a user's EXISTING macro webhook (name+avatar) and persists it -
  * the actual rate-limited Discord API call. Used both by `applyFlowerReroll` (draws one and
- * applies it immediately) and by `/bh reroll`'s roll-again/apply-now flow (which draws - and lets
- * the user re-draw - several times client-side before ever calling this, so the webhook itself
- * only gets edited once per session instead of once per draw). Throws BiomeHuntError on any
- * precondition failure (no macro channel, channel/webhook inaccessible). */
+ * applies it immediately - the `/bh-owner reroll-flower` path) and by `/bh reroll`'s
+ * roll-again/apply-now flow (which draws - and lets the user re-draw - several times client-side
+ * before ever calling this, so the webhook itself only gets edited once per session instead of
+ * once per draw). Throws BiomeHuntError on any precondition failure (no macro channel,
+ * channel/webhook inaccessible). These are the ONLY two paths allowed to change a Flower once a
+ * user already has one - everything else (setup, force-setup, adopt) must leave an existing
+ * Flower untouched (see `assignFlower` in guildSetup.ts).
+ */
 export async function applyFlowerToWebhook(client: BotClient, userId: number, flower: string): Promise<void> {
     const macroChannel = await getMacroChannelByUserId(userId);
     if (!macroChannel) throw new BiomeHuntError("That user doesn't have a macro channel.");
@@ -174,22 +173,10 @@ export async function applyFlowerToWebhook(client: BotClient, userId: number, fl
     await setUserFlower(userId, flower);
 }
 
-/** Draws a new Flower and applies it immediately - the free admin path, which has no
- * roll-again preview step. */
+/** Draws a new Flower and applies it immediately - the bot-owner path (`/bh-owner reroll-flower`),
+ * which has no roll-again preview step. */
 export async function applyFlowerReroll(client: BotClient, userId: number): Promise<{ flower: string }> {
     const flower = drawRandomFlower();
     await applyFlowerToWebhook(client, userId, flower);
     return { flower };
-}
-
-export async function memberRerollFlowerAction(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
-    if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
-        throw new BiomeHuntError("Flowers aren't enabled for this server. Enable `EXPERIMENT_WEBHOOK_FLOWERS` first (`flag set`).");
-    }
-
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) throw new BiomeHuntError("That user has no data.");
-
-    const { flower } = await applyFlowerReroll(client, user.id);
-    return `<@${discordUserId}>'s flower rerolled: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`;
 }
