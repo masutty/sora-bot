@@ -17,7 +17,7 @@ import { runUserSetup } from "../guildSetup";
 import { isFlagEnabled } from "../repository/flags";
 import { adjustUserBalance } from "../repository/rewards";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
-import { BiomeHuntError, formatSeedsFooter } from "../types";
+import { BiomeHuntError } from "../types";
 import { runProfileView } from "./profileViews";
 
 const logger = new Logger("biomehunt.commands.bh");
@@ -150,14 +150,12 @@ function flowerSectionContent(flower: string | null): string {
  * `## {heading}`
  * Flower name + rarity, with its image as a thumbnail
  * ---
- * `-# 🌱 Seeds: ... · Level ...` (same footer the profile uses, so the balance is always visible
- * while rolling, not just at the very start)
+ * `-# 🌱 Seeds: ...` (just the balance being spent - no Level/XP, irrelevant to a Flower reroll)
  */
 function buildRerollPayload(
     heading: string,
     flower: string | null,
     seeds: number,
-    xp: number,
     rollCount: number,
     buttons?: ActionRowBuilder<ButtonBuilder>,
     note?: string,
@@ -181,7 +179,7 @@ function buildRerollPayload(
     if (note) container.addTextDisplayComponents((td) => td.setContent(`-# ${note}`));
 
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
-    container.addTextDisplayComponents((td) => td.setContent(formatSeedsFooter(seeds, xp)));
+    container.addTextDisplayComponents((td) => td.setContent(`-# 🌱 Seeds: ${seeds}`));
 
     return { flags: MessageFlags.IsComponentsV2, components: buttons ? [container, buttons] : [container], files };
 }
@@ -286,7 +284,7 @@ async function runRerollSession(
     // ── Stage 1: confirm, showing the CURRENT flower - nothing is spent yet. ──
     const msg = await respond(
         buildRerollPayload(
-            `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`, macroChannel.flower, seeds, user.xp,
+            `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`, user.flower, seeds,
             rollCount, buildConfirmButtons(),
         ),
     );
@@ -322,7 +320,7 @@ async function runRerollSession(
     while (true) {
         await msg.edit(
             buildRerollPayload(
-                "🎲 New Flower!", drawn, seeds, user.xp, rollCount, buildRollButtons(seeds >= REROLL_COST),
+                "🎲 New Flower!", drawn, seeds, rollCount, buildRollButtons(seeds >= REROLL_COST),
                 `If you don't pick one within ${REROLL_IDLE_MS / 1000}s, this Flower is applied automatically.`,
             ),
         ).catch(() => {});
@@ -345,7 +343,7 @@ async function runRerollSession(
             await msg.edit(EmbedFormatter.error(text)).catch(() => {});
             return;
         }
-        await msg.edit(buildRerollPayload("✅ Flower applied!", drawn, seeds, user.xp, rollCount)).catch(() => {});
+        await msg.edit(buildRerollPayload("✅ Flower applied!", drawn, seeds, rollCount)).catch(() => {});
         return;
     }
 }

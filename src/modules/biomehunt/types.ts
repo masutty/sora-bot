@@ -18,37 +18,42 @@ interface BiomeMeta {
     color: number;
     /** Optional icon shown next to the biome name on its forward notification. Unset = no image. */
     iconUrl?: string;
+    /** Raw ANSI escape prefix (e.g. `"\u001b[1;33m"`) used to color this biome's name in the
+     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in SessionReportEngine.ts).
+     * Unset = no color (terminal default). Discord's `ansi` codeblock only renders bold(1) plus
+     * 8 foreground (30-37) and 8 background (40-47) codes - see `!test embed/ansi-colors`. */
+    ansiColor?: string;
 }
 
 /**
  * SINGLE SOURCE OF TRUTH for every recognized biome, keyed by its canonical space-less
  * uppercase form (how it's stored/matched - see `normalizeBiomeName` in webhookParser.ts).
  * To add/rename/recolor/recategorize/reicon a biome, edit it here - everything else
- * (recognition, display name, category grouping, forward notification color/icon) reads
- * from this one object. Anything not listed here falls back to a generic Title Case
- * display name, no category match, the default accent color, and no icon.
+ * (recognition, display name, category grouping, forward notification color/icon, session-end
+ * ANSI color) reads from this one object. Anything not listed here falls back to a generic Title
+ * Case display name, no category match, the default accent color, no icon, and no ANSI color.
  */
 export const BIOME_META: Record<string, BiomeMeta> = {
-    WINDY: { label: "Windy", category: "weather", color: 0xa9dfff, iconUrl: "https://i.imgur.com/GD9ppHZ.png" },
-    SNOWY: { label: "Snowy", category: "weather", color: 0xdfffff, iconUrl: "https://i.imgur.com/8rXSIQ0.png" },
-    RAINY: { label: "Rainy", category: "weather", color: 0x3a6ea5, iconUrl: "https://i.imgur.com/KYblZp4.png" },
-    SANDSTORM: { label: "Sand Storm", category: "biome", color: 0xe0c068, iconUrl: "https://i.imgur.com/gBJQViw.png" },
-    HELL: { label: "Hell", category: "biome", color: 0xd7263d, iconUrl: "https://i.imgur.com/qf4ih2k.png" },
-    STARFALL: { label: "Starfall", category: "biome", color: 0x6c5ce7, iconUrl: "https://i.imgur.com/KDlFLf3.png" },
-    HEAVEN: { label: "Heaven", category: "biome", color: 0xffd700, iconUrl: "https://i.imgur.com/y6OXzVv.png" },
-    CORRUPTION: { label: "Corruption", category: "biome", color: 0x4b0082, iconUrl: "https://i.imgur.com/lzlsuC6.png" },
-    NULL: { label: "Null", category: "biome", color: 0x2c2f33, iconUrl: "https://i.imgur.com/krutokU.png" },
-    GLITCHED: { label: "Glitched", category: "rare", color: 0xff00ff, iconUrl: "https://i.imgur.com/xTd6Ku4.png" },
-    CYBERSPACE: { label: "Cyberspace", category: "rare", color: 0x00e5ff, iconUrl: "https://i.imgur.com/FxFEobX.png" },
-    DREAMSPACE: { label: "Dreamspace", category: "rare", color: 0xffb6d9, iconUrl: "https://i.imgur.com/JCoQDvY.png" },
-    SINGULARITY: { label: "Singularity", category: "rare", color: 0x0a0a0a, iconUrl: "https://i.imgur.com/rBoV7lJ.png" },
-    PUMPKINMOON: { label: "Pumpkin Moon", category: "event", color: 0xff8c00, iconUrl: "https://i.imgur.com/wEdcqqI.png" },
-    GRAVEYARD: { label: "Graveyard", category: "event", color: 0x556b2f, iconUrl: "https://i.imgur.com/MrKZqUx.png" },
-    BLAZINGSUN: { label: "Blazing Sun", category: "event", color: 0xff4500, iconUrl: "https://i.imgur.com/BMKWWJ3.png" },
-    INCINERATOR: { label: "Incinerator", category: "event", color: 0xff4500, iconUrl: "" },
-    BLOODRAIN: { label: "Blood Rain", category: "event", color: 0x8b0000, iconUrl: "https://i.imgur.com/w8oVQ8e.png" },
-    AURORA: { label: "Aurora", category: "event", color: 0x00fa9a, iconUrl: "https://i.imgur.com/nS7GTo1.png" },
-    EGGLAND: { label: "Eggland", category: "event", color: 0xf5deb3, iconUrl: "https://i.imgur.com/vkQwGrz.png" },
+    WINDY: { label: "Windy", category: "weather", color: 0xa9dfff, iconUrl: "https://i.imgur.com/GD9ppHZ.png", ansiColor: "\u001b[36m" },
+    SNOWY: { label: "Snowy", category: "weather", color: 0xdfffff, iconUrl: "https://i.imgur.com/8rXSIQ0.png", ansiColor: "\u001b[37m" },
+    RAINY: { label: "Rainy", category: "weather", color: 0x3a6ea5, iconUrl: "https://i.imgur.com/KYblZp4.png", ansiColor: "\u001b[34m" },
+    SANDSTORM: { label: "Sand Storm", category: "biome", color: 0xe0c068, iconUrl: "https://i.imgur.com/gBJQViw.png", ansiColor: "\u001b[33m" },
+    HELL: { label: "Hell", category: "biome", color: 0xd7263d, iconUrl: "https://i.imgur.com/qf4ih2k.png", ansiColor: "\u001b[31m" },
+    STARFALL: { label: "Starfall", category: "biome", color: 0x6c5ce7, iconUrl: "https://i.imgur.com/KDlFLf3.png", ansiColor: "\u001b[34m" },
+    HEAVEN: { label: "Heaven", category: "biome", color: 0xffd700, iconUrl: "https://i.imgur.com/y6OXzVv.png", ansiColor: "\u001b[33m" },
+    CORRUPTION: { label: "Corruption", category: "biome", color: 0x4b0082, iconUrl: "https://i.imgur.com/lzlsuC6.png", ansiColor: "\u001b[35m" },
+    NULL: { label: "Null", category: "biome", color: 0x2c2f33, iconUrl: "https://i.imgur.com/krutokU.png", ansiColor: "\u001b[30m" },
+    GLITCHED: { label: "Glitched", category: "rare", color: 0xff00ff, iconUrl: "https://i.imgur.com/xTd6Ku4.png", ansiColor: "\u001b[1;32;40m" },
+    CYBERSPACE: { label: "Cyberspace", category: "rare", color: 0x00e5ff, iconUrl: "https://i.imgur.com/FxFEobX.png", ansiColor: "\u001b[1;34;40m" },
+    DREAMSPACE: { label: "Dreamspace", category: "rare", color: 0xffb6d9, iconUrl: "https://i.imgur.com/JCoQDvY.png", ansiColor: "\u001b[1;37;45m" },
+    SINGULARITY: { label: "Singularity", category: "rare", color: 0x0a0a0a, iconUrl: "https://i.imgur.com/rBoV7lJ.png", ansiColor: "\u001b[1;31;40m" },
+    PUMPKINMOON: { label: "Pumpkin Moon", category: "event", color: 0xff8c00, iconUrl: "https://i.imgur.com/wEdcqqI.png", ansiColor: "\u001b[1;33m" },
+    GRAVEYARD: { label: "Graveyard", category: "event", color: 0x556b2f, iconUrl: "https://i.imgur.com/MrKZqUx.png", ansiColor: "\u001b[1;33m" },
+    BLAZINGSUN: { label: "Blazing Sun", category: "event", color: 0xff4500, iconUrl: "https://i.imgur.com/BMKWWJ3.png", ansiColor: "\u001b[1;33m" },
+    INCINERATOR: { label: "Incinerator", category: "event", color: 0xff4500, iconUrl: "", ansiColor: "\u001b[1;33m" },
+    BLOODRAIN: { label: "Blood Rain", category: "event", color: 0x8b0000, iconUrl: "https://i.imgur.com/w8oVQ8e.png", ansiColor: "\u001b[1;33m" },
+    AURORA: { label: "Aurora", category: "event", color: 0x00fa9a, iconUrl: "https://i.imgur.com/nS7GTo1.png", ansiColor: "\u001b[1;33m" },
+    EGGLAND: { label: "Eggland", category: "event", color: 0xf5deb3, iconUrl: "https://i.imgur.com/vkQwGrz.png", ansiColor: "\u001b[1;33m" },
 };
 
 export function getBiomeIconUrl(biome: string): string | undefined {
@@ -109,6 +114,11 @@ const DEFAULT_BIOME_COLOR = 0x5865f2;
 export function getBiomeColor(biome: string): number {
     return BIOME_META[biome]?.color ?? DEFAULT_BIOME_COLOR;
 }
+
+/** Unset = no ANSI color applied - the biome's name prints in the codeblock's default color. */
+export function getBiomeAnsiColor(biome: string): string {
+    return BIOME_META[biome]?.ansiColor ?? "";
+}
 /** Seeds/XP granted per biome detection, keyed by category - not per individual biome. Global constants for now (same posture as flowers.ts's RARITY_CHANCE). */
 export const REWARD_BY_CATEGORY: Record<BiomeCategory, { seeds: number; xp: number }> = {
     weather: { seeds: 1, xp: 2 },
@@ -130,12 +140,6 @@ export function getLevelForXp(xp: number): { level: number; currentLevelXp: numb
     return { level, currentLevelXp: xpForLevel(level), nextLevelXp: xpForLevel(level + 1) };
 }
 
-/** Small `-#` footer line showing a user's current Seeds/Level - shared by the profile and
- * anywhere else a balance needs to stay visible (e.g. mid-reroll, so spending it down is obvious). */
-export function formatSeedsFooter(seeds: number, xp: number): string {
-    const { level, currentLevelXp, nextLevelXp } = getLevelForXp(xp);
-    return `-# 🌱 Seeds: ${seeds} · Level ${level} (${xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`;
-}
 
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
@@ -252,6 +256,9 @@ export interface UserRow {
     created_at: Date;
     seeds: number;
     xp: number;
+    /** Sticks to the user, not the macro channel - survives soft-delete/reset-channel. Only
+     * `/bh reroll` and `/bh-owner reroll-flower` are allowed to change it once set. */
+    flower: string | null;
 }
 
 export interface UserMacroChannelRow {
@@ -260,7 +267,6 @@ export interface UserMacroChannelRow {
     channel_id: string;
     webhook_id: string;
     webhook_url: string;
-    flower: string | null;
     created_at: Date;
 }
 

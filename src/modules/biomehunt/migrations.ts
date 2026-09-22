@@ -70,19 +70,29 @@ CREATE INDEX IF NOT EXISTS bh_users_last_activity ON bh_users(last_activity_at) 
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS seeds INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0;
 
+/* Flower lives on the user, not the macro channel - it must survive soft-delete/reset-channel
+   (which only drop the bh_user_macro_channels row), so a user keeps the same Flower across
+   channel resets and only a real reroll (/bh reroll, /bh-owner reroll-flower) changes it. */
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS flower VARCHAR(32);
+
 CREATE TABLE IF NOT EXISTS bh_user_macro_channels (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL UNIQUE REFERENCES bh_users(id) ON DELETE CASCADE,
     channel_id VARCHAR(20) NOT NULL UNIQUE,
     webhook_id VARCHAR(20) NOT NULL,
     webhook_url TEXT NOT NULL,
-    flower VARCHAR(32),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-/* Existing rows predate the Flower feature - left NULL here, backfilled by BiomeHunt's onReady
-   (needs a live Discord client to edit each webhook's name/avatar, which plain SQL can't do). */
+/* One-time carry-over from the old per-channel Flower column into bh_users.flower above - the
+   ADD/UPDATE/DROP trio here is safe to keep running (idempotent): on a fresh install the ADD
+   creates an empty column with no rows to migrate, on an upgraded install it migrates existing
+   data once, then both converge on the same DROP. */
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS flower VARCHAR(32);
+UPDATE bh_users u SET flower = mc.flower
+FROM bh_user_macro_channels mc
+WHERE mc.user_id = u.id AND mc.flower IS NOT NULL AND u.flower IS NULL;
+ALTER TABLE bh_user_macro_channels DROP COLUMN IF EXISTS flower;
 
 /* ───────────────────────────────────────────── */
 /* Activity                                     */
