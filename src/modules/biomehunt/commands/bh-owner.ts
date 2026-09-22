@@ -6,11 +6,14 @@ import { CommandCategory } from "@/types";
 import { confirmAction, type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
+import { applyFlowerReroll } from "./adminMemberActions";
+import { FLOWER_META } from "../flowers";
+import { isFlagEnabled } from "../repository/flags";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds";
-import { getUserByDiscordId } from "../repository/users";
+import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users";
 import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/BiomeRewardEngine";
 import {
-    ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory,
+    ALL_BIOME_CATEGORIES, BiomeHuntError, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory,
     type BiomeCategory,
 } from "../types";
 
@@ -59,6 +62,15 @@ export default defineCommand({
                 .addStringOption((o) => o.setName("after_date").setDescription("Only events on/after this date (YYYY-MM-DD)"))
                 .addStringOption((o) => o.setName("biome").setDescription("Only this specific biome").addChoices(...BIOME_ONLY_CHOICES))
                 .addStringOption((o) => o.setName("category").setDescription("Only this biome category (ignored if biome is given)").addChoices(...BIOME_CATEGORY_CHOICES)),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("reroll-flower")
+                .setDescription("Rerolls a user's Flower - the only admin-side way to change one once set.")
+                .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
+                .addStringOption((o) =>
+                    o.setName("guild_id").setDescription("Guild ID - only needed if the user has a profile in more than one guild").setRequired(false),
+                ),
         ),
 
     // ── Slash ─────────────────────────────────────────────────────────────────
@@ -87,6 +99,18 @@ export default defineCommand({
             return;
         }
 
+        if (sub === "reroll-flower") {
+            await runOwnerRerollFlower(
+                {
+                    discordUserId: interaction.options.getString("discord_user_id", true),
+                    guildId: interaction.options.getString("guild_id"),
+                },
+                client,
+                (reply) => interaction.editReply(reply),
+            );
+            return;
+        }
+
         await runStaleCleanup(
             client,
             interaction.options.getString("guild_id"),
@@ -103,7 +127,8 @@ export default defineCommand({
             await message.reply(
                 EmbedFormatter.warn(
                     "`!bh-owner stale` - list stale guilds\n`!bh-owner stale-cleanup [guild_id]` - clean up one guild, or every stale guild if omitted\n" +
-                    "`!bh-owner recalculate-user <guild_id> <discord_user_id> [after_date] [biome] [category]` - backfill missing Seeds/XP",
+                    "`!bh-owner recalculate-user <guild_id> <discord_user_id> [after_date] [biome] [category]` - backfill missing Seeds/XP\n" +
+                    "`!bh-owner reroll-flower <discord_user_id> [guild_id]` - reroll a user's Flower",
                 ),
             );
             return;
@@ -125,6 +150,18 @@ export default defineCommand({
                 },
                 message.author.id,
                 (payload) => message.reply(payload),
+                (reply) => message.reply(reply),
+            );
+            return;
+        }
+
+        if (sub === "reroll-flower") {
+            await runOwnerRerollFlower(
+                {
+                    discordUserId: args.getString("discord_user_id"),
+                    guildId: args.getString("guild_id"),
+                },
+                client,
                 (reply) => message.reply(reply),
             );
             return;
@@ -215,6 +252,75 @@ async function runRecalculateUser(
             );
         },
     });
+}
+
+interface RerollFlowerArgs {
+    discordUserId: string | null;
+    guildId: string | null;
+}
+
+/**
+ * When `guild_id` is omitted, resolves it from the user's BiomeHunt profiles - only safe when they
+ * have exactly one across every guild; ambiguous (or absent) otherwise, in which case the caller
+ * must specify guild_id explicitly.
+ */
+async function resolveOwnerTargetGuild(discordUserId: string, guildId: string | null): Promise<{ guildId: string } | { error: string }> {
+    if (guildId) return { guildId };
+
+    const profiles = await getUsersByDiscordId(discordUserId);
+    if (profiles.length === 0) return { error: `<@${discordUserId}> has no BiomeHunt profile in any guild.` };
+    if (profiles.length > 1) {
+        return {
+            error: `<@${discordUserId}> has profiles in multiple guilds - specify guild_id: ${profiles.map((p) => `\`${p.guild_id}\``).join(", ")}.`,
+        };
+    }
+    return { guildId: profiles[0].guild_id };
+}
+
+/**
+ * Bot-owner-only Flower reroll - together with `/bh reroll`, the only two ways a user's Flower is
+ * allowed to change once set (see `assignFlower` in guildSetup.ts, which reuses an existing Flower
+ * rather than re-rolling it on setup/force-setup).
+ */
+async function runOwnerRerollFlower(
+    args: RerollFlowerArgs,
+    client: BotClient,
+    replyPlain: (reply: FormattedReply) => Promise<unknown>,
+): Promise<void> {
+    if (!args.discordUserId) {
+        await replyPlain(EmbedFormatter.error("Missing required argument: discord_user_id."));
+        return;
+    }
+    const { discordUserId } = args;
+
+    const resolved = await resolveOwnerTargetGuild(discordUserId, args.guildId);
+    if ("error" in resolved) {
+        await replyPlain(EmbedFormatter.error(resolved.error));
+        return;
+    }
+    const { guildId } = resolved;
+
+    if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
+        await replyPlain(EmbedFormatter.error(`Flowers aren't enabled in guild \`${guildId}\`. Enable \`EXPERIMENT_WEBHOOK_FLOWERS\` there first.`));
+        return;
+    }
+
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    if (!user) {
+        await replyPlain(EmbedFormatter.error(`<@${discordUserId}> has no profile in guild \`${guildId}\`.`));
+        return;
+    }
+
+    try {
+        const { flower } = await applyFlowerReroll(client, user.id);
+        logger.info(`Rerolled Flower for user ${user.id} (guild ${guildId}): ${flower}`);
+        await replyPlain(
+            EmbedFormatter.success(`<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`),
+        );
+    } catch (err) {
+        const text = err instanceof BiomeHuntError ? err.message : "Something went wrong applying the Flower.";
+        await replyPlain(EmbedFormatter.error(text));
+    }
 }
 
 async function renderStaleList(client: BotClient): Promise<FormattedReply> {

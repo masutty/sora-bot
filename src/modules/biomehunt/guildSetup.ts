@@ -1,7 +1,6 @@
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel } from "discord.js";
 import { readFileSync } from "fs";
-import type { BotClient } from "@/core/BotClient";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./flowers";
@@ -9,7 +8,7 @@ import { isFlagEnabled } from "./repository/flags";
 import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds";
 import {
     createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
-    getMacroChannelsMissingFlower, lookupChannel, registerChannel, setUserFlower,
+    lookupChannel, registerChannel, setUserFlower,
 } from "./repository/users";
 import { BiomeHuntError } from "./types";
 import type { GuildConfigRow } from "./types";
@@ -27,13 +26,19 @@ export function macroChannelName(username: string): string {
 }
 
 /**
- * Draws a Flower and applies it to the webhook's name/avatar - `null` if the edit itself failed
- * (permissions, rate limit, channel gone mid-flight, etc). Callers in this file treat this as
- * best-effort: on `null` they persist no Flower (`NULL`) rather than lying about one that was
- * never actually applied - the next boot's `backfillMissingFlowers` will retry that row.
+ * Applies a Flower to the (newly created or adopted) webhook's name/avatar - the user's existing
+ * Flower if they already have one (first-time-only assignment: a fresh channel from `/bh setup` or
+ * `force-setup` must never re-roll it), otherwise a freshly drawn one. Returns `null` if the edit
+ * itself failed (permissions, rate limit, channel gone mid-flight, etc) - callers then persist
+ * nothing, rather than lying about a Flower that was never actually applied. Only `/bh reroll` and
+ * `/bh-owner reroll-flower` are allowed to change a Flower once one is set - this never does.
  */
-async function assignFlower(webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> }, logger: Logger): Promise<string | null> {
-    const flower = drawRandomFlower();
+async function assignFlower(
+    webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> },
+    existingFlower: string | null,
+    logger: Logger,
+): Promise<string | null> {
+    const flower = existingFlower ?? drawRandomFlower();
     try {
         await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
     } catch (err) {
@@ -77,10 +82,11 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
     }
 
     const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
-    const flower = flowersEnabled ? await assignFlower(webhook, logger) : null;
+    const flower = flowersEnabled ? await assignFlower(webhook, user.flower, logger) : null;
+    if (flower && !user.flower) await setUserFlower(user.id, flower);
 
     try {
-        await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url), flower);
+        await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url));
     } catch (err) {
         await webhook.delete().catch(() => {});
         await channel.delete().catch(() => {});
@@ -153,9 +159,10 @@ export async function adoptExistingChannel(
     }
 
     const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
-    const flower = flowersEnabled ? await assignFlower(webhook, logger) : null;
+    const flower = flowersEnabled ? await assignFlower(webhook, user.flower, logger) : null;
+    if (flower && !user.flower) await setUserFlower(user.id, flower);
 
-    await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl), flower);
+    await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl));
     registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId });
 
     return { channelId: channel.id, webhookUrl };
@@ -200,41 +207,4 @@ async function findOrCreateCategory(guild: Guild, guildConfig: GuildConfigRow) {
     const newCategory = await guild.channels.create({ name: "BiomeHunt Macros", type: ChannelType.GuildCategory });
     await addCategory(guild.id, newCategory.id);
     return newCategory;
-}
-
-/**
- * One-time (per boot) backfill for MacroChannels created before the Flower feature existed -
- * idempotent by construction: only rows still missing a Flower are touched, so this is a no-op on
- * every boot after the first one that finds any. Runs from the cog's `onReady` (needs a live
- * client to edit each webhook's name/avatar - plain SQL can't do that).
- */
-export async function backfillMissingFlowers(client: BotClient): Promise<void> {
-    const rows = await getMacroChannelsMissingFlower();
-    if (rows.length === 0) return;
-
-    logger.info(`Backfilling Flower for ${rows.length} macro channel(s) created before the Flower feature existed.`);
-    for (const row of rows) {
-        if (!(await isFlagEnabled(row.guild_id, "EXPERIMENT_WEBHOOK_FLOWERS"))) continue;
-
-        const channel = await client.channels.fetch(row.channel_id).catch(() => null);
-        if (!channel || channel.type !== ChannelType.GuildText) {
-            logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - channel not found or not text.`);
-            continue;
-        }
-
-        const webhooks = await channel.fetchWebhooks().catch(() => null);
-        const webhook = webhooks?.get(row.webhook_id);
-        if (!webhook) {
-            logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - webhook not found.`);
-            continue;
-        }
-
-        const flower = await assignFlower(webhook, logger);
-        if (!flower) {
-            logger.warn(`Skipping flower backfill for macro channel ${row.channel_id} (user ${row.user_id}) - webhook.edit() failed, will retry next boot.`);
-            continue;
-        }
-        await setUserFlower(row.user_id, flower);
-    }
-    logger.info("Flower backfill complete.");
 }

@@ -21,7 +21,7 @@ import { economyGrantAction } from "./adminEconomyActions";
 import { flagListAction, flagSetAction } from "./adminFlagActions";
 import {
     memberClearBiomesAction, memberDecrementBiomeAction, memberForceSetupAction, memberHardDeleteAction,
-    memberResetChannelAction, memberRerollFlowerAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction, type AdoptParams,
+    memberResetChannelAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction, type AdoptParams,
 } from "./adminMemberActions";
 import {
     quotasCreateAction, quotasForceEvalAction, quotasListAction, quotasSetEvalHourAction, runQuotasDelete,
@@ -29,10 +29,7 @@ import {
 import { sessionClearAction, sessionDeleteAction } from "./adminSessionActions";
 import { runEzSetup } from "./ezsetup";
 import { runForwardMenu } from "./forwardMenu";
-import {
-    buildGuildStatsContainer, buildHistoryContainer, buildLeaderboardContainer, buildUserListContainer,
-    getSessionHistory, getUserListPage, runProfileView, SESSIONS_PER_PAGE, USERS_PER_PAGE,
-} from "./profileViews";
+import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "./profileViews";
 import {
     ALL_BADGES, ALL_FLAGS, BADGE_META, BiomeHuntError, BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES, FLAG_DEFINITIONS,
     resolveBadgeSlug, type ActivityStatus, type Badge, type FlagName, type QuotaRoleMode,
@@ -77,15 +74,6 @@ export default defineCommand({
                 .addSubcommand((s) => s.setName("show").setDescription("Show the current BiomeHunt configuration."))
                 .addSubcommand((s) => s.setName("test").setDescription("Check whether required configuration is complete."))
                 .addSubcommand((s) => s.setName("reset").setDescription("Reset all BiomeHunt configuration for this server.")),
-        )
-        .addSubcommandGroup((g) =>
-            g.setName("stats").setDescription("Guild-wide activity stats.")
-                .addSubcommand((s) => s.setName("guild").setDescription("Show guild-wide BiomeHunt stats."))
-                .addSubcommand((s) => s.setName("leaderboard").setDescription("Show the activity leaderboard."))
-                .addSubcommand((s) =>
-                    s.setName("users").setDescription("List users, optionally filtered by status.")
-                        .addStringOption((o) => o.setName("status").setDescription("Filter by status").addChoices(...STATUS_CHOICES)),
-                ),
         )
         .addSubcommandGroup((g) =>
             g.setName("activity").setDescription("Activity thresholds, auto-delete, and status roles.")
@@ -232,10 +220,6 @@ export default defineCommand({
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("reroll-flower").setDescription("Rerolls a user's macro channel Flower - edits the existing webhook in place.")
-                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
-                )
-                .addSubcommand((s) =>
                     s.setName("pause").setDescription("Exempt a user from inactivity auto-delete.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
@@ -334,13 +318,6 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "stats-users") {
-            const status = interaction.options.getString("status") as ActivityStatus | null;
-            await interaction.deferReply();
-            await replyUserList(interaction.guild.id, status, interaction.user.id, (payload) => interaction.editReply(payload));
-            return;
-        }
-
         await interaction.deferReply();
         try {
             const result = await runSubcommand(routeKey, interaction.guild, client, {
@@ -422,12 +399,6 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "stats-users") {
-            const status = args.getString("status")?.toLowerCase() as ActivityStatus | null;
-            await replyUserList(message.guild.id, status ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
-            return;
-        }
-
         try {
             const result = await runSubcommand(routeKey, message.guild, client, {
                 getString: (name) => args.getString(name),
@@ -472,10 +443,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             return testConfigAction(guildId);
         case "config-reset":
             return resetConfigAction(guildId);
-        case "stats-guild":
-            return buildGuildStatsContainer(guildId);
-        case "stats-leaderboard":
-            return buildLeaderboardContainer(guildId);
         case "activity-set":
             return activitySetAction(
                 guildId,
@@ -631,11 +598,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return memberResetChannelAction(client, guildId, id);
         }
-        case "member-reroll-flower": {
-            const id = await args.getUserId("user");
-            if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return memberRerollFlowerAction(client, guildId, id);
-        }
         case "member-pause": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
@@ -687,28 +649,6 @@ async function replySessionHistory(
         flags: MessageFlags.IsComponentsV2,
         components: [
             buildHistoryContainer(sessions, member, page),
-            ...(interactive ? [buildPaginationRow(page, pages)] : []),
-        ],
-    });
-
-    const msg = await respond(render(0, pages > 1));
-    if (pages <= 1) return;
-
-    attachPagination(msg, { invokerId, pages, render });
-}
-
-async function replyUserList(
-    guildId: string,
-    status: ActivityStatus | null,
-    invokerId: string,
-    respond: (payload: ConfirmPayload) => Promise<Message>,
-): Promise<void> {
-    const users = await getUserListPage(guildId, status);
-    const pages = Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
-    const render = (page: number, interactive: boolean): ConfirmPayload => ({
-        flags: MessageFlags.IsComponentsV2,
-        components: [
-            buildUserListContainer(users, page, status),
             ...(interactive ? [buildPaginationRow(page, pages)] : []),
         ],
     });

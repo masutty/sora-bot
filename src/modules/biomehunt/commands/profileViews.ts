@@ -8,14 +8,15 @@ import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/forma
 import { Logger } from "@/utils/logging";
 import { FLOWER_META } from "../flowers";
 import {
-    getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
+    getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity";
 import { getUserBadges } from "../repository/badges";
 import { isFlagEnabled } from "../repository/flags";
+import { getOrCreateGuildConfig } from "../repository/guilds";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quotaRoles";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
 import {
-    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, formatSeedsFooter,
+    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor, getLevelForXp,
     type ActivitySessionRow, type ActivityStatus, type BiomeCategory, type UserRow,
 } from "../types";
 
@@ -58,15 +59,17 @@ interface ProfileState {
     sessionPage: number;
 }
 
-/** Order + captions for the Profile tab's bottom "biomes found" line - fixed and positional, unlike the Biomes tab's per-category fields. */
+/** Order for the Profile tab's bottom "biomes found" line - fixed and positional, unlike the Biomes tab's per-category fields. */
 const BIOME_TOTAL_ORDER: BiomeCategory[] = ["weather", "biome", "event", "rare"];
-const BIOME_TOTAL_CAPTIONS: Record<BiomeCategory, string> = {
-    weather: "Weathers", biome: "Biomes", event: "Event Biomes", rare: "Rare Biomes",
-};
 
 interface ProfileData {
     user: UserRow;
     activeSeconds: number;
+    /** Active seconds since the most recent `quota_eval_hour_utc` rollover - same day boundary the
+     * Fixed-mode ("F") quota reward sweep uses, not a plain UTC midnight. */
+    activeSecondsToday: number;
+    quotaDayStart: Date;
+    quotaDayEnd: Date;
     biomes: Array<{ biome: string; count: number }>;
     channelId: string | null;
     flower: string | null;
@@ -77,13 +80,27 @@ interface ProfileData {
     economyEnabled: boolean;
 }
 
+/** The current "quota day"'s `[start, end)` - the most recent occurrence of `quotaEvalHourUtc`
+ * (UTC) at or before `now`, through the same hour 24h later. Mirrors the day boundary the
+ * Fixed-mode quota sweep rolls over on (see `getGuildsDueForFixedRewardEval`), so "today" in the
+ * profile always lines up with when that reward actually resets. */
+function computeQuotaDayWindow(quotaEvalHourUtc: number, now: Date): { start: Date; end: Date } {
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), quotaEvalHourUtc, 0, 0, 0));
+    if (start > now) start.setUTCDate(start.getUTCDate() - 1);
+    return { start, end: new Date(start.getTime() + 86_400_000) };
+}
+
 async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
     const start = Date.now();
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) return null;
 
-    const [activeSeconds, biomes, channel, quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled] = await Promise.all([
+    const guildConfig = await getOrCreateGuildConfig(guildId);
+    const quotaDayWindow = computeQuotaDayWindow(guildConfig.quota_eval_hour_utc, new Date());
+
+    const [activeSeconds, activeSecondsToday, biomes, channel, quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled] = await Promise.all([
         getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
+        getActiveSecondsBetween(user.id, quotaDayWindow.start, quotaDayWindow.end),
         getBiomeCounts(user.id),
         getMacroChannelByUserId(user.id),
         getQuotaRewardSummaryLines(guildId, user.id),
@@ -99,7 +116,8 @@ async function loadProfileData(guildId: string, discordUserId: string): Promise<
     }
 
     return {
-        user, activeSeconds, biomes, channelId: channel?.channel_id ?? null, flower: channel?.flower ?? null,
+        user, activeSeconds, activeSecondsToday, quotaDayStart: quotaDayWindow.start, quotaDayEnd: quotaDayWindow.end,
+        biomes, channelId: channel?.channel_id ?? null, flower: user.flower,
         quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled,
     };
 }
@@ -122,6 +140,21 @@ function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 }
 
+/** Same Separator component as `addDivider`, but with no visible line - just the vertical gap
+ * Discord adds around one. Used to put air between a small `-#` line and the heading below it,
+ * without an actual rule cutting between them. */
+function addSpacer(container: ContainerBuilder): void {
+    container.addSeparatorComponents((sep) => sep.setDivider(false).setSpacing(SeparatorSpacingSize.Small));
+}
+
+const ANSI_RESET = "\u001b[0m";
+
+/** Per-biome ANSI color, from `BIOME_META[biome].ansiColor` - same treatment as the session-end
+ * report's biome breakdown (see `ansiBiomeLine` in services/SessionReportEngine.ts). */
+function ansiBiomeLine(biome: string, count: number): string {
+    return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
+}
+
 /** ComponentsV2 equivalent of an embed's `.setThumbnail()` - a Section pairs text with a small
  * side image (its "accessory"). Used for each tab's header line so the member's avatar still
  * shows, matching the classic-embed profile view this replaced. */
@@ -140,25 +173,29 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
     const channelLine = channelId ? `<#${channelId}>` : "*not created*";
     const statusLabel = user.current_status.charAt(0).toUpperCase() + user.current_status.slice(1);
     const flowerLine = flower && FLOWER_META[flower]
-        ? `\`${FLOWER_META[flower].label}\` (${FLOWER_META[flower].rarity})`
+        ? `\`${FLOWER_META[flower].label}\` *(${FLOWER_META[flower].rarity})*`
         : "*none yet*";
 
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
 
-    const seedsLevelLine = formatSeedsFooter(user.seeds, user.xp);
+    const { level, currentLevelXp, nextLevelXp } = getLevelForXp(user.xp);
+
+    if (data.economyEnabled) {
+        container.addTextDisplayComponents((td) => td.setContent(`-# Level ${level} (${user.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`));
+        addSpacer(container);
+    }
+
+    container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Profile`));
 
     addHeaderSection(
         container,
         member,
         [
-            `**\`${member.user.username}\`'s Profile**`,
-            `- Profile created <t:${Math.floor(user.created_at.getTime() / 1000)}:R>`,
-            `- Channel: ${channelLine}`,
-            ...(data.flowersEnabled ? [`- Flower: ${flowerLine}`] : []),
             `- Status: \`${STATUS_EMOJI[user.current_status]} ${statusLabel}\``,
             `- ${totalLine} biomes found.`,
-            ...(data.economyEnabled ? [seedsLevelLine] : []),
+            `- Channel: ${channelLine}`,
+            ...(data.flowersEnabled ? [`- Flower: ${flowerLine}`] : []),
         ].join("\n"),
     );
 
@@ -167,26 +204,55 @@ function buildProfileTabContainer(member: GuildMember, data: ProfileData): Conta
         container.addTextDisplayComponents((td) => td.setContent(`**Badges**\n${badges.map((b) => BADGE_META[b.badge].emoji).join(" ")}`));
     }
 
+    addDivider(container);
+    const footerParts = [
+        ...(data.economyEnabled ? [`🌱 Seeds: ${user.seeds}`] : []),
+        `member since <t:${unix(user.created_at)}:D>`,
+    ];
+    container.addTextDisplayComponents((td) => td.setContent(`-# ${footerParts.join(" · ")}`));
+
     return container;
 }
 
+function formatActivityLine(label: string, seconds: number, zeroText: string): string {
+    return `- ${label}: ${seconds > 0 ? `\`${formatTime(seconds)}\`` : zeroText}`;
+}
+
+/** Discord `<t:...:t>` renders just the local time-of-day for that instant, in each viewer's own
+ * timezone - the actual date on `start`/`end` doesn't matter for that, only their hour:minute do.
+ * `end` is shown one minute early (23:59, not 00:00) so it doesn't read as an off-by-one. */
+function formatQuotaWindowLine(start: Date, end: Date): string {
+    const displayEnd = new Date(end.getTime() - 60_000);
+    return `> -# from <t:${unix(start)}:t> to <t:${unix(displayEnd)}:t>`;
+}
+
 function buildQuotasTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
-    const { activeSeconds, quotaSummaryLines } = data;
+    const { activeSeconds, activeSecondsToday, quotaDayStart, quotaDayEnd, quotaSummaryLines } = data;
     const container = baseContainer(0x5865f2);
 
-    const header = `**\`${member.user.username}\`'s Quotas**\nYou have \`${formatTime(activeSeconds)}\` in the last ${RECENT_ACTIVITY_WINDOW_HOURS} hours.`;
-    const body = quotaSummaryLines.length === 0
-        ? "-# There's no quotas to meet in this server!"
-        : quotaSummaryLines.join("\n");
+    container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Quotas`));
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            [
+                formatActivityLine(`Your activity in the last ${RECENT_ACTIVITY_WINDOW_HOURS}h`, activeSeconds, "No activity detected"),
+                formatActivityLine("Your activity today", activeSecondsToday, "No activity detected"),
+                formatQuotaWindowLine(quotaDayStart, quotaDayEnd),
+            ].join("\n"),
+        ),
+    );
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(quotaSummaryLines.length === 0 ? "-# There's no quotas to meet in this server!" : quotaSummaryLines.join("\n")),
+    );
 
-    container.addTextDisplayComponents((td) => td.setContent(`${header}\n\n${body}`));
     return container;
 }
 
 function buildBiomesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { biomes } = data;
     const container = baseContainer(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Biomes**`));
+    container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Biomes`));
 
     if (biomes.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No biomes discovered yet."));
@@ -194,23 +260,23 @@ function buildBiomesTabContainer(member: GuildMember, data: ProfileData): Contai
     }
 
     const totals = totalBiomesFoundByCategory(biomes);
-    const summaryLine = BIOME_TOTAL_ORDER.map((c) => `${BIOME_TOTAL_CAPTIONS[c]}: \`${totals[c]}\``).join(" · ");
-    addDivider(container);
-    container.addTextDisplayComponents((td) => td.setContent(summaryLine));
 
     for (const category of ALL_BIOME_CATEGORIES) {
         const inCategory = biomes.filter((b) => BIOME_META[b.biome]?.category === category);
         if (inCategory.length === 0) continue;
-        const lines = [...inCategory].sort((a, b) => b.count - a.count).map((b) => `${formatBiomeName(b.biome)}: ${b.count}`);
+        const lines = [...inCategory].sort((a, b) => b.count - a.count).map((b) => ansiBiomeLine(b.biome, b.count));
         addDivider(container);
-        container.addTextDisplayComponents((td) => td.setContent(`**${BIOME_CATEGORY_LABELS[category]}**\n${formatCodeblock(lines.join("\n"))}`));
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`**${BIOME_CATEGORY_LABELS[category]} (${totals[category]})**\n${formatCodeblock(lines.join("\n"), "ansi")}`),
+        );
     }
 
     const uncategorized = biomes.filter((b) => !BIOME_META[b.biome]);
     if (uncategorized.length > 0) {
+        const uncategorizedTotal = uncategorized.reduce((sum, b) => sum + b.count, 0);
         addDivider(container);
         container.addTextDisplayComponents((td) =>
-            td.setContent(`**Other**\n${formatCodeblock(uncategorized.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n"))}`),
+            td.setContent(`**Other (${uncategorizedTotal})**\n${formatCodeblock(uncategorized.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n"))}`),
         );
     }
 
@@ -220,7 +286,7 @@ function buildBiomesTabContainer(member: GuildMember, data: ProfileData): Contai
 function buildBadgesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { badges } = data;
     const container = baseContainer(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Badges**`));
+    container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Badges`));
 
     if (badges.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No badges yet."));
@@ -242,25 +308,39 @@ function buildBadgesTabContainer(member: GuildMember, data: ProfileData): Contai
  * classic embed version stays as-is for `!bh-admin member session-view`'s own pagination. */
 function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page: number): ContainerBuilder {
     const container = baseContainer(0x5865f2);
-    const { sessions } = data;
+    const { sessions, user } = data;
 
     if (sessions.length === 0) {
-        container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Sessions**\nNo activity recorded yet.`));
+        container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Sessions\nNo activity recorded yet.`));
         return container;
     }
 
-    const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
+    // While active, `sessions[0]` (newest-first) IS the current burst - ActivityEngine keeps
+    // extending its ended_at/duration_seconds live on every incoming message, it's not "finished"
+    // yet. Called out separately instead of listed as just another completed entry.
+    const ongoing = user.current_status === "active" ? sessions[0] : null;
+    const completed = ongoing ? sessions.slice(1) : sessions;
+
+    const pages = Math.max(Math.ceil(completed.length / SESSIONS_PER_PAGE), 1);
     const start = page * SESSIONS_PER_PAGE;
-    const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
-    const oldestFirst = [...slice].reverse();
+    const slice = completed.slice(start, start + SESSIONS_PER_PAGE);
 
-    const lines = oldestFirst.map((session) =>
-        `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
-    );
-
-    container.addTextDisplayComponents((td) => td.setContent(`**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`));
+    container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Session History`));
     addDivider(container);
-    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`));
+
+    const lines: string[] = [];
+    if (ongoing && page === 0) lines.push(`🟢 Currently macroing (started <t:${unix(ongoing.started_at)}:R>)`);
+    if (slice.length === 0) {
+        lines.push(ongoing ? "*No completed sessions yet.*" : "No activity recorded yet.");
+    } else {
+        for (const session of slice) {
+            lines.push(`⏱️ \`#${session.id}\` · \`${formatTime(session.duration_seconds)}\` · ended <t:${unix(session.ended_at)}:R>`);
+        }
+    }
+    container.addTextDisplayComponents((td) => td.setContent(lines.join("\n")));
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages}, ${completed.length} total sessions`));
 
     return container;
 }
