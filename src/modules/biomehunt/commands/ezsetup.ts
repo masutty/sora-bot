@@ -4,7 +4,7 @@ import {
     TextDisplayBuilder, TextInputBuilder, TextInputStyle,
 } from "discord.js";
 import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
-import { EmbedFormatter, formatTime, NO_ROLE_PINGS } from "@/utils/format";
+import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
 import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds";
 import { getGuildBadgeRoles } from "../repository/badges";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags";
@@ -74,16 +74,16 @@ function stepContainer(title: string, description: string): ContainerBuilder {
 export interface StepPayload {
     flags: MessageFlags.IsComponentsV2;
     components: NonNullable<MessageEditOptions["components"]>;
-    allowedMentions: typeof NO_ROLE_PINGS;
+    allowedMentions: typeof NO_PINGS;
 }
 
 /**
- * Every wizard screen routes through this - bakes in the ComponentsV2 flag plus `NO_ROLE_PINGS`
+ * Every wizard screen routes through this - bakes in the ComponentsV2 flag plus `NO_PINGS`
  * once, since most of these screens echo a role back (`roleLine`, badge/quota role summaries)
  * just to show its current value, not to notify anyone.
  */
 function stepPayload(components: StepPayload["components"]): StepPayload {
-    return { flags: MessageFlags.IsComponentsV2, components, allowedMentions: NO_ROLE_PINGS };
+    return { flags: MessageFlags.IsComponentsV2, components, allowedMentions: NO_PINGS };
 }
 
 function formatQuotaRoleLine(qr: QuotaRoleRow): string {

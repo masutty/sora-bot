@@ -8,7 +8,7 @@ import type { BotClient } from "@/core/BotClient";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { type ConfirmPayload } from "@/utils/confirm";
-import { EmbedFormatter, type FormattedReply, NO_ROLE_PINGS } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import { applyFlowerToWebhook } from "./adminMemberActions";
@@ -55,7 +55,7 @@ export default defineCommand({
                 return;
             }
             await interaction.deferReply();
-            await runProfileView(interaction.guild.id, target, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runProfileView(interaction.guild.id, target, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -87,7 +87,7 @@ export default defineCommand({
 
         if (sub === "profile") {
             const target = (await args.getMember("user")) ?? message.member;
-            await runProfileView(message.guild.id, target, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runProfileView(message.guild.id, target, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 

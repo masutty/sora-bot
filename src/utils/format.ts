@@ -1,10 +1,12 @@
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { MessageMentionOptions } from "discord.js";
 
-/** Renders `<@&roleId>` mentions as the normal clickable role chip, but suppresses the actual
- * ping - for admin/config screens that display a role (e.g. "Active role: <@&123>") where
- * nobody asked to be notified just because their role got printed on a report. */
-export const NO_ROLE_PINGS: MessageMentionOptions = { roles: [] };
+/** Renders `<@userId>`/`<@&roleId>` mentions as the normal clickable chip, but suppresses the
+ * actual ping - for admin/config/stats screens that display a user or role (e.g. a leaderboard,
+ * "Active role: <@&123>") where nobody asked to be notified just because they got printed on a
+ * report. An empty `parse` (with no explicit `users`/`roles` id list) suppresses ALL mention
+ * types per Discord's API - this is not role-only despite older code naming it that way. */
+export const NO_PINGS: MessageMentionOptions = { parse: [] };
 
 export function formatTime(seconds: number): string {
     const d = Math.floor(seconds / 86400);

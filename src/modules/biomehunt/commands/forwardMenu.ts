@@ -3,7 +3,7 @@ import {
     ContainerBuilder, MessageFlags, RoleSelectMenuBuilder, SeparatorSpacingSize, StringSelectMenuBuilder,
 } from "discord.js";
 import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
-import { EmbedFormatter, NO_ROLE_PINGS } from "@/utils/format";
+import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { buildPaginationRow, handlePaginationButton } from "@/utils/pagination";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards";
 import { BIOME_SELECTOR_CHOICES, formatBiomeName, resolveBiomeSelector, type BiomeForwardRow } from "../types";
@@ -64,7 +64,7 @@ async function promptRemoveForward(msg: Message, adminId: string, forwards: Biom
                 new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId("fwd-back").setLabel("Back").setStyle(ButtonStyle.Secondary)),
                 ...(pages > 1 ? [buildPaginationRow(p, pages)] : []),
             ],
-            allowedMentions: NO_ROLE_PINGS,
+            allowedMentions: NO_PINGS,
         };
     };
 
@@ -138,7 +138,7 @@ async function promptCreateForward(msg: Message, adminId: string): Promise<Creat
                     new ButtonBuilder().setCustomId("fwd-cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger),
                 ),
             ],
-            allowedMentions: NO_ROLE_PINGS,
+            allowedMentions: NO_PINGS,
         };
     };
 
@@ -186,7 +186,7 @@ async function forwardLoop(
                     ...extraButtons(),
                 ),
             ],
-            allowedMentions: NO_ROLE_PINGS,
+            allowedMentions: NO_PINGS,
         });
 
         const choice = await awaitButton(msg, adminId);
@@ -232,7 +232,7 @@ export async function runForwardMenu(
     }
 
     const forwards = await getForwardConfigs(guild.id);
-    await msg.edit({ flags: MessageFlags.IsComponentsV2, components: [listContainer(forwards)], allowedMentions: NO_ROLE_PINGS }).catch(() => {});
+    await msg.edit({ flags: MessageFlags.IsComponentsV2, components: [listContainer(forwards)], allowedMentions: NO_PINGS }).catch(() => {});
 }
 
 /** ezsetup wizard step - same Create/Remove loop, with Back/Skip/Cancel instead of Close. */
