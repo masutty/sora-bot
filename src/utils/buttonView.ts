@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from "discord.js";
-import type { ContainerBuilder, EmbedBuilder, Message, MessageFlags } from "discord.js";
+import type { ContainerBuilder, EmbedBuilder, Message, MessageFlags, MessageMentionOptions } from "discord.js";
+import { NO_PINGS } from "./format";
 import { Logger } from "./logging";
 
 const logger = new Logger("utils.buttonView");
@@ -32,13 +33,13 @@ export interface ButtonViewButton<S> {
  * module actually produces, and both `.reply()`/`.editReply()`/`.update()`/`.edit()` accept either.
  */
 export type ButtonViewPayload =
-    | { embeds: EmbedBuilder[] }
-    | { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[] };
+    | { embeds: EmbedBuilder[]; allowedMentions?: MessageMentionOptions }
+    | { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[]; allowedMentions?: MessageMentionOptions };
 
 /** `ButtonViewPayload` plus its button rows merged in - what `respond`/`i.update()` are actually called with. */
 export type ButtonViewFinalPayload =
-    | { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }
-    | { flags: MessageFlags.IsComponentsV2; components: (ContainerBuilder | ActionRowBuilder<ButtonBuilder>)[] };
+    | { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; allowedMentions?: MessageMentionOptions }
+    | { flags: MessageFlags.IsComponentsV2; components: (ContainerBuilder | ActionRowBuilder<ButtonBuilder>)[]; allowedMentions?: MessageMentionOptions };
 
 export interface ButtonViewRender<S> {
     /** Content only - button rows are appended separately, not part of this. */
@@ -80,13 +81,19 @@ function buttonRows<S>(render: ButtonViewRender<S>): ButtonViewButton<S>[][] {
  * ComponentsV2 content and its buttons share the SAME `components` array (there's no separate
  * `embeds` slot on a ComponentsV2 message) - classic embed content puts the button rows in
  * `components` alongside `embeds`, so this one merge works for both shapes.
+ *
+ * Also defaults `allowedMentions` to `NO_PINGS` unless the render explicitly set its own - a
+ * render can legitimately show a `<@userId>`/`<@&roleId>` mention (a leaderboard, a user list,
+ * a role echoed back on a config screen), and nobody clicking a tab/page button should trigger a
+ * fresh ping for everyone still listed on the re-rendered page.
  */
-function mergePayload<S>(render: ButtonViewRender<S>) {
+function mergePayload<S>(render: ButtonViewRender<S>): ButtonViewFinalPayload {
     const rows = buttonRows(render).map(buildRow);
+    const allowedMentions = render.payload.allowedMentions ?? NO_PINGS;
     if ("embeds" in render.payload) {
-        return { ...render.payload, components: rows };
+        return { ...render.payload, components: rows, allowedMentions };
     }
-    return { ...render.payload, components: [...render.payload.components, ...rows] };
+    return { ...render.payload, components: [...render.payload.components, ...rows], allowedMentions };
 }
 
 /**
@@ -143,7 +150,7 @@ export async function runButtonView<S>(opts: RunButtonViewOptions<S>): Promise<v
         // Re-render the current state's content WITHOUT buttons, rather than truncating
         // `components` to `[]` - on a ComponentsV2 message that would wipe the content itself,
         // since content and buttons share the same array there.
-        await msg.edit(current.payload).catch(() => { });
+        await msg.edit({ ...current.payload, allowedMentions: current.payload.allowedMentions ?? NO_PINGS }).catch(() => { });
     });
 }
 

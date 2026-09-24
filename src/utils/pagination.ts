@@ -11,6 +11,7 @@ import {
     TextInputBuilder,
     TextInputStyle,
 } from "discord.js";
+import { NO_PINGS } from "./format";
 
 const FIRST_ID = "pg-first";
 const PREV_ID = "pg-prev";
@@ -54,6 +55,13 @@ function buildJumpModal(pages: number): ModalBuilder {
  * buttons' idle timeout (which tends to be much shorter). */
 const MODAL_TIMEOUT_MS = 60_000;
 
+/** Defaults a page's `allowedMentions` to `NO_PINGS` unless the caller's `render` explicitly set
+ * its own - a page can legitimately list `<@userId>` mentions (session history, a user list), and
+ * clicking prev/next/jump shouldn't re-ping everyone shown on the page it lands on. */
+function withDefaultMentions(payload: MessageEditOptions): MessageEditOptions {
+    return { allowedMentions: NO_PINGS, ...payload };
+}
+
 export interface AttachPaginationOptions {
     /** Only clicks from this user are accepted - everyone else gets an ephemeral "not yours". */
     invokerId: string;
@@ -80,8 +88,10 @@ export async function handlePaginationButton(
     i: ButtonInteraction,
     page: number,
     pages: number,
-    render: (page: number) => MessageEditOptions,
+    renderRaw: (page: number) => MessageEditOptions,
 ): Promise<number | null> {
+    const render = (p: number) => withDefaultMentions(renderRaw(p));
+
     if (i.customId === FIRST_ID) {
         await i.update(render(0));
         return 0;
@@ -140,6 +150,6 @@ export function attachPagination(msg: Message, opts: AttachPaginationOptions): v
     });
 
     collector.on("end", async () => {
-        await msg.edit(render(page, false)).catch(() => { });
+        await msg.edit(withDefaultMentions(render(page, false))).catch(() => { });
     });
 }

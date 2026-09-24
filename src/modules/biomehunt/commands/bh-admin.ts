@@ -4,7 +4,7 @@ import type { BotClient } from "@/core/BotClient";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import type { ConfirmPayload } from "@/utils/confirm";
-import { EmbedFormatter, type FormattedReply, NO_ROLE_PINGS } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { getFailureQuip } from "@/utils/quips";
@@ -272,7 +272,7 @@ export default defineCommand({
                 const result = await forceCounterUpdateAction(client, interaction.guild.id);
                 await interaction.editReply(toReplyPayload(result));
             } catch (err) {
-                await interaction.editReply(EmbedFormatter.error(errorMessage(err)));
+                await interaction.editReply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
             }
             return;
         }
@@ -284,7 +284,7 @@ export default defineCommand({
                 return;
             }
             await interaction.deferReply();
-            await replySessionHistory(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply(payload));
+            await replySessionHistory(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -295,26 +295,26 @@ export default defineCommand({
                 return;
             }
             await interaction.deferReply();
-            await runProfileView(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runProfileView(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "quotas-delete") {
             await interaction.deferReply();
             const roleId = interaction.options.getRole("role")?.id ?? null;
-            await runQuotasDelete(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runQuotasDelete(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "setup") {
             await interaction.deferReply();
-            await runEzSetup(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runEzSetup(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "forward-menu") {
             await interaction.deferReply();
-            await runForwardMenu(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runForwardMenu(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -332,7 +332,7 @@ export default defineCommand({
             });
             await interaction.editReply(toReplyPayload(result));
         } catch (err) {
-            await interaction.editReply(EmbedFormatter.error(errorMessage(err)));
+            await interaction.editReply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
         }
     },
 
@@ -345,7 +345,7 @@ export default defineCommand({
         const sub = args.getSubcommand();
         if (!sub) {
             if (group === "forward") {
-                await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+                await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
                 return;
             }
             await message.reply(EmbedFormatter.info("Run `bh-admin config show` to see the current configuration."));
@@ -358,7 +358,7 @@ export default defineCommand({
                 const result = await forceCounterUpdateAction(client, message.guild.id);
                 await message.reply(toReplyPayload(result));
             } catch (err) {
-                await message.reply(EmbedFormatter.error(errorMessage(err)));
+                await message.reply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
             }
             return;
         }
@@ -369,7 +369,7 @@ export default defineCommand({
                 await message.reply("Could not resolve that member. Try pinging them instead.");
                 return;
             }
-            await replySessionHistory(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await replySessionHistory(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -379,23 +379,23 @@ export default defineCommand({
                 await message.reply("Could not resolve that member. Try pinging them instead.");
                 return;
             }
-            await runProfileView(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runProfileView(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "quotas-delete") {
             const role = await args.getRole("role");
-            await runQuotasDelete(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runQuotasDelete(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "setup") {
-            await runEzSetup(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runEzSetup(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "forward-menu") {
-            await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS }));
+            await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -412,7 +412,7 @@ export default defineCommand({
             });
             await message.reply(toReplyPayload(result));
         } catch (err) {
-            await message.reply(EmbedFormatter.error(errorMessage(err)));
+            await message.reply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
         }
     },
 });
@@ -659,11 +659,11 @@ async function replySessionHistory(
     attachPagination(msg, { invokerId, pages, render });
 }
 
-/** Admin/config results routinely echo a role back (`"The role is now <@&...>"`) - `NO_ROLE_PINGS`
+/** Admin/config results routinely echo a role back (`"The role is now <@&...>"`) - `NO_PINGS`
  * keeps the mention visible without actually pinging the role just because it showed up on a report. */
 function toReplyPayload(result: string | ContainerBuilder): FormattedReply {
-    if (typeof result === "string") return { ...EmbedFormatter.success(result), allowedMentions: NO_ROLE_PINGS };
-    return { flags: MessageFlags.IsComponentsV2, components: [result], allowedMentions: NO_ROLE_PINGS };
+    if (typeof result === "string") return { ...EmbedFormatter.success(result), allowedMentions: NO_PINGS };
+    return { flags: MessageFlags.IsComponentsV2, components: [result], allowedMentions: NO_PINGS };
 }
 
 function errorMessage(err: unknown): string {

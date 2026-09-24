@@ -3,7 +3,7 @@ import type { Message, User } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/buttonView";
-import { EmbedFormatter, formatTime, NO_ROLE_PINGS, unix, formatCodeblock } from "@/utils/format";
+import { EmbedFormatter, formatTime, NO_PINGS, unix, formatCodeblock } from "@/utils/format";
 import {
     getBiomeCounts, getBiomeTopContributors, getGuildBiomeCounts, getGuildSessionOverview,
     getLongestSessions, getRecentSessions, getUserLongestSessionRank,
@@ -305,7 +305,7 @@ export default defineCommand({
         const sub = interaction.options.getSubcommand(true);
         const guildId = interaction.guild.id;
         const invokerId = interaction.user.id;
-        const send = (payload: ButtonViewFinalPayload) => interaction.editReply({ ...payload, allowedMentions: NO_ROLE_PINGS });
+        const send = (payload: ButtonViewFinalPayload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS });
 
         await interaction.deferReply();
         try {
@@ -322,7 +322,7 @@ export default defineCommand({
             await runUsersStats(guildId, invokerId, send);
         } catch (err) {
             const text = err instanceof BiomeHuntError ? err.message : "Something went wrong.";
-            await interaction.editReply(EmbedFormatter.error(text));
+            await interaction.editReply({ ...EmbedFormatter.error(text), allowedMentions: NO_PINGS });
         }
     },
 
@@ -339,7 +339,7 @@ export default defineCommand({
 
         const guildId = message.guild.id;
         const invokerId = message.author.id;
-        const send = (payload: ButtonViewFinalPayload) => message.reply({ ...payload, allowedMentions: NO_ROLE_PINGS });
+        const send = (payload: ButtonViewFinalPayload) => message.reply({ ...payload, allowedMentions: NO_PINGS });
 
         try {
             if (sub === "biomes") {
@@ -358,7 +358,7 @@ export default defineCommand({
             }
         } catch (err) {
             const text = err instanceof BiomeHuntError ? err.message : "Something went wrong.";
-            await message.reply(EmbedFormatter.error(text));
+            await message.reply({ ...EmbedFormatter.error(text), allowedMentions: NO_PINGS });
         }
     },
 });
