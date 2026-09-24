@@ -1,7 +1,7 @@
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { GuildTextBasedChannel, Message } from "discord.js";
 import type { BotClient } from "@/core/BotClient";
-import { EmbedFormatter, type FormattedReply, NO_ROLE_PINGS } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { markQuotaEvaluated, setQuotaEvalHour } from "../repository/guilds";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
 import { evaluateFixedRewardsForGuild } from "../services/RewardEngine";
@@ -59,7 +59,7 @@ export async function runQuotasDelete(
 ): Promise<void> {
     if (roleId) {
         const message = await removeQuotaRoleAction(guildId, roleId);
-        await respond({ ...EmbedFormatter.success(message), allowedMentions: NO_ROLE_PINGS });
+        await respond({ ...EmbedFormatter.success(message), allowedMentions: NO_PINGS });
         return;
     }
 
@@ -87,7 +87,7 @@ export async function runQuotasDelete(
         }
         const target = roles[n - 1];
         const message = await removeQuotaRoleAction(guildId, target.role_id);
-        await msg.edit({ ...EmbedFormatter.success(message), allowedMentions: NO_ROLE_PINGS }).catch(() => {});
+        await msg.edit({ ...EmbedFormatter.success(message), allowedMentions: NO_PINGS }).catch(() => {});
     });
 
     collector.on("end", (collected) => {
