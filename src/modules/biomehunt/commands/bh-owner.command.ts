@@ -1,9 +1,7 @@
-import type { Message } from "discord.js";
 import { SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { defineCommand } from "@/define";
+import { type CommandContext, confirm, defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { type ConfirmPayload, confirmAction } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory } from "../constants/biomes.constants";
@@ -74,7 +72,7 @@ export default defineCommand({
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
         await ctx.defer({ ephemeral: true });
-        const reply = (payload: ConfirmPayload | FormattedReply) => ctx.reply(payload);
+        const reply = (payload: FormattedReply) => ctx.reply(payload);
 
         if (sub === "stale") {
             await ctx.reply(await renderStaleList(ctx.client));
@@ -82,18 +80,13 @@ export default defineCommand({
         }
 
         if (sub === "recalculate-user") {
-            await runRecalculateUser(
-                {
-                    guildId: ctx.args.getString("guild_id", true),
-                    discordUserId: ctx.args.getString("discord_user_id", true),
-                    afterDateStr: ctx.args.getString("after_date"),
-                    biome: ctx.args.getString("biome"),
-                    category: ctx.args.getString("category") as BiomeCategory | null,
-                },
-                ctx.user.id,
-                reply,
-                reply,
-            );
+            await runRecalculateUser(ctx, {
+                guildId: ctx.args.getString("guild_id", true),
+                discordUserId: ctx.args.getString("discord_user_id", true),
+                afterDateStr: ctx.args.getString("after_date"),
+                biome: ctx.args.getString("biome"),
+                category: ctx.args.getString("category") as BiomeCategory | null,
+            });
             return;
         }
 
@@ -109,7 +102,7 @@ export default defineCommand({
             return;
         }
 
-        await runStaleCleanup(ctx.client, ctx.args.getString("guild_id"), ctx.user.id, reply, reply);
+        await runStaleCleanup(ctx, ctx.client, ctx.args.getString("guild_id"));
     },
 });
 
@@ -127,24 +120,19 @@ interface RecalculateUserArgs {
  * optionally narrowed by date and/or biome/category. Deliberately ignores that flag entirely - see
  * `planUserRewardBackfill`'s doc comment. Badges are out of scope; never touched here.
  */
-async function runRecalculateUser(
-    args: RecalculateUserArgs,
-    invokerId: string,
-    send: (payload: ConfirmPayload) => Promise<Message>,
-    replyPlain: (reply: FormattedReply) => Promise<unknown>,
-): Promise<void> {
+async function runRecalculateUser(ctx: CommandContext, args: RecalculateUserArgs): Promise<void> {
     let afterDate: Date | null = null;
     if (args.afterDateStr) {
         afterDate = new Date(args.afterDateStr);
         if (isNaN(afterDate.getTime())) {
-            await replyPlain(EmbedFormatter.error("Invalid after_date - use YYYY-MM-DD."));
+            await ctx.reply(EmbedFormatter.error("Invalid after_date - use YYYY-MM-DD."));
             return;
         }
     }
 
     const user = await getUserByDiscordId(args.guildId, args.discordUserId);
     if (!user) {
-        await replyPlain(EmbedFormatter.info(`<@${args.discordUserId}> has no profile in guild \`${args.guildId}\`.`));
+        await ctx.reply(EmbedFormatter.info(`<@${args.discordUserId}> has no profile in guild \`${args.guildId}\`.`));
         return;
     }
 
@@ -152,7 +140,7 @@ async function runRecalculateUser(
 
     const plan = await planUserRewardBackfill(user.id, { afterDate, biomes });
     if (plan.events.length === 0) {
-        await replyPlain(EmbedFormatter.info(`<@${args.discordUserId}> has no un-rewarded biome finds matching those filters.`));
+        await ctx.reply(EmbedFormatter.info(`<@${args.discordUserId}> has no un-rewarded biome finds matching those filters.`));
         return;
     }
 
@@ -163,26 +151,29 @@ async function runRecalculateUser(
 
     const { guildId, discordUserId } = args;
 
-    await confirmAction({
-        invokerId,
-        title: `Backfill Seeds/XP for <@${discordUserId}> in guild \`${guildId}\`?`,
-        fields: [
-            { label: "Events to backfill", value: String(plan.events.length) },
-            { label: "Seeds to grant", value: String(plan.totalSeeds) },
-            { label: "XP to grant", value: String(plan.totalXp) },
-            { label: "Filters", value: filterParts.length > 0 ? filterParts.join(", ") : "none" },
-            ...(plan.skippedUnknownCount > 0 ? [{ label: "Skipped (unknown biome)", value: String(plan.skippedUnknownCount) }] : []),
-        ],
-        send,
-        onConfirm: async () => {
-            const updated = await applyUserRewardBackfill(user.id, plan);
-            logger.info(`Backfilled ${plan.events.length} event(s) for user ${user.id} in guild ${guildId}: +${plan.totalSeeds} seeds, +${plan.totalXp} xp`);
-            return EmbedFormatter.success(
-                `Backfilled ${plan.events.length} event(s) for <@${discordUserId}>: +${plan.totalSeeds} 🌱, +${plan.totalXp} XP.\n` +
-                `New balance: ${updated.seeds} 🌱, ${updated.xp} XP.`,
-            );
-        },
-    });
+    // Titles echo `<@discordUserId>` - View payloads get NO_PINGS by default, so it shows without pinging.
+    await ctx.open(
+        confirm({
+            name: "biomehunt.recalculate-user",
+            title: `Backfill Seeds/XP for <@${discordUserId}> in guild \`${guildId}\`?`,
+            fields: [
+                { label: "Events to backfill", value: String(plan.events.length) },
+                { label: "Seeds to grant", value: String(plan.totalSeeds) },
+                { label: "XP to grant", value: String(plan.totalXp) },
+                { label: "Filters", value: filterParts.length > 0 ? filterParts.join(", ") : "none" },
+                ...(plan.skippedUnknownCount > 0 ? [{ label: "Skipped (unknown biome)", value: String(plan.skippedUnknownCount) }] : []),
+            ],
+            onConfirm: async () => {
+                const updated = await applyUserRewardBackfill(user.id, plan);
+                logger.info(`Backfilled ${plan.events.length} event(s) for user ${user.id} in guild ${guildId}: +${plan.totalSeeds} seeds, +${plan.totalXp} xp`);
+                return EmbedFormatter.success(
+                    `Backfilled ${plan.events.length} event(s) for <@${discordUserId}>: +${plan.totalSeeds} 🌱, +${plan.totalXp} XP.\n` +
+                    `New balance: ${updated.seeds} 🌱, ${updated.xp} XP.`,
+                );
+            },
+        }),
+        undefined,
+    );
 }
 
 interface RerollFlowerArgs {
@@ -257,17 +248,11 @@ async function renderStaleList(client: BotClient): Promise<FormattedReply> {
  * guild's BiomeHunt data" escape hatch). `guildId` omitted -> targets every stale guild at once,
  * with a SINGLE confirmation covering all of them - never one confirmation per guild.
  */
-async function runStaleCleanup(
-    client: BotClient,
-    guildId: string | null,
-    invokerId: string,
-    send: (payload: ConfirmPayload) => Promise<Message>,
-    replyPlain: (reply: FormattedReply) => Promise<unknown>,
-): Promise<void> {
+async function runStaleCleanup(ctx: CommandContext, client: BotClient, guildId: string | null): Promise<void> {
     const targets = guildId ? await getGuildDataSummary([guildId]) : await findStaleGuilds(client);
 
     if (!targets.length) {
-        await replyPlain(
+        await ctx.reply(
             EmbedFormatter.info(guildId ? `Guild \`${guildId}\` has no BiomeHunt data.` : "No stale guilds to clean up."),
         );
         return;
@@ -276,24 +261,26 @@ async function runStaleCleanup(
     const totalUsers = targets.reduce((sum, g) => sum + g.user_count, 0);
     const totalChannels = targets.reduce((sum, g) => sum + g.macro_channel_count, 0);
 
-    await confirmAction({
-        invokerId,
-        title:
-            targets.length === 1
-                ? `Delete all BiomeHunt data for guild \`${targets[0].guild_id}\`?`
-                : `Delete all BiomeHunt data for ${targets.length} stale guild(s)?`,
-        fields: [
-            { label: "Guilds", value: targets.map((g) => g.guild_id).join(", ") },
-            { label: "Users tracked", value: String(totalUsers) },
-            { label: "Macro channels", value: String(totalChannels) },
-        ],
-        color: 0xed4245,
-        send,
-        onConfirm: async () => {
-            const guildIds = targets.map((g) => g.guild_id);
-            const deleted = await deleteGuildData(guildIds);
-            logger.info(`Deleted BiomeHunt data for ${deleted} guild(s): ${guildIds.join(", ")}`);
-            return EmbedFormatter.success(`Deleted BiomeHunt data for ${deleted} guild(s).`);
-        },
-    });
+    await ctx.open(
+        confirm({
+            name: "biomehunt.stale-cleanup",
+            title:
+                targets.length === 1
+                    ? `Delete all BiomeHunt data for guild \`${targets[0].guild_id}\`?`
+                    : `Delete all BiomeHunt data for ${targets.length} stale guild(s)?`,
+            fields: [
+                { label: "Guilds", value: targets.map((g) => g.guild_id).join(", ") },
+                { label: "Users tracked", value: String(totalUsers) },
+                { label: "Macro channels", value: String(totalChannels) },
+            ],
+            color: 0xed4245,
+            onConfirm: async () => {
+                const guildIds = targets.map((g) => g.guild_id);
+                const deleted = await deleteGuildData(guildIds);
+                logger.info(`Deleted BiomeHunt data for ${deleted} guild(s): ${guildIds.join(", ")}`);
+                return EmbedFormatter.success(`Deleted BiomeHunt data for ${deleted} guild(s).`);
+            },
+        }),
+        undefined,
+    );
 }
