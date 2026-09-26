@@ -3,12 +3,12 @@ import { getGuildFlags, setGuildFlag } from "../repository/flags.repository";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import type { FlagName } from "../types";
 
-export async function flagSetAction(guildId: string, flag: FlagName, enabled: boolean): Promise<string> {
+export async function setFlag(guildId: string, flag: FlagName, enabled: boolean): Promise<string> {
     await setGuildFlag(guildId, flag, enabled);
     return `${FLAG_DEFINITIONS[flag].label} is now ${enabled ? "ON" : "OFF"}.`;
 }
 
-export async function flagListAction(guildId: string): Promise<ContainerBuilder> {
+export async function listFlags(guildId: string): Promise<ContainerBuilder> {
     const flags = await getGuildFlags(guildId);
 
     const lines = ALL_FLAGS.map((name) => {

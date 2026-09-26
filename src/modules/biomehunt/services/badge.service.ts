@@ -5,7 +5,7 @@ import { getUserByDiscordId } from "../repository/users.repository";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import { BiomeHuntError, type Badge } from "../types";
 
-export async function badgesAwardAction(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
+export async function awardBadge(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
@@ -18,7 +18,7 @@ export async function badgesAwardAction(guildId: string, discordUserId: string, 
     return `${BADGE_META[badge].emoji} <@${discordUserId}> was granted the ${BADGE_META[badge].display} badge.`;
 }
 
-export async function badgesTakeAction(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
+export async function takeBadge(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
@@ -32,7 +32,7 @@ export async function badgesTakeAction(guildId: string, discordUserId: string, b
 }
 
 /** `roleId` of `null` unconfigures the badge's role instead of setting one. */
-export async function badgesSetAction(guildId: string, badge: Badge, roleId: string | null): Promise<string> {
+export async function setBadges(guildId: string, badge: Badge, roleId: string | null): Promise<string> {
     if (!roleId) {
         await removeGuildBadgeRole(guildId, badge);
         return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display} no longer grants a role.`;
@@ -41,7 +41,7 @@ export async function badgesSetAction(guildId: string, badge: Badge, roleId: str
     return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display} will now grant <@&${roleId}>.`;
 }
 
-export async function badgesListAction(guildId: string): Promise<ContainerBuilder> {
+export async function listBadges(guildId: string): Promise<ContainerBuilder> {
     const badgeRoles = await getGuildBadgeRoles(guildId);
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
 

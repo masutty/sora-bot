@@ -1,5 +1,5 @@
 import { MessageFlags } from "discord.js";
-import { buildSessionEndContainer } from "@/modules/biomehunt/services/SessionReportEngine";
+import { buildSessionEndContainer } from "@/modules/biomehunt/services/activity-session-report.service";
 import { BIOME_META } from "@/modules/biomehunt/constants/biomes.constants";
 import type { ActivitySessionRow } from "@/modules/biomehunt/types";
 import type { TestCase, TestPayload } from "../../registry";

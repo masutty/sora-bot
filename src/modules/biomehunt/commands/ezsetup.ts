@@ -10,10 +10,10 @@ import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRol
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
-import { activityDeleteAction, activitySetAction } from "./adminActivityActions";
-import { badgesSetAction } from "./adminBadgeActions";
-import { addCategoryAction, disableCounterAction, setCounterChannelAction, setRolesAction, showConfig } from "./adminConfigActions";
-import { quotasCreateAction, removeQuotaRoleAction } from "./adminQuotaActions";
+import { deleteActivity, setActivity } from "../services/activity.service";
+import { setBadges } from "../services/badge.service";
+import { addCategory, disableCounter, setCounterChannel, setRoles, showConfig } from "../services/guild-config.service";
+import { createQuota, removeQuotaRole } from "../services/quota.service";
 import { stepBiomeForwards } from "./forwardMenu";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
@@ -362,7 +362,7 @@ async function stepCategories(guild: Guild, adminId: string, msg: Message, canGo
     const result = await awaitChannelSelect(msg, adminId);
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
     if (result.kind === "back") return "back";
-    if (result.kind === "ok") for (const categoryId of result.value) await addCategoryAction(guild.id, categoryId);
+    if (result.kind === "ok") for (const categoryId of result.value) await addCategory(guild.id, categoryId);
     return "forward";
 }
 
@@ -386,7 +386,7 @@ async function stepRoles(guild: Guild, adminId: string, msg: Message, canGoBack:
     const result = await awaitRoleTriplet(msg, adminId);
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
     if (result.kind === "back") return "back";
-    if (result.kind === "ok") await setRolesAction(guild.id, result.value.active, result.value.idle, result.value.inactive);
+    if (result.kind === "ok") await setRoles(guild.id, result.value.active, result.value.idle, result.value.inactive);
     return "forward";
 }
 
@@ -421,7 +421,7 @@ async function stepThresholds(guild: Guild, adminId: string, msg: Message, canGo
     );
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
     if (result.kind === "back") return "back";
-    if (result.kind === "ok") await activitySetAction(guild.id, result.value[0], result.value[1], result.value[2]);
+    if (result.kind === "ok") await setActivity(guild.id, result.value[0], result.value[1], result.value[2]);
     return "forward";
 }
 
@@ -457,7 +457,7 @@ async function stepAutoDelete(guild: Guild, adminId: string, msg: Message, canGo
             );
             if (isTerminal(hoursResult)) { await finish(msg, terminalMessage(hoursResult.kind)); return hoursResult.kind; }
             if (hoursResult.kind === "back" || hoursResult.kind === "skip") continue;
-            await activityDeleteAction(guild.id, hoursResult.value[0]);
+            await deleteActivity(guild.id, hoursResult.value[0]);
             await setGuildFlag(guild.id, "AUTO_DELETE_ENABLED", true);
             return "forward";
         }
@@ -502,12 +502,12 @@ async function stepCounter(guild: Guild, adminId: string, msg: Message, canGoBac
             const channelResult = await awaitChannelSelect(msg, adminId);
             if (isTerminal(channelResult)) { await finish(msg, terminalMessage(channelResult.kind)); return channelResult.kind; }
             if (channelResult.kind === "back" || channelResult.kind === "skip") continue;
-            await setCounterChannelAction(guild.id, channelResult.value[0]);
+            await setCounterChannel(guild.id, channelResult.value[0]);
             return "forward";
         }
 
         if (choice.kind === "ok" && choice.value === "ez-disable") {
-            await disableCounterAction(guild.id);
+            await disableCounter(guild.id);
             return "forward";
         }
     }
@@ -539,7 +539,7 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
 
         if (choice.kind === "ok" && choice.value === "ez-remove") {
             const index = await promptRemoveIndex(msg, adminId, existingRewards);
-            if (index !== null) await removeQuotaRoleAction(guild.id, existingRewards[index - 1].role_id);
+            if (index !== null) await removeQuotaRole(guild.id, existingRewards[index - 1].role_id);
             continue;
         }
 
@@ -606,7 +606,7 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
         if (isTerminal(nums)) { await finish(msg, terminalMessage(nums.kind)); return nums.kind; }
         if (nums.kind === "back" || nums.kind === "skip") continue;
 
-        await quotasCreateAction(guild.id, rewardRole.value, mode, nums.value[0], nums.value[1], needsDuration ? nums.value[2] : null);
+        await createQuota(guild.id, rewardRole.value, mode, nums.value[0], nums.value[1], needsDuration ? nums.value[2] : null);
     }
 }
 
@@ -634,7 +634,7 @@ async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGo
     if (result.kind === "ok") {
         for (const badge of ALL_BADGES) {
             const roleId = result.value[badge];
-            if (roleId) await badgesSetAction(guild.id, badge, roleId);
+            if (roleId) await setBadges(guild.id, badge, roleId);
         }
     }
     return "forward";

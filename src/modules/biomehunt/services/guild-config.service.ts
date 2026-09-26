@@ -2,15 +2,15 @@ import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { formatTime } from "@/utils/format";
 import {
-    addCategory, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
-    isGuildReady, removeCategory, resetGuildConfig, setAutoCreateCategories, setCounterChannel, setGuildRoles,
+    insertCategory, clearCounterChannel, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
+    isGuildReady, deleteCategory, resetGuildConfig, updateAutoCreateCategories, updateCounterChannel, setGuildRoles,
 } from "../repository/guilds.repository";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
-import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
+import { getForwardConfigs } from "../repository/forwards.repository";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import { BiomeHuntError } from "../types";
-import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
+import { formatBiomeName } from "../constants/biomes.constants";
 import { updateCounterForGuild } from "../workers/counter.worker";
 
 function addDivider(container: ContainerBuilder): void {
@@ -73,39 +73,39 @@ export async function showConfig(guildId: string): Promise<ContainerBuilder> {
     return container;
 }
 
-export async function setAutoCreateCategoriesAction(guildId: string, enabled: boolean): Promise<string> {
-    await setAutoCreateCategories(guildId, enabled);
+export async function setAutoCreateCategories(guildId: string, enabled: boolean): Promise<string> {
+    await updateAutoCreateCategories(guildId, enabled);
     return `Auto-create categories ${enabled ? "enabled" : "disabled"}.`;
 }
 
-export async function addCategoryAction(guildId: string, categoryId: string): Promise<string> {
-    await addCategory(guildId, categoryId);
+export async function addCategory(guildId: string, categoryId: string): Promise<string> {
+    await insertCategory(guildId, categoryId);
     return `Category <#${categoryId}> is now allowed for macro channels.`;
 }
 
-export async function removeCategoryAction(guildId: string, categoryId: string): Promise<string> {
-    const removed = await removeCategory(guildId, categoryId);
+export async function removeCategory(guildId: string, categoryId: string): Promise<string> {
+    const removed = await deleteCategory(guildId, categoryId);
     if (!removed) throw new BiomeHuntError("That category isn't registered.");
     return `Category <#${categoryId}> removed.`;
 }
 
 /** Sets all 3 status roles at once - used by the ez-setup wizard's single-screen role picker. The admin CLI sets them one at a time via `activity set-role`. */
-export async function setRolesAction(guildId: string, activeId: string, idleId: string, inactiveId: string): Promise<string> {
+export async function setRoles(guildId: string, activeId: string, idleId: string, inactiveId: string): Promise<string> {
     await setGuildRoles(guildId, activeId, idleId, inactiveId);
     return `Roles updated: active <@&${activeId}>, idle <@&${idleId}>, inactive <@&${inactiveId}>.`;
 }
 
-export async function setCounterChannelAction(guildId: string, channelId: string): Promise<string> {
-    await setCounterChannel(guildId, channelId);
+export async function setCounterChannel(guildId: string, channelId: string): Promise<string> {
+    await updateCounterChannel(guildId, channelId);
     return `Live counter will now be posted in <#${channelId}>.`;
 }
 
-export async function disableCounterAction(guildId: string): Promise<string> {
-    await disableCounter(guildId);
+export async function disableCounter(guildId: string): Promise<string> {
+    await clearCounterChannel(guildId);
     return "Live counter disabled.";
 }
 
-export async function forceCounterUpdateAction(client: BotClient, guildId: string): Promise<string> {
+export async function forceCounterUpdate(client: BotClient, guildId: string): Promise<string> {
     const guildConfig = await getOrCreateGuildConfig(guildId);
     if (!guildConfig.counter_channel_id) {
         throw new BiomeHuntError("Live counter isn't configured for this server. Set one with `counter set`.");
@@ -114,7 +114,7 @@ export async function forceCounterUpdateAction(client: BotClient, guildId: strin
     return `Live counter updated in <#${guildConfig.counter_channel_id}>.`;
 }
 
-export async function testConfigAction(guildId: string): Promise<ContainerBuilder> {
+export async function testConfig(guildId: string): Promise<ContainerBuilder> {
     const { hasCategory, hasRoles } = await isGuildReady(guildId);
     const config = await getOrCreateGuildConfig(guildId);
     const ready = hasCategory && hasRoles;
@@ -135,54 +135,7 @@ export async function testConfigAction(guildId: string): Promise<ContainerBuilde
     return container;
 }
 
-export async function resetConfigAction(guildId: string): Promise<string> {
+export async function resetConfig(guildId: string): Promise<string> {
     await resetGuildConfig(guildId);
     return "All BiomeHunt configuration for this server has been reset.";
-}
-
-async function setForwardAction(guildId: string, selector: string, channelId: string, roleId: string | null): Promise<string> {
-    const biomes = resolveBiomeSelector(selector);
-    for (const biome of biomes) await setForwardConfig(guildId, biome, channelId, roleId);
-
-    const roleNote = roleId ? `, pinging <@&${roleId}>` : "";
-    if (biomes.length === 1) return `${formatBiomeName(biomes[0])} will now be forwarded to <#${channelId}>${roleNote}.`;
-    return `${biomes.length} biomes will now be forwarded to <#${channelId}>${roleNote}: ${biomes.map(formatBiomeName).join(", ")}.`;
-}
-
-/**
- * `channel` is optional: omitting it (with no `role` either) removes the forward instead of
- * setting it. Passing `role` without `channel` is rejected - a role ping needs a destination.
- */
-export async function forwardSetAction(guildId: string, selector: string, channelId: string | null, roleId: string | null): Promise<string> {
-    if (!channelId) {
-        if (roleId) throw new BiomeHuntError("Missing required argument: channel");
-        return removeForwardAction(guildId, selector);
-    }
-    return setForwardAction(guildId, selector, channelId, roleId);
-}
-
-async function removeForwardAction(guildId: string, selector: string): Promise<string> {
-    const biomes = resolveBiomeSelector(selector);
-    const removed: string[] = [];
-    for (const biome of biomes) {
-        if (await removeForwardConfig(guildId, biome)) removed.push(biome);
-    }
-
-    if (removed.length === 0) throw new BiomeHuntError("No matching biome forward is configured.");
-    if (removed.length === 1) return `Forward for ${formatBiomeName(removed[0])} removed.`;
-    return `Removed ${removed.length} biome forward(s): ${removed.map(formatBiomeName).join(", ")}.`;
-}
-
-export async function listForwardsAction(guildId: string): Promise<ContainerBuilder> {
-    const forwards = await getForwardConfigs(guildId);
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-
-    if (forwards.length === 0) {
-        container.addTextDisplayComponents((td) => td.setContent("**Biome Forwards**\nNo biome forwards configured yet."));
-        return container;
-    }
-
-    const lines = forwards.map((f) => `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`);
-    container.addTextDisplayComponents((td) => td.setContent(`**Biome Forwards**\n${lines.join("\n")}`));
-    return container;
 }

@@ -20,7 +20,7 @@ export async function upsertQuotaRole(
     return result.rows[0];
 }
 
-export async function removeQuotaRole(guildId: string, roleId: string): Promise<boolean> {
+export async function deleteQuotaRole(guildId: string, roleId: string): Promise<boolean> {
     const result = await query(`DELETE FROM bh_quota_roles WHERE guild_id = $1 AND role_id = $2`, [guildId, roleId]);
     return (result.rowCount ?? 0) > 0;
 }

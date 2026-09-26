@@ -49,7 +49,7 @@ export async function resetThresholds(guildId: string): Promise<void> {
     await updateThresholds(guildId, 1200, 1800, 86400);
 }
 
-export async function setQuotaEvalHour(guildId: string, hourUtc: number): Promise<void> {
+export async function updateQuotaEvalHour(guildId: string, hourUtc: number): Promise<void> {
     await query(
         `UPDATE bh_guilds SET quota_eval_hour_utc = $2, updated_at = NOW() WHERE guild_id = $1`,
         [guildId, hourUtc],
@@ -91,7 +91,7 @@ export async function setAutoDeleteHours(guildId: string, seconds: number): Prom
     invalidate(guildId);
 }
 
-export async function setAutoCreateCategories(guildId: string, enabled: boolean): Promise<void> {
+export async function updateAutoCreateCategories(guildId: string, enabled: boolean): Promise<void> {
     await query(
         `UPDATE bh_guilds SET auto_create_categories = $2, updated_at = NOW() WHERE guild_id = $1`,
         [guildId, enabled],
@@ -99,7 +99,7 @@ export async function setAutoCreateCategories(guildId: string, enabled: boolean)
     invalidate(guildId);
 }
 
-export async function setCounterChannel(guildId: string, channelId: string): Promise<void> {
+export async function updateCounterChannel(guildId: string, channelId: string): Promise<void> {
     await query(
         `UPDATE bh_guilds SET counter_channel_id = $2, counter_message_id = NULL, updated_at = NOW() WHERE guild_id = $1`,
         [guildId, channelId],
@@ -107,7 +107,7 @@ export async function setCounterChannel(guildId: string, channelId: string): Pro
     invalidate(guildId);
 }
 
-export async function disableCounter(guildId: string): Promise<void> {
+export async function clearCounterChannel(guildId: string): Promise<void> {
     await query(
         `UPDATE bh_guilds SET counter_channel_id = NULL, counter_message_id = NULL, updated_at = NOW() WHERE guild_id = $1`,
         [guildId],
@@ -125,7 +125,7 @@ export async function getGuildsWithCounterEnabled(): Promise<GuildConfigRow[]> {
     return result.rows;
 }
 
-export async function addCategory(guildId: string, categoryId: string): Promise<void> {
+export async function insertCategory(guildId: string, categoryId: string): Promise<void> {
     await query(
         `INSERT INTO bh_guild_categories (guild_id, discord_category_id, is_enabled)
          VALUES ($1, $2, TRUE)
@@ -134,7 +134,7 @@ export async function addCategory(guildId: string, categoryId: string): Promise<
     );
 }
 
-export async function removeCategory(guildId: string, categoryId: string): Promise<boolean> {
+export async function deleteCategory(guildId: string, categoryId: string): Promise<boolean> {
     const result = await query(
         `DELETE FROM bh_guild_categories WHERE guild_id = $1 AND discord_category_id = $2`,
         [guildId, categoryId],

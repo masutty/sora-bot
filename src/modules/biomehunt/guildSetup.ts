@@ -5,7 +5,7 @@ import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./constants/flowers.constants";
 import { isFlagEnabled } from "./repository/flags.repository";
-import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds.repository";
+import { insertCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds.repository";
 import {
     createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
     lookupChannel, registerChannel, setUserFlower,
@@ -121,7 +121,7 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
  * against the channel's actual webhooks before anything is renamed or registered.
  *
  * The caller is expected to have already cleared any prior registration for this member (see
- * `memberForceSetupAction`) - this function does not check for or remove an existing channel.
+ * `forceSetupMember`) - this function does not check for or remove an existing channel.
  */
 export async function adoptExistingChannel(
     guild: Guild,
@@ -205,6 +205,6 @@ async function findOrCreateCategory(guild: Guild, guildConfig: GuildConfigRow) {
     }
 
     const newCategory = await guild.channels.create({ name: "BiomeHunt Macros", type: ChannelType.GuildCategory });
-    await addCategory(guild.id, newCategory.id);
+    await insertCategory(guild.id, newCategory.id);
     return newCategory;
 }

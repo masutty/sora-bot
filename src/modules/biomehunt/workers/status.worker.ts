@@ -11,8 +11,8 @@ import {
     deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState, updateUserStatus,
 } from "../repository/users.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
-import { evaluateRollingRewards, runFixedRewardSweep } from "../services/RewardEngine";
-import { reportSessionEnd } from "../services/SessionReportEngine";
+import { evaluateRollingRewards, runFixedRewardSweep } from "../services/reward.service";
+import { reportSessionEnd } from "../services/activity-session-report.service";
 
 const logger = new Logger("biomehunt.StatusEngine");
 

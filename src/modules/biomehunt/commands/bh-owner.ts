@@ -6,12 +6,12 @@ import { CommandCategory } from "@/types";
 import { confirmAction, type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { applyFlowerReroll } from "./adminMemberActions";
+import { applyFlowerReroll } from "../services/member.service";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
 import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
-import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/BiomeRewardEngine";
+import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/biome-reward.service";
 import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory } from "../constants/biomes.constants";
 import { BiomeHuntError, type BiomeCategory } from "../types";
 

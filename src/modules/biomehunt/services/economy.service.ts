@@ -3,7 +3,7 @@ import { adjustUserBalance } from "../repository/rewards.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
 
-export async function economyGrantAction(
+export async function grantEconomy(
     guildId: string,
     discordUserId: string,
     seeds: number | null,

@@ -9,24 +9,25 @@ import { Logger } from "@/utils/logging";
 import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { getFailureQuip } from "@/utils/quips";
 import {
-    activityDeleteAction, activityResetAction, activitySetAction, activitySetRoleAction,
-} from "./adminActivityActions";
-import { badgesAwardAction, badgesListAction, badgesSetAction, badgesTakeAction } from "./adminBadgeActions";
+    deleteActivity, resetActivity, setActivity, setActivityRole,
+} from "../services/activity.service";
+import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
 import {
-    addCategoryAction, forceCounterUpdateAction, forwardSetAction, listForwardsAction,
-    removeCategoryAction, resetConfigAction, setAutoCreateCategoriesAction, setCounterChannelAction,
-    disableCounterAction, showConfig, testConfigAction,
-} from "./adminConfigActions";
-import { economyGrantAction } from "./adminEconomyActions";
-import { flagListAction, flagSetAction } from "./adminFlagActions";
+    addCategory, forceCounterUpdate,
+    removeCategory, resetConfig, setAutoCreateCategories, setCounterChannel,
+    disableCounter, showConfig, testConfig,
+} from "../services/guild-config.service";
+import { setForward, listForwards } from "../services/forward.service";
+import { grantEconomy } from "../services/economy.service";
+import { listFlags, setFlag } from "../services/flag.service";
 import {
-    memberClearBiomesAction, memberDecrementBiomeAction, memberForceSetupAction, memberHardDeleteAction,
-    memberResetChannelAction, memberSoftDeleteAction, pauseUserAction, unpauseUserAction, type AdoptParams,
-} from "./adminMemberActions";
+    clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember,
+    resetMemberChannel, softDeleteMember, pauseMember, unpauseMember, type AdoptParams,
+} from "../services/member.service";
 import {
-    quotasCreateAction, quotasForceEvalAction, quotasListAction, quotasSetEvalHourAction, runQuotasDelete,
-} from "./adminQuotaActions";
-import { sessionClearAction, sessionDeleteAction } from "./adminSessionActions";
+    createQuota, forceQuotaEval, listQuotas, setQuotaEvalHour, deleteQuotas,
+} from "../services/quota.service";
+import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { runEzSetup } from "./ezsetup";
 import { runForwardMenu } from "./forwardMenu";
 import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "./profileViews";
@@ -269,7 +270,7 @@ export default defineCommand({
         if (routeKey === "counter-force-update") {
             await interaction.deferReply();
             try {
-                const result = await forceCounterUpdateAction(client, interaction.guild.id);
+                const result = await forceCounterUpdate(client, interaction.guild.id);
                 await interaction.editReply(toReplyPayload(result));
             } catch (err) {
                 await interaction.editReply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
@@ -302,7 +303,7 @@ export default defineCommand({
         if (routeKey === "quotas-delete") {
             await interaction.deferReply();
             const roleId = interaction.options.getRole("role")?.id ?? null;
-            await runQuotasDelete(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
+            await deleteQuotas(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -355,7 +356,7 @@ export default defineCommand({
 
         if (routeKey === "counter-force-update") {
             try {
-                const result = await forceCounterUpdateAction(client, message.guild.id);
+                const result = await forceCounterUpdate(client, message.guild.id);
                 await message.reply(toReplyPayload(result));
             } catch (err) {
                 await message.reply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
@@ -385,7 +386,7 @@ export default defineCommand({
 
         if (routeKey === "quotas-delete") {
             const role = await args.getRole("role");
-            await runQuotasDelete(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await deleteQuotas(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -440,93 +441,93 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "config-show":
             return showConfig(guildId);
         case "config-test":
-            return testConfigAction(guildId);
+            return testConfig(guildId);
         case "config-reset":
-            return resetConfigAction(guildId);
+            return resetConfig(guildId);
         case "activity-set":
-            return activitySetAction(
+            return setActivity(
                 guildId,
                 requireNumber(args.getInteger("session_gap_minutes"), "session_gap_minutes"),
                 requireNumber(args.getInteger("idle_minutes"), "idle_minutes"),
                 requireNumber(args.getInteger("inactive_hours"), "inactive_hours"),
             );
         case "activity-reset":
-            return activityResetAction(guildId);
+            return resetActivity(guildId);
         case "activity-delete": {
             const hours = args.getNumber("hours");
             if (hours === null) throw new BiomeHuntError("Missing required argument: hours");
-            return activityDeleteAction(guildId, hours);
+            return deleteActivity(guildId, hours);
         }
         case "activity-set-role": {
             const type = args.getString("type") as ActivityStatus | null;
             const roleId = await args.getRoleId("role");
             if (!type) throw new BiomeHuntError("Missing required argument: type");
-            return activitySetRoleAction(guildId, type, roleId);
+            return setActivityRole(guildId, type, roleId);
         }
         case "categories-auto-create": {
             const enabled = args.getBoolean("enabled");
             if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
-            return setAutoCreateCategoriesAction(guildId, enabled);
+            return setAutoCreateCategories(guildId, enabled);
         }
         case "categories-add": {
             const id = await args.getChannelId("category");
             if (!id) throw new BiomeHuntError("Missing required argument: category");
-            return addCategoryAction(guildId, id);
+            return addCategory(guildId, id);
         }
         case "categories-remove": {
             const id = await args.getChannelId("category");
             if (!id) throw new BiomeHuntError("Missing required argument: category");
-            return removeCategoryAction(guildId, id);
+            return removeCategory(guildId, id);
         }
         case "badges-award": {
             const id = await args.getUserId("user");
             const badge = requireBadge(args.getString("badge"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return badgesAwardAction(guildId, id, badge);
+            return awardBadge(guildId, id, badge);
         }
         case "badges-take": {
             const id = await args.getUserId("user");
             const badge = requireBadge(args.getString("badge"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return badgesTakeAction(guildId, id, badge);
+            return takeBadge(guildId, id, badge);
         }
         case "badges-set": {
             const badge = requireBadge(args.getString("badge"));
             const roleId = await args.getRoleId("role");
-            return badgesSetAction(guildId, badge, roleId);
+            return setBadges(guildId, badge, roleId);
         }
         case "badges-list":
-            return badgesListAction(guildId);
+            return listBadges(guildId);
         case "flag-set": {
             const flag = args.getString("flag") as FlagName | null;
             const enabled = args.getBoolean("enabled");
             if (!flag) throw new BiomeHuntError("Missing required argument: flag");
             if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
-            return flagSetAction(guildId, flag, enabled);
+            return setFlag(guildId, flag, enabled);
         }
         case "flag-list":
-            return flagListAction(guildId);
+            return listFlags(guildId);
         case "economy-grant": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return economyGrantAction(guildId, id, args.getInteger("seeds"), args.getInteger("xp"));
+            return grantEconomy(guildId, id, args.getInteger("seeds"), args.getInteger("xp"));
         }
         case "forward-set": {
             const biome = args.getString("biome");
             const channelId = await args.getChannelId("channel");
             const roleId = await args.getRoleId("role");
             if (!biome) throw new BiomeHuntError("Missing required argument: biome");
-            return forwardSetAction(guildId, biome, channelId, roleId);
+            return setForward(guildId, biome, channelId, roleId);
         }
         case "forward-list":
-            return listForwardsAction(guildId);
+            return listForwards(guildId);
         case "counter-set": {
             const id = await args.getChannelId("channel");
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
-            return setCounterChannelAction(guildId, id);
+            return setCounterChannel(guildId, id);
         }
         case "counter-disable":
-            return disableCounterAction(guildId);
+            return disableCounter(guildId);
         case "quotas-create": {
             const roleId = await args.getRoleId("role");
             const mode = args.getString("mode")?.toUpperCase() as QuotaRoleMode | null;
@@ -534,7 +535,7 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             const quotaWindowHours = args.getInteger("quota_window_hours");
             const accessDurationDays = args.getInteger("access_duration_days");
             if (!roleId || !mode) throw new BiomeHuntError("Missing required argument: role or mode.");
-            return quotasCreateAction(
+            return createQuota(
                 guildId,
                 roleId,
                 mode,
@@ -544,25 +545,25 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             );
         }
         case "quotas-list":
-            return quotasListAction(guildId);
+            return listQuotas(guildId);
         case "quotas-force-eval":
-            return quotasForceEvalAction(client, guildId);
+            return forceQuotaEval(client, guildId);
         case "quotas-set-eval-hour": {
             const hour = args.getInteger("hour");
             if (hour === null) throw new BiomeHuntError("Missing required argument: hour");
-            return quotasSetEvalHourAction(guildId, hour);
+            return setQuotaEvalHour(guildId, hour);
         }
         case "session-delete": {
             const id = await args.getUserId("user");
             const sessionId = args.getInteger("session_id");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             if (sessionId === null) throw new BiomeHuntError("Missing required argument: session_id");
-            return sessionDeleteAction(guildId, id, sessionId);
+            return deleteActivitySession(guildId, id, sessionId);
         }
         case "session-clear": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return sessionClearAction(guildId, id);
+            return clearActivitySessions(guildId, id);
         }
         case "member-force-setup": {
             const member = await args.getMember("user");
@@ -581,32 +582,32 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
                 adopt = { channel, webhookUrl };
             }
 
-            return memberForceSetupAction(client, guild, member, dmUser, adopt);
+            return forceSetupMember(client, guild, member, dmUser, adopt);
         }
         case "member-hard-delete": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return memberHardDeleteAction(client, guildId, id);
+            return hardDeleteMember(client, guildId, id);
         }
         case "member-soft-delete": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return memberSoftDeleteAction(client, guildId, id);
+            return softDeleteMember(client, guildId, id);
         }
         case "member-reset-channel": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return memberResetChannelAction(client, guildId, id);
+            return resetMemberChannel(client, guildId, id);
         }
         case "member-pause": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return pauseUserAction(guildId, id);
+            return pauseMember(guildId, id);
         }
         case "member-unpause": {
             const id = await args.getUserId("user");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return unpauseUserAction(guildId, id);
+            return unpauseMember(guildId, id);
         }
         case "member-decrement-biome": {
             const id = await args.getUserId("user");
@@ -614,14 +615,14 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             const amount = args.getInteger("amount") ?? 1;
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             if (!biome) throw new BiomeHuntError("Missing required argument: biome");
-            return memberDecrementBiomeAction(guildId, id, biome, amount);
+            return decrementMemberBiome(guildId, id, biome, amount);
         }
         case "member-clear-biomes": {
             const id = await args.getUserId("user");
             const biome = args.getString("biome");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             if (!biome) throw new BiomeHuntError("Missing required argument: biome");
-            return memberClearBiomesAction(guildId, id, biome);
+            return clearMemberBiomes(guildId, id, biome);
         }
         default:
             throw new BiomeHuntError(`Unknown subcommand: ${sub}`);

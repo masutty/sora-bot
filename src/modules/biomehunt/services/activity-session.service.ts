@@ -2,7 +2,7 @@ import { deleteAllSessionsForUser, deleteSessionById } from "../repository/activ
 import { getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
 
-export async function sessionDeleteAction(guildId: string, discordUserId: string, sessionId: number): Promise<string> {
+export async function deleteActivitySession(guildId: string, discordUserId: string, sessionId: number): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
@@ -11,7 +11,7 @@ export async function sessionDeleteAction(guildId: string, discordUserId: string
     return `Session #${sessionId} deleted for <@${discordUserId}>.`;
 }
 
-export async function sessionClearAction(guildId: string, discordUserId: string): Promise<string> {
+export async function clearActivitySessions(guildId: string, discordUserId: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 

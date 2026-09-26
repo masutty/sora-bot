@@ -6,8 +6,8 @@ import { getUserById, lookupChannel, touchLastActivity } from "../repository/use
 import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity.repository";
 import { parseEvent } from "../macro-parsers";
 import { BIOME_META } from "../constants/biomes.constants";
-import { grantBiomeReward } from "./BiomeRewardEngine";
-import { checkAndForward } from "./ForwardEngine";
+import { grantBiomeReward } from "./biome-reward.service";
+import { checkAndForward } from "./forward.service";
 import { transitionUser } from "../workers/status.worker";
 
 const logger = new Logger("biomehunt.ActivityEngine");

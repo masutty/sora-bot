@@ -8,7 +8,7 @@ import {
 } from "../repository/quota-roles.repository";
 import { enqueueRoleJob, scheduleRoleRemoval } from "../repository/role-jobs.repository";
 import { getUsersForGuild } from "../repository/users.repository";
-import { pingQuotaMet } from "./QuotaPingEngine";
+import { pingQuotaMet } from "./quota-ping.service";
 import type { QuotaRoleRow, UserRow } from "../types";
 
 const logger = new Logger("biomehunt.RewardEngine");
