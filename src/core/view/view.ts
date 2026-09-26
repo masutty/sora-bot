@@ -129,8 +129,13 @@ export interface ViewDefinition<S, R = void, I = void> {
     onText?: (c: HandlerContext<S, R> & { text: string }) => HandlerResult<S>;
     /**
      * The session's idle timeout - ROOT ONLY (ignored on a child: the root's clock runs while any
-     * view is on top). Default config.ui.viewTimeoutMs; renewed by every accepted interaction and
-     * paused while a modal is open.
+     * view is on top). Default config.ui.viewTimeoutMs; renewed by every accepted interaction, paused
+     * while a modal is open, and postponed while any instance is running its OWN handler/start code
+     * (merely being parked in `c.open`/`c.modal`, waiting on the user, does NOT count and still
+     * expires normally). If the idle deadline is reached mid-handler, the session doesn't expire out
+     * from under it: once that run settles (with nothing else running), that settling counts as
+     * activity too, and the clock is armed fresh for a full `timeoutMs` - so a slow "Apply Now" still
+     * gets its own render, and a fresh full window to be idle in before the session actually expires.
      */
     timeoutMs?: number;
     /**
@@ -143,11 +148,13 @@ export interface ViewDefinition<S, R = void, I = void> {
     /**
      * Called on expiry for every open instance (root and children, top to bottom), before the
      * final payload (e.g. reroll auto-applies) - except an instance whose handler (or `start`) is
-     * running its own code at that moment (so a slow "apply" isn't applied twice). An instance
-     * merely waiting - on `c.open(child)` or `c.modal(...)` - still gets it (a reroll awaiting a
-     * confirm, a flow whose `start` awaits its steps). Every pending `open` and the
-     * `open`/`runView` of the root then resolve `undefined` - so a handler resuming from `open`
-     * must not apply again.
+     * running its own code at that moment (so a slow "apply" isn't applied twice). In practice this
+     * skip is now mostly unreachable directly: the engine already postpones expiry entirely while
+     * anything is running its own code (see `timeoutMs`), so by the time `beforeExpire` runs, nothing
+     * should be - it's kept as defense in depth. An instance merely waiting - on `c.open(child)` or
+     * `c.modal(...)` - still gets it (a reroll awaiting a confirm, a flow whose `start` awaits its
+     * steps). Every pending `open` and the `open`/`runView` of the root then resolve `undefined` - so
+     * a handler resuming from `open` must not apply again.
      */
     beforeExpire?: (state: S) => Promise<void>;
     /** Default "invoker". */

@@ -948,7 +948,7 @@ test("M1. strip / disable / done keep Link buttons (they have no customId and st
     expect(customIds(fake.lastPayload())).toEqual([]);
 });
 
-test("M2. expiry skips beforeExpire for an instance whose handler is still running", async () => {
+test("M2 (fix round 1). an idle timeout while a handler is still running is postponed, not applied: it settles (its render is painted), a fresh full timeout runs with no activity, then it expires normally", async () => {
     const gate = deferred();
     const applied: string[] = [];
     const view = defineView<null, void>({
@@ -967,11 +967,29 @@ test("M2. expiry skips beforeExpire for an instance whose handler is still runni
     const result = start(view, undefined);
     await fake.flush();
     await fake.emit(fake.click("apply", OWNER));
+
+    // The idle timer fires while "apply" is still awaiting the gate - expiry is postponed.
     await fake.clock.advance(TIMEOUT);
+    let settled = false;
+    void result.then(() => (settled = true));
+    await fake.flush();
+    expect(settled).toBe(false);
+    expect(applied).toEqual([]);
+
+    // Letting the handler finish is itself "activity": it gets its own redraw (not dropped), and
+    // the session does NOT expire right away - a fresh full timeout is armed instead.
+    const rendersBefore = fake.renders.length;
     gate.resolve();
-    expect(await result).toBeUndefined();
     await fake.flush();
     expect(applied).toEqual(["manual"]);
+    expect(fake.renders.length).toBeGreaterThan(rendersBefore);
+    expect(settled).toBe(false);
+
+    // No further activity for a full fresh timeout - now it genuinely expires, running
+    // `beforeExpire` normally (nothing is running anymore).
+    await fake.clock.advance(TIMEOUT);
+    expect(await result).toBeUndefined();
+    expect(applied).toEqual(["manual", "auto"]);
 });
 
 test("C1. start: a child whose start finishes at once shows nothing - the root's start goes on and its render is the first send", async () => {

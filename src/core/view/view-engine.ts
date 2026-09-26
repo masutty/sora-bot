@@ -236,7 +236,11 @@ function disableInteractive(list: JsonComponent[]): JsonComponent[] {
  * The pure View engine for one message. It keeps a stack of instances (root + open children);
  * every event goes to the top one, and a click on another instance's id (a stale parent button)
  * is acknowledged and ignored. The idle timer belongs to the session and its duration and expiry
- * screen to the root: every accepted event renews it, and when it fires the whole session expires.
+ * screen to the root: every accepted event renews it, and when it fires the whole session expires -
+ * UNLESS some instance is at that moment running its OWN handler/start code (not merely parked in
+ * `c.open`/`c.modal`, waiting on the user): then expiry is postponed, and once that run settles
+ * (with nothing else running), the clock is armed fresh for a full `timeoutMs` - the run itself
+ * counts as activity, so a slow handler is never expired out from under its own in-flight redraw.
  * Each component interaction is answered exactly once: by a render, a modal, a notify or an
  * acknowledge - never two of those.
  */
@@ -255,8 +259,20 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
     let pendingModals = 0;
     /** The instance whose screen is on the message - can lag behind `top()` right after a child pops. */
     let onScreen: Instance | null = null;
+    /** The idle timer fired while something was running its own code - `armTimer` owes it a fresh timeout once that settles. */
+    let expirePostponed = false;
 
     const top = (): Instance | undefined => stack[stack.length - 1];
+
+    /** True while `inst`'s OWN handler/start is executing - as opposed to merely parked in `c.open`/`c.modal`, waiting on the user (which doesn't count). */
+    function isRunningOwnCode(inst: Instance): boolean {
+        return inst.busy && !(inst.run && inst.run.parked > 0);
+    }
+
+    /** Whether ANY instance on the stack is currently running its own code - if so, the session can't expire right now. */
+    function anyRunningOwnCode(): boolean {
+        return stack.some(isRunningOwnCode);
+    }
 
     function stopTimer() {
         if (timer !== null) clock.clearTimeout(timer);
@@ -267,10 +283,25 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
     function armTimer() {
         if (!sent || ended) return;
         stopTimer();
+        expirePostponed = false; // a fresh timer supersedes any earlier postponement.
         const viewMs = stack[0]?.def.timeoutMs ?? config.ui.viewTimeoutMs;
         // A modal being filled in is activity: only the MODAL_EXPIRY_GRACE_MS safety net runs meanwhile.
         const ms = pendingModals > 0 ? Math.max(viewMs, config.ui.modalTimeoutMs + MODAL_EXPIRY_GRACE_MS) : viewMs;
-        timer = clock.setTimeout(() => void expire(), ms);
+        timer = clock.setTimeout(() => {
+            if (anyRunningOwnCode()) {
+                // Don't expire out from under a running handler - `settleRun`'s caller re-arms once it's done.
+                expirePostponed = true;
+                return;
+            }
+            void expire();
+        }, ms);
+    }
+
+    /** Called once a handler/start run has fully finished (busy released). If the idle timer fired
+     * while it (or something else) was running, and nothing is running anymore, that settling
+     * counts as activity: arm a fresh full timeout instead of expiring immediately. */
+    function armAfterSettle() {
+        if (expirePostponed && !anyRunningOwnCode()) armTimer();
     }
 
     /** Starts owing `e` an answer; if the handler is still busy at ACK_DEADLINE_MS, acknowledges it. */
@@ -368,7 +399,9 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
     /**
      * The whole session expires: `beforeExpire` top→bottom (skipping instances whose handler is
      * running its own code - not merely parked in `open`/`modal`), then the ROOT's `onExpire` is
-     * the final screen, then every open/run resolves undefined.
+     * the final screen, then every open/run resolves undefined. By the time this runs, `armTimer`'s
+     * callback has already confirmed nothing is running its own code (see `anyRunningOwnCode`) - the
+     * `running` skip below is now mostly unreachable, kept as defense in depth.
      */
     async function expire() {
         if (ended) return;
@@ -376,7 +409,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         const shown = onScreen ?? root;
         const all = [...stack].reverse();
         // Snapshot before cancelling modals (a cancelled modal un-parks its handler).
-        const running = new Set(all.filter((inst) => inst.busy && !(inst.run && inst.run.parked > 0)));
+        const running = new Set(all.filter(isRunningOwnCode));
         end();
         for (const cancel of cancelModals) cancel();
         for (const inst of all) {
@@ -624,6 +657,9 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
             run.running = false;
             inst.busy = false;
             if (inst.run === run) inst.run = null;
+            // This run no longer counts as "running its own code" - if the idle timer fired while it
+            // (or something else) was, and nothing still is, that's the activity: arm a fresh timeout.
+            armAfterSettle();
             if (!aborted) {
                 await settleRun(run);
                 if (run.start && !run.start.ready) {
