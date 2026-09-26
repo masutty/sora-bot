@@ -3,8 +3,8 @@ import { type ButtonBuilder, ContainerBuilder, MessageFlags, TextDisplayBuilder 
 import { Logger } from "@/utils/logging";
 import { UserFacingError } from "../command/user-facing-error";
 import { createFakeTransport, customIds, type FakeTransport } from "./fake-transport";
-import { defineView, type ViewDefinition } from "./view";
-import { createViewSession } from "./view-engine";
+import { defineView, type HandlerContext, type ViewDefinition } from "./view";
+import { ACK_DEADLINE_MS, type ComponentEvent, createViewSession } from "./view-engine";
 
 const OWNER = "owner";
 const OTHER = "other";
@@ -126,6 +126,9 @@ test("6. done(x) resolves the run with x; the transport gets the final render an
     expect(await result).toBe(7);
     expect(fake.renders).toHaveLength(1);
     expect(fake.renders[0].e).toBe(e);
+    // The final screen keeps the content but no live (dead after close) components.
+    expect(fake.renders[0].payload.content).toBe("n=7");
+    expect(customIds(fake.renders[0].payload)).toEqual([]);
     expect(fake.log.slice(-2)).toEqual(["render", "close"]);
     expect(fake.closed).toBe(1);
 });
@@ -364,4 +367,227 @@ test("onExpire \"disable\" keeps the components but disables them; \"strip\" rea
     const container = fake.lastPayload().components?.[0] as { components: { type: number; components?: { disabled?: boolean }[] }[] };
     expect(container.components[1].components?.[0].disabled).toBe(true);
     expect(customIds(fake.lastPayload())).toHaveLength(1);
+});
+
+// ─── Fix round 1: stale child screen, modal vs idle timer, 3s window, concurrency ───
+
+function deferred<T = void>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+        resolve = r;
+    });
+    return { promise, resolve };
+}
+
+type ModalResult = { values: Record<string, string>; ack: ComponentEvent } | null;
+
+const pickChild = defineView<null, string>({
+    name: "test.child",
+    initial: () => null,
+    render: (_s, kit) => ({ content: "child", components: [kit.row(kit.button("pick", label))] }),
+    on: { pick: (c) => c.done("y") },
+});
+
+/** A parent whose `choose` opens `pickChild`, bumps n, then runs `after`. */
+function parentThen(after: (c: HandlerContext<{ n: number }, void>) => Promise<unknown>) {
+    return defineView<{ n: number }, void>({
+        name: "test.parent",
+        initial: () => ({ n: 0 }),
+        render: (s, kit) => ({ content: `parent n=${s.n}`, components: [kit.row(kit.button("choose", label))] }),
+        on: {
+            choose: async (c) => {
+                await c.open(pickChild, null);
+                c.state.n++;
+                await after(c);
+            },
+        },
+    });
+}
+
+test("child done, then the parent's modal is dismissed: the parent is redrawn (not stuck on the child's screen)", async () => {
+    void start(parentThen((c) => c.modal({ title: "t", fields: [{ key: "a", label: "a" }] })), undefined);
+    await fake.flush();
+    const parentId = fake.id("choose");
+
+    await fake.emit(fake.click("choose", OWNER));
+    const pick = fake.click("pick", OWNER);
+    await fake.emit(pick);
+
+    expect(fake.modals).toHaveLength(1);
+    expect(fake.modals[0].e).toBe(pick);
+    expect(fake.lastPayload().content).toBe("parent n=1");
+    expect(fake.renders.at(-1)?.e).toBeNull();
+    expect(fake.id("choose")).toBe(parentId);
+    expect(fake.acks).toHaveLength(0);
+});
+
+test("child done, then the parent's handler throws: the parent is redrawn and the owner notified", async () => {
+    void start(
+        parentThen(async () => {
+            throw new UserFacingError("nope");
+        }),
+        undefined,
+    );
+    await fake.flush();
+
+    await fake.emit(fake.click("choose", OWNER));
+    const pick = fake.click("pick", OWNER);
+    await fake.emit(pick);
+
+    expect(fake.notifies).toEqual([{ e: pick, content: "nope" }]);
+    expect(fake.lastPayload().content).toBe("parent n=1");
+    expect(fake.renders.filter((r) => r.e === pick)).toHaveLength(1);
+    expect(fake.acks).toHaveLength(0);
+    expect(fake.closed).toBe(0);
+});
+
+function renamer(timeoutMs: number, seen: unknown[] = []) {
+    return defineView<{ name: string }, void>({
+        name: "test.rename",
+        initial: () => ({ name: "-" }),
+        render: (s, kit) => ({ content: `name=${s.name}`, components: [kit.row(kit.button("rename", label))] }),
+        timeoutMs,
+        on: {
+            rename: async (c) => {
+                const v = await c.modal({ title: "Rename", fields: [{ key: "name", label: "Name" }] });
+                seen.push(v);
+                if (v) c.state.name = v.name;
+            },
+        },
+    });
+}
+
+test("the idle timer is paused while a modal is open: a 20s view survives 30s of typing", async () => {
+    const submit = deferred<ModalResult>();
+    fake.modalResult = () => submit.promise;
+    void start(renamer(20_000), undefined);
+    await fake.flush();
+
+    await fake.emit(fake.click("rename", OWNER));
+    await fake.clock.advance(30_000);
+    expect(fake.closed).toBe(0);
+
+    const ack = fake.modalSubmit(OWNER);
+    submit.resolve({ values: { name: "sora" }, ack });
+    await fake.flush();
+
+    expect(fake.renders.at(-1)?.e).toBe(ack);
+    expect(fake.lastPayload().content).toBe("name=sora");
+
+    // Resumed after the submit: the normal idle timeout applies again.
+    await fake.clock.advance(20_000);
+    expect(fake.closed).toBe(1);
+});
+
+test("a slow handler: the click is acknowledged before Discord's 3s window closes, then rendered once without a second ack", async () => {
+    const gate = deferred();
+    const view = defineView<{ n: number }, void>({
+        name: "test.slow",
+        initial: () => ({ n: 0 }),
+        render: (s, kit) => ({ content: `n=${s.n}`, components: [kit.row(kit.button("slow", label))] }),
+        timeoutMs: 10_000,
+        on: {
+            slow: async (c) => {
+                await gate.promise;
+                c.state.n = 1;
+            },
+        },
+    });
+    void start(view, undefined);
+    await fake.flush();
+
+    const e = fake.click("slow", OWNER);
+    await fake.emit(e);
+    await fake.clock.advance(ACK_DEADLINE_MS - 1);
+    expect(fake.acks).toHaveLength(0);
+    await fake.clock.advance(1);
+    expect(fake.acks).toEqual([e]);
+
+    await fake.clock.advance(500);
+    gate.resolve();
+    await fake.flush();
+
+    expect(fake.renders).toHaveLength(1);
+    expect(fake.renders[0].e).toBe(e);
+    expect(fake.lastPayload().content).toBe("n=1");
+    expect(fake.acks).toEqual([e]);
+});
+
+test("expiry while a modal is pending (the transport never answered): the modal resolves null, a late submit is acknowledged", async () => {
+    const submit = deferred<ModalResult>();
+    fake.modalResult = () => submit.promise;
+    const seen: unknown[] = [];
+    const result = start(renamer(1_000, seen), undefined);
+    await fake.flush();
+
+    await fake.emit(fake.click("rename", OWNER));
+    await fake.clock.advance(10 * 60_000);
+
+    expect(await result).toBeUndefined();
+    expect(seen).toEqual([null]);
+    expect(fake.closed).toBe(1);
+
+    const ack = fake.modalSubmit(OWNER);
+    submit.resolve({ values: { name: "late" }, ack });
+    await fake.flush();
+    expect(fake.acks).toEqual([ack]);
+    expect(fake.renders.filter((r) => r.e === ack)).toHaveLength(0);
+});
+
+test("expiry while a child is open: open() and the run both resolve undefined, one final render", async () => {
+    const opened: unknown[] = [];
+    const parent = defineView<null, void>({
+        name: "test.parent",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "parent", components: [kit.row(kit.button("choose", label))] }),
+        on: {
+            choose: async (c) => {
+                opened.push(await c.open(pickChild, null));
+            },
+        },
+    });
+    const result = start(parent, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("choose", OWNER));
+    const rendersBefore = fake.renders.length;
+
+    await fake.clock.advance(60_000);
+
+    expect(await result).toBeUndefined();
+    expect(opened).toEqual([undefined]);
+    expect(fake.renders.length - rendersBefore).toBe(1);
+    expect(fake.lastPayload().content).toBe("child");
+    expect(customIds(fake.lastPayload())).toEqual([]);
+    expect(fake.closed).toBe(1);
+});
+
+test("a click while a handler is still running is acknowledged and doesn't run the handler twice", async () => {
+    const gate = deferred();
+    let runs = 0;
+    const view = defineView<{ n: number }, void>({
+        name: "test.busy",
+        initial: () => ({ n: 0 }),
+        render: (s, kit) => ({ content: `n=${s.n}`, components: [kit.row(kit.button("go", label))] }),
+        on: {
+            go: async (c) => {
+                runs++;
+                await gate.promise;
+                c.state.n++;
+            },
+        },
+    });
+    void start(view, undefined);
+    await fake.flush();
+
+    const first = fake.click("go", OWNER);
+    const second = fake.click("go", OWNER);
+    await fake.emit(first);
+    await fake.emit(second);
+    expect(fake.acks).toEqual([second]);
+
+    gate.resolve();
+    await fake.flush();
+    expect(runs).toBe(1);
+    expect(fake.renders).toEqual([{ e: first, payload: fake.lastPayload() }]);
+    expect(fake.lastPayload().content).toBe("n=1");
 });

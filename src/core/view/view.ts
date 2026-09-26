@@ -53,12 +53,18 @@ export interface HandlerContext<S, R> {
     /** Values of the select that fired (ids for channel/role/user selects). Empty for buttons and text. */
     values: string[];
     user: User;
-    /** Ends THIS view with `result` once the handler returns; whoever opened it (open/runView) gets the value. */
+    /**
+     * Ends THIS view with `result` once the handler returns; whoever opened it (open/runView) gets
+     * the value. A child hands the message back to its opener; the root's final screen is its
+     * render with the interactive components stripped.
+     */
     done(result: R): void;
     /** Opens a child view on the SAME message; resolves with its result, or `undefined` if it expires. */
     open<CS, CR, CI>(child: ViewDefinition<CS, CR, CI>, input: CI): Promise<CR | undefined>;
     /**
-     * Shows a modal (component handlers only, and only as the first answer to the click). Resolves
+     * Shows a modal (component handlers only, as the first answer to the click, before any slow
+     * work - after ACK_DEADLINE_MS the engine has already acknowledged the click). While it's open
+     * the View's idle timer is paused. Resolves
      * with the values by `key`, or `null` if closed/expired - in which case the message is left
      * untouched unless the handler returns a new state.
      */
