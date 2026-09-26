@@ -1,4 +1,4 @@
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { getPoolStats } from "@/database/connection";
 import { Logger } from "@/utils/logging";
 import { recordTickStats } from "@/utils/metrics";

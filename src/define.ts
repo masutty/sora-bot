@@ -6,7 +6,7 @@ export type {
     CogAuthor,
 } from "./types";
 
-export type { PrefixArgs } from "./core/PrefixArgs";
+export type { PrefixArgs } from "./core/prefix-args";
 
 const DEFAULT_COMMAND_FLAGS: Partial<CommandDefinition> = {
     showOnHelp: false,

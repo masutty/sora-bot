@@ -2,7 +2,7 @@ import { ButtonStyle, ContainerBuilder, MessageFlags, PermissionFlagsBits, Separ
 import type { Message, User } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/buttonView";
+import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/button-view";
 import { EmbedFormatter, formatTime, NO_PINGS, unix, formatCodeblock } from "@/utils/format";
 import {
     getBiomeCounts, getBiomeTopContributors, getGuildBiomeCounts, getGuildSessionOverview,

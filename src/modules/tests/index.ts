@@ -1,5 +1,5 @@
 import { defineCog } from "@/define";
-import _test from "./commands/test";
+import _test from "./commands/test.command";
 
 export default defineCog({
     name: "tests",

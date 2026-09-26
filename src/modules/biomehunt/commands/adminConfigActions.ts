@@ -1,5 +1,5 @@
 import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { formatTime } from "@/utils/format";
 import {
     addCategory, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,

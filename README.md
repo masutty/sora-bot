@@ -13,12 +13,12 @@ src/
 │   └── index.ts              # Interfaces compartilhadas (CommandDefinition, ModuleDefinition, etc.)
 ├── database/
 │   ├── connection.ts         # Pool pg + query() + transaction()
-│   ├── guildRepository.ts    # CRUD de guilds + cache de prefix
+│   ├── guild.repository.ts   # CRUD de guilds + cache de prefix
 │   └── migrate.ts            # Runner de migrações idempotentes
 ├── core/
-│   ├── BotClient.ts          # Extends Client do discord.js, injeta CommandRegistry
-│   ├── CommandRegistry.ts    # Map<name, CommandDefinition> com lookup O(1)
-│   ├── CommandHandler.ts     # Listeners messageCreate + interactionCreate
+│   ├── bot-client.ts         # Extends Client do discord.js, injeta CommandRegistry
+│   ├── command-registry.ts   # Map<name, CommandDefinition> com lookup O(1)
+│   ├── command-handler.ts    # Listeners messageCreate + interactionCreate
 │   └── ModuleLoader.ts       # Discovery de módulos por filesystem
 ├── commands/                 # Comandos built-in
 │   ├── ping.ts

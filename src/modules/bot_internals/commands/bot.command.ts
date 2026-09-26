@@ -1,9 +1,9 @@
 import { ContainerBuilder, MessageFlags, OAuth2Scopes, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { loadCog, unloadCog, reloadCog, hotReloadBot } from "@/core/CogLoader";
-import { registerSlashCommands } from "@/core/CommandHandler";
-import type { BotClient } from "@/core/BotClient";
+import { loadCog, unloadCog, reloadCog, hotReloadBot } from "@/core/cog-loader";
+import { registerSlashCommands } from "@/core/command-handler";
+import type { BotClient } from "@/core/bot-client";
 import { config } from "@/config";
 import { getPoolStats, query } from "@/database/connection";
 import { join } from "path";

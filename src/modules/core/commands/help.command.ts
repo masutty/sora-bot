@@ -2,8 +2,8 @@ import { ContainerBuilder, MessageFlags, SeparatorSpacingSize, SlashCommandBuild
 import { defineCommand } from "@/define";
 import { CommandCategory, type CommandDefinition } from "@/types";
 import { config } from "../../../config";
-import { getGuildPrefix } from "../../../database/guildRepository";
-import type { BotClient } from "@/core/BotClient";
+import { getGuildPrefix } from "../../../database/guild.repository";
+import type { BotClient } from "@/core/bot-client";
 import { EmbedFormatter } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { attachPagination, buildPaginationRow } from "@/utils/pagination";

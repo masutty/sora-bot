@@ -1,7 +1,7 @@
 import { PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { invalidatePrefixCache, updateGuildPrefix } from "../../../database/guildRepository";
+import { invalidatePrefixCache, updateGuildPrefix } from "../../../database/guild.repository";
 
 export default defineCommand({
     name: "setprefix",

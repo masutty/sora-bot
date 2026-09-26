@@ -8,10 +8,10 @@ import {
 } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { config } from "@/config";
-import { getGuildPrefix } from "@/database/guildRepository";
+import { getGuildPrefix } from "@/database/guild.repository";
 import { EmbedFormatter } from "@/utils/format";
-import type { BotClient } from "./BotClient";
-import { PrefixArgs, deriveSchema, deriveSubcommandSchema } from "./PrefixArgs";
+import type { BotClient } from "./bot-client";
+import { PrefixArgs, deriveSchema, deriveSubcommandSchema } from "./prefix-args";
 import { checkGuards } from "./guards";
 import { getFailureQuip } from "@/utils/quips";
 import type { CommandDefinition } from "@/types";

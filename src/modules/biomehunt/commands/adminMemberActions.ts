@@ -1,7 +1,7 @@
 import { ChannelType } from "discord.js";
 import type { Guild, GuildMember, TextChannel } from "discord.js";
 import { readFileSync } from "fs";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity";

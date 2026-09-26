@@ -1,6 +1,6 @@
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { GuildTextBasedChannel, Message } from "discord.js";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { markQuotaEvaluated, setQuotaEvalHour } from "../repository/guilds";
 import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";

@@ -4,7 +4,7 @@ import {
 } from "discord.js";
 import type { Guild, GuildMember, Message } from "discord.js";
 import { readFileSync } from "fs";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { type ConfirmPayload } from "@/utils/confirm";

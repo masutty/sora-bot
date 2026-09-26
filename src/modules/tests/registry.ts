@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "fs";
 import { join, relative, sep } from "path";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import type { ConfirmPayload } from "@/utils/confirm";
 
 const TESTS_DIR = join(__dirname, "tests");

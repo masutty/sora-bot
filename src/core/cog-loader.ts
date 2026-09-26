@@ -5,7 +5,7 @@ import { config } from "@/config";
 import { Logger } from "@/utils/logging";
 import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
-import type { BotClient } from "./BotClient";
+import type { BotClient } from "./bot-client";
 
 const logger = new Logger("core.cogloader");
 
@@ -238,7 +238,7 @@ const HOT_RELOAD_KEEP_ALIVE = [
     require.resolve("../database/connection"),
     require.resolve("../utils/logging"),
     require.resolve("../utils/metrics"),
-    require.resolve("./BotClient"),
+    require.resolve("./bot-client"),
 ];
 
 /**
@@ -254,7 +254,7 @@ const HOT_RELOAD_KEEP_ALIVE = [
  * `require()` (not this file's static imports) on purpose: the static imports still point at the
  * OLD version (captured when this module was first loaded); only a fresh `require()`, after the
  * cache is cleared, forces Node to re-execute the file and hand back the current version on disk -
- * including this very CogLoader.ts, whose module-scoped `cogListeners` needs to be the SAME
+ * including this very cog-loader.ts, whose module-scoped `cogListeners` needs to be the SAME
  * instance that will do the next load (and the next unload, on the following reload) to avoid
  * leaking a listener.
  */
@@ -277,10 +277,10 @@ export async function hotReloadBot(
     client.removeAllListeners(Events.MessageCreate);
     client.removeAllListeners(Events.InteractionCreate);
 
-    const commandHandler = require("@/core/CommandHandler") as typeof import("./CommandHandler");
+    const commandHandler = require("@/core/command-handler") as typeof import("./command-handler");
     commandHandler.registerCommandHandlers(client);
 
-    const cogLoader = require("@/core/CogLoader") as typeof import("./CogLoader");
+    const cogLoader = require("@/core/cog-loader") as typeof import("./cog-loader");
     const { failures } = await cogLoader.loadCogs(client, cogsPath);
     return failures;
 }

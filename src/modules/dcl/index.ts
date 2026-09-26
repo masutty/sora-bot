@@ -1,5 +1,5 @@
 import { defineCog } from "@/define";
-import _dcl from "./commands/dcl";
+import _dcl from "./commands/dcl.command";
 
 export default defineCog({
     name: "dcl",

@@ -1,5 +1,5 @@
 import { ChannelType, ContainerBuilder, MessageFlags } from "discord.js";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
 import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/guilds";
 import { getGuildUserCounts } from "../repository/users";

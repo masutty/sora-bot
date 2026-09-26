@@ -1,4 +1,4 @@
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getMacroChannelByUserId, getUserById } from "../repository/users";

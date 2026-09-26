@@ -1,4 +1,4 @@
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
 import { getPendingJobs, markJobProcessed, rescheduleJob } from "../repository/roleJobs";
 import { getUserById } from "../repository/users";

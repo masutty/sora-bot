@@ -9,7 +9,7 @@ import type {
 } from "discord.js";
 import { GuildMember } from "discord.js";
 import { config } from "@/config";
-import type { BotClient } from "./BotClient";
+import type { BotClient } from "./bot-client";
 
 // ─── Schema derivation ────────────────────────────────────────────────────────
 

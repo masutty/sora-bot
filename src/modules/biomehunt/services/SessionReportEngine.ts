@@ -1,5 +1,5 @@
 import { ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import { formatCodeblock, formatTime } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import type { ActivitySessionRow } from "../types";

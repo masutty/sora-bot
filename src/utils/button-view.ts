@@ -3,7 +3,7 @@ import type { ContainerBuilder, EmbedBuilder, Message, MessageFlags, MessageMent
 import { NO_PINGS } from "./format";
 import { Logger } from "./logging";
 
-const logger = new Logger("utils.buttonView");
+const logger = new Logger("utils.button-view");
 
 /** `render()` is expected to be pure/in-memory (any DB work belongs upstream, before runButtonView is called) - it should never be slow on its own. */
 const SLOW_RENDER_MS = 250;

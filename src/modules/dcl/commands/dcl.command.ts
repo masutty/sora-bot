@@ -2,7 +2,7 @@ import type { Message } from "discord.js";
 import { SlashCommandBuilder } from "discord.js";
 import { join } from "path";
 import { config } from "@/config";
-import type { BotClient } from "@/core/BotClient";
+import type { BotClient } from "@/core/bot-client";
 import {
     getCogOrigin,
     getDclRuntimeDir,
@@ -10,12 +10,12 @@ import {
     loadCog,
     reloadCog,
     unloadCog,
-} from "@/core/CogLoader";
-import { getGuildPrefix } from "@/database/guildRepository";
+} from "@/core/cog-loader";
+import { getGuildPrefix } from "@/database/guild.repository";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, extractCodeBlock } from "@/utils/format";
-import { resolveMessageSource } from "@/utils/messageSource";
+import { resolveMessageSource } from "@/utils/message-source";
 
 const COGS_PATH = join(__dirname, "../../");
 

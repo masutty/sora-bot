@@ -3,7 +3,7 @@ import {
     MessageFlags, SeparatorSpacingSize,
 } from "discord.js";
 import type { Message } from "discord.js";
-import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/buttonView";
+import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/button-view";
 import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { FLOWER_META } from "../flowers";
@@ -22,7 +22,7 @@ import {
 
 const logger = new Logger("biomehunt.profileViews");
 
-/** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks (see utils/buttonView.ts's own timing). */
+/** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks (see utils/button-view.ts's own timing). */
 const SLOW_PROFILE_LOAD_MS = 500;
 
 export const SESSIONS_PER_PAGE = 10;
