@@ -7,13 +7,26 @@ export type { CommandContext, GuildCommandContext, ReplyOptions, ReplyPayload } 
 export { buildHelpContainer } from "./core/command/command-usage";
 export type { PrefixArgs } from "./core/command/prefix-args";
 export { UserFacingError } from "./core/command/user-facing-error";
+export { type ConfirmField, type ConfirmOptions, type ConfirmState, confirm } from "./core/view/confirm";
 export {
     /** TEST-ONLY: an in-memory View transport + manual clock, to test a module's Views (`fake.run(view, input)`). */
     createFakeTransport as createFakeViewTransport,
     type FakeTransport as FakeViewTransport,
     type ManualClock as FakeViewClock,
 } from "./core/view/fake-transport";
+export {
+    type FlowOptions,
+    type FlowState,
+    type FlowStep,
+    flow,
+    type NavRowOptions,
+    navHandlers,
+    navRow,
+    type StepResult,
+} from "./core/view/flow";
+export { type PaginateOptions, paginate } from "./core/view/paginate";
 export { type RunViewOptions, runView } from "./core/view/run-view";
+export { type TabRender, type TabSpec, type TabsOptions, tabs } from "./core/view/tabs";
 export {
     type AnySelect,
     defineView,
