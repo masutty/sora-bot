@@ -1,7 +1,7 @@
 import { resetThresholds, setAutoDeleteHours, setGuildRoleForStatus, updateThresholds } from "../repository/guilds.repository";
 import { type ActivityStatus, BiomeHuntError } from "../types";
 
-export async function setActivity(
+export async function setActivityThresholds(
     guildId: string,
     sessionGapMinutes: number,
     idleMinutes: number,
@@ -14,13 +14,13 @@ export async function setActivity(
     return `Thresholds updated: session gap ${sessionGapMinutes}m, idle ${idleMinutes}m, inactive ${inactiveHours}h.`;
 }
 
-export async function resetActivity(guildId: string): Promise<string> {
+export async function resetActivityThresholds(guildId: string): Promise<string> {
     await resetThresholds(guildId);
     return "Thresholds reset to defaults (session gap 20m, idle 30m, inactive 24h).";
 }
 
 /** Sets the auto-delete hours-after-inactive threshold. This alone doesn't enable auto-delete - see the AUTO_DELETE_ENABLED flag. */
-export async function deleteActivity(guildId: string, hoursAfterInactive: number): Promise<string> {
+export async function setAutoDeleteThreshold(guildId: string, hoursAfterInactive: number): Promise<string> {
     if (hoursAfterInactive <= 0) throw new BiomeHuntError("Hours must be greater than zero.");
     await setAutoDeleteHours(guildId, Math.round(hoursAfterInactive * 3600));
     return `Auto-delete threshold set: a user's macro channel is removed ${hoursAfterInactive}h after they go inactive. ` +

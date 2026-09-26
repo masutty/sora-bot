@@ -10,7 +10,7 @@ import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
 import { getEnabledCategories, getGuildRoles, getOrCreateGuildConfig, isGuildReady } from "../repository/guilds.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
-import { deleteActivity, setActivity } from "../services/activity.service";
+import { setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { setBadges } from "../services/badge.service";
 import { addCategory, disableCounter, setCounterChannel, setRoles, showConfig } from "../services/guild-config.service";
 import { createQuota, removeQuotaRole } from "../services/quota.service";
@@ -421,7 +421,7 @@ async function stepThresholds(guild: Guild, adminId: string, msg: Message, canGo
     );
     if (isTerminal(result)) { await finish(msg, terminalMessage(result.kind)); return result.kind; }
     if (result.kind === "back") return "back";
-    if (result.kind === "ok") await setActivity(guild.id, result.value[0], result.value[1], result.value[2]);
+    if (result.kind === "ok") await setActivityThresholds(guild.id, result.value[0], result.value[1], result.value[2]);
     return "forward";
 }
 
@@ -457,7 +457,7 @@ async function stepAutoDelete(guild: Guild, adminId: string, msg: Message, canGo
             );
             if (isTerminal(hoursResult)) { await finish(msg, terminalMessage(hoursResult.kind)); return hoursResult.kind; }
             if (hoursResult.kind === "back" || hoursResult.kind === "skip") continue;
-            await deleteActivity(guild.id, hoursResult.value[0]);
+            await setAutoDeleteThreshold(guild.id, hoursResult.value[0]);
             await setGuildFlag(guild.id, "AUTO_DELETE_ENABLED", true);
             return "forward";
         }

@@ -246,8 +246,8 @@ const HOT_RELOAD_KEEP_ALIVE = [
  * memory), clears the require cache for ALL of `src/` - except `HOT_RELOAD_KEEP_ALIVE` above -
  * then re-registers both the core listeners (`registerCommandHandlers` - command/guard/prefix
  * routing) and the cogs, all freshly re-read from disk. Unlike `reloadCog`, which only clears ONE
- * cog's `index.ts`: this picks up a change in any file in the bot (a `commands/*.ts`, CogLoader
- * itself, guards, PrefixArgs) and also detects a brand-new cog (a folder created after boot) -
+ * cog's `index.ts`: this picks up a change in any file in the bot (a `commands/*.ts`, cog-loader.ts
+ * itself, guards, prefix-args.ts) and also detects a brand-new cog (a folder created after boot) -
  * without restarting the process.
  *
  * After clearing the cache, `registerCommandHandlers`/`loadCogs` are fetched via a dynamic

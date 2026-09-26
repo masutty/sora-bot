@@ -6,9 +6,10 @@ import { formatBiomeName } from "../constants/biomes.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
-import {clearCounterChannel, deleteCategory, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
-    insertCategory, 
-    isGuildReady, resetGuildConfig, setGuildRoles,updateAutoCreateCategories, updateCounterChannel, 
+import {
+    clearCounterChannel, deleteCategory, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
+    insertCategory,
+    isGuildReady, resetGuildConfig, setGuildRoles, updateAutoCreateCategories, updateCounterChannel,
 } from "../repository/guilds.repository";
 import { BiomeHuntError } from "../types";
 import { updateCounterForGuild } from "../workers/counter.worker";

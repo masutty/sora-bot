@@ -1,6 +1,6 @@
 import {
     type ChatInputCommandInteraction,
-    Events,GuildMember, 
+    Events, GuildMember,
     type Message,
     REST,
     Routes,

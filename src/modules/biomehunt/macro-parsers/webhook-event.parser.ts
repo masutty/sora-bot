@@ -1,7 +1,8 @@
 import { ComponentType } from "discord.js";
 import { Logger } from "@/utils/logging";
 import type { ParsedEvent } from "../types";
-import { detectMacroParser, type EmbedLike } from "./index";
+import { detectMacroParser } from "./macro-parser.registry";
+import type { EmbedLike } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers.webhook-event");
 

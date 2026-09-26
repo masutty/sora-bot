@@ -54,7 +54,7 @@ type RawOption = {
 
 /**
  * Derives a flat arg schema from a builder (no subcommands).
- * Used by CommandHandler for regular commands.
+ * Used by command-handler.ts for regular commands.
  */
 export function deriveSchema(builder: AnyBuilder): ArgSchema[] {
     const json = builder.toJSON() as { options?: RawOption[] };

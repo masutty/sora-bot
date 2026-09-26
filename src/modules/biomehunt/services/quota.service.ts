@@ -51,6 +51,8 @@ export async function removeQuotaRole(guildId: string, roleId: string): Promise<
 /**
  * `roleId` given -> deletes it directly. `roleId` omitted -> shows a numbered list (mirroring
  * ez-setup's quota role removal screen) and waits for the admin to type the number to delete.
+ *
+ * TODO(etapa-3): UI in a service (message collector) - becomes a View step.
  */
 export async function deleteQuotas(
     guildId: string,
@@ -78,7 +80,6 @@ export async function deleteQuotas(
     const msg = await respond({ flags: MessageFlags.IsComponentsV2, components: [listContainer] });
 
     const channel = msg.channel as GuildTextBasedChannel;
-    // TODO(etapa-3): UI in a service - becomes a View step
     const collector = channel.createMessageCollector({ filter: (m) => m.author.id === invokerId, time: settings.ui.quotaReplyTimeoutMs, max: 1 });
 
     collector.on("collect", async (m) => {

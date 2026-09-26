@@ -14,7 +14,8 @@ import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runForwardConfigFlow } from "../flows/forward-config.flow";
 import {
-    deleteActivity, resetActivity, setActivity, setActivityRole,
+    resetActivityThresholds, setActivityRole, setActivityThresholds,
+    setAutoDeleteThreshold,
 } from "../services/activity.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
@@ -22,16 +23,17 @@ import { grantEconomy } from "../services/economy.service";
 import { listFlags, setFlag } from "../services/flag.service";
 import { listForwards, setForward } from "../services/forward.service";
 import {
-    addCategory, 
+    addCategory,
     disableCounter, forceCounterUpdate,
-    removeCategory, resetConfig, setAutoCreateCategories, setCounterChannel,showConfig, testConfig,
+    removeCategory, resetConfig, setAutoCreateCategories, setCounterChannel, showConfig, testConfig,
 } from "../services/guild-config.service";
-import {type AdoptParams,
-    clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember,pauseMember, 
-    resetMemberChannel, softDeleteMember, unpauseMember, 
+import {
+    type AdoptParams,
+    clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember, pauseMember,
+    resetMemberChannel, softDeleteMember, unpauseMember,
 } from "../services/member.service";
 import {
-    createQuota, deleteQuotas,forceQuotaEval, listQuotas, setQuotaEvalHour, 
+    createQuota, deleteQuotas, forceQuotaEval, listQuotas, setQuotaEvalHour,
 } from "../services/quota.service";
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
 import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "../views/stats.view";
@@ -445,18 +447,18 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "config-reset":
             return resetConfig(guildId);
         case "activity-set":
-            return setActivity(
+            return setActivityThresholds(
                 guildId,
                 requireNumber(args.getInteger("session_gap_minutes"), "session_gap_minutes"),
                 requireNumber(args.getInteger("idle_minutes"), "idle_minutes"),
                 requireNumber(args.getInteger("inactive_hours"), "inactive_hours"),
             );
         case "activity-reset":
-            return resetActivity(guildId);
+            return resetActivityThresholds(guildId);
         case "activity-delete": {
             const hours = args.getNumber("hours");
             if (hours === null) throw new BiomeHuntError("Missing required argument: hours");
-            return deleteActivity(guildId, hours);
+            return setAutoDeleteThreshold(guildId, hours);
         }
         case "activity-set-role": {
             const type = args.getString("type") as ActivityStatus | null;
