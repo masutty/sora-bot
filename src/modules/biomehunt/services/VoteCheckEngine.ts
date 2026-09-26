@@ -1,6 +1,6 @@
 import { MessageFlags, PermissionFlagsBits } from "discord.js";
 import type { Client, GuildMember, Interaction, Message } from "discord.js";
-import { deleteEventById } from "../repository/activity";
+import { deleteEventById } from "../repository/activity.repository";
 import { buildForwardContainer } from "./forwardRender";
 import { grantBiomeReward } from "./BiomeRewardEngine";
 import type { VoteCheckState } from "../types";

@@ -9,12 +9,12 @@ import { Logger } from "@/utils/logging";
 import { FLOWER_META } from "../flowers";
 import {
     getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
-} from "../repository/activity";
-import { getUserBadges } from "../repository/badges";
-import { isFlagEnabled } from "../repository/flags";
-import { getOrCreateGuildConfig } from "../repository/guilds";
-import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quotaRoles";
-import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users";
+} from "../repository/activity.repository";
+import { getUserBadges } from "../repository/badges.repository";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
+import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users.repository";
 import {
     ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor, getLevelForXp,
     type ActivitySessionRow, type ActivityStatus, type BiomeCategory, type UserRow,

@@ -4,10 +4,10 @@ import { formatTime } from "@/utils/format";
 import {
     addCategory, disableCounter, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
     isGuildReady, removeCategory, resetGuildConfig, setAutoCreateCategories, setCounterChannel, setGuildRoles,
-} from "../repository/guilds";
-import { getGuildBadgeRoles } from "../repository/badges";
-import { isFlagEnabled } from "../repository/flags";
-import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards";
+} from "../repository/guilds.repository";
+import { getGuildBadgeRoles } from "../repository/badges.repository";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { ALL_BADGES, BADGE_META, BiomeHuntError, formatBiomeName, resolveBiomeSelector } from "../types";
 import { updateCounterForGuild } from "../workers/CounterEngine";
 

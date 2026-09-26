@@ -1,7 +1,7 @@
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
-import { getPendingJobs, markJobProcessed, rescheduleJob } from "../repository/roleJobs";
-import { getUserById } from "../repository/users";
+import { getPendingJobs, markJobProcessed, rescheduleJob } from "../repository/role-jobs.repository";
+import { getUserById } from "../repository/users.repository";
 import type { RoleJobRow } from "../types";
 
 const logger = new Logger("biomehunt.RoleEngine");

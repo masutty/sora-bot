@@ -1,13 +1,13 @@
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
-import { getActiveSecondsInWindow } from "../repository/activity";
-import { isFlagEnabled } from "../repository/flags";
-import { getGuildsDueForFixedRewardEval, markQuotaEvaluated } from "../repository/guilds";
+import { getActiveSecondsInWindow } from "../repository/activity.repository";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { getGuildsDueForFixedRewardEval, markQuotaEvaluated } from "../repository/guilds.repository";
 import {
     getQuotaRolesByMode, getUserQuotaRole, grantQuotaRole, revokeQuotaRole,
-} from "../repository/quotaRoles";
-import { enqueueRoleJob, scheduleRoleRemoval } from "../repository/roleJobs";
-import { getUsersForGuild } from "../repository/users";
+} from "../repository/quota-roles.repository";
+import { enqueueRoleJob, scheduleRoleRemoval } from "../repository/role-jobs.repository";
+import { getUsersForGuild } from "../repository/users.repository";
 import { pingQuotaMet } from "./QuotaPingEngine";
 import type { QuotaRoleRow, UserRow } from "../types";
 

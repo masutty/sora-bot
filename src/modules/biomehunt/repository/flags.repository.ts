@@ -1,7 +1,7 @@
 import { query } from "@/database/connection";
 import { TTLCache } from "@/utils/cache";
 import { ALL_FLAGS, FLAG_DEFINITIONS, type FlagName } from "../types";
-import { getOrCreateGuildConfig } from "./guilds";
+import { getOrCreateGuildConfig } from "./guilds.repository";
 
 const flagsCache = new TTLCache<string, Record<FlagName, boolean>>(60 * 1000);
 

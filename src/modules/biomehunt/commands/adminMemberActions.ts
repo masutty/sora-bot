@@ -4,11 +4,11 @@ import { readFileSync } from "fs";
 import type { BotClient } from "@/core/bot-client";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
-import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity";
+import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
     pauseUser, setUserFlower, unpauseUser,
-} from "../repository/users";
+} from "../repository/users.repository";
 import { revertBiomeRewards, revokeOrphanedBadges } from "../services/BiomeRewardEngine";
 import { BADGE_META, BiomeHuntError, formatBiomeName, type Badge } from "../types";
 

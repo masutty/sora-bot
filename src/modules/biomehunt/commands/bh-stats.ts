@@ -7,8 +7,8 @@ import { EmbedFormatter, formatTime, NO_PINGS, unix, formatCodeblock } from "@/u
 import {
     getBiomeCounts, getBiomeTopContributors, getGuildBiomeCounts, getGuildSessionOverview,
     getLongestSessions, getRecentSessions, getUserLongestSessionRank,
-} from "../repository/activity";
-import { getUserByDiscordId } from "../repository/users";
+} from "../repository/activity.repository";
+import { getUserByDiscordId } from "../repository/users.repository";
 import { buildGuildStatsContainer, buildUserListContainer, getUserListPage, USERS_PER_PAGE } from "./profileViews";
 import {
     ALL_BIOME_CATEGORIES, BiomeHuntError, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor,

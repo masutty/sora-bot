@@ -2,8 +2,8 @@ import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { GuildTextBasedChannel, Message } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
-import { markQuotaEvaluated, setQuotaEvalHour } from "../repository/guilds";
-import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quotaRoles";
+import { markQuotaEvaluated, setQuotaEvalHour } from "../repository/guilds.repository";
+import { getQuotaRolesForGuild, removeQuotaRole, upsertQuotaRole } from "../repository/quota-roles.repository";
 import { evaluateFixedRewardsForGuild } from "../services/RewardEngine";
 import { BiomeHuntError, type QuotaRoleMode, type QuotaRoleRow } from "../types";
 

@@ -1,6 +1,6 @@
-import { isFlagEnabled } from "../repository/flags";
-import { adjustUserBalance } from "../repository/rewards";
-import { getUserByDiscordId } from "../repository/users";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { adjustUserBalance } from "../repository/rewards.repository";
+import { getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
 
 export async function economyGrantAction(

@@ -14,9 +14,9 @@ import { getFailureQuip } from "@/utils/quips";
 import { applyFlowerToWebhook } from "./adminMemberActions";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
 import { runUserSetup } from "../guildSetup";
-import { isFlagEnabled } from "../repository/flags";
-import { adjustUserBalance } from "../repository/rewards";
-import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { adjustUserBalance } from "../repository/rewards.repository";
+import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
 import { runProfileView } from "./profileViews";
 

@@ -5,10 +5,10 @@ import {
 } from "discord.js";
 import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
 import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
-import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds";
-import { getGuildBadgeRoles } from "../repository/badges";
-import { isFlagEnabled, setGuildFlag } from "../repository/flags";
-import { getQuotaRolesForGuild } from "../repository/quotaRoles";
+import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds.repository";
+import { getGuildBadgeRoles } from "../repository/badges.repository";
+import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
+import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import { activityDeleteAction, activitySetAction } from "./adminActivityActions";
 import { badgesSetAction } from "./adminBadgeActions";
 import { addCategoryAction, disableCounterAction, setCounterChannelAction, setRolesAction, showConfig } from "./adminConfigActions";

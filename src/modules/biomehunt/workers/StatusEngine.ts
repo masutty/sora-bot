@@ -3,13 +3,13 @@ import { getPoolStats } from "@/database/connection";
 import { Logger } from "@/utils/logging";
 import { recordTickStats } from "@/utils/metrics";
 import type { ActivityStatus } from "../types";
-import { grantUserBadge } from "../repository/badges";
-import { isFlagEnabled } from "../repository/flags";
-import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds";
+import { grantUserBadge } from "../repository/badges.repository";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState, updateUserStatus,
-} from "../repository/users";
-import { enqueueRoleJob } from "../repository/roleJobs";
+} from "../repository/users.repository";
+import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import { evaluateRollingRewards, runFixedRewardSweep } from "../services/RewardEngine";
 import { reportSessionEnd } from "../services/SessionReportEngine";
 

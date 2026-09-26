@@ -1,7 +1,7 @@
 import { defineCog } from "@/define";
 import { Logger } from "@/utils/logging";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
-import { loadChannelIndex } from "./repository/users";
+import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/ActivityEngine";
 import { handleVoteButtonClick } from "./services/VoteCheckEngine";
 import { startCounterEngine } from "./workers/CounterEngine";

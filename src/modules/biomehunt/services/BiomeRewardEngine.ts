@@ -1,11 +1,11 @@
 import { transaction } from "@/database/connection";
-import { getUserById } from "../repository/users";
-import { grantUserBadge, revokeUserBadge, getGuildBadgeRole } from "../repository/badges";
-import { enqueueRoleJob } from "../repository/roleJobs";
-import { isFlagEnabled } from "../repository/flags";
+import { getUserById } from "../repository/users.repository";
+import { grantUserBadge, revokeUserBadge, getGuildBadgeRole } from "../repository/badges.repository";
+import { enqueueRoleJob } from "../repository/role-jobs.repository";
+import { isFlagEnabled } from "../repository/flags.repository";
 import {
     adjustUserBalance, countRewardsWithBadge, getRewardsByEventIds, getUnrewardedEventsForUser, insertReward,
-} from "../repository/rewards";
+} from "../repository/rewards.repository";
 import { ALL_BADGES, BIOME_META, REWARD_BY_CATEGORY, getLevelForXp, type Badge, type UserRow } from "../types";
 
 function isBadgeBiome(biome: string): biome is Badge {

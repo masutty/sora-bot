@@ -4,12 +4,12 @@ import { readFileSync } from "fs";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./flowers";
-import { isFlagEnabled } from "./repository/flags";
-import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds";
+import { isFlagEnabled } from "./repository/flags.repository";
+import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds.repository";
 import {
     createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
     lookupChannel, registerChannel, setUserFlower,
-} from "./repository/users";
+} from "./repository/users.repository";
 import { BiomeHuntError } from "./types";
 import type { GuildConfigRow } from "./types";
 

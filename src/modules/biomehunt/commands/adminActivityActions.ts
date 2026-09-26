@@ -1,4 +1,4 @@
-import { resetThresholds, setAutoDeleteHours, setGuildRoleForStatus, updateThresholds } from "../repository/guilds";
+import { resetThresholds, setAutoDeleteHours, setGuildRoleForStatus, updateThresholds } from "../repository/guilds.repository";
 import { BiomeHuntError, type ActivityStatus } from "../types";
 
 export async function activitySetAction(

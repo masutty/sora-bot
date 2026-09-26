@@ -1,5 +1,5 @@
-import { deleteAllSessionsForUser, deleteSessionById } from "../repository/activity";
-import { getUserByDiscordId } from "../repository/users";
+import { deleteAllSessionsForUser, deleteSessionById } from "../repository/activity.repository";
+import { getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
 
 export async function sessionDeleteAction(guildId: string, discordUserId: string, sessionId: number): Promise<string> {

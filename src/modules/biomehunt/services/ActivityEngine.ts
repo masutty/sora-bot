@@ -1,9 +1,9 @@
 import type { Message } from "discord.js";
 import { transaction } from "@/database/connection";
 import { Logger } from "@/utils/logging";
-import { getOrCreateGuildConfig } from "../repository/guilds";
-import { getUserById, lookupChannel, touchLastActivity } from "../repository/users";
-import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity";
+import { getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { getUserById, lookupChannel, touchLastActivity } from "../repository/users.repository";
+import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity.repository";
 import { parseEvent } from "../webhookParser";
 import { BIOME_META } from "../types";
 import { grantBiomeReward } from "./BiomeRewardEngine";

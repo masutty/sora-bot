@@ -1,7 +1,7 @@
 import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { getMacroChannelByUserId, getUserById } from "../repository/users";
+import { getMacroChannelByUserId, getUserById } from "../repository/users.repository";
 
 const logger = new Logger("biomehunt.QuotaPingEngine");
 

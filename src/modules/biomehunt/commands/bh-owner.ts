@@ -8,9 +8,9 @@ import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { applyFlowerReroll } from "./adminMemberActions";
 import { FLOWER_META } from "../flowers";
-import { isFlagEnabled } from "../repository/flags";
-import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds";
-import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
+import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
 import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/BiomeRewardEngine";
 import {
     ALL_BIOME_CATEGORIES, BiomeHuntError, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory,

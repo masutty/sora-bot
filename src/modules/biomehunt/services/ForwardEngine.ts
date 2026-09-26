@@ -1,8 +1,8 @@
 import { MessageFlags } from "discord.js";
 import type { Message } from "discord.js";
 import { Logger } from "@/utils/logging";
-import { getBiomeCountForUser } from "../repository/activity";
-import { getForwardConfig } from "../repository/forwards";
+import { getBiomeCountForUser } from "../repository/activity.repository";
+import { getForwardConfig } from "../repository/forwards.repository";
 import { BIOME_META, type ParsedEvent } from "../types";
 import { buildForwardContainer } from "./forwardRender";
 import { startVoteCheck } from "./VoteCheckEngine";
