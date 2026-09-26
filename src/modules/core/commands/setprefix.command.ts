@@ -9,6 +9,7 @@ export default defineCommand({
     category: CommandCategory.UTILITY,
     showOnHelp: true,
     adminOnly: true,
+    guildOnly: true,
 
     options: new SlashCommandBuilder()
         .addStringOption((opt) =>
@@ -20,37 +21,15 @@ export default defineCommand({
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    async executeAsSlash(interaction, _client) {
-        if (!interaction.guild) {
-            await interaction.reply({ content: "Only in servers!", ephemeral: true });
-            return;
-        }
-
-        const newPrefix = interaction.options.getString("prefix", true).trim();
-        if (!/^[^\s]{1,5}$/.test(newPrefix)) {
-            await interaction.reply({ content: "❌ Invalid prefix (1-5 characters, no spaces).", ephemeral: true });
-            return;
-        }
-
-        await updateGuildPrefix(interaction.guild.id, newPrefix);
-        invalidatePrefixCache(interaction.guild.id);
-        await interaction.reply({ content: `✅ Prefix updated to \`${newPrefix}\`` });
-    },
-
-    async executeAsPrefix(message, args, _client) {
-        if (!message.guild) {
-            await message.reply("Only in servers!");
-            return;
-        }
-
-        const newPrefix = args.getString("prefix")?.trim();
+    async run(ctx) {
+        const newPrefix = ctx.args.getString("prefix")?.trim();
         if (!newPrefix || !/^[^\s]{1,5}$/.test(newPrefix)) {
-            await message.reply("❌ Invalid prefix (1-5 characters, no spaces).");
+            await ctx.reply("❌ Invalid prefix (1-5 characters, no spaces).", { ephemeral: true });
             return;
         }
 
-        await updateGuildPrefix(message.guild.id, newPrefix);
-        invalidatePrefixCache(message.guild.id);
-        await message.reply(`✅ Prefix updated to \`${newPrefix}\``);
+        await updateGuildPrefix(ctx.guild.id, newPrefix);
+        invalidatePrefixCache(ctx.guild.id);
+        await ctx.reply(`✅ Prefix updated to \`${newPrefix}\``);
     },
 });

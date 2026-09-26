@@ -1,12 +1,10 @@
 import { ContainerBuilder, MessageFlags, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { buildHelpContainer, defineCommand } from "@/define";
+import { buildHelpContainer, defineCommand, UserFacingError } from "@/define";
 import { CommandCategory, type CommandDefinition } from "@/types";
-import { EmbedFormatter } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { config } from "../../../config";
-import { getGuildPrefix } from "../../../database/guild.repository";
 
 const logger = new Logger("core.commands.help");
 
@@ -71,81 +69,36 @@ export default defineCommand({
             .setRequired(false),
     ),
 
-    // ── Slash ─────────────────────────────────────────────────────────────────
-    async executeAsSlash(interaction, client) {
-        const cmdName = interaction.options.getString("command");
+    async run(ctx) {
+        const cmdName = ctx.args.getString("command");
+        const useFlagStyle = ctx.mode === "prefix" && config.bot.allowArgsAsFlags;
 
         // Detail view
         if (cmdName) {
             const [base, ...path] = cmdName.trim().toLowerCase().split(/\s+/);
-            const cmd = client.commands.get(base);
+            const cmd = ctx.client.commands.get(base);
             if (!cmd || !cmd.showOnHelp) {
-                if (!cmd?.showOnHelp) logger.warn(`User ${interaction.user.id} tried to view hidden command: ${cmdName}`);
-                await interaction.reply({ ...EmbedFormatter.error(`Command \`${cmdName}\` not found.`), ephemeral: true });
-                return;
+                if (!cmd?.showOnHelp) logger.warn(`User ${ctx.user.id} tried to view hidden command: ${cmdName}`);
+                throw new UserFacingError(`Command \`${cmdName}\` not found.`);
             }
-            const container = buildHelpContainer("/", cmd, path, false, "slash");
-            if (!container) {
-                await interaction.reply({ ...EmbedFormatter.error(`Subcommand \`${cmdName}\` not found.`), ephemeral: true });
-                return;
-            }
-            await interaction.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
+            const container = buildHelpContainer(ctx.invokePrefix, cmd, path, useFlagStyle, ctx.mode);
+            if (!container) throw new UserFacingError(`Subcommand \`${cmdName}\` not found.`);
+            await ctx.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
             return;
         }
 
         // List view
-        const all = getVisibleCommands(client);
+        const all = getVisibleCommands(ctx.client);
         const pages = Math.ceil(all.length / PER_PAGE);
 
-        await interaction.deferReply();
-        const msg = await interaction.editReply(renderList(0, pages > 1, all, pages, "/"));
-
-        if (pages <= 1) return;
-
-        attachPagination(msg, {
-            invokerId: interaction.user.id,
-            pages,
-            render: (page, interactive) => renderList(page, interactive, all, pages, "/"),
-        });
-    },
-
-    // ── Prefix ────────────────────────────────────────────────────────────────
-    async executeAsPrefix(message, args, client) {
-        const cmdName = args.getString("command");
-        const prefix = message.guild
-            ? await getGuildPrefix(message.guild.id)
-            : config.bot.defaultPrefix;
-
-        // Detail view
-        if (cmdName) {
-            const [base, ...path] = cmdName.trim().toLowerCase().split(/\s+/);
-            const cmd = client.commands.get(base);
-            if (!cmd || !cmd.showOnHelp) {
-                if (!cmd?.showOnHelp) logger.warn(`User ${message.author.id} tried to view hidden command: ${cmdName}`);
-                await message.reply(EmbedFormatter.error(`Command \`${cmdName}\` not found.`));
-                return;
-            }
-            const container = buildHelpContainer(prefix, cmd, path, config.bot.allowArgsAsFlags, "prefix");
-            if (!container) {
-                await message.reply(EmbedFormatter.error(`Subcommand \`${cmdName}\` not found.`));
-                return;
-            }
-            await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
-            return;
-        }
-
-        // List view
-        const all = getVisibleCommands(client);
-        const pages = Math.ceil(all.length / PER_PAGE);
-
-        const sent = await message.reply(renderList(0, pages > 1, all, pages, prefix));
+        const sent = await ctx.reply(renderList(0, pages > 1, all, pages, ctx.invokePrefix));
 
         if (pages <= 1) return;
 
         attachPagination(sent, {
-            invokerId: message.author.id,
+            invokerId: ctx.user.id,
             pages,
-            render: (page, interactive) => renderList(page, interactive, all, pages, prefix),
+            render: (page, interactive) => renderList(page, interactive, all, pages, ctx.invokePrefix),
         });
     },
 });
