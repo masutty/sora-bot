@@ -2,6 +2,7 @@ import type { Cog, CommandDefinition } from "./types";
 
 
 export type { PrefixArgs } from "./core/command/prefix-args";
+export { UserFacingError } from "./core/command/user-facing-error";
 export type {
     Cog,
     CogAuthor,

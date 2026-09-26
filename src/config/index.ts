@@ -52,6 +52,11 @@ export const config = {
         // PrefixArgs). Off by default until validated in real use.
         allowArgsAsFlags: process.env.DEV_ALLOW_ARGS_AS_FLAGS === "true",
     },
+    // Framework-wide UI defaults (not env-driven) - one place to tune how every command/view behaves.
+    ui: {
+        /** Prefix commands can't send true ephemeral messages; a reply marked ephemeral is deleted after this. Must be >= the longest button timeout a command leaves on such a reply. */
+        prefixEphemeralTtlMs: 60_000,
+    },
 } as const;
 
 export type Config = typeof config;
