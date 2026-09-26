@@ -1,8 +1,7 @@
 import type { Message, User } from "discord.js";
-import { ButtonStyle, ContainerBuilder, MessageFlags, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
-import { defineCommand } from "@/define";
+import { ContainerBuilder, MessageFlags, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
+import { type CommandContext, defineCommand, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
-import { type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender, runButtonView } from "@/utils/button-view";
 import { EmbedFormatter, formatCodeblock, formatTime, NO_PINGS, unix } from "@/utils/format";
 import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
 import {
@@ -10,10 +9,13 @@ import {
     getLongestSessions, getRecentSessions, getUserLongestSessionRank,
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
-import type { ActivityStatus } from "../types";
-import { buildGuildStatsContainer, buildUserListContainer, getUserListPage, USERS_PER_PAGE } from "../views/stats.view";
+import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/bh-stats.view";
+import { buildGuildStatsContainer, getUserListPage } from "../views/stats-builders";
 
 const ANSI_RESET = "\u001b[0m";
+
+/** The shape `send` accepts for the non-interactive (single-user) stats replies. */
+type StatsPayload = Exclude<ReplyPayload, string>;
 
 function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -95,27 +97,12 @@ async function buildUserBiomesContainer(discordUserId: string, userRowId: number
     return container;
 }
 
-type BiomesTab = "overview" | "contributors";
-
-async function runBiomesStats(guildId: string, invokerId: string, send: (payload: ButtonViewFinalPayload) => Promise<Message>): Promise<void> {
+async function runBiomesStats(ctx: CommandContext, guildId: string): Promise<void> {
     const [overview, contributors] = await Promise.all([buildBiomesOverviewContainer(guildId), buildBiomesContributorsContainer(guildId)]);
-    const containers: Record<BiomesTab, ContainerBuilder> = { overview, contributors };
-
-    await runButtonView<BiomesTab>({
-        state: "overview",
-        invokerId,
-        respond: send,
-        render: (tab): ButtonViewRender<BiomesTab> => ({
-            payload: { flags: MessageFlags.IsComponentsV2, components: [containers[tab]] },
-            buttons: [[
-                { customId: "bhstats-biomes-overview", label: "Overview", style: tab === "overview" ? ButtonStyle.Primary : ButtonStyle.Secondary, next: () => "overview" },
-                { customId: "bhstats-biomes-contributors", label: "Top Contributors", style: tab === "contributors" ? ButtonStyle.Primary : ButtonStyle.Secondary, next: () => "contributors" },
-            ]],
-        }),
-    });
+    await ctx.open(biomesStatsView, { overview, contributors });
 }
 
-async function runUserBiomesStats(guildId: string, target: User, send: (payload: ButtonViewFinalPayload) => Promise<Message>): Promise<void> {
+async function runUserBiomesStats(guildId: string, target: User, send: (payload: StatsPayload) => Promise<Message>): Promise<void> {
     const user = await getUserByDiscordId(guildId, target.id);
     if (!user) {
         await send(EmbedFormatter.info(`<@${target.id}> has no BiomeHunt profile in this server.`));
@@ -184,27 +171,12 @@ async function buildUserSessionsContainer(guildId: string, discordUserId: string
     return container;
 }
 
-type SessionsTab = "overview" | "longest";
-
-async function runSessionsStats(guildId: string, invokerId: string, send: (payload: ButtonViewFinalPayload) => Promise<Message>): Promise<void> {
+async function runSessionsStats(ctx: CommandContext, guildId: string): Promise<void> {
     const [overview, longest] = await Promise.all([buildSessionsOverviewContainer(guildId), buildLongestSessionsContainer(guildId)]);
-    const containers: Record<SessionsTab, ContainerBuilder> = { overview, longest };
-
-    await runButtonView<SessionsTab>({
-        state: "overview",
-        invokerId,
-        respond: send,
-        render: (tab): ButtonViewRender<SessionsTab> => ({
-            payload: { flags: MessageFlags.IsComponentsV2, components: [containers[tab]] },
-            buttons: [[
-                { customId: "bhstats-sessions-overview", label: "Overview", style: tab === "overview" ? ButtonStyle.Primary : ButtonStyle.Secondary, next: () => "overview" },
-                { customId: "bhstats-sessions-longest", label: "🏆 Longest Sessions", style: tab === "longest" ? ButtonStyle.Primary : ButtonStyle.Secondary, next: () => "longest" },
-            ]],
-        }),
-    });
+    await ctx.open(sessionsStatsView, { overview, longest });
 }
 
-async function runUserSessionsStats(guildId: string, target: User, send: (payload: ButtonViewFinalPayload) => Promise<Message>): Promise<void> {
+async function runUserSessionsStats(guildId: string, target: User, send: (payload: StatsPayload) => Promise<Message>): Promise<void> {
     const user = await getUserByDiscordId(guildId, target.id);
     if (!user) {
         await send(EmbedFormatter.info(`<@${target.id}> has no BiomeHunt profile in this server.`));
@@ -216,62 +188,14 @@ async function runUserSessionsStats(guildId: string, target: User, send: (payloa
 
 // ─── Users ──────────────────────────────────────────────────────────────────
 
-interface UsersState {
-    status: "overview" | ActivityStatus;
-    page: number;
-}
-
-const STATUS_BUTTON_LABELS: Record<ActivityStatus, string> = { active: "🟢 Active", idle: "🟡 Idle", inactive: "🔴 Inactive" };
-
-async function runUsersStats(guildId: string, invokerId: string, send: (payload: ButtonViewFinalPayload) => Promise<Message>): Promise<void> {
+async function runUsersStats(ctx: CommandContext, guildId: string): Promise<void> {
     const [overview, active, idle, inactive] = await Promise.all([
         buildGuildStatsContainer(guildId),
         getUserListPage(guildId, "active"),
         getUserListPage(guildId, "idle"),
         getUserListPage(guildId, "inactive"),
     ]);
-    const usersByStatus: Record<ActivityStatus, Awaited<ReturnType<typeof getUserListPage>>> = { active, idle, inactive };
-
-    const statusRow = (state: UsersState): ButtonViewButton<UsersState>[] => [
-        { customId: "bhstats-users-overview", label: "Overview", style: state.status === "overview" ? ButtonStyle.Primary : ButtonStyle.Secondary, next: (): UsersState => ({ status: "overview", page: 0 }) },
-        ...(["active", "idle", "inactive"] as ActivityStatus[]).map((status) => ({
-            customId: `bhstats-users-${status}`,
-            label: STATUS_BUTTON_LABELS[status],
-            style: state.status === status ? ButtonStyle.Primary : ButtonStyle.Secondary,
-            next: (): UsersState => ({ status, page: 0 }),
-        })),
-    ];
-
-    await runButtonView<UsersState>({
-        state: { status: "overview", page: 0 },
-        invokerId,
-        respond: send,
-        render: (state): ButtonViewRender<UsersState> => {
-            if (state.status === "overview") {
-                return { payload: { flags: MessageFlags.IsComponentsV2, components: [overview] }, buttons: [statusRow(state)] };
-            }
-
-            const users = usersByStatus[state.status];
-            const pages = Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
-            const container = buildUserListContainer(users, state.page, state.status);
-
-            const paginationRow: ButtonViewButton<UsersState>[] = pages > 1 ? [
-                {
-                    customId: "bhstats-users-page-prev", emoji: "⬅️",
-                    next: (s): UsersState => ({ ...s, page: s.page > 0 ? s.page - 1 : pages - 1 }),
-                },
-                {
-                    customId: "bhstats-users-page-next", emoji: "➡️",
-                    next: (s): UsersState => ({ ...s, page: s.page < pages - 1 ? s.page + 1 : 0 }),
-                },
-            ] : [];
-
-            return {
-                payload: { flags: MessageFlags.IsComponentsV2, components: [container] },
-                buttons: [statusRow(state), ...(paginationRow.length > 0 ? [paginationRow] : [])],
-            };
-        },
-    });
+    await ctx.open(usersStatsView, { overview, usersByStatus: { active, idle, inactive } });
 }
 
 // ─── Command ────────────────────────────────────────────────────────────────
@@ -299,20 +223,19 @@ export default defineCommand({
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
         const guildId = ctx.guild.id;
-        const invokerId = ctx.user.id;
-        const send = (payload: ButtonViewFinalPayload) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
+        const send = (payload: StatsPayload) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
 
         await ctx.defer();
         if (sub === "biomes") {
             const target = await ctx.args.getUser("user");
-            await (target ? runUserBiomesStats(guildId, target, send) : runBiomesStats(guildId, invokerId, send));
+            await (target ? runUserBiomesStats(guildId, target, send) : runBiomesStats(ctx, guildId));
             return;
         }
         if (sub === "sessions") {
             const target = await ctx.args.getUser("user");
-            await (target ? runUserSessionsStats(guildId, target, send) : runSessionsStats(guildId, invokerId, send));
+            await (target ? runUserSessionsStats(guildId, target, send) : runSessionsStats(ctx, guildId));
             return;
         }
-        await runUsersStats(guildId, invokerId, send);
+        await runUsersStats(ctx, guildId);
     },
 });
