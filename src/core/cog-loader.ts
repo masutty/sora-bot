@@ -277,7 +277,7 @@ export async function hotReloadBot(
     client.removeAllListeners(Events.MessageCreate);
     client.removeAllListeners(Events.InteractionCreate);
 
-    const commandHandler = require("@/core/command-handler") as typeof import("./command-handler");
+    const commandHandler = require("@/core/command/command-handler") as typeof import("./command/command-handler");
     commandHandler.registerCommandHandlers(client);
 
     const cogLoader = require("@/core/cog-loader") as typeof import("./cog-loader");

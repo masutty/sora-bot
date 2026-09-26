@@ -12,8 +12,8 @@ import type { CommandDefinition } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
-import type { BotClient } from "./bot-client";
-import { checkGuards } from "./guards";
+import type { BotClient } from "../bot-client";
+import { checkGuards } from "../guards";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 
 const logger = new Logger("core.commandhandlers");

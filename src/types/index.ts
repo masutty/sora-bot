@@ -9,9 +9,9 @@ import type {
     SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
 import type { BotClient } from "../core/bot-client";
-import type { PrefixArgs } from "../core/prefix-args";
+import type { PrefixArgs } from "../core/command/prefix-args";
 
-export { PrefixArgs } from "../core/prefix-args";
+export { PrefixArgs } from "../core/command/prefix-args";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 

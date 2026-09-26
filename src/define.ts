@@ -1,7 +1,7 @@
 import type { Cog, CommandDefinition } from "./types";
 
 
-export type { PrefixArgs } from "./core/prefix-args";
+export type { PrefixArgs } from "./core/command/prefix-args";
 export type {
     Cog,
     CogAuthor,

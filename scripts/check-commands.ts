@@ -1,6 +1,6 @@
 /**
  * Loads every cog module and replays the exact same builder construction that
- * `registerSlashCommands` (src/core/command-handler.ts) does at real boot time - including the
+ * `registerSlashCommands` (src/core/command/command-handler.ts) does at real boot time - including the
  * fallback `SlashCommandBuilder` for commands with no `.options` (defineCommand alone only
  * validates commands that already have `.options`; a description-only command never touches
  * discord.js's validator until slash registration, at actual boot - this closes that gap).

@@ -2,7 +2,7 @@ import { config } from "@/config";
 import type {
     CommandDefinition,
     CommandRegistry as ICommandRegistry,
-} from "../types";
+} from "../../types";
 
 export class CommandRegistry implements ICommandRegistry {
     private readonly commands = new Map<string, CommandDefinition>();

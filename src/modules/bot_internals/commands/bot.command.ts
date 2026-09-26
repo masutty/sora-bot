@@ -3,7 +3,7 @@ import { join } from "path";
 import { config } from "@/config";
 import type { BotClient } from "@/core/bot-client";
 import { hotReloadBot, loadCog, reloadCog, unloadCog } from "@/core/cog-loader";
-import { registerSlashCommands } from "@/core/command-handler";
+import { registerSlashCommands } from "@/core/command/command-handler";
 import { getPoolStats, query } from "@/database/connection";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
