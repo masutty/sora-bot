@@ -7,6 +7,17 @@ export type { CommandContext, GuildCommandContext, ReplyOptions, ReplyPayload } 
 export { buildHelpContainer } from "./core/command/command-usage";
 export type { PrefixArgs } from "./core/command/prefix-args";
 export { UserFacingError } from "./core/command/user-facing-error";
+export { type RunViewOptions, runView } from "./core/view/run-view";
+export {
+    defineView,
+    type HandlerContext,
+    type HandlerResult,
+    type ModalSpec,
+    type RenderKit,
+    type ViewDefinition,
+    type ViewPayload,
+    type ViewRender,
+} from "./core/view/view";
 export type {
     Cog,
     CogAuthor,

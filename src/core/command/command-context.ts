@@ -4,6 +4,8 @@ import {
 } from "discord.js";
 import { config } from "../../config";
 import type { BotClient } from "../bot-client";
+import { runView } from "../view/run-view";
+import type { ViewDefinition } from "../view/view";
 import { type CommandArgs, prefixArgs, slashArgs } from "./command-args";
 import type { PrefixArgs } from "./prefix-args";
 
@@ -65,6 +67,12 @@ export interface CommandContext {
     editReply(payload: ReplyPayload): Promise<Message>;
     /** Replies with this command's auto-generated usage (the same one prefix shows for a missing subcommand). */
     replyUsage(): Promise<Message | null>;
+    /**
+     * Runs `view` as a new reply: `opts` apply to that first message (prefix `ephemeral` deletes
+     * it after the TTL - give it one that covers the View's session). Resolves with the View's
+     * `done` result, or `undefined` if it expires. The invoker is its owner.
+     */
+    open<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts?: ReplyOptions): Promise<R | undefined>;
 }
 
 /** What `run` receives for a `guildOnly: true` command - guild and member are guaranteed. */
@@ -127,6 +135,10 @@ export function createSlashContext(interaction: ChatInputCommandInteraction, cli
             const usage = deps.usage?.();
             return usage ? ctx.reply(usage) : null;
         },
+
+        open(view, input, opts) {
+            return runView(view, input, { respond: (p) => ctx.reply(p, opts), invokerId: ctx.user.id });
+        },
     };
     return ctx;
 }
@@ -178,6 +190,10 @@ export function createPrefixContext(
         async replyUsage() {
             const usage = deps.usage?.();
             return usage ? ctx.reply(usage) : null;
+        },
+
+        open(view, input, opts) {
+            return runView(view, input, { respond: (p) => ctx.reply(p, opts), invokerId: ctx.user.id });
         },
     };
     return ctx;
