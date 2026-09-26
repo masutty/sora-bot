@@ -7,6 +7,9 @@ import { defineView, type HandlerContext, type RenderKit, type ViewDefinition, t
 
 const logger = new Logger("core.view.flow");
 
+/** Discord rejects an ActionRow with more buttons than this. */
+const MAX_BUTTONS_PER_ROW = 5;
+
 /** How a flow step ends: `ok` (next step), `skip` (next step, nothing saved), `back` (previous step), `cancel` (ends the flow). */
 export type StepResult = { kind: "ok" } | { kind: "skip" } | { kind: "back" } | { kind: "cancel" };
 
@@ -101,7 +104,7 @@ export interface NavRowOptions {
     canBack: boolean;
     /** The Skip button's label (e.g. "Done", "Start"). Default "Skip"; `false` hides it. */
     skipLabel?: string | false;
-    /** Buttons placed between Back and Skip (e.g. "Fill Form"). At most 2 with Skip (5 per row). */
+    /** Buttons placed between Back and Skip (e.g. "Fill Form"). At most 2 with Skip, 3 without (Discord allows 5 per row - more throws). */
     extra?: ButtonBuilder[];
 }
 
@@ -114,12 +117,19 @@ export interface NavRowOptions {
  */
 export function navRow(kit: RenderKit, opts: NavRowOptions): ActionRowBuilder<ButtonBuilder> {
     const skipLabel = opts.skipLabel ?? "Skip";
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    const buttons = [
         kit.button("back", (b) => b.setLabel("Back").setDisabled(!opts.canBack)),
         ...(opts.extra ?? []),
         ...(skipLabel === false ? [] : [kit.button("skip", (b) => b.setLabel(skipLabel))]),
         kit.button("cancel", (b) => b.setLabel("Cancel").setStyle(ButtonStyle.Danger)),
-    );
+    ];
+    if (buttons.length > MAX_BUTTONS_PER_ROW) {
+        const viewName = (buttons[0].data as { custom_id?: string }).custom_id?.split(":")[0] ?? "?";
+        throw new Error(
+            `View "${viewName}": navRow would have ${buttons.length} buttons (Discord's max is ${MAX_BUTTONS_PER_ROW} per row). Pass fewer \`extra\` buttons (or skipLabel: false), or put them in their own row.`,
+        );
+    }
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
 /**

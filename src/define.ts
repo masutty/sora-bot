@@ -24,7 +24,7 @@ export {
     navRow,
     type StepResult,
 } from "./core/view/flow";
-export { type PaginateOptions, paginate } from "./core/view/paginate";
+export { type PaginateOptions, type PaginationHandlersOptions, paginate, paginationHandlers, paginationRow } from "./core/view/paginate";
 export { type RunViewOptions, runView } from "./core/view/run-view";
 export { type TabRender, type TabSpec, type TabsOptions, tabs } from "./core/view/tabs";
 export {

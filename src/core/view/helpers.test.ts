@@ -7,9 +7,9 @@ import { UserFacingError } from "../command/user-facing-error";
 import { confirm } from "./confirm";
 import { createFakeTransport, customIds, type FakeTransport } from "./fake-transport";
 import { type FlowOptions, flow, navHandlers, navRow, type StepResult } from "./flow";
-import { paginate } from "./paginate";
+import { paginate, paginationHandlers, paginationRow } from "./paginate";
 import { tabs } from "./tabs";
-import { defineView, type ViewDefinition, type ViewPayload } from "./view";
+import { createRenderKit, defineView, type ViewDefinition, type ViewPayload } from "./view";
 
 const OWNER = "owner";
 
@@ -126,6 +126,78 @@ test("paginate: initialPage is where it opens; a single page has no navigation r
     expect(customIds(fake.lastPayload())).toEqual([]);
 });
 
+test("paginationRow + paginationHandlers compose a custom view: pages, its own Back, a typed pick with retry, done(result)", async () => {
+    const items = ["a", "b", "c", "d", "e"];
+    const PER_PAGE = 2;
+    const pagesOf = () => Math.ceil(items.length / PER_PAGE);
+    const remover = defineView<{ page: number }, string | null, void>({
+        name: "test.remove",
+        initial: () => ({ page: 0 }),
+        render: ({ page }, kit) => ({
+            content: items
+                .slice(page * PER_PAGE, (page + 1) * PER_PAGE)
+                .map((it, i) => `${page * PER_PAGE + i + 1}. ${it}`)
+                .join("\n"),
+            components: [paginationRow(kit, page, pagesOf()), kit.row(kit.button("back", (b) => b.setLabel("Back")))],
+            acceptText: true,
+        }),
+        on: {
+            ...paginationHandlers({ pages: pagesOf }),
+            back: (c) => c.done(null),
+        },
+        onText: async (c) => {
+            const n = Number(c.text);
+            if (!Number.isInteger(n) || n < 1 || n > items.length) {
+                await c.notify("Invalid number, try again.");
+                return;
+            }
+            c.done(items[n - 1]);
+        },
+    });
+    const result = fake.run(remover, undefined);
+    await fake.flush();
+
+    expect(fake.lastPayload().content).toBe("1. a\n2. b");
+    expect(keys()).toEqual(["first", "prev", "jump", "next", "last", "back"]);
+    expect(comp("jump").label).toBe("1 / 3");
+    expect(comp("first").disabled).toBe(true);
+
+    await fake.emit(fake.click("prev", OWNER));
+    expect(fake.lastPayload().content).toBe("5. e");
+    await fake.emit(fake.click("next", OWNER));
+    expect(fake.lastPayload().content).toBe("1. a\n2. b");
+
+    const ack = fake.modalSubmit(OWNER);
+    fake.modalResult = async () => ({ values: { page: "2" }, ack });
+    await fake.emit(fake.click("jump", OWNER));
+    expect(fake.lastPayload().content).toBe("3. c\n4. d");
+    const badAck = fake.modalSubmit(OWNER);
+    fake.modalResult = async () => ({ values: { page: "7" }, ack: badAck });
+    await fake.emit(fake.click("jump", OWNER));
+    expect(fake.notifies.at(-1)).toEqual({ e: badAck, content: "Enter a number between 1 and 3." });
+
+    expect(fake.textListening).toBe(true);
+    await fake.emit(fake.text(OWNER, "9"));
+    expect(fake.notifies.at(-1)?.content).toBe("Invalid number, try again.");
+    await fake.emit(fake.text(OWNER, "4"));
+    expect(await result).toBe("d");
+});
+
+test("paginationHandlers: Back from the custom view dones with its own result", async () => {
+    const view = defineView<{ page: number; tag: string }, string, void>({
+        name: "test.pv",
+        initial: () => ({ page: 0, tag: "x" }),
+        render: (s, kit) => ({ content: `p${s.page}`, components: [paginationRow(kit, s.page, 2), kit.row(kit.button("back", (b) => b.setLabel("Back")))] }),
+        on: { ...paginationHandlers({ pages: 2 }), back: (c) => c.done(`back from ${c.state.page} ${c.state.tag}`) },
+    });
+    const result = fake.run(view, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("last", OWNER));
+    expect(fake.lastPayload().content).toBe("p1");
+    await fake.emit(fake.click("back", OWNER));
+    expect(await result).toBe("back from 1 x");
+});
+
 // ─── tabs ───────────────────────────────────────────────────────────────────
 
 test("tabs: clicking tab \"b\" renders tab b with its button disabled (and Primary); a tab's extra rows have their own handlers", async () => {
@@ -163,6 +235,38 @@ test("tabs: clicking tab \"b\" renders tab b with its button disabled (and Prima
 
     await fake.emit(fake.click("inc", OWNER));
     expect(text()).toBe("tab b n=6");
+});
+
+test("tabs: onTabChange runs after the switch (mutate or return a state) - e.g. resetting a page", async () => {
+    const view = tabs({
+        name: "test.tabs",
+        initial: () => ({ tab: "a", page: 0 }),
+        tabs: [
+            { key: "a", label: "A" },
+            { key: "b", label: "B" },
+            { key: "c", label: "C" },
+        ],
+        renderTab: (s, kit) => ({ payload: { content: `${s.tab} p${s.page}` }, extraRows: [kit.row(kit.button("more", (b) => b.setLabel(">")))] }),
+        on: {
+            more: (c) => {
+                c.state.page++;
+            },
+        },
+        onTabChange: (s, key) => {
+            if (key === "c") return { tab: key, page: 100 };
+            s.page = 0;
+        },
+    });
+    void fake.run(view, undefined);
+    await fake.flush();
+
+    await fake.emit(fake.click("more", OWNER));
+    await fake.emit(fake.click("more", OWNER));
+    expect(fake.lastPayload().content).toBe("a p2");
+    await fake.emit(fake.click("tab:b", OWNER));
+    expect(fake.lastPayload().content).toBe("b p0");
+    await fake.emit(fake.click("tab:c", OWNER));
+    expect(fake.lastPayload().content).toBe("c p100");
 });
 
 // ─── confirm ────────────────────────────────────────────────────────────────
@@ -212,7 +316,7 @@ test("confirm: yes runs onConfirm, resolves true, and the final screen is onConf
     expect(fake.closed).toBe(1);
 });
 
-test("confirm: an onConfirm that throws shows \"Error running the action!\" (a UserFacingError shows its own message)", async () => {
+test("confirm: an onConfirm that throws shows \"Error running the action!\" (a UserFacingError shows its own message) and resolves false", async () => {
     const result = fake.run(
         confirmView(async () => {
             throw new Error("db down");
@@ -221,7 +325,7 @@ test("confirm: an onConfirm that throws shows \"Error running the action!\" (a U
     );
     await fake.flush();
     await fake.emit(fake.click("yes", OWNER));
-    expect(await result).toBe(true);
+    expect(await result).toBe(false);
     expect(text()).toContain("Error running the action!");
     expect(logError).toHaveBeenCalled();
 
@@ -234,7 +338,7 @@ test("confirm: an onConfirm that throws shows \"Error running the action!\" (a U
     );
     await fake.flush();
     await fake.emit(fake.click("yes", OWNER));
-    expect(await result2).toBe(true);
+    expect(await result2).toBe(false);
     expect(text()).toContain("Not today.");
 });
 
@@ -508,4 +612,12 @@ test("navRow: [Back][...extra][Skip][Cancel]; Back disabled when it can't go bac
         ["back", false],
         ["cancel", false],
     ]);
+});
+
+test("navRow: more than 5 buttons throws a clear error at render time", () => {
+    const kit = createRenderKit("test.nav", "i");
+    const b = (k: string) => kit.button(k, (x) => x.setLabel(k));
+    expect(() => navRow(kit, { canBack: true, extra: [b("x1"), b("x2")] })).not.toThrow();
+    expect(() => navRow(kit, { canBack: true, extra: [b("x1"), b("x2"), b("x3")] })).toThrow(/test\.nav.*6 buttons.*max is 5/);
+    expect(() => navRow(kit, { canBack: true, skipLabel: false, extra: [b("x1"), b("x2"), b("x3")] })).not.toThrow();
 });

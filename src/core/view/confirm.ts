@@ -30,14 +30,14 @@ export interface ConfirmOptions {
     /**
      * Runs only when the user confirms; its payload is the final screen. It may be slow (the click
      * is acknowledged in time). A throw is logged and shown as "Error running the action!" (a
-     * UserFacingError shows its own message).
+     * UserFacingError shows its own message), and the confirm resolves `false`.
      */
     onConfirm: () => Promise<ViewPayload>;
     /** Idle timeout when this is the root. Default config.ui.confirmTimeoutMs. */
     timeoutMs?: number;
 }
 
-export type ConfirmState = { phase: "asking" } | { phase: "confirmed" | "cancelled"; payload: ViewPayload };
+export type ConfirmState = { phase: "asking" } | { phase: "confirmed" | "cancelled" | "failed"; payload: ViewPayload };
 
 /** The summary container (same layout as the old `utils/confirm`): bold title + one line per field. */
 function summaryContainer(opts: ConfirmOptions): ContainerBuilder {
@@ -64,8 +64,9 @@ function confirmRow(kit: RenderKit): ActionRowBuilder<ButtonBuilder> {
 
 /**
  * A yes/no confirmation before an action: the summary with [Confirm] [Cancel]. Resolves `true`
- * once the user confirmed (after `onConfirm` ran - its payload, or the error, is the final screen),
- * `false` on Cancel ("Action cancelled."), `undefined` on idle expiry ("Confirmation expired.").
+ * once the user confirmed and `onConfirm` succeeded (its payload is the final screen); `false` on
+ * Cancel ("Action cancelled.") or when `onConfirm` threw (the error is the final screen);
+ * `undefined` on idle expiry ("Confirmation expired.").
  * Opened as a child (`c.open`), the opener's next screen replaces `onConfirm`'s payload, and it
  * runs on the root's clock (e.g. a flow step's).
  *
@@ -93,16 +94,16 @@ export function confirm(opts: ConfirmOptions): ViewDefinition<ConfirmState, bool
         },
         on: {
             yes: async (c) => {
-                let payload: ViewPayload;
                 try {
-                    payload = await opts.onConfirm();
+                    const payload = await opts.onConfirm();
+                    c.done(true);
+                    return { phase: "confirmed", payload };
                 } catch (err) {
                     const described = describeCommandError(err);
                     if (described.kind === "internal") logger.error(err instanceof Error ? err : new Error(String(err)), { view: opts.name });
-                    payload = EmbedFormatter.error(described.kind === "user" ? described.message : "Error running the action!");
+                    c.done(false);
+                    return { phase: "failed", payload: EmbedFormatter.error(described.kind === "user" ? described.message : "Error running the action!") };
                 }
-                c.done(true);
-                return { phase: "confirmed", payload };
             },
             no: (c) => {
                 c.done(false);

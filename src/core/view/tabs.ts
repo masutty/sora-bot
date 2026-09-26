@@ -26,6 +26,12 @@ export interface TabsOptions<T extends { tab: string }, I> {
     renderTab: (state: T, kit: RenderKit) => TabRender;
     /** Handlers for the tabs' own controls. Keys starting with `tab:` are taken by the tab buttons. */
     on?: ViewDefinition<T, void, I>["on"];
+    /**
+     * Runs after a tab click switched `state.tab` to `key` - mutate the state or return a new one
+     * (e.g. reset a list's page). Not called for the tab the view opens on.
+     */
+    // biome-ignore lint/suspicious/noConfusingVoidType: same convention as HandlerResult - mutate (void) or return a state.
+    onTabChange?: (state: T, key: string) => T | void;
     /** Idle timeout when this is the root. Default config.ui.viewTimeoutMs. */
     timeoutMs?: number;
 }
@@ -51,7 +57,7 @@ function tabRows(tabs: TabSpec[], active: string, kit: RenderKit): ActionRowBuil
 /**
  * Tabs on one message: a button per tab (the active one Primary and disabled, same look as the old
  * `button-view` tabs) below the tab's content, then the tab's own `extraRows`. Clicking a
- * tab only sets `state.tab` - everything else in the state is kept.
+ * tab sets `state.tab` (the rest of the state is kept), then runs `onTabChange` if given.
  *
  * @example
  * const profile = tabs({
@@ -62,6 +68,7 @@ function tabRows(tabs: TabSpec[], active: string, kit: RenderKit): ActionRowBuil
  *         ? { payload: buildProfile(s.data) }
  *         : { payload: buildSessions(s.data, s.page), extraRows: [kit.row(kit.button("more", (b) => b.setLabel(">")))] },
  *     on: { more: (c) => { c.state.page++; } },
+ *     onTabChange: (s) => { s.page = 0; },
  * });
  * await ctx.open(profile, data);
  */
@@ -70,6 +77,7 @@ export function tabs<T extends { tab: string }, I = void>(opts: TabsOptions<T, I
     for (const t of opts.tabs) {
         on[`tab:${t.key}`] = (c) => {
             c.state.tab = t.key;
+            return opts.onTabChange?.(c.state, t.key);
         };
     }
     return defineView<T, void, I>({
