@@ -37,8 +37,10 @@ export interface ContextDeps {
  * handled here - prefer ctx.reply over interaction.reply/editReply/followUp:
  * - 1st `reply()` -> the command's response (after `defer()`, it fills the deferred one).
  * - Later `reply()`s -> follow-ups. `editReply()` edits the first response.
- * The slash state is read from the interaction itself, so replying once through `ctx.raw` (e.g. a
- * modal flow) doesn't desync it.
+ * The slash state is read from the interaction itself, so a `reply`/`followUp` made through
+ * `ctx.raw` (e.g. a modal flow) doesn't desync it. Exception: after `ctx.defer()`, don't fill the
+ * deferred response with `ctx.raw.interaction.editReply` - the next `ctx.reply` would edit it again
+ * instead of following up. Use `ctx.reply` for that first response.
  * `raw` is the typed escape hatch for the rare mode-specific need (e.g. reading a prefix message's
  * attachment); prefer declaring `modes`/`subcommandModes` over branching on it.
  */

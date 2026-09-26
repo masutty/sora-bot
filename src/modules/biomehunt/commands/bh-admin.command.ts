@@ -261,7 +261,9 @@ export default defineCommand({
         // onMissingSubcommand: "run" - a bare `!bh-admin forward` opens the forward menu; any other
         // missing/unknown subcommand gets the framework's usage.
         if (!sub) {
-            if (group === "forward") {
+            // Only a truly bare `forward` opens the menu - `forward lst` (a typo) gets the usage.
+            const nothingAfterGroup = ctx.raw.kind === "prefix" && ctx.raw.args.getRawArgs().length === 0;
+            if (group === "forward" && nothingAfterGroup) {
                 await runForwardConfigFlow(ctx.guild, ctx.user.id, send);
                 return;
             }
