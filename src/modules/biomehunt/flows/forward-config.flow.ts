@@ -214,7 +214,7 @@ async function forwardLoop(
 }
 
 /** Standalone entry point for `bh-admin forward menu` / bare `!bh-admin forward`. */
-export async function runForwardMenu(
+export async function runForwardConfigFlow(
     guild: Guild,
     adminId: string,
     respond: (payload: { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[] }) => Promise<Message>,

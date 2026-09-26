@@ -19,7 +19,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
-import { runProfileView } from "./profileViews";
+import { runProfileView } from "../views/stats.view";
 
 const logger = new Logger("biomehunt.commands.bh");
 

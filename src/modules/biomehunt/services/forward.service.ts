@@ -5,7 +5,7 @@ import { getBiomeCountForUser } from "../repository/activity.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { BiomeHuntError, type ParsedEvent } from "../types";
-import { buildForwardContainer } from "./forwardRender";
+import { buildForwardContainer } from "../views/forward-post.view";
 import { startVoteCheck } from "./vote-check.service";
 
 const logger = new Logger("biomehunt.ForwardEngine");

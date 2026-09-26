@@ -14,7 +14,7 @@ import { deleteActivity, setActivity } from "../services/activity.service";
 import { setBadges } from "../services/badge.service";
 import { addCategory, disableCounter, setCounterChannel, setRoles, showConfig } from "../services/guild-config.service";
 import { createQuota, removeQuotaRole } from "../services/quota.service";
-import { stepBiomeForwards } from "./forwardMenu";
+import { stepBiomeForwards } from "./forward-config.flow";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
 
@@ -642,7 +642,7 @@ async function stepBadgeRoles(guild: Guild, adminId: string, msg: Message, canGo
 
 // ─── Driver ─────────────────────────────────────────────────────────────────
 
-export async function runEzSetup(
+export async function runEzSetupFlow(
     guild: Guild,
     adminId: string,
     respond: (payload: StepPayload) => Promise<Message>,

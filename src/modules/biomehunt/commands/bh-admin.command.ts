@@ -28,9 +28,9 @@ import {
     createQuota, forceQuotaEval, listQuotas, setQuotaEvalHour, deleteQuotas,
 } from "../services/quota.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
-import { runEzSetup } from "./ezsetup";
-import { runForwardMenu } from "./forwardMenu";
-import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "./profileViews";
+import { runEzSetupFlow } from "../flows/ez-setup.flow";
+import { runForwardConfigFlow } from "../flows/forward-config.flow";
+import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "../views/stats.view";
 import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { BiomeHuntError, type ActivityStatus, type Badge, type FlagName, type QuotaRoleMode } from "../types";
@@ -309,13 +309,13 @@ export default defineCommand({
 
         if (routeKey === "setup") {
             await interaction.deferReply();
-            await runEzSetup(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
+            await runEzSetupFlow(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "forward-menu") {
             await interaction.deferReply();
-            await runForwardMenu(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
+            await runForwardConfigFlow(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
@@ -346,7 +346,7 @@ export default defineCommand({
         const sub = args.getSubcommand();
         if (!sub) {
             if (group === "forward") {
-                await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+                await runForwardConfigFlow(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
                 return;
             }
             await message.reply(EmbedFormatter.info("Run `bh-admin config show` to see the current configuration."));
@@ -391,12 +391,12 @@ export default defineCommand({
         }
 
         if (routeKey === "setup") {
-            await runEzSetup(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await runEzSetupFlow(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (routeKey === "forward-menu") {
-            await runForwardMenu(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await runForwardConfigFlow(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 

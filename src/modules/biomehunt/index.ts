@@ -7,10 +7,10 @@ import { handleVoteButtonClick } from "./services/vote-check.service";
 import { startCounterWorker } from "./workers/counter.worker";
 import { startRoleWorker } from "./workers/role.worker";
 import { startStatusWorker } from "./workers/status.worker";
-import _bh from "./commands/bh";
-import _bhAdmin from "./commands/bh-admin";
-import _bhOwner from "./commands/bh-owner";
-import _bhStats from "./commands/bh-stats";
+import _bh from "./commands/bh.command";
+import _bhAdmin from "./commands/bh-admin.command";
+import _bhOwner from "./commands/bh-owner.command";
+import _bhStats from "./commands/bh-stats.command";
 
 const logger = new Logger("biomehunt");
 

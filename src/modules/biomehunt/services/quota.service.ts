@@ -78,6 +78,7 @@ export async function deleteQuotas(
     const msg = await respond({ flags: MessageFlags.IsComponentsV2, components: [listContainer] });
 
     const channel = msg.channel as GuildTextBasedChannel;
+    // TODO(etapa-3): UI in a service - becomes a View step
     const collector = channel.createMessageCollector({ filter: (m) => m.author.id === invokerId, time: settings.ui.quotaReplyTimeoutMs, max: 1 });
 
     collector.on("collect", async (m) => {
