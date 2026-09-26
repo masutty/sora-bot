@@ -57,6 +57,8 @@ export function createDiscordTransport(message: Message, opts: DiscordTransportO
     let components: { stop(): void } | null = null;
     let text: MessageCollector | null = null;
     let closed = false;
+    /** Cancels of the modal waits in progress - `close()` resolves them all with `null`. */
+    const modalWaits = new Set<() => void>();
 
     /**
      * Edits the View's message. An ephemeral message can't be edited through the bot's own REST
@@ -121,29 +123,54 @@ export function createDiscordTransport(message: Message, opts: DiscordTransportO
             if (sent) setTimeout(() => void sent.delete().catch(() => {}), TEXT_NOTIFY_TTL_MS).unref?.();
         },
 
-        async modal(e, spec, customId, timeoutMs) {
+        async modal(e, spec, customId, timeoutMs, signal) {
             const clicked = e.raw as MessageComponentInteraction;
             try {
                 const shown = await answers.showModal(asAnswerable(clicked), buildModal(spec, customId));
-                if (!shown) return null;
+                // Already answered, or a modal submit (Discord can't answer one with a modal).
+                if (!shown) throw new Error(`Can't show modal "${customId}": the interaction was already answered or can't show a modal (a modal submit)`);
             } catch (err) {
-                // A bad ModalSpec or a rejected showModal: answer the click (no "interaction failed")
-                // and reject, so the engine logs it - it's a bug, not a closed modal.
+                // A bad ModalSpec, a rejected showModal or an interaction that can't show one:
+                // answer it (no "interaction failed") and reject, so the engine logs it - it's a
+                // bug, not a closed modal.
                 await answers.acknowledge(asAnswerable(clicked)).catch(() => {});
                 throw err;
             }
-            try {
-                const submit = await clicked.awaitModalSubmit({
-                    filter: (s) => s.customId === customId && s.user.id === e.userId,
-                    time: timeoutMs,
-                });
-                const values: Record<string, string> = {};
-                for (const f of spec.fields) values[f.key] = submit.fields.getTextInputValue(f.key);
-                return { values, ack: componentEvent(submit) };
-            } catch {
+            const submitted = clicked
+                .awaitModalSubmit({ filter: (s) => s.customId === customId && s.user.id === e.userId, time: timeoutMs })
+                .then((submit) => {
+                    const values: Record<string, string> = {};
+                    for (const f of spec.fields) values[f.key] = submit.fields.getTextInputValue(f.key);
+                    return { values, ack: componentEvent(submit) };
+                })
                 // Timed out (or its collector ended): to the engine, the modal was closed.
-                return null;
-            }
+                .catch(() => null);
+            // awaitModalSubmit can't be stopped from outside: a cancel (signal / close) resolves
+            // null at once, and a submit that still arrives is acknowledged here, never left unanswered.
+            return new Promise((resolve) => {
+                let settled = false;
+                const cancel = () => {
+                    if (settled) return;
+                    settled = true;
+                    modalWaits.delete(cancel);
+                    resolve(null);
+                };
+                if (closed || signal?.aborted) cancel();
+                else {
+                    modalWaits.add(cancel);
+                    signal?.addEventListener("abort", cancel, { once: true });
+                }
+                void submitted.then((res) => {
+                    signal?.removeEventListener("abort", cancel);
+                    if (settled) {
+                        if (res) void answers.acknowledge(asAnswerable(res.ack.raw)).catch(() => {});
+                        return;
+                    }
+                    settled = true;
+                    modalWaits.delete(cancel);
+                    resolve(res);
+                });
+            });
         },
 
         async deleteText(e) {
@@ -157,6 +184,7 @@ export function createDiscordTransport(message: Message, opts: DiscordTransportO
             components = null;
             text?.stop();
             text = null;
+            for (const cancel of [...modalWaits]) cancel();
         },
     };
 }

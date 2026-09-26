@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { type ButtonBuilder, ContainerBuilder, MessageFlags, TextDisplayBuilder } from "discord.js";
+import { ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, SectionBuilder, TextDisplayBuilder } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { UserFacingError } from "../command/user-facing-error";
 import { createFakeTransport, customIds, type FakeTransport } from "./fake-transport";
 import { defineView, type HandlerContext, type ViewDefinition } from "./view";
-import { ACK_DEADLINE_MS, type ComponentEvent, createViewSession } from "./view-engine";
+import { ACK_DEADLINE_MS, type ComponentEvent } from "./view-engine";
 
 const OWNER = "owner";
 const OTHER = "other";
@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 function start<S, R, I>(view: ViewDefinition<S, R, I>, input: I, invokerId = OWNER) {
-    return createViewSession(fake, invokerId, fake.clock).run(view, input, fake.respond);
+    return fake.run(view, input, invokerId);
 }
 
 /** A counter with a button per interesting behavior. */
@@ -590,4 +590,415 @@ test("a click while a handler is still running is acknowledged and doesn't run t
     expect(runs).toBe(1);
     expect(fake.renders).toEqual([{ e: first, payload: fake.lastPayload() }]);
     expect(fake.lastPayload().content).toBe("n=1");
+});
+
+// ─── Checkpoint fix wave ────────────────────────────────────────────────────
+
+const step = defineView<null, string>({
+    name: "test.step",
+    initial: () => null,
+    render: (_s, kit) => ({ content: "step", components: [kit.row(kit.button("pick", label))] }),
+    on: { pick: (c) => c.done("a") },
+});
+
+test("C1. start: a root whose start opens a child sends the child's render first; child done -> the root is redrawn", async () => {
+    const flow = defineView<{ got: string | undefined }, void>({
+        name: "test.flow",
+        initial: () => ({ got: undefined }),
+        render: (s, kit) => ({ content: `flow ${s.got ?? "-"}`, components: [kit.row(kit.button("again", label))] }),
+        start: async (c) => {
+            c.state.got = await c.open(step, null);
+        },
+    });
+    void start(flow, undefined);
+    await fake.flush();
+
+    expect(fake.responded).toHaveLength(1);
+    expect(fake.responded[0].content).toBe("step");
+    expect(fake.renders).toHaveLength(0);
+
+    const pick = fake.click("pick", OWNER);
+    await fake.emit(pick);
+
+    expect(fake.renders).toEqual([{ e: pick, payload: fake.lastPayload() }]);
+    expect(fake.lastPayload().content).toBe("flow a");
+    expect(fake.acks).toHaveLength(0);
+    expect(customIds(fake.lastPayload())).toHaveLength(1);
+});
+
+test("C1. start: state mutated or returned by the root's start is in the first render", async () => {
+    void start(
+        defineView({
+            ...counter,
+            start: (c: HandlerContext<{ n: number }, number>) => {
+                c.state.n++;
+            },
+        }),
+        5,
+    );
+    await fake.flush();
+    expect(fake.responded.map((p) => p.content)).toEqual(["n=6"]);
+
+    fake = createFakeTransport();
+    void start(defineView({ ...counter, start: async () => ({ n: 42 }) }), 5);
+    await fake.flush();
+    expect(fake.responded.map((p) => p.content)).toEqual(["n=42"]);
+});
+
+test("C1. start: a root that calls done before anything is sent renders once (stripped), then resolves", async () => {
+    const result = start(defineView({ ...counter, start: (c: HandlerContext<{ n: number }, number>) => c.done(9) }), 9);
+    expect(await result).toBe(9);
+    expect(fake.responded).toHaveLength(1);
+    expect(fake.responded[0].content).toBe("n=9");
+    expect(customIds(fake.responded[0])).toEqual([]);
+    expect(fake.renders).toHaveLength(0);
+});
+
+test("C1. start: a child with start, opened from a click, answers that click with its own child's render", async () => {
+    const inner = defineView<null, string>({
+        name: "test.inner",
+        initial: () => null,
+        render: () => ({ content: "inner-self" }),
+        start: async (c) => {
+            const r = await c.open(step, null);
+            c.done(`inner-${r}`);
+        },
+    });
+    const parent = defineView<{ r: string | undefined }, void>({
+        name: "test.parent",
+        initial: () => ({ r: undefined }),
+        render: (s, kit) => ({ content: `parent ${s.r ?? "-"}`, components: [kit.row(kit.button("go", label))] }),
+        on: {
+            go: async (c) => {
+                c.state.r = await c.open(inner, null);
+            },
+        },
+    });
+    void start(parent, undefined);
+    await fake.flush();
+
+    const go = fake.click("go", OWNER);
+    await fake.emit(go);
+    expect(fake.renders).toEqual([{ e: go, payload: fake.lastPayload() }]);
+    expect(fake.lastPayload().content).toBe("step");
+
+    const pick = fake.click("pick", OWNER);
+    await fake.emit(pick);
+    expect(fake.renders.filter((r) => r.e === pick)).toHaveLength(1);
+    expect(fake.lastPayload().content).toBe("parent inner-a");
+    expect(fake.acks).toHaveLength(0);
+    expect(fake.notifies).toHaveLength(0);
+});
+
+test("C1. start: notify with no interaction is a no-op; modal throws a clear error (the root's run rejects)", async () => {
+    void start(
+        defineView({
+            ...counter,
+            start: async (c: HandlerContext<{ n: number }, number>) => {
+                await c.notify("hi");
+            },
+        }),
+        1,
+    );
+    await fake.flush();
+    expect(fake.notifies).toHaveLength(0);
+    expect(fake.responded).toHaveLength(1);
+
+    fake = createFakeTransport();
+    const run = start(
+        defineView({
+            ...counter,
+            start: async (c: HandlerContext<{ n: number }, number>) => {
+                await c.modal({ title: "t", fields: [{ key: "a", label: "a" }] });
+            },
+        }),
+        1,
+    );
+    await expect(run).rejects.toThrow(/start/);
+    expect(fake.responded).toHaveLength(0);
+    expect(fake.modals).toHaveLength(0);
+});
+
+test("C1. start: a child whose start throws before rendering makes open reject; the click is answered once (notify)", async () => {
+    const broken = defineView<null, void>({
+        name: "test.broken",
+        initial: () => null,
+        render: () => ({ content: "broken" }),
+        start: () => {
+            throw new UserFacingError("cannot start");
+        },
+    });
+    const parent = defineView<null, void>({
+        name: "test.parent",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "parent", components: [kit.row(kit.button("go", label))] }),
+        on: {
+            go: async (c) => {
+                await c.open(broken, null);
+            },
+        },
+    });
+    void start(parent, undefined);
+    await fake.flush();
+
+    const go = fake.click("go", OWNER);
+    await fake.emit(go);
+    expect(fake.notifies).toEqual([{ e: go, content: "cannot start" }]);
+    expect(fake.renders).toHaveLength(0);
+    expect(fake.acks).toHaveLength(0);
+    // The parent is still the live screen.
+    await fake.emit(fake.click("go", OWNER));
+    expect(fake.notifies).toHaveLength(2);
+});
+
+test("I1. the idle clock is the root's: a 20s child inside a 300s root doesn't expire at 25s", async () => {
+    const confirm = defineView<null, boolean>({
+        name: "test.confirm",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "sure?", components: [kit.row(kit.button("yes", label))] }),
+        timeoutMs: 20_000,
+        onExpire: () => ({ content: "confirm expired" }),
+        on: { yes: (c) => c.done(true) },
+    });
+    const root = defineView<null, void>({
+        name: "test.root",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "root", components: [kit.row(kit.button("ask", label))] }),
+        timeoutMs: 300_000,
+        on: {
+            ask: async (c) => {
+                await c.open(confirm, null);
+            },
+        },
+    });
+    const result = start(root, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("ask", OWNER));
+
+    await fake.clock.advance(25_000);
+    expect(fake.closed).toBe(0);
+    expect(fake.lastPayload().content).toBe("sure?");
+
+    await fake.clock.advance(300_000);
+    expect(fake.closed).toBe(1);
+    expect(await result).toBeUndefined();
+    // The root's onExpire (default "strip") applies to the shown screen, not the child's function.
+    expect(fake.lastPayload().content).toBe("sure?");
+    expect(customIds(fake.lastPayload())).toEqual([]);
+});
+
+test("I1. the root's onExpire function is the final payload even while a child is on top; the child's beforeExpire still runs", async () => {
+    const order: string[] = [];
+    const child = defineView<null, string>({
+        ...step,
+        onExpire: () => ({ content: "child expired" }),
+        beforeExpire: async () => void order.push("child"),
+    });
+    const root = defineView<{ n: number }, void>({
+        name: "test.root",
+        initial: () => ({ n: 7 }),
+        render: (_s, kit) => ({ content: "root", components: [kit.row(kit.button("ask", label))] }),
+        timeoutMs: TIMEOUT,
+        onExpire: (s) => ({ content: `root expired at ${s.n}` }),
+        on: {
+            ask: async (c) => {
+                await c.open(child, null);
+            },
+        },
+    });
+    const result = start(root, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("ask", OWNER));
+
+    await fake.clock.advance(TIMEOUT);
+    expect(await result).toBeUndefined();
+    expect(fake.lastPayload().content).toBe("root expired at 7");
+    expect(order).toEqual(["child"]);
+});
+
+test("I2. a click while a modal is (silently) dismissed cancels it: the modal resolves null, the new click runs, one answer each", async () => {
+    fake.modalResult = () => new Promise<ModalResult>(() => {});
+    const seen: unknown[] = [];
+    const view = defineView<{ page: number }, void>({
+        name: "test.form",
+        initial: () => ({ page: 1 }),
+        render: (s, kit) => ({ content: `page ${s.page}`, components: [kit.row(kit.button("fill", label), kit.button("back", label))] }),
+        on: {
+            fill: async (c) => {
+                seen.push(await c.modal({ title: "t", fields: [{ key: "a", label: "a" }] }));
+            },
+            back: (c) => {
+                c.state.page = 0;
+            },
+        },
+    });
+    void start(view, undefined);
+    await fake.flush();
+
+    const fill = fake.click("fill", OWNER);
+    await fake.emit(fill);
+    expect(fake.modals).toHaveLength(1);
+
+    const back = fake.click("back", OWNER);
+    await fake.emit(back);
+    await fake.flush();
+
+    expect(seen).toEqual([null]);
+    expect(fake.modals[0].signal?.aborted).toBe(true);
+    expect(fake.renders).toEqual([{ e: back, payload: fake.lastPayload() }]);
+    expect(fake.lastPayload().content).toBe("page 0");
+    expect(fake.acks).toHaveLength(0);
+    expect(fake.notifies).toHaveLength(0);
+});
+
+test("I3. a modal can't answer a modal submit: c.modal() throws, the submit is answered once (notify)", async () => {
+    const ack = fake.modalSubmit(OWNER);
+    fake.modalResult = async () => ({ values: { a: "bad" }, ack });
+    const view = defineView<null, void>({
+        name: "test.remodal",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "form", components: [kit.row(kit.button("fill", label))] }),
+        on: {
+            fill: async (c) => {
+                const spec = { title: "t", fields: [{ key: "a", label: "a" }] };
+                if (await c.modal(spec)) await c.modal(spec);
+            },
+        },
+    });
+    void start(view, undefined);
+    await fake.flush();
+
+    await fake.emit(fake.click("fill", OWNER));
+    expect(fake.modals).toHaveLength(1);
+    expect(logError).toHaveBeenCalledTimes(1);
+    const logged = (logError.mock.calls[0] as unknown[])[0];
+    expect(logged instanceof Error ? logged.message : String(logged)).toMatch(/modal must be shown in response to a component interaction/);
+    expect(fake.notifies.map((n) => n.e)).toEqual([ack]);
+    expect(fake.acks).toHaveLength(0);
+});
+
+test("I4. two quick typed replies with a slow delete: onText runs once, the second is dropped", async () => {
+    const gate = deferred();
+    const deleteText = fake.deleteText;
+    fake.deleteText = async (e) => {
+        await gate.promise;
+        await deleteText(e);
+    };
+    let runs = 0;
+    const view = defineView<{ name: string }, void>({
+        name: "test.text",
+        initial: () => ({ name: "-" }),
+        render: (s) => ({ content: `name=${s.name}`, acceptText: true }),
+        onText: (c) => {
+            runs++;
+            c.state.name = c.text;
+        },
+        deleteTextInput: true,
+    });
+    void start(view, undefined);
+    await fake.flush();
+
+    await fake.emit(fake.text(OWNER, "a"));
+    await fake.emit(fake.text(OWNER, "b"));
+    gate.resolve();
+    await fake.flush();
+
+    expect(runs).toBe(1);
+    expect(fake.lastPayload().content).toBe("name=a");
+    expect(fake.deletedTexts.map((t) => t.content)).toEqual(["a"]);
+});
+
+test("M1. strip / disable / done keep Link buttons (they have no customId and still work)", async () => {
+    const link = () => new ButtonBuilder().setStyle(ButtonStyle.Link).setURL("https://example.com").setLabel("docs");
+    const view = defineView<null, void>({
+        name: "test.link",
+        initial: () => null,
+        render: (_s, kit) => ({
+            flags: MessageFlags.IsComponentsV2,
+            components: [
+                new ContainerBuilder()
+                    .addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent("s")).setButtonAccessory(link()))
+                    .addActionRowComponents(kit.row(kit.button("a", label), link())),
+            ],
+        }),
+        timeoutMs: TIMEOUT,
+        on: { a: (c) => c.done() },
+    });
+    const links = (payload: { components?: unknown }) => JSON.stringify(payload.components).match(/https:\/\/example\.com/g)?.length ?? 0;
+
+    void start(view, undefined);
+    await fake.flush();
+    await fake.clock.advance(TIMEOUT);
+    expect(links(fake.lastPayload())).toBe(2);
+    expect(customIds(fake.lastPayload())).toEqual([]);
+
+    fake = createFakeTransport();
+    void start(defineView({ ...view, onExpire: "disable" }), undefined);
+    await fake.flush();
+    await fake.clock.advance(TIMEOUT);
+    const json = JSON.stringify(fake.lastPayload().components);
+    expect(links(fake.lastPayload())).toBe(2);
+    expect(json.match(/"disabled":true/g)).toHaveLength(1);
+
+    fake = createFakeTransport();
+    void start(view, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("a", OWNER));
+    expect(links(fake.lastPayload())).toBe(2);
+    expect(customIds(fake.lastPayload())).toEqual([]);
+});
+
+test("M2. expiry skips beforeExpire for an instance whose handler is still running", async () => {
+    const gate = deferred();
+    const applied: string[] = [];
+    const view = defineView<null, void>({
+        name: "test.reroll",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "reroll", components: [kit.row(kit.button("apply", label))] }),
+        timeoutMs: TIMEOUT,
+        beforeExpire: async () => void applied.push("auto"),
+        on: {
+            apply: async () => {
+                await gate.promise;
+                applied.push("manual");
+            },
+        },
+    });
+    const result = start(view, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("apply", OWNER));
+    await fake.clock.advance(TIMEOUT);
+    gate.resolve();
+    expect(await result).toBeUndefined();
+    await fake.flush();
+    expect(applied).toEqual(["manual"]);
+});
+
+test("C1. start: a child whose start finishes at once shows nothing - the root's start goes on and its render is the first send", async () => {
+    const instant = defineView<null, string>({
+        name: "test.instant",
+        initial: () => null,
+        render: () => ({ content: "instant" }),
+        start: (c) => c.done("skip"),
+    });
+    const flow = defineView<{ got: string | undefined }, void>({
+        name: "test.flow",
+        initial: () => ({ got: undefined }),
+        render: (s) => ({ content: `flow ${s.got ?? "-"}` }),
+        start: async (c) => {
+            c.state.got = await c.open(instant, null);
+        },
+    });
+    const result = start(flow, undefined);
+    await fake.flush();
+    expect(fake.responded.map((p) => p.content)).toEqual(["flow skip"]);
+    expect(fake.renders).toHaveLength(0);
+    await fake.flush();
+    let settled = false;
+    void result.then(
+        () => (settled = true),
+        () => (settled = true),
+    );
+    await fake.flush();
+    expect(settled).toBe(false);
 });

@@ -1,9 +1,11 @@
 /**
  * An in-memory ViewTransport + manual clock for engine/helper tests: records every call and lets
- * the test emit clicks, typed replies and modal submits. Test-only: never import from runtime code.
+ * the test emit clicks, typed replies and modal submits. TEST-ONLY: modules get it from
+ * `@/define` as `createFakeViewTransport` for their View tests; never use it in runtime code.
  */
-import type { ModalSpec, ViewPayload } from "./view";
-import type { ComponentEvent, TextEvent, ViewClock, ViewTransport } from "./view-engine";
+import type { User } from "discord.js";
+import type { ModalSpec, ViewDefinition, ViewPayload } from "./view";
+import { type ComponentEvent, createViewSession, type TextEvent, type ViewClock, type ViewTransport } from "./view-engine";
 
 type ModalResult = { values: Record<string, string>; ack: ComponentEvent } | null;
 
@@ -19,13 +21,17 @@ export interface FakeTransport extends ViewTransport {
     renders: { e: ComponentEvent | null; payload: ViewPayload }[];
     acks: ComponentEvent[];
     notifies: { e: ComponentEvent | TextEvent; content: string }[];
-    modals: { e: ComponentEvent; spec: ModalSpec; customId: string; timeoutMs: number }[];
+    /** `signal`: aborted when the engine cancels the modal (a new click after a dismissed modal, or expiry). */
+    modals: { e: ComponentEvent; spec: ModalSpec; customId: string; timeoutMs: number; signal: AbortSignal | undefined }[];
     deletedTexts: TextEvent[];
     closed: number;
     textListening: boolean;
     /** Method names in call order (respond, render, acknowledge, notify, modal, deleteText, close). */
     log: string[];
-    /** What the next `modal()` resolves with. Default: closed (`null`). */
+    /**
+     * What the next `modal()` resolves with. Default: closed (`null`). It ignores the abort signal
+     * on purpose (the engine must cope with a transport that settles late).
+     */
     modalResult: (call: { e: ComponentEvent; customId: string }) => Promise<ModalResult>;
     clock: ManualClock;
     /** The payload currently on the message (last respond/render). */
@@ -43,6 +49,11 @@ export interface FakeTransport extends ViewTransport {
     emit(e: ComponentEvent | TextEvent): Promise<void>;
     /** Lets every pending promise chain settle. */
     flush(): Promise<void>;
+    /**
+     * Runs `view` as the root of a session on this transport and its manual clock, owned by
+     * `invokerId` (default "owner"). Resolves like `runView`: the `done` result, or `undefined` on expiry.
+     */
+    run<S, R, I>(view: ViewDefinition<S, R, I>, input: I, invokerId?: string): Promise<R | undefined>;
 }
 
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -134,9 +145,9 @@ export function createFakeTransport(): FakeTransport {
             fake.log.push("notify");
             fake.notifies.push({ e, content });
         },
-        async modal(e, spec, customId, timeoutMs) {
+        async modal(e, spec, customId, timeoutMs, signal) {
             fake.log.push("modal");
-            fake.modals.push({ e, spec, customId, timeoutMs });
+            fake.modals.push({ e, spec, customId, timeoutMs, signal });
             return fake.modalResult({ e, customId });
         },
         async deleteText(e) {
@@ -178,6 +189,9 @@ export function createFakeTransport(): FakeTransport {
             await settle();
         },
         flush: settle,
+        run(view, input, invokerId = "owner") {
+            return createViewSession(fake, { id: invokerId } as User, fake.clock).run(view, input, fake.respond);
+        },
     };
     return fake;
 }

@@ -1,4 +1,4 @@
-import type { Message } from "discord.js";
+import type { Message, User } from "discord.js";
 import { createDiscordTransport, type DiscordTransportOptions } from "./discord-transport";
 import type { ViewDefinition, ViewPayload } from "./view";
 import { type ComponentEvent, createViewSession, type TextEvent, type ViewTransport } from "./view-engine";
@@ -6,8 +6,8 @@ import { type ComponentEvent, createViewSession, type TextEvent, type ViewTransp
 export interface RunViewOptions {
     /** Sends the View's first render and returns the sent message - the one the View then lives on. */
     respond: (payload: ViewPayload) => Promise<Message>;
-    /** Who opened the View: its owner for `access: "invoker"` (the default). */
-    invokerId: string;
+    /** Who opened the View: its owner for `access: "invoker"` (the default), and `c.user` in the root's `start`. */
+    invoker: User;
     /**
      * Edits the sent message when no click token can (an ephemeral message rejects `message.edit`,
      * e.g. an expiry before the first click, or a redraw after a first-click `notify`).
@@ -20,7 +20,8 @@ export interface RunViewOptions {
 /**
  * Runs `view` on a new message: sends its first render through `respond`, then handles its
  * interactions until it's done (→ its result) or expires (→ `undefined`). Rejects only if the
- * first render can't be built or sent. Inside a command, prefer `ctx.open(view, input)`.
+ * root can't be created (its initial/start throw before anything was sent) or the first render
+ * can't be built or sent. Inside a command, prefer `ctx.open(view, input)`.
  */
 export function runView<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts: RunViewOptions): Promise<R | undefined> {
     const factory = opts.transportFactory ?? createDiscordTransport;
@@ -37,11 +38,11 @@ export function runView<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts: 
         render: (e, payload) => transport().render(e, payload),
         acknowledge: (e) => transport().acknowledge(e),
         notify: (e, content) => transport().notify(e, content),
-        modal: (e, spec, customId, timeoutMs) => transport().modal(e, spec, customId, timeoutMs),
+        modal: (e, spec, customId, timeoutMs, signal) => transport().modal(e, spec, customId, timeoutMs, signal),
         deleteText: (e) => transport().deleteText(e),
         close: () => transport().close(),
     };
-    const session = createViewSession(forward, opts.invokerId);
+    const session = createViewSession(forward, opts.invoker);
     return session.run(view, input, async (payload) => {
         const message = await opts.respond(payload);
         bound = factory(message, { editMessage: opts.editMessage });

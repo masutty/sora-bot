@@ -131,3 +131,60 @@ test("acknowledge and component notify reject on a Discord error while open, and
     await t.acknowledge(failing());
     await t.notify(failing(), "x");
 });
+
+// ─── Checkpoint fix wave ────────────────────────────────────────────────────
+
+/** An awaitModalSubmit the test settles by hand; the submit it returns records how it was answered. */
+function pendingSubmit() {
+    let resolve!: (submit: unknown) => void;
+    const submitCalls: string[] = [];
+    const submit = {
+        customId: "v:1:modal:1",
+        user: { id: "u1" },
+        fields: { getTextInputValue: () => "typed" },
+        isFromMessage: () => true,
+        deferUpdate: async () => void submitCalls.push("deferUpdate"),
+        update: async () => void submitCalls.push("update"),
+    };
+    const awaitModalSubmit = () =>
+        new Promise((r) => {
+            resolve = r;
+        });
+    return { awaitModalSubmit, submit, submitCalls, arrive: () => resolve(submit) };
+}
+
+test("I3. modal: an interaction that can't show one (a modal submit) rejects instead of resolving null, and still gets answered", async () => {
+    const { message } = fakeMessage();
+    const t = createDiscordTransport(message);
+    const { e, calls } = click({ showModal: undefined as unknown as Fn });
+    delete (e.raw as { showModal?: unknown }).showModal;
+    await expect(t.modal(e, spec, "v:1:modal:1", 1_000)).rejects.toThrow(/modal/);
+    expect(calls).toEqual(["deferUpdate"]);
+});
+
+test("I2. modal: aborting the signal resolves null at once; a submit that still arrives is acknowledged", async () => {
+    const { message } = fakeMessage();
+    const t = createDiscordTransport(message);
+    const p = pendingSubmit();
+    const { e } = click({ awaitModalSubmit: p.awaitModalSubmit as Fn });
+    const controller = new AbortController();
+    const result = t.modal(e, spec, "v:1:modal:1", 60_000, controller.signal);
+    await Promise.resolve();
+    controller.abort();
+    expect(await result).toBeNull();
+
+    p.arrive();
+    await new Promise((r) => setImmediate(r));
+    expect(p.submitCalls).toEqual(["deferUpdate"]);
+});
+
+test("I2. modal: close() resolves a pending modal wait with null", async () => {
+    const { message } = fakeMessage();
+    const t = createDiscordTransport(message);
+    const p = pendingSubmit();
+    const { e } = click({ awaitModalSubmit: p.awaitModalSubmit as Fn });
+    const result = t.modal(e, spec, "v:1:modal:1", 60_000, new AbortController().signal);
+    await Promise.resolve();
+    t.close();
+    expect(await result).toBeNull();
+});

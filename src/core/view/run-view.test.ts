@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ButtonBuilder, Message } from "discord.js";
+import type { ButtonBuilder, Message, User } from "discord.js";
 import { createFakeTransport } from "./fake-transport";
 import { runView } from "./run-view";
 import { defineView } from "./view";
@@ -25,7 +25,7 @@ test("runView sends the first render once through respond, binds the transport t
             responded.push(payload);
             return sent;
         },
-        invokerId: OWNER,
+        invoker: { id: OWNER } as User,
         transportFactory: (message) => {
             boundTo.push(message);
             return fake;
@@ -45,4 +45,14 @@ test("runView sends the first render once through respond, binds the transport t
     expect(responded).toHaveLength(1);
     expect(fake.renders).toHaveLength(1);
     expect(fake.closed).toBe(1);
+});
+
+test("the module-author test seam: createFakeViewTransport from @/define runs a view on its manual clock", async () => {
+    const { createFakeViewTransport } = await import("@/define");
+    const fake = createFakeViewTransport();
+    const result = fake.run(defineView({ ...picker, timeoutMs: 1_000 }), 3, OWNER);
+    await fake.flush();
+    expect(fake.lastPayload().content).toBe("n=3");
+    await fake.clock.advance(1_000);
+    expect(await result).toBeUndefined();
 });

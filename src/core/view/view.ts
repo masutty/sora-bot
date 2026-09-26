@@ -44,34 +44,54 @@ export interface ModalSpec {
 }
 
 /**
- * What a handler receives. A component interaction is answered exactly once by the engine: by the
- * redraw after the handler returns, or by the modal / child view / notify the handler used first.
+ * What a handler (or `start`) receives. A component interaction is answered exactly once by the
+ * engine: by the redraw after the handler returns, or by the modal / child view / notify the
+ * handler used first.
  */
 export interface HandlerContext<S, R> {
     /** Current state - may be mutated in place (Q34). */
     state: S;
-    /** Values of the select that fired (ids for channel/role/user selects). Empty for buttons and text. */
+    /** Values of the select that fired (ids for channel/role/user selects). Empty for buttons, text and `start`. */
     values: string[];
+    /** Who interacted. In `start`: whoever opened the view (the invoker for the root). */
     user: User;
     /**
      * Ends THIS view with `result` once the handler returns; whoever opened it (open/runView) gets
      * the value. A child hands the message back to its opener; the root's final screen is its
-     * render with the interactive components stripped.
+     * render with the interactive components stripped (Link buttons are kept - they need no
+     * listener and still work).
      */
     done(result: R): void;
-    /** Opens a child view on the SAME message; resolves with its result, or `undefined` if it expires. */
+    /**
+     * Opens a child view on the SAME message; resolves with its result once it's `done`. The
+     * child's own `timeoutMs`/`onExpire` don't apply: the session has one idle clock and one
+     * expiry screen, both the root's. If the session expires while the child is open, this (and
+     * every other pending `open`, and the run itself) resolves `undefined` - check for it.
+     */
     open<CS, CR, CI>(child: ViewDefinition<CS, CR, CI>, input: CI): Promise<CR | undefined>;
     /**
-     * Shows a modal (component handlers only, as the first answer to the click, before any slow
-     * work - after ACK_DEADLINE_MS the engine has already acknowledged the click). While it's open
-     * the View's idle timer is paused. Resolves
-     * with the values by `key`, or `null` if closed/expired - in which case the message is left
-     * untouched unless the handler returns a new state.
+     * Shows a modal. Only as the FIRST answer to a button/select click, before any slow work
+     * (Discord allows ~3s; after that the engine has already acknowledged the click): not from
+     * `start` or `onText`, not after notify/open/another modal, and not in answer to a modal
+     * submit - Discord can't show a modal from a modal. So "invalid value → ask again" is: `notify`
+     * and let the user click the button again. Misuse throws a clear error.
+     * While it's open the View's idle timer is paused. Resolves with the values by `key`, or
+     * `null` if closed/expired - in which case the message is left untouched unless the handler
+     * returns a new state. Discord never reports a dismissed (Esc) modal: the next accepted click
+     * on this view cancels it (it resolves `null`, this handler finishes) and then runs normally.
      */
     modal(spec: ModalSpec): Promise<Record<string, string> | null>;
-    /** Ephemeral answer only for whoever interacted (e.g. "invalid value"), without touching the View's message. */
+    /**
+     * Ephemeral answer only for whoever interacted (e.g. "invalid value"), without touching the
+     * View's message. Best effort: after a modal that was dismissed (the click was already answered
+     * by showing the modal) it's a follow-up that may not be seen; in `start` with no interaction
+     * to answer (the root's, or a child opened from another `start`) it's a logged no-op.
+     */
     notify(content: string): Promise<void>;
-    /** Escape hatch: the raw interaction (or typed message) that triggered the handler. */
+    /**
+     * Escape hatch: the raw interaction (or typed message) that triggered the handler. In `start`
+     * it's the interaction that opened the view; throws if there is none (the root's `start`).
+     */
     raw: MessageComponentInteraction | Message;
 }
 
@@ -81,21 +101,51 @@ export type HandlerResult<S> = S | void | Promise<S | void>;
 /**
  * A stateful message: `render` turns the state into a message, handlers in `on` change the state,
  * and the engine redraws after each one. Run it with `ctx.open(view, input)` (or `runView`).
+ *
+ * Sessions: the view a command opens is the ROOT; `c.open` stacks children on the same message
+ * (only the top one receives events). The session has one idle clock and one expiry screen, both
+ * owned by the root - a child's `timeoutMs`/`onExpire` are ignored.
  */
 export interface ViewDefinition<S, R = void, I = void> {
     /** `<cog>.<name>` - goes into the customId and the logs. */
     name: string;
     initial(input: I): S | Promise<S>;
-    /** Pure and fast: state -> message. I/O belongs in `initial` or in the handlers. */
+    /**
+     * Runs once when the instance is created (the root at session start, a child when opened),
+     * before anything of it is shown - with a handler's lifecycle: the view is busy (clicks on it
+     * are dropped) until it returns, then it's rendered, or finished if it called `done`. It may
+     * `open` children right away (a flow shows step 1 at once): the first child's render is the
+     * view's first screen (for the root, the first message sent - the root's own render never
+     * flashes). A root that calls `done` before anything was sent still sends its final render
+     * once. There's no interaction behind it: `values` is empty, `modal` throws, `notify` is a
+     * no-op unless a child handed a click back. Throwing before anything of it was rendered fails
+     * the creation like `initial` would (`open`/`runView` reject).
+     */
+    start?: (c: HandlerContext<S, R>) => HandlerResult<S>;
+    /** Pure and fast: state -> message. I/O belongs in `initial`, `start` or the handlers. */
     render(state: S, kit: RenderKit): ViewRender;
     on?: Record<string, (c: HandlerContext<S, R>) => HandlerResult<S>>;
     /** A typed reply, when the current screen has `acceptText`. Return the state; to refuse, `c.notify(...)` and keep it. */
     onText?: (c: HandlerContext<S, R> & { text: string }) => HandlerResult<S>;
-    /** Default: config.ui.viewTimeoutMs, idle (renewed by every accepted interaction). */
+    /**
+     * The session's idle timeout - ROOT ONLY (ignored on a child: the root's clock runs while any
+     * view is on top). Default config.ui.viewTimeoutMs; renewed by every accepted interaction and
+     * paused while a modal is open.
+     */
     timeoutMs?: number;
-    /** Default "strip": removes the components, keeps the content. A function = the final payload (e.g. "expired"). */
+    /**
+     * The session's final screen on expiry - ROOT ONLY (ignored on a child). Default "strip":
+     * removes the interactive components of the screen currently shown (root or child), keeps the
+     * content and Link buttons. "disable": keeps them, with buttons/selects disabled (Link buttons
+     * untouched). A function gets the ROOT's state and returns the final payload (e.g. "expired").
+     */
     onExpire?: "strip" | "disable" | ((state: S) => ViewPayload | Promise<ViewPayload>);
-    /** Called on expiry, before the final payload (e.g. reroll auto-applies). The result of open/runView becomes `undefined`. */
+    /**
+     * Called on expiry for every open instance (root and children, top to bottom), before the
+     * final payload (e.g. reroll auto-applies) - except an instance whose handler is still running
+     * at that moment (so a slow "apply" isn't applied twice). Every pending `open` and the
+     * `open`/`runView` of the root then resolve `undefined`.
+     */
     beforeExpire?: (state: S) => Promise<void>;
     /** Default "invoker". */
     access?: "invoker" | "anyone" | ((user: User) => boolean);

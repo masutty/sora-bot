@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatInputCommandInteraction, type Message, MessageFlags } from "discord.js";
 import { config } from "@/config";
+import { createFakeTransport } from "../view/fake-transport";
+import { defineView } from "../view/view";
 import { createPrefixContext, createSlashContext } from "./command-context";
 import { fakeClient, fakeGuild, fakeInteractionOptions, fakeUser } from "./fakes";
 import { PrefixArgs } from "./prefix-args";
@@ -185,5 +187,39 @@ describe("review fixes", () => {
         const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", { schedule: () => {}, usage: () => usage });
         await ctx.replyUsage();
         expect(calls[0]).toEqual(["reply", usage]);
+    });
+});
+
+describe("ctx.open", () => {
+    const view = defineView<null, void>({
+        name: "test.view",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "v", components: [kit.row(kit.button("ok", (b) => b.setLabel("x")))] }),
+        on: { ok: (c) => c.done() },
+    });
+
+    test("prefix: an ephemeral View is deleted a TTL after the session ends, not after the first send", async () => {
+        const { message, calls, deleted } = recordingMessage();
+        const scheduled: Array<[() => void, number]> = [];
+        const fake = createFakeTransport();
+        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", {
+            schedule: (fn, ms) => scheduled.push([fn, ms]),
+            viewTransport: () => fake,
+        });
+
+        const run = ctx.open(view, undefined, { ephemeral: true, ttlMs: 30_000 });
+        await fake.flush();
+        expect(methods(calls)).toEqual(["reply"]);
+        expect(scheduled).toEqual([]);
+
+        fake.responded.push(calls[0][1] as never);
+        await fake.emit(fake.click("ok", "1"));
+        await run;
+
+        expect(scheduled.map(([, ms]) => ms)).toEqual([30_000]);
+        expect(deleted).toEqual([]);
+        scheduled[0][0]();
+        await Promise.resolve();
+        expect(deleted).toEqual(["sent1"]);
     });
 });

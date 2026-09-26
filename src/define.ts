@@ -7,8 +7,15 @@ export type { CommandContext, GuildCommandContext, ReplyOptions, ReplyPayload } 
 export { buildHelpContainer } from "./core/command/command-usage";
 export type { PrefixArgs } from "./core/command/prefix-args";
 export { UserFacingError } from "./core/command/user-facing-error";
+export {
+    /** TEST-ONLY: an in-memory View transport + manual clock, to test a module's Views (`fake.run(view, input)`). */
+    createFakeTransport as createFakeViewTransport,
+    type FakeTransport as FakeViewTransport,
+    type ManualClock as FakeViewClock,
+} from "./core/view/fake-transport";
 export { type RunViewOptions, runView } from "./core/view/run-view";
 export {
+    type AnySelect,
     defineView,
     type HandlerContext,
     type HandlerResult,

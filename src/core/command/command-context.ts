@@ -4,7 +4,7 @@ import {
 } from "discord.js";
 import { config } from "../../config";
 import type { BotClient } from "../bot-client";
-import { runView } from "../view/run-view";
+import { type RunViewOptions, runView } from "../view/run-view";
 import type { ViewDefinition } from "../view/view";
 import { type CommandArgs, prefixArgs, slashArgs } from "./command-args";
 import type { PrefixArgs } from "./prefix-args";
@@ -21,9 +21,9 @@ export interface ReplyOptions {
      */
     ephemeral?: boolean;
     /**
-     * Prefix only: how long an ephemeral reply lives. The countdown starts at SEND time and does not
-     * reset on button clicks - a reply carrying an interactive view that people may keep using
-     * (pagination, pickers) needs a TTL that covers a realistic session, not just one idle timeout.
+     * Prefix only: how long an ephemeral reply lives. For `reply` the countdown starts at SEND time
+     * and does not reset on button clicks. For `open` it starts when the View's session ENDS (done
+     * or expired - counted from its final render), so an open View is never deleted under the user.
      */
     ttlMs?: number;
 }
@@ -32,6 +32,8 @@ export interface ReplyOptions {
 export interface ContextDeps {
     schedule?: (fn: () => void, ms: number) => void;
     usage?: () => ReplyPayload | null;
+    /** Test seam: the transport `open` runs its View on. Default: the discord.js transport. */
+    viewTransport?: RunViewOptions["transportFactory"];
 }
 
 /**
@@ -69,8 +71,8 @@ export interface CommandContext {
     replyUsage(): Promise<Message | null>;
     /**
      * Runs `view` as a new reply: `opts` apply to that first message (prefix `ephemeral` deletes
-     * it after the TTL - give it one that covers the View's session). Resolves with the View's
-     * `done` result, or `undefined` if it expires. The invoker is its owner.
+     * it `ttlMs` after the View's session ends). Resolves with the View's `done` result, or
+     * `undefined` if it expires. The invoker is its owner.
      */
     open<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts?: ReplyOptions): Promise<R | undefined>;
 }
@@ -139,9 +141,10 @@ export function createSlashContext(interaction: ChatInputCommandInteraction, cli
         open(view, input, opts) {
             return runView(view, input, {
                 respond: (p) => ctx.reply(p, opts),
-                invokerId: ctx.user.id,
+                invoker: ctx.user,
                 // An ephemeral View can only be edited through the command's token until a click brings a newer one.
                 editMessage: (message, payload) => interaction.webhook.editMessage(message, payload as never),
+                transportFactory: deps.viewTransport,
             });
         },
     };
@@ -160,6 +163,8 @@ export function createPrefixContext(
     const schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms).unref?.());
     let defaultEphemeral = false;
     let first: Message | null = null;
+    const scheduleDelete = (sent: Message, opts: ReplyOptions | undefined) =>
+        schedule(() => void sent.delete().catch(() => {}), opts?.ttlMs ?? config.ui.prefixEphemeralTtlMs);
 
     const ctx: CommandContext = {
         mode: "prefix",
@@ -181,9 +186,7 @@ export function createPrefixContext(
         async reply(payload, opts) {
             const sent = await message.reply(toBody(payload) as never);
             first ??= sent;
-            if (opts?.ephemeral ?? defaultEphemeral) {
-                schedule(() => void sent.delete().catch(() => {}), opts?.ttlMs ?? config.ui.prefixEphemeralTtlMs);
-            }
+            if (opts?.ephemeral ?? defaultEphemeral) scheduleDelete(sent, opts);
             return sent;
         },
 
@@ -198,7 +201,22 @@ export function createPrefixContext(
         },
 
         open(view, input, opts) {
-            return runView(view, input, { respond: (p) => ctx.reply(p, opts), invokerId: ctx.user.id });
+            // "Ephemeral" here is a delete after the TTL: for a View it's scheduled once the session
+            // ends, not at the first send - the View may still be in use when a send-time TTL fires.
+            const ephemeral = opts?.ephemeral ?? defaultEphemeral;
+            let sent: Message | null = null;
+            const run = runView(view, input, {
+                respond: async (p) => {
+                    sent = await ctx.reply(p, { ...opts, ephemeral: false });
+                    return sent;
+                },
+                invoker: ctx.user,
+                transportFactory: deps.viewTransport,
+            });
+            if (!ephemeral) return run;
+            return run.finally(() => {
+                if (sent) scheduleDelete(sent, opts);
+            });
         },
     };
     return ctx;
