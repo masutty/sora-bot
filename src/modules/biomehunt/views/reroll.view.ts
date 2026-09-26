@@ -18,11 +18,26 @@ export const REROLL_COST = 50;
  * against the same webhook (and let two idle timeouts each try to apply their own Flower). */
 const activeRerolls = new Set<string>();
 
+/** `render` must stay pure/fast (see `view.ts`'s TSDoc), but this View re-sends the Flower PNG on
+ * every render (by design - see `buildRerollPayload`'s doc). Caching the bytes here means only the
+ * FIRST render of a given Flower ever touches disk; every later one (and every render of a Flower
+ * already shown elsewhere in the process) just reads this Map. A fresh `AttachmentBuilder` is still
+ * built each time - discord.js attachments aren't meant to be shared across payloads. */
+const flowerBufferCache = new Map<string, Buffer>();
+
+function flowerBuffer(flower: string): Buffer {
+    const cached = flowerBufferCache.get(flower);
+    if (cached) return cached;
+    const buffer = readFileSync(flowerAssetPath(flower));
+    flowerBufferCache.set(flower, buffer);
+    return buffer;
+}
+
 function flowerAttachment(flower: string | null): { files: AttachmentBuilder[]; thumbnailAttachment?: string } {
     if (!flower || !FLOWER_META[flower]) return { files: [] };
     const fileName = `${flower.toLowerCase()}.png`;
     return {
-        files: [new AttachmentBuilder(readFileSync(flowerAssetPath(flower)), { name: fileName })],
+        files: [new AttachmentBuilder(flowerBuffer(flower), { name: fileName })],
         thumbnailAttachment: fileName,
     };
 }
@@ -175,6 +190,11 @@ export function rerollView(deps: RerollDeps): ViewDefinition<RerollState, void, 
         render,
         on: {
             confirm: async (c) => {
+                // If this throws (a DB exception, not just "not enough Seeds"), it's uncaught here:
+                // the engine's generic handler-error path shows an ephemeral quip and leaves the View
+                // open (unlike the old command-level error reply, which closed it right away and
+                // released `activeRerolls` on the spot - here the guard stays held until this session
+                // eventually expires on its own).
                 const spent = await deps.spendSeeds();
                 if (!spent.ok) {
                     c.state.phase = "done";
@@ -194,6 +214,8 @@ export function rerollView(deps: RerollDeps): ViewDefinition<RerollState, void, 
             },
             again: async (c) => {
                 // The button is already disabled once this can't succeed - stay safe regardless.
+                // Same uncaught-throw caveat as `confirm` above: a DB exception here shows the
+                // engine's generic quip and leaves the View (and the guard) open, not a reply.
                 const spent = await deps.spendSeeds();
                 if (!spent.ok) return;
                 c.state.seeds = spent.seeds;
