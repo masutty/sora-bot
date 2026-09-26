@@ -1,11 +1,9 @@
-import type { Guild, GuildMember, Message } from "discord.js";
+import type { Guild, GuildMember } from "discord.js";
 import { ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { type CommandArgs, defineCommand, type ReplyPayload } from "@/define";
+import { type CommandArgs, type CommandContext, defineCommand, paginate, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
-import type { ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
-import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
 import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
@@ -34,7 +32,8 @@ import {
     createQuota, deleteQuotas, forceQuotaEval, listQuotas, setQuotaEvalHour,
 } from "../services/quota.service";
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
-import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "../views/stats.view";
+import { openProfileView } from "../views/profile.view";
+import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 
 
 const FLAG_CHOICES = ALL_FLAGS.map((name) => ({ name: FLAG_DEFINITIONS[name].label, value: name }));
@@ -281,14 +280,14 @@ export default defineCommand({
         if (routeKey === "session-view") {
             const member = await requireMember(ctx.args, "user");
             await ctx.defer();
-            await replySessionHistory(ctx.guild.id, member, ctx.user.id, send);
+            await replySessionHistory(ctx, ctx.guild.id, member);
             return;
         }
 
         if (routeKey === "profile") {
             const member = await requireMember(ctx.args, "user");
             await ctx.defer();
-            await runProfileView(ctx.guild.id, member, ctx.user.id, send);
+            await openProfileView(ctx, ctx.guild.id, member);
             return;
         }
 
@@ -528,35 +527,26 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
     }
 }
 
-async function replySessionHistory(
-    guildId: string,
-    member: GuildMember,
-    invokerId: string,
-    respond: (payload: ConfirmPayload | FormattedReply) => Promise<Message>,
-): Promise<void> {
+async function replySessionHistory(ctx: CommandContext, guildId: string, member: GuildMember): Promise<void> {
     const sessions = await getSessionHistory(guildId, member.id);
     if (sessions === null) {
-        await respond(EmbedFormatter.info(`<@${member.id}> doesn't have a profile yet.`));
+        await ctx.reply({ ...EmbedFormatter.info(`<@${member.id}> doesn't have a profile yet.`), allowedMentions: NO_PINGS });
         return;
     }
     if (sessions.length === 0) {
-        await respond(EmbedFormatter.info(`<@${member.id}> has no activity recorded yet.`));
+        await ctx.reply({ ...EmbedFormatter.info(`<@${member.id}> has no activity recorded yet.`), allowedMentions: NO_PINGS });
         return;
     }
 
     const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
-    const render = (page: number, interactive: boolean): ConfirmPayload => ({
-        flags: MessageFlags.IsComponentsV2,
-        components: [
-            buildHistoryContainer(sessions, member, page),
-            ...(interactive ? [buildPaginationRow(page, pages)] : []),
-        ],
-    });
-
-    const msg = await respond(render(0, pages > 1));
-    if (pages <= 1) return;
-
-    attachPagination(msg, { invokerId, pages, render });
+    await ctx.open(
+        paginate({
+            name: "biomehunt.session-history",
+            pages,
+            renderPage: (page) => ({ flags: MessageFlags.IsComponentsV2, components: [buildHistoryContainer(sessions, member, page)] }),
+        }),
+        undefined,
+    );
 }
 
 /** Admin/config results routinely echo a role back (`"The role is now <@&...>"`) - `NO_PINGS`

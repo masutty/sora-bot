@@ -1,67 +1,29 @@
-import type { Message } from "discord.js";
-import {
-    ButtonStyle, ContainerBuilder, GuildMember,
-    MessageFlags, SeparatorSpacingSize,
-} from "discord.js";
-import { type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender, runButtonView } from "@/utils/button-view";
-import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
-import { Logger } from "@/utils/logging";
+import { ContainerBuilder, type GuildMember, SeparatorSpacingSize } from "discord.js";
+import { formatCodeblock, formatTime, unix } from "@/utils/format";
 import { BADGE_META } from "../constants/badges.constants";
 import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { getLevelForXp } from "../constants/levels.constants";
-import {
-    getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
-} from "../repository/activity.repository";
-import { getUserBadges } from "../repository/badges.repository";
-import { isFlagEnabled } from "../repository/flags.repository";
-import { getOrCreateGuildConfig } from "../repository/guilds.repository";
-import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
-import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users.repository";
-import { settings } from "../settings";
+import { getLeaderboard, getRecentSessions } from "../repository/activity.repository";
+import type { getUserBadges } from "../repository/badges.repository";
+import { getGuildUserCounts, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users.repository";
 import type { ActivitySessionRow, ActivityStatus, BiomeCategory, UserRow } from "../types";
-
-const logger = new Logger("biomehunt.views.stats");
-
 
 export const SESSIONS_PER_PAGE = 10;
 export const USERS_PER_PAGE = 10;
 
 /** There's no general per-guild quota anymore (that's fully replaced by per-role quota rewards) - recent-activity displays just use a fixed lookback window. */
-const RECENT_ACTIVITY_WINDOW_HOURS = 24;
+export const RECENT_ACTIVITY_WINDOW_HOURS = 24;
 
 const STATUS_EMOJI = { active: "🟢", idle: "🟡", inactive: "🔴" } as const;
 const STATUS_COLOR = { active: 0x57f287, idle: 0xfaa61a, inactive: 0xed4245 } as const;
 
-async function computeQuotaRewardProgress(guildId: string, userId: number): Promise<Array<{ p: QuotaProgressRow; activeSeconds: number; qualifies: boolean }>> {
-    const progress = await getUserQuotaProgress(guildId, userId);
-    return Promise.all(progress.map(async (p) => {
-        const activeSeconds = await getActiveSecondsInWindow(userId, p.quota_window_hours);
-        const qualifies = p.held_granted_at !== null || activeSeconds >= p.quota_target_seconds;
-        return { p, activeSeconds, qualifies };
-    }));
-}
-
-/** One-line-per-role summary (checkmark/X + role ping only) - used by the Quotas tab. */
-export async function getQuotaRewardSummaryLines(guildId: string, userId: number): Promise<string[]> {
-    const progress = await computeQuotaRewardProgress(guildId, userId);
-    return progress.map(({ p, qualifies }) => `${qualifies ? "✅" : "❌"} <@&${p.role_id}>`);
-}
-
-type ProfileTab = "profile" | "biomes" | "badges" | "quotas" | "sessions";
-
-const TAB_ORDER: ProfileTab[] = ["profile", "biomes", "badges", "quotas", "sessions"];
-const TAB_LABELS: Record<ProfileTab, string> = { profile: "Profile", biomes: "Biomes", badges: "Badges", quotas: "Quotas", sessions: "Sessions" };
-
-interface ProfileState {
-    tab: ProfileTab;
-    sessionPage: number;
-}
-
 /** Order for the Profile tab's bottom "biomes found" line - fixed and positional, unlike the Biomes tab's per-category fields. */
 const BIOME_TOTAL_ORDER: BiomeCategory[] = ["weather", "biome", "event", "rare"];
 
-interface ProfileData {
+/** Everything the Profile view's tabs render from - loaded once upfront by `loadProfileData`
+ * (views/profile.view.ts), so tab switches and session pagination just re-render from it. */
+export interface ProfileData {
     user: UserRow;
     activeSeconds: number;
     /** Active seconds since the most recent `quota_eval_hour_utc` rollover - same day boundary the
@@ -77,48 +39,6 @@ interface ProfileData {
     sessions: ActivitySessionRow[];
     flowersEnabled: boolean;
     economyEnabled: boolean;
-}
-
-/** The current "quota day"'s `[start, end)` - the most recent occurrence of `quotaEvalHourUtc`
- * (UTC) at or before `now`, through the same hour 24h later. Mirrors the day boundary the
- * Fixed-mode quota sweep rolls over on (see `getGuildsDueForFixedRewardEval`), so "today" in the
- * profile always lines up with when that reward actually resets. */
-function computeQuotaDayWindow(quotaEvalHourUtc: number, now: Date): { start: Date; end: Date } {
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), quotaEvalHourUtc, 0, 0, 0));
-    if (start > now) start.setUTCDate(start.getUTCDate() - 1);
-    return { start, end: new Date(start.getTime() + 86_400_000) };
-}
-
-async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
-    const start = Date.now();
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) return null;
-
-    const guildConfig = await getOrCreateGuildConfig(guildId);
-    const quotaDayWindow = computeQuotaDayWindow(guildConfig.quota_eval_hour_utc, new Date());
-
-    const [activeSeconds, activeSecondsToday, biomes, channel, quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled] = await Promise.all([
-        getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
-        getActiveSecondsBetween(user.id, quotaDayWindow.start, quotaDayWindow.end),
-        getBiomeCounts(user.id),
-        getMacroChannelByUserId(user.id),
-        getQuotaRewardSummaryLines(guildId, user.id),
-        getUserBadges(user.id),
-        getRecentSessions(user.id, 100),
-        isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"),
-        isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"),
-    ]);
-
-    const elapsedMs = Date.now() - start;
-    if (elapsedMs > settings.diagnostics.slowProfileLoadMs) {
-        logger.warn(`Slow profile data load: ${elapsedMs}ms (DB-bound - see database pool stats)`, { guildId, userId: user.id });
-    }
-
-    return {
-        user, activeSeconds, activeSecondsToday, quotaDayStart: quotaDayWindow.start, quotaDayEnd: quotaDayWindow.end,
-        biomes, channelId: channel?.channel_id ?? null, flower: user.flower,
-        quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled,
-    };
 }
 
 /** Sums per-biome counts (total sightings, not distinct biomes discovered) into their category buckets. */
@@ -165,7 +85,7 @@ function addHeaderSection(container: ContainerBuilder, member: GuildMember, cont
     );
 }
 
-function buildProfileTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
+export function buildProfileTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { user, biomes, channelId, flower, badges } = data;
     const container = baseContainer(STATUS_COLOR[user.current_status]);
 
@@ -225,7 +145,7 @@ function formatQuotaWindowLine(start: Date, end: Date): string {
     return `> -# from <t:${unix(start)}:t> to <t:${unix(displayEnd)}:t>`;
 }
 
-function buildQuotasTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
+export function buildQuotasTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { activeSeconds, activeSecondsToday, quotaDayStart, quotaDayEnd, quotaSummaryLines } = data;
     const container = baseContainer(0x5865f2);
 
@@ -248,7 +168,7 @@ function buildQuotasTabContainer(member: GuildMember, data: ProfileData): Contai
     return container;
 }
 
-function buildBiomesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
+export function buildBiomesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { biomes } = data;
     const container = baseContainer(0x5865f2);
     container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Biomes`));
@@ -282,7 +202,7 @@ function buildBiomesTabContainer(member: GuildMember, data: ProfileData): Contai
     return container;
 }
 
-function buildBadgesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
+export function buildBadgesTabContainer(member: GuildMember, data: ProfileData): ContainerBuilder {
     const { badges } = data;
     const container = baseContainer(0x5865f2);
     container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Badges`));
@@ -305,7 +225,7 @@ function buildBadgesTabContainer(member: GuildMember, data: ProfileData): Contai
 
 /** Container version of buildHistoryEmbed's content, for the ComponentsV2 profile view - the
  * classic embed version stays as-is for `!bh-admin member session-view`'s own pagination. */
-function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page: number): ContainerBuilder {
+export function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page: number): ContainerBuilder {
     const container = baseContainer(0x5865f2);
     const { sessions, user } = data;
 
@@ -344,79 +264,13 @@ function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page:
     return container;
 }
 
-function buildTabContainer(state: ProfileState, member: GuildMember, data: ProfileData): ContainerBuilder {
-    if (state.tab === "biomes") return buildBiomesTabContainer(member, data);
-    if (state.tab === "badges") return buildBadgesTabContainer(member, data);
-    if (state.tab === "quotas") return buildQuotasTabContainer(member, data);
-    if (state.tab === "sessions") return buildSessionsTabContainer(member, data, state.sessionPage);
-    return buildProfileTabContainer(member, data);
-}
-
-/**
- * Interactive Profile/Biomes/Badges/Quotas/Sessions tabbed view - data is fetched once upfront,
- * tab switches (and session pagination) just re-render from it. Only `invokerId` can interact
- * (the profile owner for `/bh profile`, the admin who ran it for `/bh-admin profile`).
- */
-export async function runProfileView(
-    guildId: string,
-    member: GuildMember,
-    invokerId: string,
-    respond: (payload: ButtonViewFinalPayload) => Promise<Message>,
-): Promise<void> {
-    const data = await loadProfileData(guildId, member.id);
-    if (!data) {
-        await respond(EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started."));
-        return;
-    }
-
-    await runButtonView<ProfileState>({
-        state: { tab: "profile", sessionPage: 0 },
-        invokerId,
-        respond,
-        render: (state): ButtonViewRender<ProfileState> => {
-            const tabRow: ButtonViewButton<ProfileState>[] = TAB_ORDER.map((t) => ({
-                customId: `profile-tab-${t}`,
-                label: TAB_LABELS[t],
-                style: t === state.tab ? ButtonStyle.Primary : ButtonStyle.Secondary,
-                disabled: t === state.tab,
-                next: (): ProfileState => ({ tab: t, sessionPage: 0 }),
-            }));
-
-            const rows: ButtonViewButton<ProfileState>[][] = [tabRow];
-
-            if (state.tab === "sessions") {
-                const pages = Math.max(Math.ceil(data.sessions.length / SESSIONS_PER_PAGE), 1);
-                if (pages > 1) {
-                    rows.push([
-                        {
-                            customId: "profile-sessions-prev", emoji: "◀️", style: ButtonStyle.Secondary,
-                            disabled: state.sessionPage === 0,
-                            next: (s): ProfileState => ({ ...s, sessionPage: Math.max(0, s.sessionPage - 1) }),
-                        },
-                        {
-                            customId: "profile-sessions-next", emoji: "▶️", style: ButtonStyle.Secondary,
-                            disabled: state.sessionPage >= pages - 1,
-                            next: (s): ProfileState => ({ ...s, sessionPage: Math.min(pages - 1, s.sessionPage + 1) }),
-                        },
-                    ]);
-                }
-            }
-
-            return {
-                payload: { flags: MessageFlags.IsComponentsV2, components: [buildTabContainer(state, member, data)] },
-                buttons: rows,
-            };
-        },
-    });
-}
-
 export async function getSessionHistory(guildId: string, discordUserId: string, limit = 100): Promise<ActivitySessionRow[] | null> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) return null;
     return getRecentSessions(user.id, limit);
 }
 
-/** Standalone (non-tab) container for `!bh-admin session view` - paginated via `attachPagination`. */
+/** Standalone (non-tab) container for `!bh-admin session view` - paginated via `paginate`. */
 export function buildHistoryContainer(sessions: ActivitySessionRow[], member: GuildMember, page: number): ContainerBuilder {
     const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
     const start = page * SESSIONS_PER_PAGE;

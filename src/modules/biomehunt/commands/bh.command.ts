@@ -8,7 +8,7 @@ import type { BotClient } from "@/core/bot-client";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { type ConfirmPayload } from "@/utils/confirm";
-import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
@@ -17,7 +17,7 @@ import { applyFlowerToWebhook, drawRandomFlower } from "../services/flower.servi
 import { provisionMacroChannel } from "../services/macro-channel.service";
 import { settings } from "../settings";
 import { BiomeHuntError } from "../types";
-import { runProfileView } from "../views/stats.view";
+import { openProfileView } from "../views/profile.view";
 
 export default defineCommand({
     name: "bh",
@@ -43,7 +43,7 @@ export default defineCommand({
             // Supplied-but-unresolvable user -> framework error; omitted -> your own profile.
             const target = (await ctx.args.getMember("user")) ?? ctx.member;
             await ctx.defer();
-            await runProfileView(ctx.guild.id, target, ctx.user.id, (payload) => ctx.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await openProfileView(ctx, ctx.guild.id, target);
             return;
         }
 
