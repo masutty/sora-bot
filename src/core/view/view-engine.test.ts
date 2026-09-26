@@ -1002,3 +1002,35 @@ test("C1. start: a child whose start finishes at once shows nothing - the root's
     await fake.flush();
     expect(settled).toBe(false);
 });
+
+test("M2. expiry still runs beforeExpire for an instance that is only waiting (on an open child, or a modal)", async () => {
+    const order: string[] = [];
+    const root = defineView<null, void>({
+        name: "test.reroll",
+        initial: () => null,
+        render: (_s, kit) => ({ content: "reroll", components: [kit.row(kit.button("ask", label))] }),
+        timeoutMs: TIMEOUT,
+        beforeExpire: async () => void order.push("root"),
+        on: {
+            ask: async (c) => {
+                await c.open(step, null);
+            },
+        },
+    });
+    const result = start(root, undefined);
+    await fake.flush();
+    await fake.emit(fake.click("ask", OWNER));
+    await fake.clock.advance(TIMEOUT);
+    expect(await result).toBeUndefined();
+    expect(order).toEqual(["root"]);
+
+    fake = createFakeTransport();
+    fake.modalResult = () => new Promise<ModalResult>(() => {});
+    const seen: string[] = [];
+    const result2 = start(defineView({ ...renamer(TIMEOUT), beforeExpire: async () => void seen.push("renamer") }), undefined);
+    await fake.flush();
+    await fake.emit(fake.click("rename", OWNER));
+    await fake.clock.advance(10 * 60_000);
+    expect(await result2).toBeUndefined();
+    expect(seen).toEqual(["renamer"]);
+});

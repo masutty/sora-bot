@@ -142,9 +142,12 @@ export interface ViewDefinition<S, R = void, I = void> {
     onExpire?: "strip" | "disable" | ((state: S) => ViewPayload | Promise<ViewPayload>);
     /**
      * Called on expiry for every open instance (root and children, top to bottom), before the
-     * final payload (e.g. reroll auto-applies) - except an instance whose handler is still running
-     * at that moment (so a slow "apply" isn't applied twice). Every pending `open` and the
-     * `open`/`runView` of the root then resolve `undefined`.
+     * final payload (e.g. reroll auto-applies) - except an instance whose handler (or `start`) is
+     * running its own code at that moment (so a slow "apply" isn't applied twice). An instance
+     * merely waiting - on `c.open(child)` or `c.modal(...)` - still gets it (a reroll awaiting a
+     * confirm, a flow whose `start` awaits its steps). Every pending `open` and the
+     * `open`/`runView` of the root then resolve `undefined` - so a handler resuming from `open`
+     * must not apply again.
      */
     beforeExpire?: (state: S) => Promise<void>;
     /** Default "invoker". */

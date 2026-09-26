@@ -149,6 +149,11 @@ interface HandlerRun {
     skipRedraw: boolean;
     /** Set while the handler is parked in `c.modal()`: cancels that modal (it resolves `null`). */
     cancelModal: (() => void) | null;
+    /**
+     * How many `open`/`modal` waits the handler is parked in. A parked handler is waiting on the
+     * user, not doing its own work - expiry still runs its instance's `beforeExpire`.
+     */
+    parked: number;
     /** Resolves once the run ended and settled its interaction. */
     finished: Promise<void>;
     markFinished(): void;
@@ -362,14 +367,16 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
 
     /**
      * The whole session expires: `beforeExpire` top→bottom (skipping instances whose handler is
-     * running), then the ROOT's `onExpire` is the final screen, then every open/run resolves undefined.
+     * running its own code - not merely parked in `open`/`modal`), then the ROOT's `onExpire` is
+     * the final screen, then every open/run resolves undefined.
      */
     async function expire() {
         if (ended) return;
         const root = stack[0];
         const shown = onScreen ?? root;
         const all = [...stack].reverse();
-        const running = new Set(all.filter((inst) => inst.busy));
+        // Snapshot before cancelling modals (a cancelled modal un-parks its handler).
+        const running = new Set(all.filter((inst) => inst.busy && !(inst.run && inst.run.parked > 0)));
         end();
         for (const cancel of cancelModals) cancel();
         for (const inst of all) {
@@ -448,7 +455,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         const finished = new Promise<void>((r) => {
             markFinished = r;
         });
-        return { event, user, start, pending, running: true, done: null, skipRedraw: false, cancelModal: null, finished, markFinished };
+        return { event, user, start, pending, running: true, done: null, skipRedraw: false, cancelModal: null, parked: 0, finished, markFinished };
     }
 
     function makeContext(inst: Instance, run: HandlerRun): HandlerContext<unknown, unknown> {
@@ -489,7 +496,12 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
                     await show(childInst, takePending(run), rendered);
                     markShown(run);
                 }
-                return result as never;
+                run.parked++;
+                try {
+                    return (await result) as never;
+                } finally {
+                    run.parked--;
+                }
             },
 
             async modal(spec) {
@@ -509,6 +521,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
                 pendingModals++;
                 armTimer();
                 const controller = new AbortController();
+                run.parked++;
                 const submitted = await new Promise<{ values: Record<string, string>; ack: ComponentEvent } | null>((resolve) => {
                     let settled = false;
                     const cancel = () => {
@@ -538,6 +551,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
                     });
                 });
                 pendingModals--;
+                run.parked--;
                 if (ended) {
                     if (submitted) void transport.acknowledge(submitted.ack).catch((err) => logError(err, { view: name }));
                     return null;
