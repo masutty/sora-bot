@@ -10,7 +10,7 @@ import {
     getLongestSessions, getRecentSessions, getUserLongestSessionRank,
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
-import { type ActivityStatus, BiomeHuntError } from "../types";
+import type { ActivityStatus } from "../types";
 import { buildGuildStatsContainer, buildUserListContainer, getUserListPage, USERS_PER_PAGE } from "../views/stats.view";
 
 const ANSI_RESET = "\u001b[0m";
@@ -281,6 +281,7 @@ export default defineCommand({
     description: "Guild-wide (or per-user) BiomeHunt stats - biomes, sessions, and member activity.",
     category: CommandCategory.ADMIN,
     showOnHelp: true,
+    guildOnly: true,
     adminOnly: true,
 
     options: new SlashCommandBuilder()
@@ -295,68 +296,23 @@ export default defineCommand({
         )
         .addSubcommand((s) => s.setName("users").setDescription("Browse guild members by activity status.")),
 
-    async executeAsSlash(interaction) {
-        if (!interaction.guild) {
-            await interaction.reply({ content: "This command only works in a server.", ephemeral: true });
+    async run(ctx) {
+        const sub = ctx.args.getSubcommand();
+        const guildId = ctx.guild.id;
+        const invokerId = ctx.user.id;
+        const send = (payload: ButtonViewFinalPayload) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
+
+        await ctx.defer();
+        if (sub === "biomes") {
+            const target = await ctx.args.getUser("user");
+            await (target ? runUserBiomesStats(guildId, target, send) : runBiomesStats(guildId, invokerId, send));
             return;
         }
-        const sub = interaction.options.getSubcommand(true);
-        const guildId = interaction.guild.id;
-        const invokerId = interaction.user.id;
-        const send = (payload: ButtonViewFinalPayload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS });
-
-        await interaction.deferReply();
-        try {
-            if (sub === "biomes") {
-                const target = interaction.options.getUser("user");
-                await (target ? runUserBiomesStats(guildId, target, send) : runBiomesStats(guildId, invokerId, send));
-                return;
-            }
-            if (sub === "sessions") {
-                const target = interaction.options.getUser("user");
-                await (target ? runUserSessionsStats(guildId, target, send) : runSessionsStats(guildId, invokerId, send));
-                return;
-            }
-            await runUsersStats(guildId, invokerId, send);
-        } catch (err) {
-            const text = err instanceof BiomeHuntError ? err.message : "Something went wrong.";
-            await interaction.editReply({ ...EmbedFormatter.error(text), allowedMentions: NO_PINGS });
-        }
-    },
-
-    async executeAsPrefix(message, args) {
-        if (!message.guild) {
-            await message.reply("This command only works in a server.");
+        if (sub === "sessions") {
+            const target = await ctx.args.getUser("user");
+            await (target ? runUserSessionsStats(guildId, target, send) : runSessionsStats(guildId, invokerId, send));
             return;
         }
-        const sub = args.getSubcommand();
-        if (!sub) {
-            await message.reply(EmbedFormatter.info("Run `bh-stats biomes [user]`, `bh-stats sessions [user]`, or `bh-stats users`."));
-            return;
-        }
-
-        const guildId = message.guild.id;
-        const invokerId = message.author.id;
-        const send = (payload: ButtonViewFinalPayload) => message.reply({ ...payload, allowedMentions: NO_PINGS });
-
-        try {
-            if (sub === "biomes") {
-                const target = await args.getUser("user");
-                await (target ? runUserBiomesStats(guildId, target, send) : runBiomesStats(guildId, invokerId, send));
-                return;
-            }
-            if (sub === "sessions") {
-                const target = await args.getUser("user");
-                await (target ? runUserSessionsStats(guildId, target, send) : runSessionsStats(guildId, invokerId, send));
-                return;
-            }
-            if (sub === "users") {
-                await runUsersStats(guildId, invokerId, send);
-                return;
-            }
-        } catch (err) {
-            const text = err instanceof BiomeHuntError ? err.message : "Something went wrong.";
-            await message.reply({ ...EmbedFormatter.error(text), allowedMentions: NO_PINGS });
-        }
+        await runUsersStats(guildId, invokerId, send);
     },
 });

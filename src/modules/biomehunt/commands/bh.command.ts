@@ -9,8 +9,6 @@ import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
-import { Logger } from "@/utils/logging";
-import { getFailureQuip } from "@/utils/quips";
 import { FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
@@ -21,13 +19,12 @@ import { settings } from "../settings";
 import { BiomeHuntError } from "../types";
 import { runProfileView } from "../views/stats.view";
 
-const logger = new Logger("biomehunt.commands.bh");
-
 export default defineCommand({
     name: "bh",
     description: "User commands for biome hunt module",
     category: CommandCategory.UTILITY,
     showOnHelp: true,
+    guildOnly: true,
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
@@ -39,70 +36,25 @@ export default defineCommand({
         // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
         // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
-    async executeAsSlash(interaction, client) {
-        if (!interaction.guild || !interaction.member) {
-            await interaction.reply({ content: "This command only works in a server.", ephemeral: true });
-            return;
-        }
-        const sub = interaction.options.getSubcommand(true);
+    async run(ctx) {
+        const sub = ctx.args.getSubcommand();
 
         if (sub === "profile") {
-            const targetUser = interaction.options.getUser("user");
-            const target = targetUser
-                ? await interaction.guild.members.fetch(targetUser.id).catch(() => null)
-                : (interaction.member as GuildMember);
-            if (!target) {
-                await interaction.reply({ content: "Could not resolve that member.", ephemeral: true });
-                return;
-            }
-            await interaction.deferReply();
-            await runProfileView(interaction.guild.id, target, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
+            // Supplied-but-unresolvable user -> framework error; omitted -> your own profile.
+            const target = (await ctx.args.getMember("user")) ?? ctx.member;
+            await ctx.defer();
+            await runProfileView(ctx.guild.id, target, ctx.user.id, (payload) => ctx.reply({ ...payload, allowedMentions: NO_PINGS }));
             return;
         }
 
         if (sub === "reroll") {
-            await interaction.deferReply();
-            await runReroll(client, interaction.guild.id, interaction.user.id, (payload) => interaction.editReply(payload));
+            await ctx.defer();
+            await runReroll(ctx.client, ctx.guild.id, ctx.user.id, (payload) => ctx.reply(payload));
             return;
         }
 
-        await interaction.deferReply({ ephemeral: sub === "setup" });
-        try {
-            const result = await runSubcommand(sub, interaction.guild, interaction.member as GuildMember);
-            await interaction.editReply(result);
-        } catch (err) {
-            await interaction.editReply(EmbedFormatter.error(errorMessage(err)));
-        }
-    },
-
-    async executeAsPrefix(message, args, client) {
-        if (!message.guild || !message.member) {
-            await message.reply("This command only works in a server.");
-            return;
-        }
-        const sub = args.getSubcommand();
-        if (!sub) {
-            await message.reply(EmbedFormatter.info("Usage: `bh <setup|profile>`"));
-            return;
-        }
-
-        if (sub === "profile") {
-            const target = (await args.getMember("user")) ?? message.member;
-            await runProfileView(message.guild.id, target, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
-            return;
-        }
-
-        if (sub === "reroll") {
-            await runReroll(client, message.guild.id, message.author.id, (payload) => message.reply(payload));
-            return;
-        }
-
-        try {
-            const result = await runSubcommand(sub, message.guild, message.member);
-            await message.reply(result);
-        } catch (err) {
-            await message.reply(EmbedFormatter.error(errorMessage(err)));
-        }
+        await ctx.defer({ ephemeral: sub === "setup" });
+        await ctx.reply(await runSubcommand(`${sub}`, ctx.guild, ctx.member));
     },
 });
 
@@ -348,8 +300,3 @@ async function runRerollSession(
     }
 }
 
-function errorMessage(err: unknown): string {
-    if (err instanceof BiomeHuntError) return err.message;
-    logger.error(err instanceof Error ? err : new Error(String(err)));
-    return getFailureQuip();
-}

@@ -1,3 +1,5 @@
+import { UserFacingError } from "@/define";
+
 export type ActivityStatus = "active" | "idle" | "inactive";
 
 /** Hardcoded biome grouping, used to quick-select "all biomes in category X" wherever biomes are configured. */
@@ -16,7 +18,7 @@ export type FlagName =
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
  * Command handlers show its message verbatim instead of the generic failure quip.
  */
-export class BiomeHuntError extends Error {}
+export class BiomeHuntError extends UserFacingError {}
 
 export interface GuildConfigRow {
     guild_id: string;
