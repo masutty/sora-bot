@@ -78,33 +78,35 @@ async function runTestCase(ctx: CommandContext, key: string, client: BotClient):
 
 // ─── Picker ─────────────────────────────────────────────────────────────────
 
+/** One dropdown entry - computed once upfront (`runPicker`) so `render` stays pure (no re-requiring
+ * every test module on each render, or again on expiry). */
+export interface PickerOption {
+    key: string;
+    description?: string;
+}
+
 type PickerState =
-    | { screen: "pick"; keys: string[] }
+    | { screen: "pick"; options: PickerOption[] }
     | { screen: "shown"; payload: TestPayload };
 
 /** `!test` with no keyword: a select menu instead of a wall of text - pick one, it runs right
  * there (a single page replaces the picker in place; several pages open as a child `paginate`
  * View, sharing this session's clock). */
-export function pickerView(client: BotClient): ViewDefinition<PickerState, void, string[]> {
-    return defineView<PickerState, void, string[]>({
+export function pickerView(client: BotClient): ViewDefinition<PickerState, void, PickerOption[]> {
+    return defineView<PickerState, void, PickerOption[]>({
         name: "tests.picker",
-        initial: (keys) => ({ screen: "pick", keys }),
+        initial: (options) => ({ screen: "pick", options }),
         render: (state, kit) => {
             if (state.screen === "shown") return state.payload;
 
-            const cases = loadTestCases();
             const container = new ContainerBuilder().setAccentColor(0x5865f2);
             container.addTextDisplayComponents((td) => td.setContent("## 🧪 Test Previews"));
             container.addTextDisplayComponents((td) => td.setContent("-# Pick one from the dropdown to run it."));
             const select = kit.stringSelect("pick", (s) =>
                 s
-                    .setPlaceholder(`Choose a test to preview (${state.keys.length} available)...`)
+                    .setPlaceholder(`Choose a test to preview (${state.options.length} available)...`)
                     .addOptions(
-                        state.keys.slice(0, 25).map((key) => ({
-                            label: key,
-                            value: key,
-                            description: (cases.get(key)?.description ?? "").slice(0, 100) || undefined,
-                        })),
+                        state.options.slice(0, 25).map((o) => ({ label: o.key, value: o.key, description: o.description })),
                     ),
             );
             return { flags: MessageFlags.IsComponentsV2, components: [container, kit.row(select)] };
@@ -124,11 +126,19 @@ export function pickerView(client: BotClient): ViewDefinition<PickerState, void,
                 if (pages.length === 0) return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` returned no pages.`) };
                 if (pages.length === 1) return { screen: "shown", payload: pages[0] };
 
-                // Several pages: hand the message to a child `paginate` View - it never `done()`s on
-                // its own, so this simply parks here (sharing the root's idle clock) until expiry.
+                // Several pages: best-effort snapshot (page 1) so `onExpire` has real content to
+                // fall back on if the session expires while the child below is open - `onExpire`
+                // only shows the "Picker timed out" text for a truly untouched "pick" screen.
+                c.state = { screen: "shown", payload: pages[0] };
+                // Hand the message to a child `paginate` View - it never `done()`s on its own, so
+                // this simply parks here (sharing the root's idle clock) until expiry.
                 await c.open(paginate({ name: "tests.pages", pages: pages.length, renderPage: (page) => pages[page] }), undefined);
             },
         },
+        // Only an untouched picker gets the old warning text; after any pick (single page shown
+        // directly, or the best-effort snapshot above for a multi-page one) it's just static
+        // content already, nothing interactive left to strip.
+        onExpire: (state) => (state.screen === "pick" ? EmbedFormatter.warn("Picker timed out - nothing selected.") : state.payload),
     });
 }
 
@@ -138,8 +148,11 @@ async function runPicker(ctx: CommandContext, client: BotClient): Promise<void> 
         await ctx.reply(EmbedFormatter.info("No test cases registered yet - add one under `src/modules/tests/tests/`."), REPLY_OPTS);
         return;
     }
-    const keys = [...cases.keys()].sort();
-    await ctx.open(pickerView(client), keys, REPLY_OPTS);
+    const options: PickerOption[] = [...cases.keys()].sort().map((key) => ({
+        key,
+        description: (cases.get(key)?.description ?? "").slice(0, 100) || undefined,
+    }));
+    await ctx.open(pickerView(client), options, REPLY_OPTS);
 }
 
 export default defineCommand({

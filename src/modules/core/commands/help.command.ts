@@ -87,6 +87,12 @@ export default defineCommand({
         const all = getVisibleCommands(ctx.client);
         const pages = Math.ceil(all.length / PER_PAGE);
 
+        // A single page needs no navigation - just reply, same as test.command.ts's openTestPages.
+        if (pages <= 1) {
+            await ctx.reply(renderPage(0, all, pages, ctx.invokePrefix));
+            return;
+        }
+
         await ctx.open(
             paginate({
                 name: "core.help",

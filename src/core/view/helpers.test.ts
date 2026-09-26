@@ -269,6 +269,43 @@ test("tabs: onTabChange runs after the switch (mutate or return a state) - e.g. 
     expect(fake.lastPayload().content).toBe("c p100");
 });
 
+test("tabs: disableActive: false keeps the active tab enabled - reclicking it still runs the handler + onTabChange", async () => {
+    const view = tabs({
+        name: "test.tabs",
+        initial: () => ({ tab: "a", page: 0 }),
+        tabs: [
+            { key: "a", label: "A" },
+            { key: "b", label: "B" },
+        ],
+        disableActive: false,
+        renderTab: (s, kit) => ({
+            payload: { content: `${s.tab} p${s.page}` },
+            extraRows: [kit.row(kit.button("more", (b) => b.setLabel(">")))],
+        }),
+        on: {
+            more: (c) => {
+                c.state.page++;
+            },
+        },
+        onTabChange: (s) => {
+            s.page = 0;
+        },
+    });
+    void fake.run(view, undefined);
+    await fake.flush();
+
+    expect(comp("tab:a")).toMatchObject({ disabled: false, style: ButtonStyle.Primary });
+    expect(comp("tab:b")).toMatchObject({ disabled: false, style: ButtonStyle.Secondary });
+
+    await fake.emit(fake.click("more", OWNER));
+    await fake.emit(fake.click("more", OWNER));
+    expect(fake.lastPayload().content).toBe("a p2");
+
+    // Reclicking the already-active tab is possible (not disabled) and still resets the page via onTabChange.
+    await fake.emit(fake.click("tab:a", OWNER));
+    expect(fake.lastPayload().content).toBe("a p0");
+});
+
 // ─── confirm ────────────────────────────────────────────────────────────────
 
 function confirmView(onConfirm: () => Promise<ViewPayload>) {

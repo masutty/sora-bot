@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import type { BotClient } from "@/core/bot-client";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
-import { pickerView } from "./test.command";
+import { config } from "../../../config";
+import { type PickerOption, pickerView } from "./test.command";
 
 const OWNER = "owner";
 
@@ -27,9 +28,11 @@ function text(payload: ViewPayload): string {
     return out.join("\n");
 }
 
+const OPTIONS: PickerOption[] = [{ key: "embed/session-end", description: "desc" }];
+
 test("tests.picker: another user's pick is rejected ephemerally and doesn't consume the picker", async () => {
     const fake = createFakeViewTransport();
-    void fake.run(pickerView({} as BotClient), ["embed/session-end"], OWNER);
+    void fake.run(pickerView({} as BotClient), OPTIONS, OWNER);
     await fake.flush();
 
     await fake.emit(fake.click("pick", "intruder", ["embed/session-end"]));
@@ -42,7 +45,7 @@ test("tests.picker: another user's pick is rejected ephemerally and doesn't cons
 
 test("tests.picker: the owner picking a registered single-page case replaces the picker in place", async () => {
     const fake = createFakeViewTransport();
-    void fake.run(pickerView({} as BotClient), ["embed/session-end"], OWNER);
+    void fake.run(pickerView({} as BotClient), OPTIONS, OWNER);
     await fake.flush();
 
     await fake.emit(fake.click("pick", OWNER, ["embed/session-end"]));
@@ -52,11 +55,34 @@ test("tests.picker: the owner picking a registered single-page case replaces the
 
 test("tests.picker: an unregistered key shows an error and the picker doesn't come back", async () => {
     const fake = createFakeViewTransport();
-    void fake.run(pickerView({} as BotClient), ["gone"], OWNER);
+    void fake.run(pickerView({} as BotClient), [{ key: "gone" }], OWNER);
     await fake.flush();
 
     await fake.emit(fake.click("pick", OWNER, ["gone"]));
 
     expect(text(fake.lastPayload())).toContain("isn't registered anymore");
     expect(() => fake.id("pick")).toThrow();
+});
+
+test("tests.picker: an untouched picker expires with \"Picker timed out - nothing selected.\"", async () => {
+    const fake = createFakeViewTransport();
+    const result = fake.run(pickerView({} as BotClient), OPTIONS, OWNER);
+    await fake.flush();
+
+    await fake.clock.advance(config.ui.viewTimeoutMs);
+
+    expect(await result).toBeUndefined();
+    expect(text(fake.lastPayload())).toContain("Picker timed out - nothing selected.");
+    expect(() => fake.id("pick")).toThrow();
+});
+
+test("tests.picker: after picking a single-page case, expiry just leaves that content (no picker warning)", async () => {
+    const fake = createFakeViewTransport();
+    void fake.run(pickerView({} as BotClient), OPTIONS, OWNER);
+    await fake.flush();
+    await fake.emit(fake.click("pick", OWNER, ["embed/session-end"]));
+
+    await fake.clock.advance(config.ui.viewTimeoutMs);
+
+    expect(text(fake.lastPayload())).not.toContain("Picker timed out");
 });

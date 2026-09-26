@@ -21,6 +21,7 @@ interface BiomesStatsState {
 export const biomesStatsView: ViewDefinition<BiomesStatsState, void, BiomesStatsInput> = tabs<BiomesStatsState, BiomesStatsInput>({
     name: "biomehunt.stats-biomes",
     initial: (containers) => ({ tab: "overview", containers }),
+    disableActive: false,
     tabs: [
         { key: "overview", label: "Overview" },
         { key: "contributors", label: "Top Contributors" },
@@ -48,6 +49,7 @@ interface SessionsStatsState {
 export const sessionsStatsView: ViewDefinition<SessionsStatsState, void, SessionsStatsInput> = tabs<SessionsStatsState, SessionsStatsInput>({
     name: "biomehunt.stats-sessions",
     initial: (containers) => ({ tab: "overview", containers }),
+    disableActive: false,
     tabs: [
         { key: "overview", label: "Overview" },
         { key: "longest", label: "🏆 Longest Sessions" },
@@ -73,8 +75,11 @@ interface UsersStatsState {
     data: UsersStatsInput;
 }
 
-function pagesFor(state: UsersStatsState): number {
-    const users = state.data.usersByStatus[state.tab as ActivityStatus];
+/** `null` when the current tab has no page concept (the Overview tab, or a stale click that
+ * landed after the tab already switched away from a status) - callers must no-op on `null`. */
+function pagesFor(state: UsersStatsState): number | null {
+    const users = state.data.usersByStatus[state.tab as ActivityStatus] as UserRow[] | undefined;
+    if (!users) return null;
     return Math.max(Math.ceil(users.length / USERS_PER_PAGE), 1);
 }
 
@@ -86,6 +91,7 @@ function pagesFor(state: UsersStatsState): number {
 export const usersStatsView: ViewDefinition<UsersStatsState, void, UsersStatsInput> = tabs<UsersStatsState, UsersStatsInput>({
     name: "biomehunt.stats-users",
     initial: (data) => ({ tab: "overview", page: 0, data }),
+    disableActive: false,
     tabs: [
         { key: "overview", label: "Overview" },
         ...USER_STATUS_ORDER.map((status) => ({ key: status, label: STATUS_BUTTON_LABELS[status] })),
@@ -97,7 +103,7 @@ export const usersStatsView: ViewDefinition<UsersStatsState, void, UsersStatsInp
         const status = state.tab as ActivityStatus;
         const users = state.data.usersByStatus[status];
         const container = buildUserListContainer(users, state.page, status);
-        const pages = pagesFor(state);
+        const pages = pagesFor(state) ?? 1;
         const extraRows = pages > 1
             ? [kit.row(
                 kit.button("prev", (b) => b.setEmoji("⬅️")),
@@ -107,12 +113,16 @@ export const usersStatsView: ViewDefinition<UsersStatsState, void, UsersStatsInp
         return { payload: { flags: MessageFlags.IsComponentsV2, components: [container] }, extraRows };
     },
     on: {
+        // A stale/racing click (the user switched to Overview - no pages there - between the
+        // render and this click landing): no-op instead of throwing on the missing status entry.
         prev: (c) => {
             const pages = pagesFor(c.state);
+            if (pages === null) return;
             c.state.page = c.state.page > 0 ? c.state.page - 1 : pages - 1;
         },
         next: (c) => {
             const pages = pagesFor(c.state);
+            if (pages === null) return;
             c.state.page = c.state.page < pages - 1 ? c.state.page + 1 : 0;
         },
     },

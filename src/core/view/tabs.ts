@@ -32,20 +32,27 @@ export interface TabsOptions<T extends { tab: string }, I> {
      */
     // biome-ignore lint/suspicious/noConfusingVoidType: same convention as HandlerResult - mutate (void) or return a state.
     onTabChange?: (state: T, key: string) => T | void;
+    /**
+     * Disables the active tab's button so it can't be reclicked - default `true`, the old
+     * `button-view` tabs' behavior. Set `false` to let the active tab be reclicked (still Primary,
+     * just not disabled): the click still sets `state.tab` to the same key and runs
+     * `onTabChange` - useful when reclicking should reset something (e.g. a list's page).
+     */
+    disableActive?: boolean;
     /** Idle timeout when this is the root. Default config.ui.viewTimeoutMs. */
     timeoutMs?: number;
 }
 
 const TABS_PER_ROW = 5;
 
-function tabRows(tabs: TabSpec[], active: string, kit: RenderKit): ActionRowBuilder<ButtonBuilder>[] {
+function tabRows(tabs: TabSpec[], active: string, kit: RenderKit, disableActive: boolean): ActionRowBuilder<ButtonBuilder>[] {
     const rows: ActionRowBuilder<ButtonBuilder>[] = [];
     for (let i = 0; i < tabs.length; i += TABS_PER_ROW) {
         const buttons = tabs.slice(i, i + TABS_PER_ROW).map((t) =>
             kit.button(`tab:${t.key}`, (b) => {
                 b.setLabel(t.label)
                     .setStyle(t.key === active ? ButtonStyle.Primary : ButtonStyle.Secondary)
-                    .setDisabled(t.key === active);
+                    .setDisabled(disableActive && t.key === active);
                 return t.emoji ? b.setEmoji(t.emoji) : b;
             }),
         );
@@ -55,9 +62,11 @@ function tabRows(tabs: TabSpec[], active: string, kit: RenderKit): ActionRowBuil
 }
 
 /**
- * Tabs on one message: a button per tab (the active one Primary and disabled, same look as the old
- * `button-view` tabs) below the tab's content, then the tab's own `extraRows`. Clicking a
- * tab sets `state.tab` (the rest of the state is kept), then runs `onTabChange` if given.
+ * Tabs on one message: a button per tab (the active one Primary, and disabled by default - same
+ * look as the old `button-view` tabs; pass `disableActive: false` to leave it clickable) below the
+ * tab's content, then the tab's own `extraRows`. Clicking a tab (including the already-active one,
+ * with `disableActive: false`) sets `state.tab` (the rest of the state is kept), then runs
+ * `onTabChange` if given.
  *
  * @example
  * const profile = tabs({
@@ -73,6 +82,7 @@ function tabRows(tabs: TabSpec[], active: string, kit: RenderKit): ActionRowBuil
  * await ctx.open(profile, data);
  */
 export function tabs<T extends { tab: string }, I = void>(opts: TabsOptions<T, I>): ViewDefinition<T, void, I> {
+    const disableActive = opts.disableActive ?? true;
     const on: NonNullable<ViewDefinition<T, void, I>["on"]> = { ...opts.on };
     for (const t of opts.tabs) {
         on[`tab:${t.key}`] = (c) => {
@@ -86,7 +96,7 @@ export function tabs<T extends { tab: string }, I = void>(opts: TabsOptions<T, I
         timeoutMs: opts.timeoutMs,
         render: (state, kit) => {
             const { payload, extraRows = [] } = opts.renderTab(state, kit);
-            return { ...payload, components: [...(payload.components ?? []), ...tabRows(opts.tabs, state.tab, kit), ...extraRows] };
+            return { ...payload, components: [...(payload.components ?? []), ...tabRows(opts.tabs, state.tab, kit, disableActive), ...extraRows] };
         },
         on,
     });
