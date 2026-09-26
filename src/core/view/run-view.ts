@@ -1,5 +1,5 @@
 import type { Message } from "discord.js";
-import { createDiscordTransport } from "./discord-transport";
+import { createDiscordTransport, type DiscordTransportOptions } from "./discord-transport";
 import type { ViewDefinition, ViewPayload } from "./view";
 import { type ComponentEvent, createViewSession, type TextEvent, type ViewTransport } from "./view-engine";
 
@@ -8,8 +8,13 @@ export interface RunViewOptions {
     respond: (payload: ViewPayload) => Promise<Message>;
     /** Who opened the View: its owner for `access: "invoker"` (the default). */
     invokerId: string;
+    /**
+     * Edits the sent message when no click token can (an ephemeral message rejects `message.edit`,
+     * e.g. an expiry before the first click, or a redraw after a first-click `notify`).
+     */
+    editMessage?: DiscordTransportOptions["editMessage"];
     /** Test seam: builds the transport for the sent message. Default: the discord.js transport. */
-    transportFactory?: (message: Message) => ViewTransport;
+    transportFactory?: (message: Message, options: DiscordTransportOptions) => ViewTransport;
 }
 
 /**
@@ -39,6 +44,6 @@ export function runView<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts: 
     const session = createViewSession(forward, opts.invokerId);
     return session.run(view, input, async (payload) => {
         const message = await opts.respond(payload);
-        bound = factory(message);
+        bound = factory(message, { editMessage: opts.editMessage });
     });
 }

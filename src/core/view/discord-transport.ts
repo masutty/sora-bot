@@ -33,15 +33,25 @@ function buildModal(spec: ModalSpec, customId: string): ModalBuilder {
     return modal;
 }
 
+export interface DiscordTransportOptions {
+    /**
+     * Edits the View's message when no click token can - an ephemeral message rejects the bot's own
+     * `message.edit`. A slash command passes its interaction's webhook edit (the original response
+     * and ephemeral follow-ups are both editable through it).
+     */
+    editMessage?: (message: Message, payload: ViewPayload) => Promise<unknown>;
+}
+
 /**
  * The ViewTransport for a sent discord.js message. Clicks come from a component collector with no
  * filter and no time - the engine owns access (so a stranger's click gets its "not yours") and the
  * idle timer. Typed text comes from a channel collector (bots filtered out) that only runs while
  * the engine asks for text. Every interaction is answered exactly once through
- * `createInteractionAnswers`. After `close()` nothing listens anymore, but late calls still answer
- * their interaction and never throw.
+ * `createInteractionAnswers`. While open, Discord errors on render/acknowledge/notify reject (the
+ * engine logs them); after `close()` nothing listens anymore, and late calls still answer their
+ * interaction but never throw.
  */
-export function createDiscordTransport(message: Message): ViewTransport {
+export function createDiscordTransport(message: Message, opts: DiscordTransportOptions = {}): ViewTransport {
     const answers = createInteractionAnswers();
     let onEvent: ((e: ComponentEvent | TextEvent) => Promise<void>) | null = null;
     let components: { stop(): void } | null = null;
@@ -50,17 +60,24 @@ export function createDiscordTransport(message: Message): ViewTransport {
 
     /**
      * Edits the View's message. An ephemeral message can't be edited through the bot's own REST
-     * route, only through an interaction token that edits it (one that updated/deferred it).
+     * route, only through an interaction token: the newest click that updated/deferred it, else the
+     * seeded editor (the command's token). A regular message uses `message.edit` (no 15min expiry).
      */
     function editMessage(payload: object): Promise<unknown> {
-        const editor = answers.lastEditor();
-        if (editor && message.flags.has(MessageFlags.Ephemeral)) return editor.editReply(payload);
+        if (message.flags.has(MessageFlags.Ephemeral)) {
+            const editor = answers.lastEditor();
+            if (editor) return editor.editReply(payload);
+            if (opts.editMessage) return opts.editMessage(message, payload as ViewPayload);
+        }
         return message.edit(payload as ViewPayload);
     }
 
     /** After close, a failure is nobody's business: the View is gone. */
     function afterClose<T>(p: Promise<T>): Promise<T | undefined> {
-        return closed ? p.catch(() => undefined) : p;
+        return p.catch((err) => {
+            if (closed) return undefined;
+            throw err;
+        });
     }
 
     return {
@@ -91,12 +108,12 @@ export function createDiscordTransport(message: Message): ViewTransport {
         },
 
         async acknowledge(e) {
-            await answers.acknowledge(asAnswerable(e.raw)).catch(() => {});
+            await afterClose(answers.acknowledge(asAnswerable(e.raw)));
         },
 
         async notify(e, content) {
             if (e.kind === "component") {
-                await answers.notify(asAnswerable(e.raw), content).catch(() => {});
+                await afterClose(answers.notify(asAnswerable(e.raw), content));
                 return;
             }
             const typed = e.raw as Message;
@@ -109,6 +126,13 @@ export function createDiscordTransport(message: Message): ViewTransport {
             try {
                 const shown = await answers.showModal(asAnswerable(clicked), buildModal(spec, customId));
                 if (!shown) return null;
+            } catch (err) {
+                // A bad ModalSpec or a rejected showModal: answer the click (no "interaction failed")
+                // and reject, so the engine logs it - it's a bug, not a closed modal.
+                await answers.acknowledge(asAnswerable(clicked)).catch(() => {});
+                throw err;
+            }
+            try {
                 const submit = await clicked.awaitModalSubmit({
                     filter: (s) => s.customId === customId && s.user.id === e.userId,
                     time: timeoutMs,
@@ -117,7 +141,7 @@ export function createDiscordTransport(message: Message): ViewTransport {
                 for (const f of spec.fields) values[f.key] = submit.fields.getTextInputValue(f.key);
                 return { values, ack: componentEvent(submit) };
             } catch {
-                // Timed out, or the modal couldn't be shown: to the engine, both are "closed".
+                // Timed out (or its collector ended): to the engine, the modal was closed.
                 return null;
             }
         },

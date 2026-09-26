@@ -137,7 +137,12 @@ export function createSlashContext(interaction: ChatInputCommandInteraction, cli
         },
 
         open(view, input, opts) {
-            return runView(view, input, { respond: (p) => ctx.reply(p, opts), invokerId: ctx.user.id });
+            return runView(view, input, {
+                respond: (p) => ctx.reply(p, opts),
+                invokerId: ctx.user.id,
+                // An ephemeral View can only be edited through the command's token until a click brings a newer one.
+                editMessage: (message, payload) => interaction.webhook.editMessage(message, payload as never),
+            });
         },
     };
     return ctx;
