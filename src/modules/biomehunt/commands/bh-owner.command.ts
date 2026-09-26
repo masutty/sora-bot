@@ -13,7 +13,7 @@ import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSu
 import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
 import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/biome-reward.service";
 import { rerollFlower } from "../services/flower.service";
-import { type BiomeCategory, BiomeHuntError } from "../types";
+import type { BiomeCategory } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-owner");
 
@@ -71,28 +71,28 @@ export default defineCommand({
                 ),
         ),
 
-    // ── Slash ─────────────────────────────────────────────────────────────────
-    async executeAsSlash(interaction, client) {
-        const sub = interaction.options.getSubcommand(true);
-        await interaction.deferReply({ ephemeral: true });
+    async run(ctx) {
+        const sub = ctx.args.getSubcommand();
+        await ctx.defer({ ephemeral: true });
+        const reply = (payload: ConfirmPayload | FormattedReply) => ctx.reply(payload);
 
         if (sub === "stale") {
-            await interaction.editReply(await renderStaleList(client));
+            await ctx.reply(await renderStaleList(ctx.client));
             return;
         }
 
         if (sub === "recalculate-user") {
             await runRecalculateUser(
                 {
-                    guildId: interaction.options.getString("guild_id", true),
-                    discordUserId: interaction.options.getString("discord_user_id", true),
-                    afterDateStr: interaction.options.getString("after_date"),
-                    biome: interaction.options.getString("biome"),
-                    category: interaction.options.getString("category") as BiomeCategory | null,
+                    guildId: ctx.args.getString("guild_id", true),
+                    discordUserId: ctx.args.getString("discord_user_id", true),
+                    afterDateStr: ctx.args.getString("after_date"),
+                    biome: ctx.args.getString("biome"),
+                    category: ctx.args.getString("category") as BiomeCategory | null,
                 },
-                interaction.user.id,
-                (payload) => interaction.editReply(payload),
-                (reply) => interaction.editReply(reply),
+                ctx.user.id,
+                reply,
+                reply,
             );
             return;
         }
@@ -100,84 +100,22 @@ export default defineCommand({
         if (sub === "reroll-flower") {
             await runOwnerRerollFlower(
                 {
-                    discordUserId: interaction.options.getString("discord_user_id", true),
-                    guildId: interaction.options.getString("guild_id"),
+                    discordUserId: ctx.args.getString("discord_user_id", true),
+                    guildId: ctx.args.getString("guild_id"),
                 },
-                client,
-                (reply) => interaction.editReply(reply),
+                ctx.client,
+                reply,
             );
             return;
         }
 
-        await runStaleCleanup(
-            client,
-            interaction.options.getString("guild_id"),
-            interaction.user.id,
-            (payload) => interaction.editReply(payload),
-            (reply) => interaction.editReply(reply),
-        );
-    },
-
-    // ── Prefix ────────────────────────────────────────────────────────────────
-    async executeAsPrefix(message, args, client) {
-        const sub = args.getSubcommand();
-        if (!sub) {
-            await message.reply(
-                EmbedFormatter.warn(
-                    "`!bh-owner stale` - list stale guilds\n`!bh-owner stale-cleanup [guild_id]` - clean up one guild, or every stale guild if omitted\n" +
-                    "`!bh-owner recalculate-user <guild_id> <discord_user_id> [after_date] [biome] [category]` - backfill missing Seeds/XP\n" +
-                    "`!bh-owner reroll-flower <discord_user_id> [guild_id]` - reroll a user's Flower",
-                ),
-            );
-            return;
-        }
-
-        if (sub === "stale") {
-            await message.reply(await renderStaleList(client));
-            return;
-        }
-
-        if (sub === "recalculate-user") {
-            await runRecalculateUser(
-                {
-                    guildId: args.getString("guild_id"),
-                    discordUserId: args.getString("discord_user_id"),
-                    afterDateStr: args.getString("after_date"),
-                    biome: args.getString("biome"),
-                    category: args.getString("category") as BiomeCategory | null,
-                },
-                message.author.id,
-                (payload) => message.reply(payload),
-                (reply) => message.reply(reply),
-            );
-            return;
-        }
-
-        if (sub === "reroll-flower") {
-            await runOwnerRerollFlower(
-                {
-                    discordUserId: args.getString("discord_user_id"),
-                    guildId: args.getString("guild_id"),
-                },
-                client,
-                (reply) => message.reply(reply),
-            );
-            return;
-        }
-
-        await runStaleCleanup(
-            client,
-            args.getString("guild_id"),
-            message.author.id,
-            (payload) => message.reply(payload),
-            (reply) => message.reply(reply),
-        );
+        await runStaleCleanup(ctx.client, ctx.args.getString("guild_id"), ctx.user.id, reply, reply);
     },
 });
 
 interface RecalculateUserArgs {
-    guildId: string | null;
-    discordUserId: string | null;
+    guildId: string;
+    discordUserId: string;
     afterDateStr: string | null;
     biome: string | null;
     category: BiomeCategory | null;
@@ -195,11 +133,6 @@ async function runRecalculateUser(
     send: (payload: ConfirmPayload) => Promise<Message>,
     replyPlain: (reply: FormattedReply) => Promise<unknown>,
 ): Promise<void> {
-    if (!args.guildId || !args.discordUserId) {
-        await replyPlain(EmbedFormatter.error("Missing required argument: guild_id and discord_user_id are both required."));
-        return;
-    }
-
     let afterDate: Date | null = null;
     if (args.afterDateStr) {
         afterDate = new Date(args.afterDateStr);
@@ -253,7 +186,7 @@ async function runRecalculateUser(
 }
 
 interface RerollFlowerArgs {
-    discordUserId: string | null;
+    discordUserId: string;
     guildId: string | null;
 }
 
@@ -285,10 +218,6 @@ async function runOwnerRerollFlower(
     client: BotClient,
     replyPlain: (reply: FormattedReply) => Promise<unknown>,
 ): Promise<void> {
-    if (!args.discordUserId) {
-        await replyPlain(EmbedFormatter.error("Missing required argument: discord_user_id."));
-        return;
-    }
     const { discordUserId } = args;
 
     const resolved = await resolveOwnerTargetGuild(discordUserId, args.guildId);
@@ -309,16 +238,12 @@ async function runOwnerRerollFlower(
         return;
     }
 
-    try {
-        const { flower } = await rerollFlower(client, user.id);
-        logger.info(`Rerolled Flower for user ${user.id} (guild ${guildId}): ${flower}`);
-        await replyPlain(
-            EmbedFormatter.success(`<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`),
-        );
-    } catch (err) {
-        const text = err instanceof BiomeHuntError ? err.message : "Something went wrong applying the Flower.";
-        await replyPlain(EmbedFormatter.error(text));
-    }
+    // A BiomeHuntError here (no macro channel, webhook gone) reaches the user through the framework.
+    const { flower } = await rerollFlower(client, user.id);
+    logger.info(`Rerolled Flower for user ${user.id} (guild ${guildId}): ${flower}`);
+    await replyPlain(
+        EmbedFormatter.success(`<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`),
+    );
 }
 
 async function renderStaleList(client: BotClient): Promise<FormattedReply> {
