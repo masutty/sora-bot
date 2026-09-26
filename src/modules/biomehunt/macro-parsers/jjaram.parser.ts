@@ -1,4 +1,4 @@
-import { DefaultMacroParser } from "./DefaultMacroParser";
+import { DefaultMacroParser } from "./default-macro.parser";
 
 /** J.Jaram reports "NAME Biome Started/Ended" - the biome name comes before the anchor, not after. */
 const JJARAM_BIOME_PATTERN =

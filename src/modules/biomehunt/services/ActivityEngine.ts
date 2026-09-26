@@ -4,7 +4,7 @@ import { Logger } from "@/utils/logging";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserById, lookupChannel, touchLastActivity } from "../repository/users.repository";
 import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity.repository";
-import { parseEvent } from "../webhookParser";
+import { parseEvent } from "../macro-parsers";
 import { BIOME_META } from "../types";
 import { grantBiomeReward } from "./BiomeRewardEngine";
 import { checkAndForward } from "./ForwardEngine";

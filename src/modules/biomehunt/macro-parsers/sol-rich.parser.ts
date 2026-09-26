@@ -1,8 +1,8 @@
-import { DefaultMacroParser } from "./DefaultMacroParser";
+import { DefaultMacroParser } from "./default-macro.parser";
 import type { EmbedLike } from "./types";
 
 /** SolRich Macro (by Finnerich) - ComponentsV2 message body (no classic embed), converted to
- * `EmbedLike` by `webhookParser.ts`'s `componentsToEmbedLike` before reaching here - otherwise
+ * `EmbedLike` by `webhook-event.parser.ts`'s `componentsToEmbedLike` before reaching here - otherwise
  * follows the common "Biome Started/Ended - NAME" format unmodified. */
 export class SolRichParser extends DefaultMacroParser {
     constructor() {

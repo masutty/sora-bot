@@ -1,14 +1,14 @@
 import { Logger } from "@/utils/logging";
-import { CoteabParser } from "./CoteabParser";
-import { DroidscopeParser } from "./DroidscopeParser";
-import { EggsolParser } from "./EggsolParser";
-import { JJaramParser } from "./JJaramParser";
-import { MaxstellarParser } from "./MaxstellarParser";
-import { MultiscopeParser } from "./MultiscopeParser";
-import { SolRichParser } from "./SolRichParser";
-import { SoraMinimalParser } from "./SoraMinimalParser";
+import { CoteabParser } from "./coteab.parser";
+import { DroidscopeParser } from "./droidscope.parser";
+import { EggsolParser } from "./eggsol.parser";
+import { JJaramParser } from "./jjaram.parser";
+import { MaxstellarParser } from "./maxstellar.parser";
+import { MultiscopeParser } from "./multiscope.parser";
+import { SolRichParser } from "./sol-rich.parser";
+import { SoraMinimalParser } from "./sora-minimal.parser";
 import type { MacroParser } from "./types";
-import { UnknownMacroParser } from "./UnknownMacroParser";
+import { UnknownMacroParser } from "./unknown-macro.parser";
 
 const logger = new Logger("biomehunt.macroParsers");
 
@@ -39,3 +39,5 @@ export function detectMacroParser(footer?: string | null): MacroParser {
 }
 
 export { MacroParser, type BiomeExtraction, type EmbedLike } from "./types";
+
+export { parseEvent, type WebhookMessageLike } from "./webhook-event.parser";

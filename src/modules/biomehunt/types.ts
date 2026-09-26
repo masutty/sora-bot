@@ -27,7 +27,7 @@ interface BiomeMeta {
 
 /**
  * SINGLE SOURCE OF TRUTH for every recognized biome, keyed by its canonical space-less
- * uppercase form (how it's stored/matched - see `normalizeBiomeName` in webhookParser.ts).
+ * uppercase form (how it's stored/matched - see `normalizeBiomeName` in macro-parsers/default-macro.parser.ts).
  * To add/rename/recolor/recategorize/reicon a biome, edit it here - everything else
  * (recognition, display name, category grouping, forward notification color/icon, session-end
  * ANSI color) reads from this one object. Anything not listed here falls back to a generic Title

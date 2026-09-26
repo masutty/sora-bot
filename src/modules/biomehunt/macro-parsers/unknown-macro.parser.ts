@@ -1,4 +1,4 @@
-import { DefaultMacroParser } from "./DefaultMacroParser";
+import { DefaultMacroParser } from "./default-macro.parser";
 
 /** Fallback for a footer that doesn't match any known macro - still attempts the common format. */
 export class UnknownMacroParser extends DefaultMacroParser {
