@@ -1,12 +1,12 @@
-import { settings } from "../settings";
-import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { GuildTextBasedChannel, Message } from "discord.js";
+import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { markQuotaEvaluated, updateQuotaEvalHour } from "../repository/guilds.repository";
-import { getQuotaRolesForGuild, deleteQuotaRole, upsertQuotaRole } from "../repository/quota-roles.repository";
-import { evaluateFixedRewardsForGuild } from "./reward.service";
+import { deleteQuotaRole, getQuotaRolesForGuild, upsertQuotaRole } from "../repository/quota-roles.repository";
+import { settings } from "../settings";
 import { BiomeHuntError, type QuotaRoleMode, type QuotaRoleRow } from "../types";
+import { evaluateFixedRewardsForGuild } from "./reward.service";
 
 function formatQuotaRoleLine(r: QuotaRoleRow): string {
     const modeLabel = r.mode === "F" ? "Fixed" : "Rolling Window";

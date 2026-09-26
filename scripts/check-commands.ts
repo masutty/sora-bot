@@ -7,9 +7,10 @@
  * Throws synchronously at construction time, no DB/Discord connection needed, so this is a
  * sub-second sanity check to run before deploying instead of finding out at bot boot.
  */
+
+import { SlashCommandBuilder } from "discord.js";
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
-import { SlashCommandBuilder } from "discord.js";
 import type { Cog } from "@/types";
 
 const modulesPath = join(__dirname, "../src/modules");

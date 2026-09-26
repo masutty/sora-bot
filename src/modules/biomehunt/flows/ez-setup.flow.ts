@@ -1,22 +1,22 @@
-import { settings } from "../settings";
+import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, ComponentType,
     ContainerBuilder, MessageFlags, ModalBuilder, RoleSelectMenuBuilder, SeparatorSpacingSize,
     TextDisplayBuilder, TextInputBuilder, TextInputStyle,
 } from "discord.js";
-import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
 import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
-import { isGuildReady, getOrCreateGuildConfig, getEnabledCategories, getGuildRoles } from "../repository/guilds.repository";
+import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
+import { getEnabledCategories, getGuildRoles, getOrCreateGuildConfig, isGuildReady } from "../repository/guilds.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import { deleteActivity, setActivity } from "../services/activity.service";
 import { setBadges } from "../services/badge.service";
 import { addCategory, disableCounter, setCounterChannel, setRoles, showConfig } from "../services/guild-config.service";
 import { createQuota, removeQuotaRole } from "../services/quota.service";
-import { stepBiomeForwards } from "./forward-config.flow";
-import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import { settings } from "../settings";
 import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
+import { stepBiomeForwards } from "./forward-config.flow";
 
 /** What the outer step driver should do next. */
 type Direction = "forward" | "back" | "cancel" | "timeout";

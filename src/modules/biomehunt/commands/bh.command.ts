@@ -1,9 +1,8 @@
-import { settings } from "../settings";
+import type { Guild, GuildMember, Message } from "discord.js";
 import {
-    ActionRowBuilder, AttachmentBuilder, type ButtonInteraction, ButtonBuilder, ButtonStyle, ComponentType,
+    ActionRowBuilder, AttachmentBuilder, ButtonBuilder, type ButtonInteraction, ButtonStyle, ComponentType,
     ContainerBuilder, MessageFlags, SeparatorSpacingSize, SlashCommandBuilder,
 } from "discord.js";
-import type { Guild, GuildMember, Message } from "discord.js";
 import { readFileSync } from "fs";
 import type { BotClient } from "@/core/bot-client";
 import { defineCommand } from "@/define";
@@ -12,12 +11,13 @@ import { type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
-import { applyFlowerToWebhook, drawRandomFlower } from "../services/flower.service";
 import { FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
-import { provisionMacroChannel } from "../services/macro-channel.service";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
+import { applyFlowerToWebhook, drawRandomFlower } from "../services/flower.service";
+import { provisionMacroChannel } from "../services/macro-channel.service";
+import { settings } from "../settings";
 import { BiomeHuntError } from "../types";
 import { runProfileView } from "../views/stats.view";
 
@@ -200,7 +200,7 @@ function buildRollButtons(canRollAgain: boolean): ActionRowBuilder<ButtonBuilder
 
 /** Waits for a single button click from `invokerId` on `msg` - resolves the interaction (so the
  * caller acks it) or `null` on idle timeout. One-shot, matching this codebase's `awaitButton`
- * convention (see ezsetup.ts/forwardMenu.ts) rather than a long-lived collector, since each
+ * convention (see flows/ez-setup.flow.ts and flows/forward-config.flow.ts) rather than a long-lived collector, since each
  * reroll stage needs its own fresh wait. */
 function awaitRerollButton(msg: Message, invokerId: string): Promise<ButtonInteraction | null> {
     return new Promise((resolve) => {

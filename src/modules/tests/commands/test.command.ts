@@ -1,8 +1,8 @@
+import type { Message } from "discord.js";
 import {
     ActionRowBuilder, ComponentType, ContainerBuilder, MessageFlags, SeparatorSpacingSize,
     SlashCommandBuilder, StringSelectMenuBuilder,
 } from "discord.js";
-import type { Message } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";

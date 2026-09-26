@@ -1,6 +1,6 @@
 import { ContainerBuilder } from "discord.js";
-import { getGuildFlags, setGuildFlag } from "../repository/flags.repository";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
+import { getGuildFlags, setGuildFlag } from "../repository/flags.repository";
 import type { FlagName } from "../types";
 
 export async function setFlag(guildId: string, flag: FlagName, enabled: boolean): Promise<string> {

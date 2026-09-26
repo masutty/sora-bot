@@ -1,9 +1,9 @@
 import { ContainerBuilder } from "discord.js";
+import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import { getGuildBadgeRole, getGuildBadgeRoles, grantUserBadge, removeGuildBadgeRole, revokeUserBadge, setGuildBadgeRole } from "../repository/badges.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
-import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
-import { BiomeHuntError, type Badge } from "../types";
+import { type Badge, BiomeHuntError } from "../types";
 
 export async function awardBadge(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);

@@ -1,12 +1,12 @@
-import type { CommandDefinition, Cog } from "./types";
+import type { Cog, CommandDefinition } from "./types";
 
-export type {
-    CommandDefinition,
-    Cog,
-    CogAuthor,
-} from "./types";
 
 export type { PrefixArgs } from "./core/prefix-args";
+export type {
+    Cog,
+    CogAuthor,
+    CommandDefinition,
+} from "./types";
 
 const DEFAULT_COMMAND_FLAGS: Partial<CommandDefinition> = {
     showOnHelp: false,

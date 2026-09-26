@@ -1,15 +1,15 @@
 import type { Guild, GuildMember, TextChannel } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { adoptMacroChannel, provisionMacroChannel } from "./macro-channel.service";
+import { BADGE_META } from "../constants/badges.constants";
+import { formatBiomeName } from "../constants/biomes.constants";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId,
     pauseUser, unpauseUser,
 } from "../repository/users.repository";
+import { type Badge, BiomeHuntError } from "../types";
 import { revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
-import { BADGE_META } from "../constants/badges.constants";
-import { BiomeHuntError, type Badge } from "../types";
-import { formatBiomeName } from "../constants/biomes.constants";
+import { adoptMacroChannel, provisionMacroChannel } from "./macro-channel.service";
 
 function formatRewardRevertSuffix(reverted: { seedsReverted: number; xpReverted: number }, revokedBadges: Badge[]): string {
     const parts: string[] = [];

@@ -1,9 +1,9 @@
-import { MessageFlags, PermissionFlagsBits } from "discord.js";
 import type { Client, GuildMember, Interaction, Message } from "discord.js";
+import { MessageFlags, PermissionFlagsBits } from "discord.js";
 import { deleteEventById } from "../repository/activity.repository";
+import type { VoteCheckState } from "../types";
 import { buildForwardContainer } from "../views/forward-post.view";
 import { grantBiomeReward } from "./biome-reward.service";
-import type { VoteCheckState } from "../types";
 
 /**
  * In-memory only - doesn't need to survive a restart. Never cleaned up once created; the

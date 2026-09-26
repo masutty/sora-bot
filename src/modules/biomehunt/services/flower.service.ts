@@ -10,7 +10,7 @@ import { BiomeHuntError } from "../types";
  * Draws a random Flower key. Rolls each rarity in RARITY_CHANCE order (rarest first); the first
  * one that hits picks uniformly among its flowers. If none hit, falls back to a common flower.
  * Independent draw every time - a Reroll can land the same Flower again on purpose (see
- * `/bh reroll` in bh.ts and `/bh-owner reroll-flower` in bh-owner.ts).
+ * `/bh reroll` in bh.command.ts and `/bh-owner reroll-flower` in bh-owner.command.ts).
  */
 export function drawRandomFlower(): string {
     for (const { rarity, chance } of RARITY_CHANCE) {

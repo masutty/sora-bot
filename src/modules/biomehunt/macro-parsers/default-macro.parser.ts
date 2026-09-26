@@ -1,8 +1,8 @@
 import { Logger } from "@/utils/logging";
 import { BIOME_META } from "../constants/biomes.constants";
-import { MacroParser, type BiomeExtraction, type EmbedLike } from "./types";
+import { type BiomeExtraction, type EmbedLike, MacroParser } from "./types";
 
-const logger = new Logger("biomehunt.macroParsers");
+const logger = new Logger("biomehunt.macro-parsers");
 
 /**
  * Matches "Biome Started/Ended - NAME" (or "NAME2 NAME - Biome Started/Ended" if a subclass

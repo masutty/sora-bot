@@ -1,5 +1,5 @@
-import { ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { Guild, GuildMember, Message } from "discord.js";
+import { ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
@@ -8,33 +8,33 @@ import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { getFailureQuip } from "@/utils/quips";
+import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
+import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
+import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
+import { runEzSetupFlow } from "../flows/ez-setup.flow";
+import { runForwardConfigFlow } from "../flows/forward-config.flow";
 import {
     deleteActivity, resetActivity, setActivity, setActivityRole,
 } from "../services/activity.service";
+import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
-import {
-    addCategory, forceCounterUpdate,
-    removeCategory, resetConfig, setAutoCreateCategories, setCounterChannel,
-    disableCounter, showConfig, testConfig,
-} from "../services/guild-config.service";
-import { setForward, listForwards } from "../services/forward.service";
 import { grantEconomy } from "../services/economy.service";
 import { listFlags, setFlag } from "../services/flag.service";
+import { listForwards, setForward } from "../services/forward.service";
 import {
-    clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember,
-    resetMemberChannel, softDeleteMember, pauseMember, unpauseMember, type AdoptParams,
+    addCategory, 
+    disableCounter, forceCounterUpdate,
+    removeCategory, resetConfig, setAutoCreateCategories, setCounterChannel,showConfig, testConfig,
+} from "../services/guild-config.service";
+import {type AdoptParams,
+    clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember,pauseMember, 
+    resetMemberChannel, softDeleteMember, unpauseMember, 
 } from "../services/member.service";
 import {
-    createQuota, forceQuotaEval, listQuotas, setQuotaEvalHour, deleteQuotas,
+    createQuota, deleteQuotas,forceQuotaEval, listQuotas, setQuotaEvalHour, 
 } from "../services/quota.service";
-import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
-import { runEzSetupFlow } from "../flows/ez-setup.flow";
-import { runForwardConfigFlow } from "../flows/forward-config.flow";
+import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
 import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "../views/stats.view";
-import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
-import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
-import { BiomeHuntError, type ActivityStatus, type Badge, type FlagName, type QuotaRoleMode } from "../types";
-import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
 
 const logger = new Logger("biomehunt.commands.bh-admin");
 

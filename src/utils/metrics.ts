@@ -56,7 +56,7 @@ export interface TickStats {
 
 let lastTick: TickStats | null = null;
 
-/** Called by StatusEngine after each sweep - the single most direct "is this bot keeping up" signal, since the sweep has a fixed interval it needs to finish within. */
+/** Called by the biomehunt status worker after each sweep - the single most direct "is this bot keeping up" signal, since the sweep has a fixed interval it needs to finish within. */
 export function recordTickStats(durationMs: number, userCount: number): void {
     lastTick = { durationMs, userCount, ranAt: new Date() };
 }

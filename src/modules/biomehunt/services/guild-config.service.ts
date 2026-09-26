@@ -1,16 +1,16 @@
 import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { formatTime } from "@/utils/format";
-import {
-    insertCategory, clearCounterChannel, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
-    isGuildReady, deleteCategory, resetGuildConfig, updateAutoCreateCategories, updateCounterChannel, setGuildRoles,
-} from "../repository/guilds.repository";
+import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import { formatBiomeName } from "../constants/biomes.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
-import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import {clearCounterChannel, deleteCategory, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
+    insertCategory, 
+    isGuildReady, resetGuildConfig, setGuildRoles,updateAutoCreateCategories, updateCounterChannel, 
+} from "../repository/guilds.repository";
 import { BiomeHuntError } from "../types";
-import { formatBiomeName } from "../constants/biomes.constants";
 import { updateCounterForGuild } from "../workers/counter.worker";
 
 function addDivider(container: ContainerBuilder): void {

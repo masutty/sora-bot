@@ -1,16 +1,16 @@
 import type { Message } from "discord.js";
 import { transaction } from "@/database/connection";
 import { Logger } from "@/utils/logging";
+import { BIOME_META } from "../constants/biomes.constants";
+import { parseEvent } from "../macro-parsers";
+import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserById, lookupChannel, touchLastActivity } from "../repository/users.repository";
-import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity.repository";
-import { parseEvent } from "../macro-parsers";
-import { BIOME_META } from "../constants/biomes.constants";
+import { transitionUser } from "../workers/status.worker";
 import { grantBiomeReward } from "./biome-reward.service";
 import { checkAndForward } from "./forward.service";
-import { transitionUser } from "../workers/status.worker";
 
-const logger = new Logger("biomehunt.ActivityEngine");
+const logger = new Logger("biomehunt.services.activity-ingest");
 
 export async function processIncomingMessage(message: Message): Promise<void> {
     const entry = lookupChannel(message.channelId);

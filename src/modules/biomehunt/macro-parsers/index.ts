@@ -10,7 +10,7 @@ import { SoraMinimalParser } from "./sora-minimal.parser";
 import type { MacroParser } from "./types";
 import { UnknownMacroParser } from "./unknown-macro.parser";
 
-const logger = new Logger("biomehunt.macroParsers");
+const logger = new Logger("biomehunt.macro-parsers");
 
 const KNOWN_PARSERS: MacroParser[] = [
     new CoteabParser(),
@@ -38,6 +38,6 @@ export function detectMacroParser(footer?: string | null): MacroParser {
     return new UnknownMacroParser();
 }
 
-export { MacroParser, type BiomeExtraction, type EmbedLike } from "./types";
+export { type BiomeExtraction, type EmbedLike, MacroParser } from "./types";
 
 export { parseEvent, type WebhookMessageLike } from "./webhook-event.parser";

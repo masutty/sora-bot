@@ -41,7 +41,7 @@ function addDivider(container: ContainerBuilder): void {
 /**
  * Winning design: "ended-only" digest - one line per completed session (id, duration, when it
  * ended), plus a "Currently macroing" banner when there's an open session. Mirrors
- * `buildSessionsTabContainer` in commands/profileViews.ts - keep the two in sync if this changes.
+ * `buildSessionsTabContainer` in views/stats.view.ts - keep the two in sync if this changes.
  */
 export default {
     description: "BiomeHunt's real Session History layout (ended-only digest + \"currently macroing\" banner), with fake data.",

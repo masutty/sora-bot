@@ -2,12 +2,12 @@ import { ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js
 import type { BotClient } from "@/core/bot-client";
 import { formatCodeblock, formatTime } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import type { ActivitySessionRow } from "../types";
+import { formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
 import { getBiomeCountsInRange, getLatestSessionForUser } from "../repository/activity.repository";
 import { getMacroChannelByUserId } from "../repository/users.repository";
-import { formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import type { ActivitySessionRow } from "../types";
 
-const logger = new Logger("biomehunt.SessionReportEngine");
+const logger = new Logger("biomehunt.services.activity-session-report");
 
 function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));

@@ -1,14 +1,14 @@
 import { transaction } from "@/database/connection";
-import { getUserById } from "../repository/users.repository";
-import { grantUserBadge, revokeUserBadge, getGuildBadgeRole } from "../repository/badges.repository";
-import { enqueueRoleJob } from "../repository/role-jobs.repository";
+import { ALL_BADGES } from "../constants/badges.constants";
+import { BIOME_META } from "../constants/biomes.constants";
+import { getLevelForXp, REWARD_BY_CATEGORY } from "../constants/levels.constants";
+import { getGuildBadgeRole, grantUserBadge, revokeUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import {
     adjustUserBalance, countRewardsWithBadge, getRewardsByEventIds, getUnrewardedEventsForUser, insertReward,
 } from "../repository/rewards.repository";
-import { ALL_BADGES } from "../constants/badges.constants";
-import { BIOME_META } from "../constants/biomes.constants";
-import { REWARD_BY_CATEGORY, getLevelForXp } from "../constants/levels.constants";
+import { enqueueRoleJob } from "../repository/role-jobs.repository";
+import { getUserById } from "../repository/users.repository";
 import type { Badge, UserRow } from "../types";
 
 function isBadgeBiome(biome: string): biome is Badge {
@@ -73,7 +73,7 @@ export async function grantBiomeReward(
  * reads the ledger and applies the Seeds/XP reversal here, but returns the set of badges that MIGHT
  * now need revoking (`badgeCandidates`) rather than revoking them itself: that check can only run
  * correctly AFTER the caller deletes the events (which cascades the ledger rows away) - see
- * `revokeOrphanedBadges` below and its call sites in `adminMemberActions.ts`.
+ * `revokeOrphanedBadges` below and its call sites in `member.service.ts`.
  */
 export async function revertBiomeRewards(
     userId: number,

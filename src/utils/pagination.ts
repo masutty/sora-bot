@@ -1,7 +1,7 @@
 import {
     ActionRowBuilder,
-    type ButtonInteraction,
     ButtonBuilder,
+    type ButtonInteraction,
     ButtonStyle,
     ComponentType,
     LabelBuilder,
@@ -81,7 +81,7 @@ export interface AttachPaginationOptions {
  * jump via modal) - calling `render`/`i.update()` (or the modal submission's own `.update()`)
  * itself, and resolving to the page it landed on. Resolves `null` if `customId` isn't one of this
  * row's buttons (so it can sit alongside other buttons in a bigger flow - check those first, fall
- * through to this one otherwise - see `forwardMenu.ts`'s own Back button), or if the jump modal
+ * through to this one otherwise - see `forward-config.flow.ts`'s own Back button), or if the jump modal
  * was cancelled or given bad input (nothing to update in that case either).
  */
 export async function handlePaginationButton(

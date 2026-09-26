@@ -1,21 +1,20 @@
 import {
     type ChatInputCommandInteraction,
-    Events,
+    Events,GuildMember, 
     type Message,
     REST,
     Routes,
-    SlashCommandBuilder,
+    SlashCommandBuilder
 } from "discord.js";
-import { Logger } from "@/utils/logging";
 import { config } from "@/config";
 import { getGuildPrefix } from "@/database/guild.repository";
-import { EmbedFormatter } from "@/utils/format";
-import type { BotClient } from "./bot-client";
-import { PrefixArgs, deriveSchema, deriveSubcommandSchema } from "./prefix-args";
-import { checkGuards } from "./guards";
-import { getFailureQuip } from "@/utils/quips";
 import type { CommandDefinition } from "@/types";
-import { GuildMember } from "discord.js";
+import { EmbedFormatter } from "@/utils/format";
+import { Logger } from "@/utils/logging";
+import { getFailureQuip } from "@/utils/quips";
+import type { BotClient } from "./bot-client";
+import { checkGuards } from "./guards";
+import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 
 const logger = new Logger("core.commandhandlers");
 const slashLogger = new Logger("core.slashcommands");

@@ -3,7 +3,7 @@ import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getMacroChannelByUserId, getUserById } from "../repository/users.repository";
 
-const logger = new Logger("biomehunt.QuotaPingEngine");
+const logger = new Logger("biomehunt.services.quota-ping");
 
 /** Posts a "you just met the quota" ping to a user's macro channel, if they still have one. */
 export async function pingQuotaMet(client: BotClient, userId: number, roleId: string): Promise<void> {

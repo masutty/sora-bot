@@ -1,12 +1,12 @@
-import { settings } from "../settings";
 import { ChannelType, ContainerBuilder, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
 import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/guilds.repository";
 import { getGuildUserCounts } from "../repository/users.repository";
+import { settings } from "../settings";
 import type { GuildConfigRow } from "../types";
 
-const logger = new Logger("biomehunt.CounterEngine");
+const logger = new Logger("biomehunt.workers.counter");
 
 function buildCounterContainer(counts: Record<"active" | "idle" | "inactive", number>): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
@@ -77,5 +77,5 @@ export function startCounterWorker(client: BotClient): void {
     setInterval(() => {
         tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     }, settings.workers.counterTickMs);
-    logger.info(`Counter engine started (tick every ${settings.workers.counterTickMs}ms)`);
+    logger.info(`Counter worker started (tick every ${settings.workers.counterTickMs}ms)`);
 }

@@ -1,21 +1,21 @@
-import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { Message } from "discord.js";
+import { ContainerBuilder, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
+import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { getBiomeCountForUser } from "../repository/activity.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
-import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { BiomeHuntError, type ParsedEvent } from "../types";
 import { buildForwardContainer } from "../views/forward-post.view";
 import { startVoteCheck } from "./vote-check.service";
 
-const logger = new Logger("biomehunt.ForwardEngine");
+const logger = new Logger("biomehunt.services.forward");
 
 /**
  * Forwards a detected biome to its configured channel, every time it happens (no throttle -
  * this is a live "someone found X" alert, same trigger semantics as the badge system: only
  * a confirmed 'started' event fires it. Uses a Components V2 container instead of a regular
  * embed so we get a real Separator between the heading and the details. Rare-category biomes
- * additionally get admin confirm/deny buttons (see VoteCheckEngine).
+ * additionally get admin confirm/deny buttons (see vote-check.service.ts).
  */
 export async function checkAndForward(message: Message, guildId: string, userId: number, parsed: ParsedEvent, eventId: number): Promise<void> {
     if (parsed.eventType !== "started" || !parsed.biome) return;

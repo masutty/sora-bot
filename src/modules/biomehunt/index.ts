@@ -1,5 +1,9 @@
 import { defineCog } from "@/define";
 import { Logger } from "@/utils/logging";
+import _bh from "./commands/bh.command";
+import _bhAdmin from "./commands/bh-admin.command";
+import _bhOwner from "./commands/bh-owner.command";
+import _bhStats from "./commands/bh-stats.command";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity-ingest.service";
@@ -7,10 +11,6 @@ import { handleVoteButtonClick } from "./services/vote-check.service";
 import { startCounterWorker } from "./workers/counter.worker";
 import { startRoleWorker } from "./workers/role.worker";
 import { startStatusWorker } from "./workers/status.worker";
-import _bh from "./commands/bh.command";
-import _bhAdmin from "./commands/bh-admin.command";
-import _bhOwner from "./commands/bh-owner.command";
-import _bhStats from "./commands/bh-stats.command";
 
 const logger = new Logger("biomehunt");
 

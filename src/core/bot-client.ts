@@ -1,7 +1,7 @@
 import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
+import type { Cog } from "@/types";
 import { Logger } from "@/utils/logging";
 import { CommandRegistry } from "./command-registry";
-import type { Cog } from "@/types";
 
 export class BotClient extends Client {
     public readonly commands: CommandRegistry;

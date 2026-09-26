@@ -1,20 +1,20 @@
-import { settings } from "../settings";
 import type { BotClient } from "@/core/bot-client";
 import { getPoolStats } from "@/database/connection";
 import { Logger } from "@/utils/logging";
 import { recordTickStats } from "@/utils/metrics";
-import type { ActivityStatus } from "../types";
 import { grantUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import {
     deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState, updateUserStatus,
 } from "../repository/users.repository";
-import { enqueueRoleJob } from "../repository/role-jobs.repository";
-import { evaluateRollingRewards, runFixedRewardSweep } from "../services/reward.service";
 import { reportSessionEnd } from "../services/activity-session-report.service";
+import { evaluateRollingRewards, runFixedRewardSweep } from "../services/reward.service";
+import { settings } from "../settings";
+import type { ActivityStatus } from "../types";
 
-const logger = new Logger("biomehunt.StatusEngine");
+const logger = new Logger("biomehunt.workers.status");
 
 export async function transitionUser(userId: number, guildId: string, newStatus: ActivityStatus): Promise<void> {
     await updateUserStatus(userId, newStatus);
@@ -104,7 +104,7 @@ async function tick(client: BotClient): Promise<void> {
     const durationMs = Date.now() - tickStart;
     recordTickStats(durationMs, users.length);
     if (durationMs > SLOW_TICK_MS) {
-        logger.warn(`Status engine tick took ${durationMs}ms (interval is ${settings.workers.statusTickMs}ms) for ${users.length} user(s) - bot may be falling behind`);
+        logger.warn(`Status worker tick took ${durationMs}ms (interval is ${settings.workers.statusTickMs}ms) for ${users.length} user(s) - bot may be falling behind`);
     }
 
     const poolStats = getPoolStats();
@@ -117,5 +117,5 @@ export function startStatusWorker(client: BotClient): void {
     setInterval(() => {
         tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     }, settings.workers.statusTickMs);
-    logger.info(`Status engine started (tick every ${settings.workers.statusTickMs}ms)`);
+    logger.info(`Status worker started (tick every ${settings.workers.statusTickMs}ms)`);
 }

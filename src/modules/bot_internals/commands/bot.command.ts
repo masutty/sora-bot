@@ -1,14 +1,14 @@
 import { ContainerBuilder, MessageFlags, OAuth2Scopes, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
+import { join } from "path";
+import { config } from "@/config";
+import type { BotClient } from "@/core/bot-client";
+import { hotReloadBot, loadCog, reloadCog, unloadCog } from "@/core/cog-loader";
+import { registerSlashCommands } from "@/core/command-handler";
+import { getPoolStats, query } from "@/database/connection";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
-import { loadCog, unloadCog, reloadCog, hotReloadBot } from "@/core/cog-loader";
-import { registerSlashCommands } from "@/core/command-handler";
-import type { BotClient } from "@/core/bot-client";
-import { config } from "@/config";
-import { getPoolStats, query } from "@/database/connection";
-import { join } from "path";
 import { EmbedFormatter } from "@/utils/format";
-import { getLogLevels, LOG_LEVELS, Logger, setLogLevel, type LogLevel } from "@/utils/logging";
+import { getLogLevels, LOG_LEVELS, Logger, type LogLevel, setLogLevel } from "@/utils/logging";
 import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
 
 const logger = new Logger("admin.commands.bot");

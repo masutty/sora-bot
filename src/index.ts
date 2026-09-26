@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+
 dotenv.config({
     path: process.env.NODE_ENV === "production" ? ".env" : ".env.local",
 });
@@ -8,8 +9,8 @@ import { rmSync } from "fs";
 import { join } from "path";
 import { config } from "./config";
 import { BotClient } from "./core/bot-client";
-import { registerCommandHandlers, registerSlashCommands } from "./core/command-handler";
 import { getDclRuntimeDir, loadCogs } from "./core/cog-loader";
+import { registerCommandHandlers, registerSlashCommands } from "./core/command-handler";
 import { closePool } from "./database/connection";
 import { migrate } from "./database/migrate";
 import { Logger } from "./utils/logging";

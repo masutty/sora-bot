@@ -1,13 +1,13 @@
-import { settings } from "../settings";
+import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, ComponentType,
     ContainerBuilder, MessageFlags, RoleSelectMenuBuilder, SeparatorSpacingSize, StringSelectMenuBuilder,
 } from "discord.js";
-import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "discord.js";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { buildPaginationRow, handlePaginationButton } from "@/utils/pagination";
-import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { BIOME_SELECTOR_CHOICES, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
+import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
+import { settings } from "../settings";
 import type { BiomeForwardRow } from "../types";
 
 const FORWARDS_PER_PAGE = 10;
@@ -39,7 +39,7 @@ async function awaitButton(msg: Message, adminId: string): Promise<string | null
 /**
  * Numbered removal list (10/page, numbering is global across pages), racing a chat-typed
  * number against Prev/Next/Back button clicks. Mirrors the pattern used for quota role
- * removal in ezsetup.ts.
+ * removal in ez-setup.flow.ts.
  */
 async function promptRemoveForward(msg: Message, adminId: string, forwards: BiomeForwardRow[]): Promise<number | null> {
     const channel = msg.channel as GuildTextBasedChannel;

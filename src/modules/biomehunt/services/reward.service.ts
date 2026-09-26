@@ -8,13 +8,13 @@ import {
 } from "../repository/quota-roles.repository";
 import { enqueueRoleJob, scheduleRoleRemoval } from "../repository/role-jobs.repository";
 import { getUsersForGuild } from "../repository/users.repository";
-import { pingQuotaMet } from "./quota-ping.service";
 import type { QuotaRoleRow, UserRow } from "../types";
+import { pingQuotaMet } from "./quota-ping.service";
 
-const logger = new Logger("biomehunt.RewardEngine");
+const logger = new Logger("biomehunt.services.reward");
 
 /**
- * RW-mode: continuous reactive check. Called once per user per Status Engine
+ * RW-mode: continuous reactive check. Called once per user per status worker
  * tick (same 30s cadence, same per-user loop) — grants/revokes immediately on
  * a compliance state change, no-ops otherwise so it never spams the role queue.
  */
@@ -73,7 +73,7 @@ export async function evaluateFixedRewardsForGuild(client: BotClient, guildId: s
     return roles.length;
 }
 
-/** Runs the F-mode daily sweep for every guild that's currently due for it. Call once per Status Engine tick. */
+/** Runs the F-mode daily sweep for every guild that's currently due for it. Call once per status worker tick. */
 export async function runFixedRewardSweep(client: BotClient): Promise<void> {
     const dueGuilds = await getGuildsDueForFixedRewardEval();
     for (const guild of dueGuilds) {

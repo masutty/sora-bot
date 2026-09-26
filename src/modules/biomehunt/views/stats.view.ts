@@ -1,13 +1,15 @@
-import { settings } from "../settings";
+import type { Message } from "discord.js";
 import {
     ButtonStyle, ContainerBuilder, GuildMember,
     MessageFlags, SeparatorSpacingSize,
 } from "discord.js";
-import type { Message } from "discord.js";
-import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/button-view";
+import { type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender, runButtonView } from "@/utils/button-view";
 import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { Logger } from "@/utils/logging";
+import { BADGE_META } from "../constants/badges.constants";
+import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
+import { getLevelForXp } from "../constants/levels.constants";
 import {
     getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity.repository";
@@ -16,12 +18,10 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users.repository";
-import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
-import { BADGE_META } from "../constants/badges.constants";
-import { getLevelForXp } from "../constants/levels.constants";
+import { settings } from "../settings";
 import type { ActivitySessionRow, ActivityStatus, BiomeCategory, UserRow } from "../types";
 
-const logger = new Logger("biomehunt.profileViews");
+const logger = new Logger("biomehunt.views.stats");
 
 
 export const SESSIONS_PER_PAGE = 10;
@@ -149,7 +149,7 @@ function addSpacer(container: ContainerBuilder): void {
 const ANSI_RESET = "\u001b[0m";
 
 /** Per-biome ANSI color, from `BIOME_META[biome].ansiColor` - same treatment as the session-end
- * report's biome breakdown (see `ansiBiomeLine` in services/SessionReportEngine.ts). */
+ * report's biome breakdown (see `ansiBiomeLine` in services/activity-session-report.service.ts). */
 function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
 }
@@ -314,7 +314,7 @@ function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page:
         return container;
     }
 
-    // While active, `sessions[0]` (newest-first) IS the current burst - ActivityEngine keeps
+    // While active, `sessions[0]` (newest-first) IS the current burst - activity-ingest.service keeps
     // extending its ended_at/duration_seconds live on every incoming message, it's not "finished"
     // yet. Called out separately instead of listed as just another completed entry.
     const ongoing = user.current_status === "active" ? sessions[0] : null;

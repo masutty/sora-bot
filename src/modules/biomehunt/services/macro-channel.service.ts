@@ -1,18 +1,18 @@
-import { ChannelType, PermissionFlagsBits } from "discord.js";
 import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel } from "discord.js";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
-import { ensureFlower } from "./flower.service";
 import { isFlagEnabled } from "../repository/flags.repository";
-import { insertCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "../repository/guilds.repository";
+import { getEnabledCategories, getOrCreateGuildConfig, insertCategory, isGuildReady } from "../repository/guilds.repository";
 import {
     createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
     lookupChannel, registerChannel, setUserFlower,
 } from "../repository/users.repository";
-import { BiomeHuntError } from "../types";
 import type { GuildConfigRow } from "../types";
+import { BiomeHuntError } from "../types";
+import { ensureFlower } from "./flower.service";
 
-const logger = new Logger("biomehunt.guildSetup");
+const logger = new Logger("biomehunt.services.macro-channel");
 
 export interface MacroChannelResult {
     channelId: string;

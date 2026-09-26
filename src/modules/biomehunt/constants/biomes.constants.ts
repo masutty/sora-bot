@@ -1,4 +1,4 @@
-import { BiomeHuntError, type BiomeCategory } from "../types";
+import { type BiomeCategory, BiomeHuntError } from "../types";
 
 export const ALL_BIOME_CATEGORIES: BiomeCategory[] = ["biome", "weather", "rare", "event"];
 
@@ -16,7 +16,7 @@ interface BiomeMeta {
     /** Optional icon shown next to the biome name on its forward notification. Unset = no image. */
     iconUrl?: string;
     /** Raw ANSI escape prefix (e.g. `"\u001b[1;33m"`) used to color this biome's name in the
-     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in SessionReportEngine.ts).
+     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in services/activity-session-report.service.ts).
      * Unset = no color (terminal default). Discord's `ansi` codeblock only renders bold(1) plus
      * 8 foreground (30-37) and 8 background (40-47) codes - see `!test embed/ansi-colors`. */
     ansiColor?: string;

@@ -2,9 +2,9 @@ import { Events } from "discord.js";
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { config } from "@/config";
-import { Logger } from "@/utils/logging";
 import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
+import { Logger } from "@/utils/logging";
 import type { BotClient } from "./bot-client";
 
 const logger = new Logger("core.cogloader");
