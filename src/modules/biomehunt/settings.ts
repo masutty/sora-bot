@@ -1,0 +1,22 @@
+/**
+ * BiomeHunt tunables - how the module *behaves* (timing, limits), never what the game *is*
+ * (that lives in constants/). Changing a value here must never change a game rule.
+ * Framework-wide UI defaults (view/confirm timeouts) belong in `@/config`, not here.
+ */
+export const settings = {
+    workers: {
+        statusTickMs: 30_000,
+        roleTickMs: 2_000,
+        counterTickMs: 5 * 60 * 1000,
+    },
+    ui: {
+        ezSetupStepTimeoutMs: 5 * 60_000,
+        forwardConfigTimeoutMs: 5 * 60_000,
+        rerollIdleMs: 20_000,
+        quotaReplyTimeoutMs: 60_000,
+    },
+    diagnostics: {
+        /** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks (see utils/button-view.ts's own timing). */
+        slowProfileLoadMs: 500,
+    },
+} as const;

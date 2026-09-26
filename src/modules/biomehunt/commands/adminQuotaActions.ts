@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { GuildTextBasedChannel, Message } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
@@ -77,7 +78,7 @@ export async function runQuotasDelete(
     const msg = await respond({ flags: MessageFlags.IsComponentsV2, components: [listContainer] });
 
     const channel = msg.channel as GuildTextBasedChannel;
-    const collector = channel.createMessageCollector({ filter: (m) => m.author.id === invokerId, time: 60_000, max: 1 });
+    const collector = channel.createMessageCollector({ filter: (m) => m.author.id === invokerId, time: settings.ui.quotaReplyTimeoutMs, max: 1 });
 
     collector.on("collect", async (m) => {
         const n = Number(m.content.trim());

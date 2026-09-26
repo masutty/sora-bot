@@ -11,7 +11,7 @@ import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../rep
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import { BiomeHuntError } from "../types";
 import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
-import { updateCounterForGuild } from "../workers/CounterEngine";
+import { updateCounterForGuild } from "../workers/counter.worker";
 
 function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));

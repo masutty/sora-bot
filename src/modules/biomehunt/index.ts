@@ -4,9 +4,9 @@ import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/ActivityEngine";
 import { handleVoteButtonClick } from "./services/VoteCheckEngine";
-import { startCounterEngine } from "./workers/CounterEngine";
-import { startRoleEngine } from "./workers/RoleEngine";
-import { startStatusEngine } from "./workers/StatusEngine";
+import { startCounterWorker } from "./workers/counter.worker";
+import { startRoleWorker } from "./workers/role.worker";
+import { startStatusWorker } from "./workers/status.worker";
 import _bh from "./commands/bh";
 import _bhAdmin from "./commands/bh-admin";
 import _bhOwner from "./commands/bh-owner";
@@ -43,9 +43,9 @@ export default defineCog({
         await loadChannelIndex();
 
         logger.info("Starting workers...");
-        startStatusEngine(client);
-        startRoleEngine(client);
-        startCounterEngine(client);
+        startStatusWorker(client);
+        startRoleWorker(client);
+        startCounterWorker(client);
 
         logger.info("BiomeHunt ready.");
     },

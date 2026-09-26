@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, ComponentType,
     ContainerBuilder, MessageFlags, RoleSelectMenuBuilder, SeparatorSpacingSize, StringSelectMenuBuilder,
@@ -9,7 +10,6 @@ import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../rep
 import { BIOME_SELECTOR_CHOICES, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import type { BiomeForwardRow } from "../types";
 
-const TIMEOUT_MS = 5 * 60_000;
 const FORWARDS_PER_PAGE = 10;
 
 type Direction = "forward" | "back" | "cancel" | "timeout";
@@ -28,7 +28,7 @@ function listContainer(forwards: BiomeForwardRow[], title = "Biome Forwards"): C
 
 async function awaitButton(msg: Message, adminId: string): Promise<string | null> {
     try {
-        const i = await msg.awaitMessageComponent({ filter: (i) => i.user.id === adminId, componentType: ComponentType.Button, time: TIMEOUT_MS });
+        const i = await msg.awaitMessageComponent({ filter: (i) => i.user.id === adminId, componentType: ComponentType.Button, time: settings.ui.forwardConfigTimeoutMs });
         await i.deferUpdate();
         return i.customId;
     } catch {
@@ -81,8 +81,8 @@ async function promptRemoveForward(msg: Message, adminId: string, forwards: Biom
             resolve(value);
         };
 
-        const buttonCollector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, componentType: ComponentType.Button, time: TIMEOUT_MS });
-        const textCollector = channel.createMessageCollector({ filter: (m) => m.author.id === adminId, time: TIMEOUT_MS });
+        const buttonCollector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, componentType: ComponentType.Button, time: settings.ui.forwardConfigTimeoutMs });
+        const textCollector = channel.createMessageCollector({ filter: (m) => m.author.id === adminId, time: settings.ui.forwardConfigTimeoutMs });
 
         buttonCollector.on("collect", async (i) => {
             if (i.customId === "fwd-back") { await i.deferUpdate(); settle(null); return; }
@@ -146,7 +146,7 @@ async function promptCreateForward(msg: Message, adminId: string): Promise<Creat
     await msg.edit(render());
 
     return new Promise((resolve) => {
-        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: TIMEOUT_MS });
+        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: settings.ui.forwardConfigTimeoutMs });
 
         collector.on("collect", async (i) => {
             if (i.customId === "fwd-cancel") { await i.deferUpdate(); collector.stop("cancel"); return; }

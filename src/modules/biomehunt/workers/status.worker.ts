@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import type { BotClient } from "@/core/bot-client";
 import { getPoolStats } from "@/database/connection";
 import { Logger } from "@/utils/logging";
@@ -35,7 +36,6 @@ export async function transitionUser(userId: number, guildId: string, newStatus:
     }
 }
 
-const TICK_INTERVAL_MS = 30_000;
 /** If a tick takes longer than this, the sweep is at real risk of falling behind its own interval - worth a heads-up before it actually overruns. */
 const SLOW_TICK_MS = 20_000;
 
@@ -104,7 +104,7 @@ async function tick(client: BotClient): Promise<void> {
     const durationMs = Date.now() - tickStart;
     recordTickStats(durationMs, users.length);
     if (durationMs > SLOW_TICK_MS) {
-        logger.warn(`Status engine tick took ${durationMs}ms (interval is ${TICK_INTERVAL_MS}ms) for ${users.length} user(s) - bot may be falling behind`);
+        logger.warn(`Status engine tick took ${durationMs}ms (interval is ${settings.workers.statusTickMs}ms) for ${users.length} user(s) - bot may be falling behind`);
     }
 
     const poolStats = getPoolStats();
@@ -113,9 +113,9 @@ async function tick(client: BotClient): Promise<void> {
     }
 }
 
-export function startStatusEngine(client: BotClient): void {
+export function startStatusWorker(client: BotClient): void {
     setInterval(() => {
         tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
-    }, TICK_INTERVAL_MS);
-    logger.info(`Status engine started (tick every ${TICK_INTERVAL_MS}ms)`);
+    }, settings.workers.statusTickMs);
+    logger.info(`Status engine started (tick every ${settings.workers.statusTickMs}ms)`);
 }

@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
 import { getPendingJobs, markJobProcessed, rescheduleJob } from "../repository/role-jobs.repository";
@@ -6,7 +7,6 @@ import type { RoleJobRow } from "../types";
 
 const logger = new Logger("biomehunt.RoleEngine");
 
-const TICK_INTERVAL_MS = 2_000;
 const BATCH_SIZE = 10;
 const MAX_RETRIES = 5;
 const BASE_BACKOFF_MS = 5_000;
@@ -57,9 +57,9 @@ async function tick(client: BotClient): Promise<void> {
     }
 }
 
-export function startRoleEngine(client: BotClient): void {
+export function startRoleWorker(client: BotClient): void {
     setInterval(() => {
         tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
-    }, TICK_INTERVAL_MS);
-    logger.info(`Role engine started (tick every ${TICK_INTERVAL_MS}ms)`);
+    }, settings.workers.roleTickMs);
+    logger.info(`Role engine started (tick every ${settings.workers.roleTickMs}ms)`);
 }

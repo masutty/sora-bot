@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import {
     ActionRowBuilder, AttachmentBuilder, type ButtonInteraction, ButtonBuilder, ButtonStyle, ComponentType,
     ContainerBuilder, MessageFlags, SeparatorSpacingSize, SlashCommandBuilder,
@@ -117,7 +118,6 @@ async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Pr
 }
 
 const REROLL_COST = 50;
-const REROLL_IDLE_MS = 20_000;
 
 const REROLL_CONFIRM_ID = "reroll-confirm";
 const REROLL_CANCEL_ID = "reroll-cancel";
@@ -207,7 +207,7 @@ function awaitRerollButton(msg: Message, invokerId: string): Promise<ButtonInter
         const collector = msg.createMessageComponentCollector({
             componentType: ComponentType.Button,
             filter: (i) => i.user.id === invokerId,
-            time: REROLL_IDLE_MS,
+            time: settings.ui.rerollIdleMs,
             max: 1,
         });
         collector.on("collect", (i) => resolve(i));
@@ -321,7 +321,7 @@ async function runRerollSession(
         await msg.edit(
             buildRerollPayload(
                 "🎲 New Flower!", drawn, seeds, rollCount, buildRollButtons(seeds >= REROLL_COST),
-                `If you don't pick one within ${REROLL_IDLE_MS / 1000}s, this Flower is applied automatically.`,
+                `If you don't pick one within ${settings.ui.rerollIdleMs / 1000}s, this Flower is applied automatically.`,
             ),
         ).catch(() => {});
 

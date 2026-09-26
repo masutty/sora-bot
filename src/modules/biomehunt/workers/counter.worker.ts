@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import { ChannelType, ContainerBuilder, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
@@ -6,8 +7,6 @@ import { getGuildUserCounts } from "../repository/users.repository";
 import type { GuildConfigRow } from "../types";
 
 const logger = new Logger("biomehunt.CounterEngine");
-
-const TICK_INTERVAL_MS = 5 * 60 * 1000;
 
 function buildCounterContainer(counts: Record<"active" | "idle" | "inactive", number>): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
@@ -74,9 +73,9 @@ async function tick(client: BotClient): Promise<void> {
     }
 }
 
-export function startCounterEngine(client: BotClient): void {
+export function startCounterWorker(client: BotClient): void {
     setInterval(() => {
         tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
-    }, TICK_INTERVAL_MS);
-    logger.info(`Counter engine started (tick every ${TICK_INTERVAL_MS}ms)`);
+    }, settings.workers.counterTickMs);
+    logger.info(`Counter engine started (tick every ${settings.workers.counterTickMs}ms)`);
 }

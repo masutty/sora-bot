@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, ComponentType,
     ContainerBuilder, MessageFlags, ModalBuilder, RoleSelectMenuBuilder, SeparatorSpacingSize,
@@ -16,8 +17,6 @@ import { quotasCreateAction, removeQuotaRoleAction } from "./adminQuotaActions";
 import { stepBiomeForwards } from "./forwardMenu";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
-
-const STEP_TIMEOUT_MS = 5 * 60_000;
 
 /** What the outer step driver should do next. */
 type Direction = "forward" | "back" | "cancel" | "timeout";
@@ -122,7 +121,7 @@ async function awaitButton(msg: Message, adminId: string): Promise<StepResult<st
         const i = await msg.awaitMessageComponent({
             filter: (i) => i.user.id === adminId,
             componentType: ComponentType.Button,
-            time: STEP_TIMEOUT_MS,
+            time: settings.ui.ezSetupStepTimeoutMs,
         });
         await i.deferUpdate();
         if (i.customId === "ez-cancel") return { kind: "cancel" };
@@ -137,7 +136,7 @@ async function awaitButton(msg: Message, adminId: string): Promise<StepResult<st
 /** Waits for a multi-select channel picker (used for macro categories / counter channel). */
 async function awaitChannelSelect(msg: Message, adminId: string): Promise<StepResult<string[]>> {
     return new Promise((resolve) => {
-        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: STEP_TIMEOUT_MS, max: 1 });
+        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: settings.ui.ezSetupStepTimeoutMs, max: 1 });
         collector.on("collect", async (i) => {
             await i.deferUpdate();
             if (i.customId === "ez-cancel") { resolve({ kind: "cancel" }); return; }
@@ -155,7 +154,7 @@ async function awaitChannelSelect(msg: Message, adminId: string): Promise<StepRe
 async function awaitRoleTriplet(msg: Message, adminId: string): Promise<StepResult<{ active: string; idle: string; inactive: string }>> {
     const picked: Partial<Record<"active" | "idle" | "inactive", string>> = {};
     return new Promise((resolve) => {
-        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: STEP_TIMEOUT_MS });
+        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: settings.ui.ezSetupStepTimeoutMs });
         collector.on("collect", async (i) => {
             await i.deferUpdate();
             if (i.customId === "ez-cancel") { collector.stop("cancel"); return; }
@@ -181,7 +180,7 @@ async function awaitRoleTriplet(msg: Message, adminId: string): Promise<StepResu
 async function awaitBadgeRoleSelects(msg: Message, adminId: string): Promise<StepResult<Partial<Record<Badge, string>>>> {
     const picked: Partial<Record<Badge, string>> = {};
     return new Promise((resolve) => {
-        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: STEP_TIMEOUT_MS });
+        const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: settings.ui.ezSetupStepTimeoutMs });
         collector.on("collect", async (i) => {
             if (i.customId === "ez-cancel") { await i.deferUpdate(); collector.stop("cancel"); return; }
             if (i.customId === "ez-skip") { await i.deferUpdate(); collector.stop("skip"); return; }
@@ -236,7 +235,7 @@ async function promptNumberModal(
         const collector = msg.createMessageComponentCollector({
             filter: (i) => i.user.id === adminId,
             componentType: ComponentType.Button,
-            time: STEP_TIMEOUT_MS,
+            time: settings.ui.ezSetupStepTimeoutMs,
         });
 
         collector.on("collect", async (i) => {
@@ -256,7 +255,7 @@ async function promptNumberModal(
             await i.showModal(modal);
 
             try {
-                const submitted = await i.awaitModalSubmit({ filter: (m) => m.customId === modalId && m.user.id === adminId, time: STEP_TIMEOUT_MS });
+                const submitted = await i.awaitModalSubmit({ filter: (m) => m.customId === modalId && m.user.id === adminId, time: settings.ui.ezSetupStepTimeoutMs });
                 const values = fields.map((f) => Number(submitted.fields.getTextInputValue(f.customId)));
                 if (values.some((n) => isNaN(n) || n <= 0)) {
                     await submitted.reply({ content: "Please enter valid positive numbers.", ephemeral: true });
@@ -309,11 +308,11 @@ async function promptRemoveIndex(msg: Message, adminId: string, roles: QuotaRole
         const buttonCollector = msg.createMessageComponentCollector({
             filter: (i) => i.user.id === adminId,
             componentType: ComponentType.Button,
-            time: STEP_TIMEOUT_MS,
+            time: settings.ui.ezSetupStepTimeoutMs,
         });
         const textCollector = channel.createMessageCollector({
             filter: (m) => m.author.id === adminId,
-            time: STEP_TIMEOUT_MS,
+            time: settings.ui.ezSetupStepTimeoutMs,
         });
 
         buttonCollector.on("collect", async (i) => {
@@ -553,7 +552,7 @@ async function stepQuotaRoles(guild: Guild, adminId: string, msg: Message, canGo
             navRow(true, "Skip"),
         ]));
         const rewardRole = await new Promise<StepResult<string>>((resolve) => {
-            const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: STEP_TIMEOUT_MS, max: 1 });
+            const collector = msg.createMessageComponentCollector({ filter: (i) => i.user.id === adminId, time: settings.ui.ezSetupStepTimeoutMs, max: 1 });
             collector.on("collect", async (i) => {
                 await i.deferUpdate();
                 if (i.customId === "ez-cancel") { resolve({ kind: "cancel" }); return; }

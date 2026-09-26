@@ -1,3 +1,4 @@
+import { settings } from "../settings";
 import {
     ButtonStyle, ContainerBuilder, GuildMember,
     MessageFlags, SeparatorSpacingSize,
@@ -22,8 +23,6 @@ import type { ActivitySessionRow, ActivityStatus, BiomeCategory, UserRow } from 
 
 const logger = new Logger("biomehunt.profileViews");
 
-/** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks (see utils/button-view.ts's own timing). */
-const SLOW_PROFILE_LOAD_MS = 500;
 
 export const SESSIONS_PER_PAGE = 10;
 export const USERS_PER_PAGE = 10;
@@ -111,7 +110,7 @@ async function loadProfileData(guildId: string, discordUserId: string): Promise<
     ]);
 
     const elapsedMs = Date.now() - start;
-    if (elapsedMs > SLOW_PROFILE_LOAD_MS) {
+    if (elapsedMs > settings.diagnostics.slowProfileLoadMs) {
         logger.warn(`Slow profile data load: ${elapsedMs}ms (DB-bound - see database pool stats)`, { guildId, userId: user.id });
     }
 

@@ -8,7 +8,7 @@ import { parseEvent } from "../macro-parsers";
 import { BIOME_META } from "../constants/biomes.constants";
 import { grantBiomeReward } from "./BiomeRewardEngine";
 import { checkAndForward } from "./ForwardEngine";
-import { transitionUser } from "../workers/StatusEngine";
+import { transitionUser } from "../workers/status.worker";
 
 const logger = new Logger("biomehunt.ActivityEngine");
 
