@@ -2,7 +2,6 @@ import {
     type ChatInputCommandInteraction,
     Events,
     type Message,
-    MessageFlags,
     REST,
     Routes,
 } from "discord.js";
@@ -14,9 +13,9 @@ import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import type { BotClient } from "../bot-client";
 import { checkGuards } from "../guards";
-import { type CommandContext, createPrefixContext, createSlashContext, type ReplyPayload } from "./command-context";
+import { type CommandContext, type CommandMode, createPrefixContext, createSlashContext, type ReplyPayload } from "./command-context";
 import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler, subcommandKey } from "./command-dispatch";
-import { buildHelpContainer } from "./command-usage";
+import { buildUsagePayload } from "./command-usage";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 import { describeCommandError } from "./user-facing-error";
 
@@ -73,15 +72,16 @@ async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
     const group = ctx.args.getSubcommandGroup();
     const sub = ctx.args.getSubcommand();
     if (mode === "prefix" && !sub && hasSubcommands(def) && def.onMissingSubcommand !== "run") {
-        const usage = buildHelpContainer(ctx.invokePrefix, def, group ? [group] : [], config.bot.allowArgsAsFlags, "prefix");
-        if (usage) await ctx.reply({ components: [usage], flags: MessageFlags.IsComponentsV2 });
+        await ctx.replyUsage();
         return;
     }
 
     const key = subcommandKey(group, sub);
     if (!isAllowed(def, mode, key)) {
         const path = [def.name, group, sub].filter(Boolean).join(" ");
-        const where = mode === "prefix" ? `a slash command: \`/${path}\`` : `a prefix command: \`${ctx.invokePrefix}${path}\``;
+        const where = mode === "prefix"
+            ? `a slash command: \`/${path}\``
+            : `a prefix command: \`${ctx.guild ? await getGuildPrefix(ctx.guild.id) : config.bot.defaultPrefix}${path}\``;
         await ctx.reply(EmbedFormatter.error(`This command is only available as ${where}.`), { ephemeral: true });
         return;
     }
@@ -95,6 +95,11 @@ async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
     } else {
         await invoke.override();
     }
+}
+
+/** Usage for `mode`, with the framework's flag-style setting (prefix only). */
+function usageFor(def: CommandDefinition, invokePrefix: string, group: string | null, mode: CommandMode): ReplyPayload | null {
+    return buildUsagePayload(def, invokePrefix, group, mode, mode === "prefix" && config.bot.allowArgsAsFlags);
 }
 
 /** A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip. */
@@ -131,7 +136,9 @@ export function registerCommandHandlers(client: BotClient): void {
         const schema = command.options ? deriveSchema(command.options) : [];
         const subcommandMap = command.options ? deriveSubcommandSchema(command.options) : undefined;
         const args = new PrefixArgs(rawArgs, schema, message.guild, client, subcommandMap);
-        const ctx = createPrefixContext(message, args, client, prefix);
+        const ctx: CommandContext = createPrefixContext(message, args, client, prefix, {
+            usage: () => usageFor(command, prefix, args.getSubcommandGroup(), "prefix"),
+        });
 
         try {
             await dispatch(command, ctx, {
@@ -170,7 +177,10 @@ export function registerCommandHandlers(client: BotClient): void {
             return;
         }
 
-        const ctx = createSlashContext(interaction as ChatInputCommandInteraction, client);
+        const slash = interaction as ChatInputCommandInteraction;
+        const ctx: CommandContext = createSlashContext(slash, client, {
+            usage: () => usageFor(command, "/", slash.options.getSubcommandGroup(false), "slash"),
+        });
         const overrode = selectHandler(command, "slash").kind === "override-slash";
 
         try {

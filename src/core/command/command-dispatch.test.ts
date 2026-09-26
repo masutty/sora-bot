@@ -82,3 +82,14 @@ describe("buildSlashJson", () => {
         expect(json).toMatchObject({ name: "ping", description: "Pong" });
     });
 });
+
+describe("review fixes", () => {
+    test("a subcommandModes key matching no subcommand is a registration error", () => {
+        expect(() => buildSlashJson(def({ subcommandModes: { event_loop: "slash" } }))).toThrow("event_loop");
+    });
+
+    test("stripping every subcommand is a registration error, not an empty command", () => {
+        expect(() => buildSlashJson(def({ subcommandModes: { status: "prefix", db: "prefix", run: "prefix", cog: "prefix" } })))
+            .toThrow("no subcommands left");
+    });
+});

@@ -16,9 +16,11 @@ function recordingInteraction() {
         member: null,
         createdTimestamp: 1_000,
         options: fakeInteractionOptions({}),
-        async reply(arg: unknown) { calls.push(["reply", arg]); },
+        replied: false,
+        deferred: false,
+        async reply(arg: unknown) { calls.push(["reply", arg]); (this as { replied: boolean }).replied = true; },
         async fetchReply() { calls.push(["fetchReply"]); return sent("first"); },
-        async deferReply(arg: unknown) { calls.push(["deferReply", arg]); },
+        async deferReply(arg: unknown) { calls.push(["deferReply", arg]); (this as { deferred: boolean }).deferred = true; },
         async editReply(arg: unknown) { calls.push(["editReply", arg]); return sent("first"); },
         async followUp(arg: unknown) { calls.push(["followUp", arg]); return sent("followup"); },
     } as unknown as ChatInputCommandInteraction;
@@ -31,6 +33,7 @@ function recordingMessage() {
     let n = 0;
     const message = {
         author: fakeUser("1"),
+        channel: { async sendTyping() { calls.push(["sendTyping"]); } },
         guild: fakeGuild(),
         member: null,
         createdTimestamp: 1_000,
@@ -103,12 +106,12 @@ describe("slash replies", () => {
 describe("prefix replies", () => {
     const prefixArgs = () => new PrefixArgs([], [], null, fakeClient());
 
-    test("defer is a no-op; reply -> message.reply", async () => {
+    test("defer only shows typing; reply -> message.reply", async () => {
         const { message, calls } = recordingMessage();
         const ctx = createPrefixContext(message, prefixArgs(), fakeClient(), "!", { schedule: () => {} });
         await ctx.defer();
         await ctx.reply("a");
-        expect(methods(calls)).toEqual(["reply"]);
+        expect(methods(calls)).toEqual(["sendTyping", "reply"]);
     });
 
     test("an ephemeral reply is deleted after config.ui.prefixEphemeralTtlMs", async () => {
@@ -149,5 +152,38 @@ describe("prefix replies", () => {
         await ctx.editReply("b");
         expect(methods(calls)).toEqual(["reply", "edit"]);
         expect(ctx.invokePrefix).toBe("?");
+    });
+});
+
+describe("review fixes", () => {
+    test("slash: if run already replied through ctx.raw, the next ctx.reply follows up", async () => {
+        const { interaction, calls } = recordingInteraction();
+        const ctx = createSlashContext(interaction, fakeClient());
+        await interaction.reply({ content: "direct" });
+        await ctx.reply("a");
+        expect(methods(calls)).toEqual(["reply", "followUp"]);
+    });
+
+    test("prefix: a per-reply ttlMs overrides the configured TTL", async () => {
+        const { message } = recordingMessage();
+        const scheduled: number[] = [];
+        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", { schedule: (_fn, ms) => scheduled.push(ms) });
+        await ctx.reply("a", { ephemeral: true, ttlMs: 300_000 });
+        expect(scheduled).toEqual([300_000]);
+    });
+
+    test("prefix: defer shows the typing indicator", async () => {
+        const { message, calls } = recordingMessage();
+        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", { schedule: () => {} });
+        await ctx.defer();
+        expect(methods(calls)).toEqual(["sendTyping"]);
+    });
+
+    test("replyUsage replies with the usage the framework supplied", async () => {
+        const { message, calls } = recordingMessage();
+        const usage = { components: [], flags: MessageFlags.IsComponentsV2 } as const;
+        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", { schedule: () => {}, usage: () => usage });
+        await ctx.replyUsage();
+        expect(calls[0]).toEqual(["reply", usage]);
     });
 });

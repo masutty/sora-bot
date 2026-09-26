@@ -1,4 +1,4 @@
-import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
+import { ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
 import type { CommandDefinition } from "../../types";
 import type { CommandMode } from "./command-context";
 import { optionsForMode, type RawOption, SUB_COMMAND, SUB_COMMAND_GROUP } from "./command-dispatch";
@@ -137,4 +137,15 @@ export function buildHelpContainer(invokeName: string, cmd: CommandDefinition, p
     if (topSub && path.length === 1) return buildLeafContainer(invokeName, cmd, [], topSub, useFlagStyle);
 
     return null;
+}
+
+/**
+ * The reply payload for a command's usage in `mode` - a bare group gets that group's view, falling
+ * back to the top-level summary when that resolves to nothing (e.g. every sub in the group is
+ * unavailable in this mode), so a usage request never ends in silence.
+ */
+export function buildUsagePayload(cmd: CommandDefinition, invokePrefix: string, group: string | null, mode: CommandMode, useFlagStyle: boolean) {
+    const container = (group && buildHelpContainer(invokePrefix, cmd, [group], useFlagStyle, mode))
+        || buildHelpContainer(invokePrefix, cmd, [], useFlagStyle, mode);
+    return container ? { components: [container], flags: MessageFlags.IsComponentsV2 as const } : null;
 }

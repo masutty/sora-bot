@@ -64,7 +64,7 @@ describe("slash and prefix resolve the same logical input identically", () => {
 
 describe("prefix-only input shapes", () => {
     test("a decimal for an integer option is rejected, not truncated", () => {
-        expect(prefix(["set", "2.5"]).getInteger("count")).toBeNull();
+        expect(() => prefix(["set", "2.5"]).getInteger("count")).toThrow("`count` must be a whole number.");
         expect(() => prefix(["set", "2.5"]).getInteger("count", true)).toThrow("`count` must be a whole number.");
     });
 
@@ -81,5 +81,17 @@ describe("prefix-only input shapes", () => {
     test("has() is true for a supplied value, even an invalid one", () => {
         expect(prefix(["set", "2.5"]).has("count")).toBe(true);
         expect(prefix(["set"]).has("count")).toBe(false);
+    });
+});
+
+describe("review fixes", () => {
+    test("an optional value that is supplied but unparseable is an error, not silently null", () => {
+        expect(() => prefix(["set", "abc"]).getInteger("count")).toThrow("`count` must be a whole number.");
+    });
+
+    test("slash numeric getters don't throw a TypeError when an integer option is read as a number", () => {
+        const args = slashArgs(fakeInteraction({ sub: "set", values: { count: 3 }, types: { count: 4 }, guild: fakeGuild() }));
+        expect(args.getNumber("count")).toBe(3);
+        expect(args.getInteger("count")).toBe(3);
     });
 });

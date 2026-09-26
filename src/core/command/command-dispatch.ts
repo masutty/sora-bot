@@ -75,7 +75,27 @@ export function optionsForMode(def: CommandDefinition, options: RawOption[], mod
  * both use this, so the pre-deploy check validates what actually gets registered. `null` = the
  * command is prefix-only and isn't registered at all.
  */
+/**
+ * Throws on a `subcommandModes` key that matches no `sub`, `group` or `group:sub` in the builder - a
+ * typo there would otherwise silently leave e.g. a sensitive slash-only subcommand usable on prefix.
+ */
+export function assertSubcommandModeKeys(def: CommandDefinition): void {
+    const known = new Set<string>();
+    for (const opt of topLevelOptions(def)) {
+        if (opt.type === SUB_COMMAND) known.add(opt.name);
+        if (opt.type === SUB_COMMAND_GROUP) {
+            known.add(opt.name);
+            for (const s of opt.options ?? []) known.add(`${opt.name}:${s.name}`);
+        }
+    }
+    const unknown = Object.keys(def.subcommandModes ?? {}).filter((k) => !known.has(k));
+    if (unknown.length) {
+        throw new Error(`/${def.name}: subcommandModes key(s) match no subcommand: ${unknown.join(", ")}`);
+    }
+}
+
 export function buildSlashJson(def: CommandDefinition): RESTPostAPIChatInputApplicationCommandsJSONBody | null {
+    assertSubcommandModeKeys(def);
     if (effectiveMode(def, null) === "prefix") return null;
 
     const base = def.options
@@ -85,6 +105,9 @@ export function buildSlashJson(def: CommandDefinition): RESTPostAPIChatInputAppl
     const json: RESTPostAPIChatInputApplicationCommandsJSONBody = { ...base };
     if (base.options) {
         json.options = optionsForMode(def, base.options as RawOption[], "slash") as typeof base.options;
+        if (hasSubcommands(def) && json.options?.length === 0) {
+            throw new Error(`/${def.name}: no subcommands left for slash - declare modes: "prefix" instead`);
+        }
     }
     if (def.guildOnly) json.contexts = [InteractionContextType.Guild];
     return json;

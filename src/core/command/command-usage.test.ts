@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { type ContainerBuilder, SlashCommandBuilder } from "discord.js";
 import type { CommandDefinition } from "../../types";
-import { buildHelpContainer } from "./command-usage";
+import { buildHelpContainer, buildUsagePayload } from "./command-usage";
 
 const cmd = {
     name: "bot",
@@ -28,4 +28,17 @@ test("slash usage lists only subcommands available on slash", () => {
     const usage = text(buildHelpContainer("/", cmd, [], false, "slash"));
     expect(usage).toContain("/bot db");
     expect(usage).not.toContain("/bot run");
+});
+
+test("usage for a group with nothing available in the mode falls back to the summary", () => {
+    const grouped = {
+        name: "g",
+        description: "G",
+        subcommandModes: { cfg: "slash" },
+        options: new SlashCommandBuilder().setName("g").setDescription("G")
+            .addSubcommand((s) => s.setName("show").setDescription("Show"))
+            .addSubcommandGroup((gr) => gr.setName("cfg").setDescription("Cfg").addSubcommand((s) => s.setName("set").setDescription("Set"))),
+    } as CommandDefinition;
+    const payload = buildUsagePayload(grouped, "!", "cfg", "prefix", false);
+    expect(JSON.stringify(payload)).toContain("!g show");
 });
