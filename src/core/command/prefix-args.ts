@@ -180,9 +180,13 @@ export class PrefixArgs {
 
             const sub = grouped ?? (first ? subcommandMap.get(first) : undefined);
             const consumed = grouped ? 2 : 1;
+            // A bare group name (no/unknown subcommand after it) still reports its group - mirrors
+            // slash, where a group can't be invoked without a subcommand, so callers can tell
+            // "`forward` with nothing after it" apart from "nothing at all".
+            const bareGroup = !sub && first !== null && [...subcommandMap.values()].some((s) => s.group === first);
 
             this._subcommand = sub?.name ?? null;
-            this._subcommandGroup = sub?.group ?? null;
+            this._subcommandGroup = sub?.group ?? (bareGroup ? first : null);
             this.activeSchema = sub?.options ?? [];
             this.activeRaw = sub ? positional.slice(consumed) : positional.slice(1);
         } else {
@@ -233,6 +237,17 @@ export class PrefixArgs {
 
     getString(name: string): string | null {
         return this.getRaw(name);
+    }
+
+    /** True if the invoker supplied a value for this arg at all - even one that won't parse. */
+    has(name: string): boolean {
+        return this.getRaw(name) !== null;
+    }
+
+    /** Like `getNumber`, but a non-integer (e.g. `2.5`) is treated as invalid (`null`), matching slash's integer options. */
+    getInteger(name: string): number | null {
+        const n = this.getNumber(name);
+        return n !== null && Number.isInteger(n) ? n : null;
     }
 
     getNumber(name: string): number | null {
