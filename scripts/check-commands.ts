@@ -8,9 +8,9 @@
  * sub-second sanity check to run before deploying instead of finding out at bot boot.
  */
 
-import { SlashCommandBuilder } from "discord.js";
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
+import { buildSlashJson } from "@/core/command/command-dispatch";
 import type { Cog } from "@/types";
 
 const modulesPath = join(__dirname, "../src/modules");
@@ -25,8 +25,8 @@ for (const entry of readdirSync(modulesPath)) {
         const cog: Cog = imported.default ?? imported;
 
         for (const cmd of cog.commands ?? []) {
-            if (cmd.options) cmd.options.toJSON();
-            else new SlashCommandBuilder().setName(cmd.name).setDescription(cmd.description).toJSON();
+            // The exact body registerSlashCommands sends - validates what really gets registered.
+            buildSlashJson(cmd);
         }
     } catch (err) {
         ok = false;

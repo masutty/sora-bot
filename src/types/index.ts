@@ -9,6 +9,7 @@ import type {
     SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
 import type { BotClient } from "../core/bot-client";
+import type { CommandContext, GuildCommandContext } from "../core/command/command-context";
 import type { PrefixArgs } from "../core/command/prefix-args";
 
 export { PrefixArgs } from "../core/command/prefix-args";
@@ -27,7 +28,20 @@ export enum CommandCategory {
 
 // ─── Command Definition ───────────────────────────────────────────────────────
 
-export interface CommandDefinition {
+/** Where a command (or one subcommand) can be invoked. */
+export type CommandModes = "both" | "slash" | "prefix";
+
+/**
+ * A command, declared with `defineCommand`. Write ONE `run(ctx)` - it serves both slash and
+ * prefix through `CommandContext` (`ctx.args`, `ctx.reply`, `ctx.defer`). The framework handles,
+ * before `run` is called: guild-only, guards, prefix usage for a missing/unknown subcommand, and
+ * `modes`. After: a thrown `UserFacingError` is shown verbatim; anything else is logged + a quip.
+ *
+ * Precedence: `executeAsSlash`/`executeAsPrefix`, when present, replace `run` in THAT mode only -
+ * an escape hatch for the rare truly different flow. Prefer `modes`/`subcommandModes`, or
+ * `ctx.raw`, over overriding.
+ */
+export interface CommandDefinitionBase {
     name: string;
     description: string;
     category?: CommandCategory;
@@ -71,15 +85,22 @@ export interface CommandDefinition {
         client: BotClient,
     ) => Promise<void>;
 
+    /** Where the command exists at all. Default "both". "prefix" = never registered as a slash command. */
+    modes?: CommandModes;
+
     /**
-     * Convenience alias — runs as slash only.
-     * Use this for simple commands that don't need prefix-specific handling.
-     * Identical to executeAsSlash.
+     * Per-subcommand `modes`, keyed `"sub"`, `"group"` (applies to every sub in it) or `"group:sub"`
+     * (most specific wins). A "prefix" subcommand is stripped from the slash registration; a "slash"
+     * one answers prefix callers with "only available as a slash command".
      */
-    execute?: (
-        interaction: ChatInputCommandInteraction,
-        client: BotClient,
-    ) => Promise<void>;
+    subcommandModes?: Record<string, CommandModes>;
+
+    /**
+     * Prefix invoked with no or an unknown subcommand: "usage" (default) replies with the
+     * auto-generated usage and never calls `run`; "run" calls `run` anyway, with
+     * `ctx.args.getSubcommand() === null` (and `getSubcommandGroup()` set for a bare group).
+     */
+    onMissingSubcommand?: "usage" | "run";
 
     /**
      * Autocomplete handler - called while the user types in an option with
@@ -92,6 +113,15 @@ export interface CommandDefinition {
         client: BotClient,
     ) => Promise<void>;
 }
+
+/**
+ * `guildOnly: true` -> registered for guilds only (hidden in DMs), a DM call is refused, and `run`
+ * gets a `GuildCommandContext` (non-null `guild`/`member`).
+ */
+export type CommandDefinition = CommandDefinitionBase & (
+    | { guildOnly: true; run?: (ctx: GuildCommandContext) => Promise<void> }
+    | { guildOnly?: false; run?: (ctx: CommandContext) => Promise<void> }
+);
 
 // ─── Cog (replaces ModuleDefinition) ─────────────────────────────────────────
 

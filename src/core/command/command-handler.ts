@@ -1,10 +1,10 @@
 import {
     type ChatInputCommandInteraction,
-    Events, GuildMember,
+    Events,
     type Message,
+    MessageFlags,
     REST,
     Routes,
-    SlashCommandBuilder
 } from "discord.js";
 import { config } from "@/config";
 import { getGuildPrefix } from "@/database/guild.repository";
@@ -14,7 +14,11 @@ import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import type { BotClient } from "../bot-client";
 import { checkGuards } from "../guards";
+import { type CommandContext, createPrefixContext, createSlashContext, type ReplyPayload } from "./command-context";
+import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler, subcommandKey } from "./command-dispatch";
+import { buildHelpContainer } from "./command-usage";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
+import { describeCommandError } from "./user-facing-error";
 
 const logger = new Logger("core.commandhandlers");
 const slashLogger = new Logger("core.slashcommands");
@@ -43,6 +47,67 @@ function parseArgs(input: string): string[] {
     return args;
 }
 
+// ─── Shared dispatch ──────────────────────────────────────────────────────────
+
+const GUILD_ONLY = "This command only works in a server.";
+
+/** Everything after "the command was found" - identical for both modes, driven by command-dispatch's pure rules. */
+async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
+    guardFailure: (guardError: string) => ReplyPayload;
+    override: () => Promise<void>;
+    noHandler: () => Promise<void>;
+}): Promise<void> {
+    const { mode } = ctx;
+
+    if (def.guildOnly && (!ctx.guild || !ctx.member)) {
+        await ctx.reply(EmbedFormatter.error(GUILD_ONLY), { ephemeral: true });
+        return;
+    }
+
+    const guardError = await checkGuards({ user: ctx.user, member: ctx.member }, def);
+    if (guardError) {
+        await ctx.reply(invoke.guardFailure(guardError), { ephemeral: true });
+        return;
+    }
+
+    const group = ctx.args.getSubcommandGroup();
+    const sub = ctx.args.getSubcommand();
+    if (mode === "prefix" && !sub && hasSubcommands(def) && def.onMissingSubcommand !== "run") {
+        const usage = buildHelpContainer(ctx.invokePrefix, def, group ? [group] : [], config.bot.allowArgsAsFlags, "prefix");
+        if (usage) await ctx.reply({ components: [usage], flags: MessageFlags.IsComponentsV2 });
+        return;
+    }
+
+    const key = subcommandKey(group, sub);
+    if (!isAllowed(def, mode, key)) {
+        const path = [def.name, group, sub].filter(Boolean).join(" ");
+        const where = mode === "prefix" ? `a slash command: \`/${path}\`` : `a prefix command: \`${ctx.invokePrefix}${path}\``;
+        await ctx.reply(EmbedFormatter.error(`This command is only available as ${where}.`), { ephemeral: true });
+        return;
+    }
+
+    const handler = selectHandler(def, mode);
+    if (handler.kind === "run") {
+        // guildOnly was checked above, so a GuildCommandContext is guaranteed when the def asks for one.
+        await (def.run as (ctx: CommandContext) => Promise<void>)(ctx);
+    } else if (handler.kind === "none") {
+        await invoke.noHandler();
+    } else {
+        await invoke.override();
+    }
+}
+
+/** A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip. */
+async function reportFailure(err: unknown, commandName: string, reply: (payload: ReplyPayload) => Promise<unknown>): Promise<void> {
+    const view = describeCommandError(err);
+    if (view.kind === "user") {
+        await reply(EmbedFormatter.error(view.message)).catch(() => { });
+        return;
+    }
+    logger.error(err instanceof Error ? err : new Error(String(err)), { command: commandName });
+    await reply(EmbedFormatter.error(getFailureQuip())).catch(() => { });
+}
+
 // ─── Command Handlers ─────────────────────────────────────────────────────────
 
 export function registerCommandHandlers(client: BotClient): void {
@@ -59,24 +124,23 @@ export function registerCommandHandlers(client: BotClient): void {
 
         const command = client.commands.get(commandName.toLowerCase());
         if (!command) return;
-
-        const handler = command.executeAsPrefix;
-        if (!handler) return; // Command doesn't support prefix
+        // A slash-only command doesn't exist on prefix at all - ignored like an unknown name.
+        if (effectiveMode(command, null) === "slash") return;
+        if (selectHandler(command, "prefix").kind === "none") return; // Command doesn't support prefix
 
         const schema = command.options ? deriveSchema(command.options) : [];
         const subcommandMap = command.options ? deriveSubcommandSchema(command.options) : undefined;
         const args = new PrefixArgs(rawArgs, schema, message.guild, client, subcommandMap);
+        const ctx = createPrefixContext(message, args, client, prefix);
 
         try {
-            const guardError = await checkGuards({ user: message.author, member: message.member }, command);
-            if (guardError) {
-                await message.reply(EmbedFormatter.error(`Error! ${getFailureQuip()}\n${guardError}`)).catch(() => { });
-                return;
-            }
-            await handler(message, args, client);
+            await dispatch(command, ctx, {
+                guardFailure: (guardError) => EmbedFormatter.error(`Error! ${getFailureQuip()}\n${guardError}`),
+                override: () => (command.executeAsPrefix as NonNullable<typeof command.executeAsPrefix>)(message, args, client),
+                noHandler: async () => { },
+            });
         } catch (err) {
-            logger.error(err instanceof Error ? err : new Error(String(err)), { command: commandName });
-            await message.reply(EmbedFormatter.error(getFailureQuip())).catch(() => { });
+            await reportFailure(err, commandName, (payload) => ctx.reply(payload, { ephemeral: true }));
         }
     });
 
@@ -106,32 +170,26 @@ export function registerCommandHandlers(client: BotClient): void {
             return;
         }
 
-        const handler = command.executeAsSlash;
-        if (!handler) {
-            await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });
-            return;
-        }
+        const ctx = createSlashContext(interaction as ChatInputCommandInteraction, client);
+        const overrode = selectHandler(command, "slash").kind === "override-slash";
 
         try {
-            const guardError = await checkGuards(
-                { user: interaction.user, member: interaction.member as GuildMember | null },
-                command,
-            );
-            if (guardError) {
-                const payload = { ...EmbedFormatter.error(`${getFailureQuip()}\n${guardError}`), ephemeral: true };
-                await interaction.reply(payload).catch(() => { });
-                return;
-            }
-            await handler(interaction as ChatInputCommandInteraction, client);
+            await dispatch(command, ctx, {
+                guardFailure: (guardError) => EmbedFormatter.error(`${getFailureQuip()}\n${guardError}`),
+                override: () => (command.executeAsSlash as NonNullable<typeof command.executeAsSlash>)(interaction as ChatInputCommandInteraction, client),
+                noHandler: async () => {
+                    await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });
+                },
+            });
         } catch (err) {
-            logger.error(err instanceof Error ? err : new Error(String(err)), { command: interaction.commandName });
-
-            const payload = { ...EmbedFormatter.error(getFailureQuip()), ephemeral: true };
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp(payload).catch(() => { });
-            } else {
-                await interaction.reply(payload).catch(() => { });
-            }
+            // An override replies on the raw interaction, so ctx doesn't know its state - pick the call from the interaction itself.
+            const reply = overrode
+                ? (payload: ReplyPayload) => {
+                    const body = { ...(typeof payload === "string" ? { content: payload } : payload), ephemeral: true };
+                    return interaction.replied || interaction.deferred ? interaction.followUp(body) : interaction.reply(body);
+                }
+                : (payload: ReplyPayload) => ctx.reply(payload, { ephemeral: true });
+            await reportFailure(err, interaction.commandName, reply);
         }
     });
 }
@@ -144,12 +202,9 @@ export async function registerSlashCommands(
 ): Promise<void> {
     const rest = new REST().setToken(config.discord.token);
 
-    const builders = client.commands.getAll().map((cmd) => {
-        if (cmd.options) return cmd.options.toJSON();
-        return new SlashCommandBuilder()
-            .setName(cmd.name)
-            .setDescription(cmd.description)
-            .toJSON();
+    const builders = client.commands.getAll().flatMap((cmd) => {
+        const json = buildSlashJson(cmd);
+        return json ? [json] : [];
     });
 
     try {
