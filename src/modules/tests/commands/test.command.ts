@@ -1,17 +1,13 @@
-import type { Message } from "discord.js";
-import {
-    ActionRowBuilder, ComponentType, ContainerBuilder, MessageFlags, SeparatorSpacingSize,
-    SlashCommandBuilder, StringSelectMenuBuilder,
-} from "discord.js";
+import { ContainerBuilder, MessageFlags, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { defineCommand } from "@/define";
+import { type CommandContext, defineCommand, defineView, paginate, type ReplyOptions, type ViewDefinition } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
-import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { loadTestCases, resolveTestPages, type TestPayload } from "../registry";
 
-const PICKER_SELECT_ID = "test-picker-select";
-const PICKER_TIMEOUT_MS = 60_000;
+/** Prefix "ephemeral" = deleted after this, not the default TTL: the countdown doesn't reset on
+ * clicks, and a preview is often paged/picked through for a while. */
+const REPLY_OPTS: ReplyOptions = { ephemeral: true, ttlMs: 5 * 60_000 };
 
 function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -48,27 +44,20 @@ function buildListPayload(): TestPayload {
     return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-/** Wraps a test case's raw pages into a `render(page, interactive)` - dropping the nav row once
- * the collector expires, same convention `attachPagination` expects everywhere else it's used. */
-function buildPagedRender(pages: TestPayload[]): (page: number, interactive: boolean) => TestPayload {
-    return (page, interactive) => ({
-        ...pages[page],
-        components: [
-            ...(pages[page].components ?? []),
-            ...(interactive && pages.length > 1 ? [buildPaginationRow(page, pages.length)] : []),
-        ],
-    });
+/** Opens `pages` on `ctx`: a single page is just a reply (no navigation needed), several pages
+ * open as a `paginate` View. */
+async function openTestPages(ctx: CommandContext, pages: TestPayload[]): Promise<void> {
+    if (pages.length <= 1) {
+        await ctx.reply(pages[0], REPLY_OPTS);
+        return;
+    }
+    await ctx.open(paginate({ name: "tests.pages", pages: pages.length, renderPage: (page) => pages[page] }), undefined, REPLY_OPTS);
 }
 
-async function runTestCase(
-    key: string,
-    client: BotClient,
-    invokerId: string,
-    send: (payload: TestPayload) => Promise<Message>,
-): Promise<void> {
+async function runTestCase(ctx: CommandContext, key: string, client: BotClient): Promise<void> {
     const testCase = loadTestCases().get(key);
     if (!testCase) {
-        await send(EmbedFormatter.error(`No test case \`${key}\`. Run \`!test\` for a picker, or \`!test list\` to see all.`));
+        await ctx.reply(EmbedFormatter.error(`No test case \`${key}\`. Run \`!test\` for a picker, or \`!test list\` to see all.`), REPLY_OPTS);
         return;
     }
 
@@ -76,98 +65,81 @@ async function runTestCase(
     try {
         pages = await resolveTestPages(testCase, client);
     } catch (err) {
-        await send(EmbedFormatter.error(`Test \`${key}\` threw: ${err instanceof Error ? err.message : String(err)}`));
+        await ctx.reply(EmbedFormatter.error(`Test \`${key}\` threw: ${err instanceof Error ? err.message : String(err)}`), REPLY_OPTS);
         return;
     }
     if (pages.length === 0) {
-        await send(EmbedFormatter.error(`Test \`${key}\` returned no pages.`));
+        await ctx.reply(EmbedFormatter.error(`Test \`${key}\` returned no pages.`), REPLY_OPTS);
         return;
     }
 
-    const render = buildPagedRender(pages);
-    const msg = await send(render(0, true));
-    if (pages.length > 1) attachPagination(msg, { invokerId, pages: pages.length, render });
+    await openTestPages(ctx, pages);
 }
 
-function buildPickerRow(keys: string[]): ActionRowBuilder<StringSelectMenuBuilder> {
-    const cases = loadTestCases();
-    const menu = new StringSelectMenuBuilder()
-        .setCustomId(PICKER_SELECT_ID)
-        .setPlaceholder(`Choose a test to preview (${keys.length} available)...`)
-        .addOptions(
-            keys.slice(0, 25).map((key) => ({
-                label: key,
-                value: key,
-                description: (cases.get(key)?.description ?? "").slice(0, 100) || undefined,
-            })),
-        );
-    return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+// ─── Picker ─────────────────────────────────────────────────────────────────
+
+type PickerState =
+    | { screen: "pick"; keys: string[] }
+    | { screen: "shown"; payload: TestPayload };
+
+/** `!test` with no keyword: a select menu instead of a wall of text - pick one, it runs right
+ * there (a single page replaces the picker in place; several pages open as a child `paginate`
+ * View, sharing this session's clock). */
+export function pickerView(client: BotClient): ViewDefinition<PickerState, void, string[]> {
+    return defineView<PickerState, void, string[]>({
+        name: "tests.picker",
+        initial: (keys) => ({ screen: "pick", keys }),
+        render: (state, kit) => {
+            if (state.screen === "shown") return state.payload;
+
+            const cases = loadTestCases();
+            const container = new ContainerBuilder().setAccentColor(0x5865f2);
+            container.addTextDisplayComponents((td) => td.setContent("## 🧪 Test Previews"));
+            container.addTextDisplayComponents((td) => td.setContent("-# Pick one from the dropdown to run it."));
+            const select = kit.stringSelect("pick", (s) =>
+                s
+                    .setPlaceholder(`Choose a test to preview (${state.keys.length} available)...`)
+                    .addOptions(
+                        state.keys.slice(0, 25).map((key) => ({
+                            label: key,
+                            value: key,
+                            description: (cases.get(key)?.description ?? "").slice(0, 100) || undefined,
+                        })),
+                    ),
+            );
+            return { flags: MessageFlags.IsComponentsV2, components: [container, kit.row(select)] };
+        },
+        on: {
+            pick: async (c) => {
+                const key = c.values[0];
+                const testCase = loadTestCases().get(key);
+                if (!testCase) return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` isn't registered anymore.`) };
+
+                let pages: TestPayload[];
+                try {
+                    pages = await resolveTestPages(testCase, client);
+                } catch (err) {
+                    return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` threw: ${err instanceof Error ? err.message : String(err)}`) };
+                }
+                if (pages.length === 0) return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` returned no pages.`) };
+                if (pages.length === 1) return { screen: "shown", payload: pages[0] };
+
+                // Several pages: hand the message to a child `paginate` View - it never `done()`s on
+                // its own, so this simply parks here (sharing the root's idle clock) until expiry.
+                await c.open(paginate({ name: "tests.pages", pages: pages.length, renderPage: (page) => pages[page] }), undefined);
+            },
+        },
+    });
 }
 
-/** `!test` with no keyword: a select menu instead of a wall of text - pick one, it runs right there. */
-async function runPicker(client: BotClient, invokerId: string, send: (payload: TestPayload) => Promise<Message>): Promise<void> {
+async function runPicker(ctx: CommandContext, client: BotClient): Promise<void> {
     const cases = loadTestCases();
     if (cases.size === 0) {
-        await send(EmbedFormatter.info("No test cases registered yet - add one under `src/modules/tests/tests/`."));
+        await ctx.reply(EmbedFormatter.info("No test cases registered yet - add one under `src/modules/tests/tests/`."), REPLY_OPTS);
         return;
     }
-
     const keys = [...cases.keys()].sort();
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent("## 🧪 Test Previews"));
-    container.addTextDisplayComponents((td) => td.setContent("-# Pick one from the dropdown to run it."));
-
-    // `TestPayload` only types its action row as ActionRowBuilder<ButtonBuilder> (the shape every
-    // other test payload needs) - a select menu row is equally valid at runtime, just outside that
-    // narrower type, so it's cast here rather than widening the type everyone else uses.
-    const msg = await send({ flags: MessageFlags.IsComponentsV2, components: [container, buildPickerRow(keys)] } as TestPayload);
-
-    const collector = msg.createMessageComponentCollector({ componentType: ComponentType.StringSelect, idle: PICKER_TIMEOUT_MS, max: 1 });
-
-    collector.on("collect", async (i) => {
-        if (i.user.id !== invokerId) {
-            await i.reply({ content: "That picker isn't yours!", ephemeral: true }).catch(() => { });
-            return;
-        }
-
-        const key = i.values[0];
-        const testCase = loadTestCases().get(key);
-        if (!testCase) {
-            await i.update(EmbedFormatter.error(`Test \`${key}\` isn't registered anymore.`)).catch(() => { });
-            return;
-        }
-
-        try {
-            const pages = await resolveTestPages(testCase, client);
-            if (pages.length === 0) {
-                await i.update(EmbedFormatter.error(`Test \`${key}\` returned no pages.`)).catch(() => { });
-                return;
-            }
-            const render = buildPagedRender(pages);
-            await i.update(render(0, true));
-            if (pages.length > 1) attachPagination(msg, { invokerId, pages: pages.length, render });
-        } catch (err) {
-            await i.update(EmbedFormatter.error(`Test \`${key}\` threw: ${err instanceof Error ? err.message : String(err)}`)).catch(() => { });
-        }
-    });
-
-    collector.on("end", (collected) => {
-        if (collected.size === 0) msg.edit(EmbedFormatter.warn("Picker timed out - nothing selected.")).catch(() => { });
-    });
-}
-
-async function runKeyword(
-    keyword: string | null,
-    invokerId: string,
-    client: BotClient,
-    send: (payload: TestPayload) => Promise<Message>,
-): Promise<void> {
-    if (!keyword) return runPicker(client, invokerId, send);
-    if (keyword === "list") {
-        await send(buildListPayload());
-        return;
-    }
-    return runTestCase(keyword, client, invokerId, send);
+    await ctx.open(pickerView(client), keys, REPLY_OPTS);
 }
 
 export default defineCommand({
@@ -184,9 +156,16 @@ export default defineCommand({
 
     async run(ctx) {
         await ctx.defer({ ephemeral: true });
-        // 5 min, not the default TTL: the countdown doesn't reset on clicks, and a preview is
-        // often paged/picked through for a while (prefix "ephemeral" = deleted after this).
-        const send = (payload: TestPayload) => ctx.reply(payload, { ephemeral: true, ttlMs: 5 * 60_000 });
-        await runKeyword(ctx.args.getString("keyword"), ctx.user.id, ctx.client, send);
+        const keyword = ctx.args.getString("keyword");
+
+        if (!keyword) {
+            await runPicker(ctx, ctx.client);
+            return;
+        }
+        if (keyword === "list") {
+            await ctx.reply(buildListPayload(), REPLY_OPTS);
+            return;
+        }
+        await runTestCase(ctx, keyword, ctx.client);
     },
 });

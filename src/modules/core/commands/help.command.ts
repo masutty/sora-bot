@@ -1,9 +1,8 @@
 import { ContainerBuilder, MessageFlags, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { buildHelpContainer, defineCommand, UserFacingError } from "@/define";
+import { buildHelpContainer, defineCommand, paginate, UserFacingError } from "@/define";
 import { CommandCategory, type CommandDefinition } from "@/types";
 import { Logger } from "@/utils/logging";
-import { attachPagination, buildPaginationRow } from "@/utils/pagination";
 import { config } from "../../../config";
 
 const logger = new Logger("core.commands.help");
@@ -36,13 +35,10 @@ function buildListContainer(page: number, all: CommandDefinition[], pages: numbe
     return container;
 }
 
-function renderList(page: number, interactive: boolean, all: CommandDefinition[], pages: number, prefix: string) {
+function renderPage(page: number, all: CommandDefinition[], pages: number, prefix: string) {
     return {
         flags: MessageFlags.IsComponentsV2 as const,
-        components: [
-            buildListContainer(page, all, pages, prefix),
-            ...(interactive ? [buildPaginationRow(page, pages)] : []),
-        ],
+        components: [buildListContainer(page, all, pages, prefix)],
     };
 }
 
@@ -91,14 +87,13 @@ export default defineCommand({
         const all = getVisibleCommands(ctx.client);
         const pages = Math.ceil(all.length / PER_PAGE);
 
-        const sent = await ctx.reply(renderList(0, pages > 1, all, pages, ctx.invokePrefix));
-
-        if (pages <= 1) return;
-
-        attachPagination(sent, {
-            invokerId: ctx.user.id,
-            pages,
-            render: (page, interactive) => renderList(page, interactive, all, pages, ctx.invokePrefix),
-        });
+        await ctx.open(
+            paginate({
+                name: "core.help",
+                pages,
+                renderPage: (page) => renderPage(page, all, pages, ctx.invokePrefix),
+            }),
+            undefined,
+        );
     },
 });
