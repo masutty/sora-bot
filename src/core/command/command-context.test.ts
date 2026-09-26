@@ -1,0 +1,153 @@
+import { describe, expect, test } from "bun:test";
+import { type ChatInputCommandInteraction, type Message, MessageFlags } from "discord.js";
+import { config } from "@/config";
+import { createPrefixContext, createSlashContext } from "./command-context";
+import { fakeClient, fakeGuild, fakeInteractionOptions, fakeUser } from "./fakes";
+import { PrefixArgs } from "./prefix-args";
+
+type Call = [method: string, arg?: unknown];
+
+function recordingInteraction() {
+    const calls: Call[] = [];
+    const sent = (id: string) => ({ id, createdTimestamp: 2_000 }) as unknown as Message;
+    const interaction = {
+        user: fakeUser("1"),
+        guild: fakeGuild(),
+        member: null,
+        createdTimestamp: 1_000,
+        options: fakeInteractionOptions({}),
+        async reply(arg: unknown) { calls.push(["reply", arg]); },
+        async fetchReply() { calls.push(["fetchReply"]); return sent("first"); },
+        async deferReply(arg: unknown) { calls.push(["deferReply", arg]); },
+        async editReply(arg: unknown) { calls.push(["editReply", arg]); return sent("first"); },
+        async followUp(arg: unknown) { calls.push(["followUp", arg]); return sent("followup"); },
+    } as unknown as ChatInputCommandInteraction;
+    return { interaction, calls };
+}
+
+function recordingMessage() {
+    const calls: Call[] = [];
+    const deleted: string[] = [];
+    let n = 0;
+    const message = {
+        author: fakeUser("1"),
+        guild: fakeGuild(),
+        member: null,
+        createdTimestamp: 1_000,
+        async reply(arg: unknown) {
+            calls.push(["reply", arg]);
+            const id = `sent${++n}`;
+            return {
+                id,
+                async delete() { deleted.push(id); },
+                async edit(e: unknown) { calls.push(["edit", e]); },
+            } as unknown as Message;
+        },
+    } as unknown as Message;
+    return { message, calls, deleted };
+}
+
+const isEphemeral = (arg: unknown) => ((((arg as { flags?: number }).flags ?? 0) & MessageFlags.Ephemeral) !== 0);
+const methods = (calls: Call[]) => calls.map(([m]) => m);
+
+describe("slash replies", () => {
+    test("reply, reply -> reply then followUp (never a second reply)", async () => {
+        const { interaction, calls } = recordingInteraction();
+        const ctx = createSlashContext(interaction, fakeClient());
+        await ctx.reply("a");
+        await ctx.reply("b");
+        expect(methods(calls)).toEqual(["reply", "fetchReply", "followUp"]);
+    });
+
+    test("defer, reply, reply -> deferReply, editReply, followUp", async () => {
+        const { interaction, calls } = recordingInteraction();
+        const ctx = createSlashContext(interaction, fakeClient());
+        await ctx.defer();
+        await ctx.reply("a");
+        await ctx.reply("b");
+        expect(methods(calls)).toEqual(["deferReply", "editReply", "followUp"]);
+    });
+
+    test("defer({ephemeral}) makes later followUps ephemeral too", async () => {
+        const { interaction, calls } = recordingInteraction();
+        const ctx = createSlashContext(interaction, fakeClient());
+        await ctx.defer({ ephemeral: true });
+        await ctx.reply("a");
+        await ctx.reply("b");
+        expect(isEphemeral(calls[0][1])).toBe(true);
+        expect(isEphemeral(calls[2][1])).toBe(true);
+    });
+
+    test("an ephemeral reply keeps a ComponentsV2 flag it already had", async () => {
+        const { interaction, calls } = recordingInteraction();
+        const ctx = createSlashContext(interaction, fakeClient());
+        await ctx.reply({ components: [], flags: MessageFlags.IsComponentsV2 }, { ephemeral: true });
+        const flags = (calls[0][1] as { flags: number }).flags;
+        expect(flags & MessageFlags.IsComponentsV2).toBeTruthy();
+        expect(flags & MessageFlags.Ephemeral).toBeTruthy();
+    });
+
+    test("editReply edits the original response", async () => {
+        const { interaction, calls } = recordingInteraction();
+        const ctx = createSlashContext(interaction, fakeClient());
+        await ctx.reply("a");
+        await ctx.editReply("b");
+        expect(methods(calls)).toEqual(["reply", "fetchReply", "editReply"]);
+    });
+
+    test("invokePrefix is '/'", () => {
+        expect(createSlashContext(recordingInteraction().interaction, fakeClient()).invokePrefix).toBe("/");
+    });
+});
+
+describe("prefix replies", () => {
+    const prefixArgs = () => new PrefixArgs([], [], null, fakeClient());
+
+    test("defer is a no-op; reply -> message.reply", async () => {
+        const { message, calls } = recordingMessage();
+        const ctx = createPrefixContext(message, prefixArgs(), fakeClient(), "!", { schedule: () => {} });
+        await ctx.defer();
+        await ctx.reply("a");
+        expect(methods(calls)).toEqual(["reply"]);
+    });
+
+    test("an ephemeral reply is deleted after config.ui.prefixEphemeralTtlMs", async () => {
+        const { message, deleted } = recordingMessage();
+        const scheduled: Array<[() => void, number]> = [];
+        const ctx = createPrefixContext(message, prefixArgs(), fakeClient(), "!", { schedule: (fn, ms) => scheduled.push([fn, ms]) });
+        await ctx.reply("secret", { ephemeral: true });
+        expect(scheduled).toHaveLength(1);
+        expect(scheduled[0][1]).toBe(config.ui.prefixEphemeralTtlMs);
+        expect(deleted).toEqual([]);
+        scheduled[0][0]();
+        await Promise.resolve();
+        expect(deleted).toEqual(["sent1"]);
+    });
+
+    test("defer({ephemeral:true}) makes later replies ephemeral", async () => {
+        const { message } = recordingMessage();
+        const scheduled: number[] = [];
+        const ctx = createPrefixContext(message, prefixArgs(), fakeClient(), "!", { schedule: (_fn, ms) => scheduled.push(ms) });
+        await ctx.defer({ ephemeral: true });
+        await ctx.reply("a");
+        await ctx.reply("b");
+        expect(scheduled).toHaveLength(2);
+    });
+
+    test("a non-ephemeral reply schedules nothing", async () => {
+        const { message } = recordingMessage();
+        const scheduled: number[] = [];
+        const ctx = createPrefixContext(message, prefixArgs(), fakeClient(), "!", { schedule: (_fn, ms) => scheduled.push(ms) });
+        await ctx.reply("a");
+        expect(scheduled).toEqual([]);
+    });
+
+    test("editReply edits the first sent message; invokePrefix is the guild prefix", async () => {
+        const { message, calls } = recordingMessage();
+        const ctx = createPrefixContext(message, prefixArgs(), fakeClient(), "?", { schedule: () => {} });
+        await ctx.reply("a");
+        await ctx.editReply("b");
+        expect(methods(calls)).toEqual(["reply", "edit"]);
+        expect(ctx.invokePrefix).toBe("?");
+    });
+});
