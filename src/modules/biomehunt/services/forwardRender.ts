@@ -2,7 +2,8 @@ import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SectionBuilder, SeparatorBuilder,
     TextDisplayBuilder, ThumbnailBuilder,
 } from "discord.js";
-import { getBiomeColor, getBiomeIconUrl, spoofBiomeName, type VoteCheckDecidedBy, type VoteCheckStatus } from "../types";
+import { getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
+import type { VoteCheckDecidedBy, VoteCheckStatus } from "../types";
 
 export interface VoteRenderInfo {
     status: VoteCheckStatus;

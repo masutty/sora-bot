@@ -8,7 +8,9 @@ import {
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
-import { ALL_BADGES, BADGE_META, BiomeHuntError, formatBiomeName, resolveBiomeSelector } from "../types";
+import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import { BiomeHuntError } from "../types";
+import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { updateCounterForGuild } from "../workers/CounterEngine";
 
 function addDivider(container: ContainerBuilder): void {

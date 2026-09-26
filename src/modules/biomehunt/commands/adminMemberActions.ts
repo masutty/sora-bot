@@ -2,7 +2,7 @@ import { ChannelType } from "discord.js";
 import type { Guild, GuildMember, TextChannel } from "discord.js";
 import { readFileSync } from "fs";
 import type { BotClient } from "@/core/bot-client";
-import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
+import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
 import { adoptExistingChannel, runUserSetup } from "../guildSetup";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
 import {
@@ -10,7 +10,9 @@ import {
     pauseUser, setUserFlower, unpauseUser,
 } from "../repository/users.repository";
 import { revertBiomeRewards, revokeOrphanedBadges } from "../services/BiomeRewardEngine";
-import { BADGE_META, BiomeHuntError, formatBiomeName, type Badge } from "../types";
+import { BADGE_META } from "../constants/badges.constants";
+import { BiomeHuntError, type Badge } from "../types";
+import { formatBiomeName } from "../constants/biomes.constants";
 
 function formatRewardRevertSuffix(reverted: { seedsReverted: number; xpReverted: number }, revokedBadges: Badge[]): string {
     const parts: string[] = [];

@@ -3,7 +3,8 @@ import type { Message } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { getBiomeCountForUser } from "../repository/activity.repository";
 import { getForwardConfig } from "../repository/forwards.repository";
-import { BIOME_META, type ParsedEvent } from "../types";
+import { BIOME_META } from "../constants/biomes.constants";
+import type { ParsedEvent } from "../types";
 import { buildForwardContainer } from "./forwardRender";
 import { startVoteCheck } from "./VoteCheckEngine";
 

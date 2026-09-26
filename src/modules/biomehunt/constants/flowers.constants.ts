@@ -19,7 +19,7 @@ interface FlowerMeta {
 
 /**
  * SINGLE SOURCE OF TRUTH for every Flower a MacroChannel can be assigned - same pattern as
- * BIOME_META/BADGE_META in types.ts. Rarity is mostly tiered by how hard the real flower is to get
+ * BIOME_META/BADGE_META in biomes.constants.ts/badges.constants.ts. Rarity is mostly tiered by how hard the real flower is to get
  * in Minecraft (biome restriction, mob/process required); a few non-flower items (Red Mushroom,
  * Oak Sapling, Lily Pad, Golden Dandelion) are deliberately hand-picked into the higher tiers as
  * odd/joke pulls, independent of their real in-game rarity.
@@ -99,5 +99,5 @@ export function drawRandomFlower(): string {
 export function flowerAssetPath(key: string): string {
     const meta = FLOWER_META[key];
     if (!meta) throw new Error(`Unknown flower key: ${key}`);
-    return join(__dirname, "../../assets/garden", meta.file);
+    return join(__dirname, "../../../assets/garden", meta.file);
 }

@@ -3,7 +3,7 @@ import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChan
 import { readFileSync } from "fs";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
-import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./flowers";
+import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./constants/flowers.constants";
 import { isFlagEnabled } from "./repository/flags.repository";
 import { addCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds.repository";
 import {

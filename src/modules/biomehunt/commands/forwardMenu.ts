@@ -6,7 +6,8 @@ import type { Guild, GuildTextBasedChannel, Message, MessageEditOptions } from "
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { buildPaginationRow, handlePaginationButton } from "@/utils/pagination";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
-import { BIOME_SELECTOR_CHOICES, formatBiomeName, resolveBiomeSelector, type BiomeForwardRow } from "../types";
+import { BIOME_SELECTOR_CHOICES, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
+import type { BiomeForwardRow } from "../types";
 
 const TIMEOUT_MS = 5 * 60_000;
 const FORWARDS_PER_PAGE = 10;

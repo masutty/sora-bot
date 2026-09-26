@@ -14,7 +14,8 @@ import { badgesSetAction } from "./adminBadgeActions";
 import { addCategoryAction, disableCounterAction, setCounterChannelAction, setRolesAction, showConfig } from "./adminConfigActions";
 import { quotasCreateAction, removeQuotaRoleAction } from "./adminQuotaActions";
 import { stepBiomeForwards } from "./forwardMenu";
-import { ALL_BADGES, BADGE_META, type Badge, type QuotaRoleMode, type QuotaRoleRow } from "../types";
+import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
 
 const STEP_TIMEOUT_MS = 5 * 60_000;
 

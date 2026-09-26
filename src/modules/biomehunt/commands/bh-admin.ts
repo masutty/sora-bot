@@ -30,10 +30,10 @@ import { sessionClearAction, sessionDeleteAction } from "./adminSessionActions";
 import { runEzSetup } from "./ezsetup";
 import { runForwardMenu } from "./forwardMenu";
 import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "./profileViews";
-import {
-    ALL_BADGES, ALL_FLAGS, BADGE_META, BiomeHuntError, BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES, FLAG_DEFINITIONS,
-    resolveBadgeSlug, type ActivityStatus, type Badge, type FlagName, type QuotaRoleMode,
-} from "../types";
+import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
+import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
+import { BiomeHuntError, type ActivityStatus, type Badge, type FlagName, type QuotaRoleMode } from "../types";
+import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
 
 const logger = new Logger("biomehunt.commands.bh-admin");
 

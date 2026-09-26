@@ -10,10 +10,8 @@ import {
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { buildGuildStatsContainer, buildUserListContainer, getUserListPage, USERS_PER_PAGE } from "./profileViews";
-import {
-    ALL_BIOME_CATEGORIES, BiomeHuntError, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor,
-    type ActivityStatus,
-} from "../types";
+import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import { BiomeHuntError, type ActivityStatus } from "../types";
 
 const ANSI_RESET = "\u001b[0m";
 

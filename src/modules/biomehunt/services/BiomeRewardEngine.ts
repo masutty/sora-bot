@@ -6,7 +6,10 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import {
     adjustUserBalance, countRewardsWithBadge, getRewardsByEventIds, getUnrewardedEventsForUser, insertReward,
 } from "../repository/rewards.repository";
-import { ALL_BADGES, BIOME_META, REWARD_BY_CATEGORY, getLevelForXp, type Badge, type UserRow } from "../types";
+import { ALL_BADGES } from "../constants/badges.constants";
+import { BIOME_META } from "../constants/biomes.constants";
+import { REWARD_BY_CATEGORY, getLevelForXp } from "../constants/levels.constants";
+import type { Badge, UserRow } from "../types";
 
 function isBadgeBiome(biome: string): biome is Badge {
     return (ALL_BADGES as string[]).includes(biome);

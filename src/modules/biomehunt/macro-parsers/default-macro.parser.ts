@@ -1,5 +1,5 @@
 import { Logger } from "@/utils/logging";
-import { BIOME_META } from "../types";
+import { BIOME_META } from "../constants/biomes.constants";
 import { MacroParser, type BiomeExtraction, type EmbedLike } from "./types";
 
 const logger = new Logger("biomehunt.macroParsers");
@@ -19,7 +19,7 @@ const DEFAULT_THUMBNAIL_REGEX =
 const DEFAULT_ROBLOX_LINK_REGEX =
     /https?:\/\/(?:www\.)?roblox\.com\/[^\s)\]"'<>]+/i;
 
-/** Single source of truth for recognized biomes lives in `BIOME_META` (types.ts). */
+/** Single source of truth for recognized biomes lives in `BIOME_META` (constants/biomes.constants.ts). */
 const VALID_BIOMES = new Set(Object.keys(BIOME_META));
 
 /** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token before matching against VALID_BIOMES. */

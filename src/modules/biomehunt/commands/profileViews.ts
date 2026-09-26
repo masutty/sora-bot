@@ -6,7 +6,7 @@ import type { Message } from "discord.js";
 import { runButtonView, type ButtonViewButton, type ButtonViewFinalPayload, type ButtonViewRender } from "@/utils/button-view";
 import { EmbedFormatter, formatCodeblock, formatTime, unix } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { FLOWER_META } from "../flowers";
+import { FLOWER_META } from "../constants/flowers.constants";
 import {
     getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getLeaderboard, getRecentSessions,
 } from "../repository/activity.repository";
@@ -15,10 +15,10 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getGuildUserCounts, getMacroChannelByUserId, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users.repository";
-import {
-    ALL_BIOME_CATEGORIES, BADGE_META, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor, getLevelForXp,
-    type ActivitySessionRow, type ActivityStatus, type BiomeCategory, type UserRow,
-} from "../types";
+import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import { BADGE_META } from "../constants/badges.constants";
+import { getLevelForXp } from "../constants/levels.constants";
+import type { ActivitySessionRow, ActivityStatus, BiomeCategory, UserRow } from "../types";
 
 const logger = new Logger("biomehunt.profileViews");
 

@@ -12,7 +12,7 @@ import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import { applyFlowerToWebhook } from "./adminMemberActions";
-import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../flowers";
+import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
 import { runUserSetup } from "../guildSetup";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
