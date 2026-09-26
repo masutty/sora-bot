@@ -1,4 +1,3 @@
-import type { Message } from "discord.js";
 import { SlashCommandBuilder } from "discord.js";
 import { join } from "path";
 import { config } from "@/config";
@@ -11,8 +10,7 @@ import {
     reloadCog,
     unloadCog,
 } from "@/core/cog-loader";
-import { getGuildPrefix } from "@/database/guild.repository";
-import { defineCommand } from "@/define";
+import { type CommandContext, defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, extractCodeBlock } from "@/utils/format";
 import { resolveMessageSource } from "@/utils/message-source";
@@ -25,9 +23,6 @@ const COGS_PATH = join(__dirname, "../../");
 function resolveBasePath(name: string): string {
     return getCogOrigin(name) ?? COGS_PATH;
 }
-
-const USAGE =
-    "`!dcl status <name>`\n`!dcl load <name>`\n`!dcl unload <name>`\n`!dcl reload <name>` - turns it on if it was off, restarts it if it was on\n`!dcl list` - lists active/disabled cogs\n`!dcl run` - installs/updates a cog from an attached or pasted .ts file (prefix only)";
 
 export default defineCommand({
     name: "dcl",
@@ -66,45 +61,24 @@ export default defineCommand({
             s.setName("run").setDescription("Installs/updates a cog from code sent on the spot (prefix only)."),
         ),
 
-    // ── Slash ─────────────────────────────────────────────────────────────────
-    async executeAsSlash(interaction, client) {
-        const sub = interaction.options.getSubcommand(true);
+    // `run` reads the invoking message's attachment / pasted code / replied-to message - there's
+    // no slash equivalent, so it isn't even registered as a slash subcommand.
+    subcommandModes: { run: "prefix" },
+
+    async run(ctx) {
+        const sub = ctx.args.getSubcommand();
+        await ctx.defer({ ephemeral: true });
 
         if (sub === "run") {
-            await interaction.reply({
-                ...EmbedFormatter.info("This subcommand only works via prefix (`!dcl run <code>`)"),
-                ephemeral: true,
-            });
-            return;
-        }
-
-        await interaction.deferReply({ ephemeral: true });
-        try {
-            const result = await runSubcommand(sub, interaction.options.getString("name"), client);
-            await interaction.editReply(EmbedFormatter.success(result));
-        } catch (err) {
-            await interaction.editReply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
-        }
-    },
-
-    // ── Prefix ────────────────────────────────────────────────────────────────
-    async executeAsPrefix(message, args, client) {
-        const sub = args.getSubcommand();
-        if (!sub) {
-            await message.reply(EmbedFormatter.warn(USAGE));
-            return;
-        }
-
-        if (sub === "run") {
-            await handleRun(message, client);
+            await handleRun(ctx);
             return;
         }
 
         try {
-            const result = await runSubcommand(sub, args.getString("name"), client);
-            await message.reply(EmbedFormatter.success(result));
+            const result = await runSubcommand(`${sub}`, ctx.args.getString("name"), ctx.client);
+            await ctx.reply(EmbedFormatter.success(result));
         } catch (err) {
-            await message.reply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
+            await ctx.reply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
         }
     },
 });
@@ -164,23 +138,23 @@ async function runSubcommand(sub: string, name: string | null, client: BotClient
 
 // ─── run (installs from sent code) ──────────────────────────────────────────────
 
-async function handleRun(message: Message, client: BotClient): Promise<void> {
-    const prefix = message.guild
-        ? await getGuildPrefix(message.guild.id)
-        : config.bot.defaultPrefix;
-    const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+async function handleRun(ctx: CommandContext): Promise<void> {
+    // subcommandModes guarantees this only runs from a prefix message.
+    if (ctx.raw.kind !== "prefix") return;
+    const { message } = ctx.raw;
+    const escapedPrefix = ctx.invokePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const runPrefixPattern = new RegExp(`^${escapedPrefix}dcl\\s+run\\s*`, "i");
 
     let source: string;
     try {
         source = await resolveMessageSource(message, runPrefixPattern);
     } catch (err) {
-        await message.reply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
+        await ctx.reply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
         return;
     }
 
     if (!source) {
-        await message.reply(
+        await ctx.reply(
             EmbedFormatter.warn(
                 "Attach a .ts/.js file with `export default defineCog({...})`, paste the code (as a code block or raw), or reply to a message with either.",
             ),
@@ -189,16 +163,16 @@ async function handleRun(message: Message, client: BotClient): Promise<void> {
     }
 
     try {
-        const result = await installCogFromSource(client, COGS_PATH, extractCodeBlock(source));
+        const result = await installCogFromSource(ctx.client, COGS_PATH, extractCodeBlock(source));
         const overwriteNote = result.overwritten
             ? " - replaced the version that was loaded in memory, but the real `index.ts` in `src/modules` (if one exists with that name) was not touched."
             : "";
-        await message.reply(
+        await ctx.reply(
             EmbedFormatter.success(
                 `Cog \`${result.name}\` ${result.overwritten ? "updated" : "installed"} - ${result.commands} command(s).${overwriteNote}\n-# Only runs for this bot session - restarting the process forgets this and goes back to normal.`,
             ),
         );
     } catch (err) {
-        await message.reply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
+        await ctx.reply(EmbedFormatter.error(err instanceof Error ? err.message : String(err)));
     }
 }

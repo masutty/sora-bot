@@ -182,12 +182,11 @@ export default defineCommand({
             o.setName("keyword").setDescription("Test case to preview, or \"list\" to see all (e.g. embed/session-end)").setRequired(false),
         ),
 
-    async executeAsSlash(interaction, client) {
-        await interaction.deferReply({ ephemeral: true });
-        await runKeyword(interaction.options.getString("keyword"), interaction.user.id, client, (payload) => interaction.editReply(payload));
-    },
-
-    async executeAsPrefix(message, args, client) {
-        await runKeyword(args.getString("keyword"), message.author.id, client, (payload) => message.reply(payload));
+    async run(ctx) {
+        await ctx.defer({ ephemeral: true });
+        // 5 min, not the default TTL: the countdown doesn't reset on clicks, and a preview is
+        // often paged/picked through for a while (prefix "ephemeral" = deleted after this).
+        const send = (payload: TestPayload) => ctx.reply(payload, { ephemeral: true, ttlMs: 5 * 60_000 });
+        await runKeyword(ctx.args.getString("keyword"), ctx.user.id, ctx.client, send);
     },
 });

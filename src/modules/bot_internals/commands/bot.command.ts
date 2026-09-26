@@ -78,74 +78,42 @@ export default defineCommand({
         .addSubcommand((sub) => sub.setName("db").setDescription("Connection pool detail."))
         .addSubcommand((sub) => sub.setName("event-loop").setDescription("Event-loop lag detail (percentiles).")),
 
-    // ── Slash ─────────────────────────────────────────────────────────────────
-    async executeAsSlash(interaction, client) {
-        const group = interaction.options.getSubcommandGroup(false);
-        const sub = interaction.options.getSubcommand(true);
-        const routeKey = group ? `${group}-${sub}` : sub;
+    // Read-only diagnostics expose internals (pool target, memory, server list...) - never posted
+    // publicly in a channel via prefix, only as an ephemeral slash reply.
+    subcommandModes: {
+        db: "slash", "event-loop": "slash", uptime: "slash", invite: "slash",
+        commands: "slash", servers: "slash", ping: "slash", memory: "slash",
+    },
+
+    async run(ctx) {
+        const group = ctx.args.getSubcommandGroup();
+        const sub = ctx.args.getSubcommand(); // never null: the framework answers a bare `!bot` with its usage
+        const routeKey = group ? `${group}-${sub}` : `${sub}`;
+
+        if (ctx.mode === "prefix") logger.info(`Executing ${routeKey} command...`);
 
         // ComponentsV2 can't coexist with embed/content in the same message - own reply, outside
         // the generic string -> EmbedFormatter pipeline used by the rest of the subcommands.
         if (routeKey === "status") {
-            await interaction.reply({
-                flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-                components: [buildStatusContainer(client)],
-            });
+            await ctx.reply({ flags: MessageFlags.IsComponentsV2, components: [buildStatusContainer(ctx.client)] }, { ephemeral: true });
             return;
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await ctx.defer({ ephemeral: true });
 
+        // Owner-only: the raw error message is shown on purpose (it's the operator reading it).
         try {
             const result = await runSubcommand(routeKey, {
-                name: interaction.options.getString("name"),
-                level: interaction.options.getString("level"),
-                target: interaction.options.getString("target"),
-            }, client);
+                name: ctx.args.getString("name"),
+                level: ctx.args.getString("level"),
+                target: ctx.args.getString("target"),
+            }, ctx.client);
             const formatted = READONLY_SUBCOMMANDS.has(routeKey) ? EmbedFormatter.plain(result) : EmbedFormatter.success(result);
-            await interaction.editReply(formatted);
+            await ctx.reply(formatted);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logger.error(err instanceof Error ? err : new Error(msg));
-            await interaction.editReply(EmbedFormatter.error(msg));
-        }
-    },
-
-    // ── Prefix ────────────────────────────────────────────────────────────────
-    async executeAsPrefix(message, args, client) {
-        const group = args.getSubcommandGroup();
-        const sub = args.getSubcommand();
-        if (!sub) {
-            await message.reply({ flags: MessageFlags.IsComponentsV2, components: [usageContainer()] });
-            return;
-        }
-        const routeKey = group ? `${group}-${sub}` : sub;
-
-        logger.info(`Executing ${routeKey} command...`);
-
-        const BLOCKED_AS_PREFIX = ['db', 'event-loop', 'uptime', 'invite', 'commands', 'servers', 'ping', 'memory']
-        if (BLOCKED_AS_PREFIX.includes(routeKey)) {
-            await message.reply(EmbedFormatter.error("I cannot run that as prefix! Use slash instead."));
-            return;
-        }
-
-        if (routeKey === "status") {
-            await message.reply({ flags: MessageFlags.IsComponentsV2, components: [buildStatusContainer(client)] });
-            return;
-        }
-
-        try {
-            const result = await runSubcommand(routeKey, {
-                name: args.getString("name"),
-                level: args.getString("level"),
-                target: args.getString("target"),
-            }, client);
-            const formatted = READONLY_SUBCOMMANDS.has(routeKey) ? EmbedFormatter.plain(result) : EmbedFormatter.success(result);
-            await message.reply(formatted);
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            logger.error(err instanceof Error ? err : new Error(msg));
-            await message.reply(EmbedFormatter.error(msg));
+            await ctx.reply(EmbedFormatter.error(msg));
         }
     },
 });
@@ -339,21 +307,6 @@ function buildStatusContainer(client: BotClient): ContainerBuilder {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function usageContainer(): ContainerBuilder {
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent("## 🤖 Bot Administration"));
-    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-
-    addSection(container, "**Cog management**\n`!bot mod load <name>`\n`!bot mod unload <name>`\n`!bot mod reload <name>`");
-    addSection(container, "**Bot**\n`!bot sync` - sync slash commands\n`!bot reload-all` - hot reload the whole bot (no restart)\n`!bot status` - bot info\n`!bot shutdown` - graceful shutdown");
-    addSection(container, "**Logging**\n`!bot log set <level> [target]` - change console/file log level (runtime only)\n`!bot log show` - show current levels");
-    container.addTextDisplayComponents((td) =>
-        td.setContent("**Debug**\n`!bot commands` - commands per cog\n`!bot servers` - server list\n`!bot ping` - WebSocket + database\n`!bot memory` - detailed memory/CPU\n`!bot db` - connection pool\n`!bot event-loop` - lag percentiles\n`!bot uptime` - just the uptime\n`!bot invite` - invite link"),
-    );
-
-    return container;
-}
 
 function formatMb(bytes: number): string {
     return `${Math.round(bytes / 1024 / 1024)}MB`;
