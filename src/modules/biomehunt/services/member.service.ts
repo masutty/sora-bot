@@ -1,13 +1,10 @@
-import { ChannelType } from "discord.js";
 import type { Guild, GuildMember, TextChannel } from "discord.js";
-import { readFileSync } from "fs";
 import type { BotClient } from "@/core/bot-client";
-import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
-import { adoptExistingChannel, runUserSetup } from "../guildSetup";
+import { adoptMacroChannel, provisionMacroChannel } from "./macro-channel.service";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
 import {
-    deleteMacroChannelOnly, deleteUserCascade, getMacroChannelByUserId, getUserByDiscordId,
-    pauseUser, setUserFlower, unpauseUser,
+    deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId,
+    pauseUser, unpauseUser,
 } from "../repository/users.repository";
 import { revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
 import { BADGE_META } from "../constants/badges.constants";
@@ -65,11 +62,11 @@ export async function forceSetupMember(
     await resetChannelIfAny(client, guild.id, member.id, adopt?.channel.id);
 
     if (adopt) {
-        const result = await adoptExistingChannel(guild, member, adopt.channel, adopt.webhookUrl);
+        const result = await adoptMacroChannel(guild, member, adopt.channel, adopt.webhookUrl);
         return `Channel <#${result.channelId}> adopted for \`${member.user.username}\` - renamed and registered. They can start using it right away, no \`/bh setup\` needed.`;
     }
 
-    const result = await runUserSetup(guild, member, { dmUser });
+    const result = await provisionMacroChannel(guild, member, { dmUser });
     if (dmUser) return `Setup complete for <@${member.id}>. Their webhook URL was sent to their DMs. Channel: <#${result.channelId}>`;
     return `Setup complete for <@${member.id}>. Channel: <#${result.channelId}>\nWebhook URL (share this with them yourself, it will not be sent to them):\n${result.webhookUrl}`;
 }
@@ -145,40 +142,4 @@ export async function clearMemberBiomes(guildId: string, discordUserId: string, 
     const revokedBadges = await revokeOrphanedBadges(guildId, user.id, badgeCandidates);
 
     return `Cleared all ${formatBiomeName(biome)} records for <@${discordUserId}> (${removedIds.length} event(s) removed).${formatRewardRevertSuffix(reverted, revokedBadges)}`;
-}
-
-/**
- * Applies a SPECIFIC Flower to a user's EXISTING macro webhook (name+avatar) and persists it -
- * the actual rate-limited Discord API call. Used both by `applyFlowerReroll` (draws one and
- * applies it immediately - the `/bh-owner reroll-flower` path) and by `/bh reroll`'s
- * roll-again/apply-now flow (which draws - and lets the user re-draw - several times client-side
- * before ever calling this, so the webhook itself only gets edited once per session instead of
- * once per draw). Throws BiomeHuntError on any precondition failure (no macro channel,
- * channel/webhook inaccessible). These are the ONLY two paths allowed to change a Flower once a
- * user already has one - everything else (setup, force-setup, adopt) must leave an existing
- * Flower untouched (see `assignFlower` in guildSetup.ts).
- */
-export async function applyFlowerToWebhook(client: BotClient, userId: number, flower: string): Promise<void> {
-    const macroChannel = await getMacroChannelByUserId(userId);
-    if (!macroChannel) throw new BiomeHuntError("That user doesn't have a macro channel.");
-
-    const channel = await client.channels.fetch(macroChannel.channel_id).catch(() => null);
-    if (!channel || channel.type !== ChannelType.GuildText) {
-        throw new BiomeHuntError("Couldn't access that user's macro channel.");
-    }
-
-    const webhooks = await channel.fetchWebhooks().catch(() => null);
-    const webhook = webhooks?.get(macroChannel.webhook_id);
-    if (!webhook) throw new BiomeHuntError("Couldn't find that user's webhook - it may have been deleted manually.");
-
-    await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
-    await setUserFlower(userId, flower);
-}
-
-/** Draws a new Flower and applies it immediately - the bot-owner path (`/bh-owner reroll-flower`),
- * which has no roll-again preview step. */
-export async function applyFlowerReroll(client: BotClient, userId: number): Promise<{ flower: string }> {
-    const flower = drawRandomFlower();
-    await applyFlowerToWebhook(client, userId, flower);
-    return { flower };
 }

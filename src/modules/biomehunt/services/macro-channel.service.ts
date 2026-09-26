@@ -1,21 +1,20 @@
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel } from "discord.js";
-import { readFileSync } from "fs";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
-import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "./constants/flowers.constants";
-import { isFlagEnabled } from "./repository/flags.repository";
-import { insertCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "./repository/guilds.repository";
+import { ensureFlower } from "./flower.service";
+import { isFlagEnabled } from "../repository/flags.repository";
+import { insertCategory, getEnabledCategories, getOrCreateGuildConfig, isGuildReady } from "../repository/guilds.repository";
 import {
     createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
     lookupChannel, registerChannel, setUserFlower,
-} from "./repository/users.repository";
-import { BiomeHuntError } from "./types";
-import type { GuildConfigRow } from "./types";
+} from "../repository/users.repository";
+import { BiomeHuntError } from "../types";
+import type { GuildConfigRow } from "../types";
 
 const logger = new Logger("biomehunt.guildSetup");
 
-export interface SetupResult {
+export interface MacroChannelResult {
     channelId: string;
     webhookUrl: string;
 }
@@ -25,30 +24,7 @@ export function macroChannelName(username: string): string {
     return `・${username.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 80)}`;
 }
 
-/**
- * Applies a Flower to the (newly created or adopted) webhook's name/avatar - the user's existing
- * Flower if they already have one (first-time-only assignment: a fresh channel from `/bh setup` or
- * `force-setup` must never re-roll it), otherwise a freshly drawn one. Returns `null` if the edit
- * itself failed (permissions, rate limit, channel gone mid-flight, etc) - callers then persist
- * nothing, rather than lying about a Flower that was never actually applied. Only `/bh reroll` and
- * `/bh-owner reroll-flower` are allowed to change a Flower once one is set - this never does.
- */
-async function assignFlower(
-    webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> },
-    existingFlower: string | null,
-    logger: Logger,
-): Promise<string | null> {
-    const flower = existingFlower ?? drawRandomFlower();
-    try {
-        await webhook.edit({ name: FLOWER_META[flower].label, avatar: readFileSync(flowerAssetPath(flower)) });
-    } catch (err) {
-        logger.error(err instanceof Error ? err : new Error(String(err)));
-        return null;
-    }
-    return flower;
-}
-
-export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dmUser?: boolean } = {}): Promise<SetupResult> {
+export async function provisionMacroChannel(guild: Guild, member: GuildMember, opts: { dmUser?: boolean } = {}): Promise<MacroChannelResult> {
     const dmUser = opts.dmUser ?? true;
 
     const { ready } = await isGuildReady(guild.id);
@@ -82,7 +58,7 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
     }
 
     const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
-    const flower = flowersEnabled ? await assignFlower(webhook, user.flower, logger) : null;
+    const flower = flowersEnabled ? await ensureFlower(webhook, user.flower, logger) : null;
     if (flower && !user.flower) await setUserFlower(user.id, flower);
 
     try {
@@ -123,12 +99,12 @@ export async function runUserSetup(guild: Guild, member: GuildMember, opts: { dm
  * The caller is expected to have already cleared any prior registration for this member (see
  * `forceSetupMember`) - this function does not check for or remove an existing channel.
  */
-export async function adoptExistingChannel(
+export async function adoptMacroChannel(
     guild: Guild,
     member: GuildMember,
     channel: TextChannel,
     webhookUrl: string,
-): Promise<SetupResult> {
+): Promise<MacroChannelResult> {
     const { ready } = await isGuildReady(guild.id);
     if (!ready) {
         throw new BiomeHuntError("This server isn't fully configured yet - set up categories and status roles first.");
@@ -159,7 +135,7 @@ export async function adoptExistingChannel(
     }
 
     const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
-    const flower = flowersEnabled ? await assignFlower(webhook, user.flower, logger) : null;
+    const flower = flowersEnabled ? await ensureFlower(webhook, user.flower, logger) : null;
     if (flower && !user.flower) await setUserFlower(user.id, flower);
 
     await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl));

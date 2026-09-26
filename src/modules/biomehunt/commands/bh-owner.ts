@@ -6,7 +6,7 @@ import { CommandCategory } from "@/types";
 import { confirmAction, type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { applyFlowerReroll } from "../services/member.service";
+import { rerollFlower } from "../services/flower.service";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
@@ -277,7 +277,7 @@ async function resolveOwnerTargetGuild(discordUserId: string, guildId: string | 
 
 /**
  * Bot-owner-only Flower reroll - together with `/bh reroll`, the only two ways a user's Flower is
- * allowed to change once set (see `assignFlower` in guildSetup.ts, which reuses an existing Flower
+ * allowed to change once set (see `ensureFlower` in services/flower.service.ts, which reuses an existing Flower
  * rather than re-rolling it on setup/force-setup).
  */
 async function runOwnerRerollFlower(
@@ -310,7 +310,7 @@ async function runOwnerRerollFlower(
     }
 
     try {
-        const { flower } = await applyFlowerReroll(client, user.id);
+        const { flower } = await rerollFlower(client, user.id);
         logger.info(`Rerolled Flower for user ${user.id} (guild ${guildId}): ${flower}`);
         await replyPlain(
             EmbedFormatter.success(`<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`),

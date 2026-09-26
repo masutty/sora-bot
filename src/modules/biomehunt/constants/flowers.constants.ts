@@ -72,27 +72,10 @@ export const RARITY_CHANCE: Array<{ rarity: Exclude<FlowerRarity, FlowerRarity.C
     { rarity: FlowerRarity.UNCOMMON, chance: 35 / 100 },
 ];
 
-/** Keyed off FlowerRarity's own values, so adding/renaming a rarity there never needs a matching edit here. */
-const FLOWERS_BY_RARITY = Object.fromEntries(Object.values(FlowerRarity).map((r) => [r, [] as string[]])) as Record<FlowerRarity, string[]>;
+/** Every Flower key grouped by rarity - keyed off FlowerRarity's own values, so adding/renaming a rarity there never needs a matching edit here. */
+export const FLOWERS_BY_RARITY = Object.fromEntries(Object.values(FlowerRarity).map((r) => [r, [] as string[]])) as Record<FlowerRarity, string[]>;
 for (const [key, meta] of Object.entries(FLOWER_META)) {
     FLOWERS_BY_RARITY[meta.rarity].push(key);
-}
-
-/**
- * Draws a random Flower key. Rolls each rarity in RARITY_CHANCE order (rarest first); the first
- * one that hits picks uniformly among its flowers. If none hit, falls back to a common flower.
- * Independent draw every time - a Reroll can land the same Flower again on purpose (see
- * `/bh reroll` in bh.ts and `/bh-owner reroll-flower` in bh-owner.ts).
- */
-export function drawRandomFlower(): string {
-    for (const { rarity, chance } of RARITY_CHANCE) {
-        if (Math.random() < chance) {
-            const pool = FLOWERS_BY_RARITY[rarity];
-            return pool[Math.floor(Math.random() * pool.length)];
-        }
-    }
-    const fallback = FLOWERS_BY_RARITY[FlowerRarity.COMMON];
-    return fallback[Math.floor(Math.random() * fallback.length)];
 }
 
 /** Absolute path to a Flower's avatar image under src/assets/garden/. */

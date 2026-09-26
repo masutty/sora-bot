@@ -12,9 +12,9 @@ import { type ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
-import { applyFlowerToWebhook } from "../services/member.service";
-import { drawRandomFlower, FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
-import { runUserSetup } from "../guildSetup";
+import { applyFlowerToWebhook, drawRandomFlower } from "../services/flower.service";
+import { FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
+import { provisionMacroChannel } from "../services/macro-channel.service";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
@@ -109,7 +109,7 @@ export default defineCommand({
 async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Promise<FormattedReply> {
     switch (sub) {
         case "setup": {
-            const result = await runUserSetup(guild, member);
+            const result = await provisionMacroChannel(guild, member);
             return EmbedFormatter.success(`Created: <#${result.channelId}>`);
         }
         default:
