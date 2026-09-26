@@ -8,7 +8,6 @@ import {
 import { config } from "@/config";
 import { getGuildPrefix } from "@/database/guild.repository";
 import type { CommandDefinition } from "@/types";
-import { EmbedFormatter } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
 import type { BotClient } from "../bot-client";
@@ -17,7 +16,7 @@ import { type CommandContext, type CommandMode, createPrefixContext, createSlash
 import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler, subcommandKey } from "./command-dispatch";
 import { buildUsagePayload } from "./command-usage";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
-import { describeCommandError } from "./user-facing-error";
+import { describeCommandError, errorReply } from "./user-facing-error";
 
 const logger = new Logger("core.commandhandlers");
 const slashLogger = new Logger("core.slashcommands");
@@ -59,7 +58,7 @@ async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
     const { mode } = ctx;
 
     if (def.guildOnly && (!ctx.guild || !ctx.member)) {
-        await ctx.reply(EmbedFormatter.error(GUILD_ONLY), { ephemeral: true });
+        await ctx.reply(errorReply(GUILD_ONLY), { ephemeral: true });
         return;
     }
 
@@ -82,7 +81,7 @@ async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
         const where = mode === "prefix"
             ? `a slash command: \`/${path}\``
             : `a prefix command: \`${ctx.guild ? await getGuildPrefix(ctx.guild.id) : config.bot.defaultPrefix}${path}\``;
-        await ctx.reply(EmbedFormatter.error(`This command is only available as ${where}.`), { ephemeral: true });
+        await ctx.reply(errorReply(`This command is only available as ${where}.`), { ephemeral: true });
         return;
     }
 
@@ -106,11 +105,11 @@ function usageFor(def: CommandDefinition, invokePrefix: string, group: string | 
 async function reportFailure(err: unknown, commandName: string, reply: (payload: ReplyPayload) => Promise<unknown>): Promise<void> {
     const view = describeCommandError(err);
     if (view.kind === "user") {
-        await reply(EmbedFormatter.error(view.message)).catch(() => { });
+        await reply(errorReply(view.message)).catch(() => { });
         return;
     }
     logger.error(err instanceof Error ? err : new Error(String(err)), { command: commandName });
-    await reply(EmbedFormatter.error(getFailureQuip())).catch(() => { });
+    await reply(errorReply(getFailureQuip())).catch(() => { });
 }
 
 // ─── Command Handlers ─────────────────────────────────────────────────────────
@@ -142,7 +141,7 @@ export function registerCommandHandlers(client: BotClient): void {
 
         try {
             await dispatch(command, ctx, {
-                guardFailure: (guardError) => EmbedFormatter.error(`Error! ${getFailureQuip()}\n${guardError}`),
+                guardFailure: (guardError) => errorReply(`Error! ${getFailureQuip()}\n${guardError}`),
                 override: () => (command.executeAsPrefix as NonNullable<typeof command.executeAsPrefix>)(message, args, client),
                 noHandler: async () => { },
             });
@@ -185,7 +184,7 @@ export function registerCommandHandlers(client: BotClient): void {
 
         try {
             await dispatch(command, ctx, {
-                guardFailure: (guardError) => EmbedFormatter.error(`${getFailureQuip()}\n${guardError}`),
+                guardFailure: (guardError) => errorReply(`${getFailureQuip()}\n${guardError}`),
                 override: () => (command.executeAsSlash as NonNullable<typeof command.executeAsSlash>)(interaction as ChatInputCommandInteraction, client),
                 noHandler: async () => {
                     await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });

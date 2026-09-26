@@ -1,13 +1,11 @@
 import type { Guild, GuildMember, Message } from "discord.js";
 import { ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { defineCommand } from "@/define";
+import { type CommandArgs, defineCommand, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
 import type { ConfirmPayload } from "@/utils/confirm";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
-import { Logger } from "@/utils/logging";
 import { attachPagination, buildPaginationRow } from "@/utils/pagination";
-import { getFailureQuip } from "@/utils/quips";
 import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
 import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
@@ -38,7 +36,6 @@ import {
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
 import { buildHistoryContainer, getSessionHistory, runProfileView, SESSIONS_PER_PAGE } from "../views/stats.view";
 
-const logger = new Logger("biomehunt.commands.bh-admin");
 
 const FLAG_CHOICES = ALL_FLAGS.map((name) => ({ name: FLAG_DEFINITIONS[name].label, value: name }));
 /** All 4 badges - valid targets for manual award/take. Value is the badge's slug (easy to type in prefix mode), resolved back via `resolveBadgeSlug`. */
@@ -64,6 +61,8 @@ export default defineCommand({
     category: CommandCategory.ADMIN,
     showOnHelp: true,
     adminOnly: true,
+    guildOnly: true,
+    onMissingSubcommand: "run",
 
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -254,181 +253,77 @@ export default defineCommand({
                 .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove biome forwards.")),
         ),
 
-    async executeAsSlash(interaction, client) {
-        if (!interaction.guild) {
-            await interaction.reply({ content: "This command only works in a server.", ephemeral: true });
-            return;
-        }
-        const group = interaction.options.getSubcommandGroup(false);
-        const sub = interaction.options.getSubcommand(true);
-        const routeKey = group ? `${group}-${sub}` : sub;
+    async run(ctx) {
+        const group = ctx.args.getSubcommandGroup();
+        const sub = ctx.args.getSubcommand();
+        const send = (payload: Exclude<ReplyPayload, string>) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
 
-        const resolveMember = async (name: string) => {
-            const user = interaction.options.getUser(name);
-            if (!user) return null;
-            return interaction.guild!.members.fetch(user.id).catch(() => null);
-        };
-
-        if (routeKey === "counter-force-update") {
-            await interaction.deferReply();
-            try {
-                const result = await forceCounterUpdate(client, interaction.guild.id);
-                await interaction.editReply(toReplyPayload(result));
-            } catch (err) {
-                await interaction.editReply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
-            }
-            return;
-        }
-
-        if (routeKey === "session-view") {
-            const member = await resolveMember("user");
-            if (!member) {
-                await interaction.reply({ content: "Could not resolve that member.", ephemeral: true });
-                return;
-            }
-            await interaction.deferReply();
-            await replySessionHistory(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
-            return;
-        }
-
-        if (routeKey === "profile") {
-            const member = await resolveMember("user");
-            if (!member) {
-                await interaction.reply({ content: "Could not resolve that member.", ephemeral: true });
-                return;
-            }
-            await interaction.deferReply();
-            await runProfileView(interaction.guild.id, member, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
-            return;
-        }
-
-        if (routeKey === "quotas-delete") {
-            await interaction.deferReply();
-            const roleId = interaction.options.getRole("role")?.id ?? null;
-            await deleteQuotas(interaction.guild.id, roleId, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
-            return;
-        }
-
-        if (routeKey === "setup") {
-            await interaction.deferReply();
-            await runEzSetupFlow(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
-            return;
-        }
-
-        if (routeKey === "forward-menu") {
-            await interaction.deferReply();
-            await runForwardConfigFlow(interaction.guild, interaction.user.id, (payload) => interaction.editReply({ ...payload, allowedMentions: NO_PINGS }));
-            return;
-        }
-
-        await interaction.deferReply();
-        try {
-            const result = await runSubcommand(routeKey, interaction.guild, client, {
-                getString: (name) => interaction.options.getString(name),
-                getInteger: (name) => interaction.options.getInteger(name),
-                getNumber: (name) => interaction.options.getNumber(name),
-                getBoolean: (name) => interaction.options.getBoolean(name),
-                getChannelId: async (name) => interaction.options.getChannel(name)?.id ?? null,
-                getRoleId: async (name) => interaction.options.getRole(name)?.id ?? null,
-                getUserId: async (name) => interaction.options.getUser(name)?.id ?? null,
-                getMember: resolveMember,
-            });
-            await interaction.editReply(toReplyPayload(result));
-        } catch (err) {
-            await interaction.editReply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
-        }
-    },
-
-    async executeAsPrefix(message, args, client) {
-        if (!message.guild) {
-            await message.reply("This command only works in a server.");
-            return;
-        }
-        const group = args.getSubcommandGroup();
-        const sub = args.getSubcommand();
+        // onMissingSubcommand: "run" - a bare `!bh-admin forward` opens the forward menu; any other
+        // missing/unknown subcommand gets the framework's usage.
         if (!sub) {
             if (group === "forward") {
-                await runForwardConfigFlow(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+                await runForwardConfigFlow(ctx.guild, ctx.user.id, send);
                 return;
             }
-            await message.reply(EmbedFormatter.info("Run `bh-admin config show` to see the current configuration."));
+            await ctx.replyUsage();
             return;
         }
         const routeKey = group ? `${group}-${sub}` : sub;
 
         if (routeKey === "counter-force-update") {
-            try {
-                const result = await forceCounterUpdate(client, message.guild.id);
-                await message.reply(toReplyPayload(result));
-            } catch (err) {
-                await message.reply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
-            }
+            await ctx.defer();
+            await ctx.reply(toReplyPayload(await forceCounterUpdate(ctx.client, ctx.guild.id)));
             return;
         }
 
         if (routeKey === "session-view") {
-            const member = await args.getMember("user");
-            if (!member) {
-                await message.reply("Could not resolve that member. Try pinging them instead.");
-                return;
-            }
-            await replySessionHistory(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            const member = await requireMember(ctx.args, "user");
+            await ctx.defer();
+            await replySessionHistory(ctx.guild.id, member, ctx.user.id, send);
             return;
         }
 
         if (routeKey === "profile") {
-            const member = await args.getMember("user");
-            if (!member) {
-                await message.reply("Could not resolve that member. Try pinging them instead.");
-                return;
-            }
-            await runProfileView(message.guild.id, member, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            const member = await requireMember(ctx.args, "user");
+            await ctx.defer();
+            await runProfileView(ctx.guild.id, member, ctx.user.id, send);
             return;
         }
 
         if (routeKey === "quotas-delete") {
-            const role = await args.getRole("role");
-            await deleteQuotas(message.guild.id, role?.id ?? null, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await ctx.defer();
+            const roleId = (await ctx.args.getRole("role"))?.id ?? null;
+            await deleteQuotas(ctx.guild.id, roleId, ctx.user.id, send);
             return;
         }
 
         if (routeKey === "setup") {
-            await runEzSetupFlow(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await ctx.defer();
+            await runEzSetupFlow(ctx.guild, ctx.user.id, send);
             return;
         }
 
         if (routeKey === "forward-menu") {
-            await runForwardConfigFlow(message.guild, message.author.id, (payload) => message.reply({ ...payload, allowedMentions: NO_PINGS }));
+            await ctx.defer();
+            await runForwardConfigFlow(ctx.guild, ctx.user.id, send);
             return;
         }
 
-        try {
-            const result = await runSubcommand(routeKey, message.guild, client, {
-                getString: (name) => args.getString(name),
-                getInteger: (name) => args.getNumber(name),
-                getNumber: (name) => args.getNumber(name),
-                getBoolean: (name) => args.getBoolean(name),
-                getChannelId: async (name) => (await args.getChannel(name))?.id ?? null,
-                getRoleId: async (name) => (await args.getRole(name))?.id ?? null,
-                getUserId: async (name) => (await args.getUser(name))?.id ?? null,
-                getMember: (name) => args.getMember(name),
-            });
-            await message.reply(toReplyPayload(result));
-        } catch (err) {
-            await message.reply({ ...EmbedFormatter.error(errorMessage(err)), allowedMentions: NO_PINGS });
-        }
+        await ctx.defer();
+        await ctx.reply(toReplyPayload(await runSubcommand(routeKey, ctx.guild, ctx.client, ctx.args)));
     },
 });
 
-interface ArgReader {
-    getString(name: string): string | null;
-    getInteger(name: string): number | null;
-    getNumber(name: string): number | null;
-    getBoolean(name: string): boolean | null;
-    getChannelId(name: string): Promise<string | null>;
-    getRoleId(name: string): Promise<string | null>;
-    getUserId(name: string): Promise<string | null>;
-    getMember(name: string): Promise<GuildMember | null>;
+/** Resolves an option's id, e.g. `await idOf(args.getChannel("channel"))` -> `"123"` or `null`. */
+async function idOf(entity: Promise<{ id: string } | null>): Promise<string | null> {
+    return (await entity)?.id ?? null;
+}
+
+/** For a required user option - absent is the only way to get null (unresolvable already throws). */
+async function requireMember(args: CommandArgs, name: string): Promise<GuildMember> {
+    const member = await args.getMember(name);
+    if (!member) throw new BiomeHuntError(`Missing required argument: \`${name}\``);
+    return member;
 }
 
 function requireNumber(value: number | null, name: string): number {
@@ -436,7 +331,7 @@ function requireNumber(value: number | null, name: string): number {
     return value;
 }
 
-async function runSubcommand(sub: string, guild: Guild, client: BotClient, args: ArgReader): Promise<string | ContainerBuilder> {
+async function runSubcommand(sub: string, guild: Guild, client: BotClient, args: CommandArgs): Promise<string | ContainerBuilder> {
     const guildId = guild.id;
 
     switch (sub) {
@@ -462,7 +357,7 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "activity-set-role": {
             const type = args.getString("type") as ActivityStatus | null;
-            const roleId = await args.getRoleId("role");
+            const roleId = await idOf(args.getRole("role"));
             if (!type) throw new BiomeHuntError("Missing required argument: type");
             return setActivityRole(guildId, type, roleId);
         }
@@ -472,30 +367,30 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             return setAutoCreateCategories(guildId, enabled);
         }
         case "categories-add": {
-            const id = await args.getChannelId("category");
+            const id = await idOf(args.getChannel("category"));
             if (!id) throw new BiomeHuntError("Missing required argument: category");
             return addCategory(guildId, id);
         }
         case "categories-remove": {
-            const id = await args.getChannelId("category");
+            const id = await idOf(args.getChannel("category"));
             if (!id) throw new BiomeHuntError("Missing required argument: category");
             return removeCategory(guildId, id);
         }
         case "badges-award": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             const badge = requireBadge(args.getString("badge"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return awardBadge(guildId, id, badge);
         }
         case "badges-take": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             const badge = requireBadge(args.getString("badge"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return takeBadge(guildId, id, badge);
         }
         case "badges-set": {
             const badge = requireBadge(args.getString("badge"));
-            const roleId = await args.getRoleId("role");
+            const roleId = await idOf(args.getRole("role"));
             return setBadges(guildId, badge, roleId);
         }
         case "badges-list":
@@ -510,28 +405,28 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "flag-list":
             return listFlags(guildId);
         case "economy-grant": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return grantEconomy(guildId, id, args.getInteger("seeds"), args.getInteger("xp"));
         }
         case "forward-set": {
             const biome = args.getString("biome");
-            const channelId = await args.getChannelId("channel");
-            const roleId = await args.getRoleId("role");
+            const channelId = await idOf(args.getChannel("channel"));
+            const roleId = await idOf(args.getRole("role"));
             if (!biome) throw new BiomeHuntError("Missing required argument: biome");
             return setForward(guildId, biome, channelId, roleId);
         }
         case "forward-list":
             return listForwards(guildId);
         case "counter-set": {
-            const id = await args.getChannelId("channel");
+            const id = await idOf(args.getChannel("channel"));
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
             return setCounterChannel(guildId, id);
         }
         case "counter-disable":
             return disableCounter(guildId);
         case "quotas-create": {
-            const roleId = await args.getRoleId("role");
+            const roleId = await idOf(args.getRole("role"));
             const mode = args.getString("mode")?.toUpperCase() as QuotaRoleMode | null;
             const quotaHours = args.getNumber("quota_hours");
             const quotaWindowHours = args.getInteger("quota_window_hours");
@@ -556,14 +451,14 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             return setQuotaEvalHour(guildId, hour);
         }
         case "session-delete": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             const sessionId = args.getInteger("session_id");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             if (sessionId === null) throw new BiomeHuntError("Missing required argument: session_id");
             return deleteActivitySession(guildId, id, sessionId);
         }
         case "session-clear": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return clearActivitySessions(guildId, id);
         }
@@ -571,7 +466,7 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             const member = await args.getMember("user");
             if (!member) throw new BiomeHuntError("Could not resolve that member.");
             const dmUser = args.getBoolean("dm_user") ?? false;
-            const channelId = await args.getChannelId("channel");
+            const channelId = await idOf(args.getChannel("channel"));
             const webhookUrl = args.getString("webhook_url");
 
             if (channelId && !webhookUrl) throw new BiomeHuntError("webhook_url is required when adopting an existing channel.");
@@ -587,32 +482,32 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             return forceSetupMember(client, guild, member, dmUser, adopt);
         }
         case "member-hard-delete": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return hardDeleteMember(client, guildId, id);
         }
         case "member-soft-delete": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return softDeleteMember(client, guildId, id);
         }
         case "member-reset-channel": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return resetMemberChannel(client, guildId, id);
         }
         case "member-pause": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return pauseMember(guildId, id);
         }
         case "member-unpause": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return unpauseMember(guildId, id);
         }
         case "member-decrement-biome": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             const biome = args.getString("biome");
             const amount = args.getInteger("amount") ?? 1;
             if (!id) throw new BiomeHuntError("Missing required argument: user");
@@ -620,7 +515,7 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             return decrementMemberBiome(guildId, id, biome, amount);
         }
         case "member-clear-biomes": {
-            const id = await args.getUserId("user");
+            const id = await idOf(args.getUser("user"));
             const biome = args.getString("biome");
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             if (!biome) throw new BiomeHuntError("Missing required argument: biome");
@@ -667,10 +562,4 @@ async function replySessionHistory(
 function toReplyPayload(result: string | ContainerBuilder): FormattedReply {
     if (typeof result === "string") return { ...EmbedFormatter.success(result), allowedMentions: NO_PINGS };
     return { flags: MessageFlags.IsComponentsV2, components: [result], allowedMentions: NO_PINGS };
-}
-
-function errorMessage(err: unknown): string {
-    if (err instanceof BiomeHuntError) return err.message;
-    logger.error(err instanceof Error ? err : new Error(String(err)));
-    return getFailureQuip();
 }
