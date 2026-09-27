@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import type { BotClient } from "@/core/bot-client";
+import { Logger } from "@/utils/logging";
 import type { InsertBallotResult } from "../repository/votes.repository";
 import type { BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
@@ -85,6 +86,11 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         },
         deleteEventById: async (eventId) => {
             calls.deleteEventById.push(eventId);
+            // Mimics the real ON DELETE SET NULL: any vote row referencing this event loses the
+            // reference (rather than being deleted itself, or cascading its ballots away).
+            for (const [id, v] of votes) {
+                if (v.event_id === eventId) votes.set(id, { ...v, event_id: null });
+            }
         },
     };
 
@@ -107,6 +113,18 @@ function fakeClient(hasMessage = true) {
     };
     const client = { channels: { fetch: async () => channel } } as unknown as BotClient;
     return { client, editCalls };
+}
+
+/** Text content of every component the given `message.edit(...)` call rendered - lets a test assert on WHICH state was actually shown, not just that an edit happened. */
+function textOfEdit(edit: { components: unknown[] }): string {
+    const flatten = (node: unknown): string[] => {
+        if (node === null || typeof node !== "object") return [];
+        const json = typeof (node as { toJSON?: unknown }).toJSON === "function" ? (node as { toJSON(): unknown }).toJSON() : node;
+        if (Array.isArray(json)) return json.flatMap(flatten);
+        const obj = json as { content?: string; components?: unknown };
+        return [obj.content ?? "", ...flatten(obj.components)].filter(Boolean);
+    };
+    return edit.components.flatMap(flatten).join("\n");
 }
 
 async function seedOpenVote(deps: VoteServiceDeps, overrides: Partial<Parameters<typeof openVote>[0]> = {}) {
@@ -232,6 +250,28 @@ test("castBallot on success re-edits the forward message with the updated (still
     expect(editCalls).toHaveLength(1);
 });
 
+test("castBallot re-reads the vote right before rendering - a vote that closed between the insert and the refresh shows its FINAL state, not the open one", async () => {
+    const { deps } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    const { client, editCalls } = fakeClient();
+
+    const originalInsertBallot = deps.insertBallot;
+    deps.insertBallot = async (voteId, userId, choice) => {
+        const result = await originalInsertBallot(voteId, userId, choice);
+        // The vote closes (e.g. an admin decides) in the tiny window right after this insert commits.
+        await deps.closeVote(voteId, VoteStatus.OPEN, VoteStatus.ADMIN_DENIED, "admin-1");
+        return result;
+    };
+
+    const result = await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps);
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(editCalls).toHaveLength(1);
+    const rendered = textOfEdit(editCalls[0]);
+    expect(rendered).toContain("Denied by <@admin-1> (admin)");
+    expect(rendered).not.toContain("closes <t:");
+});
+
 // ─── adminDecide ────────────────────────────────────────────────────────────────────────────────
 
 test("an admin click inside the window decides immediately and closes the vote", async () => {
@@ -265,6 +305,36 @@ test("adminDecide on a not-found vote id reports not_found", async () => {
     const { client } = fakeClient();
 
     expect(await adminDecide(client, "missing", "admin-1", VoteChoice.REAL, deps)).toEqual({ kind: "not_found" });
+});
+
+test("adminDecide rejects an admin who is also the vote's finder - same rule as the finder not being able to vote", async () => {
+    const { deps } = createFakeDeps([fakeUser({ id: 1, discord_user_id: "finder-discord-id" })]);
+    const vote = await seedOpenVote(deps);
+    const { client } = fakeClient();
+
+    const result = await adminDecide(client, vote.id, "finder-discord-id", VoteChoice.REAL, deps);
+
+    expect(result).toEqual({ kind: "finder" });
+    expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.OPEN); // untouched
+});
+
+test("adminDecide reads ballots AFTER the close commits (consistent with a ballot racing the close)", async () => {
+    const { deps } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
+    const { client } = fakeClient();
+
+    let readAfterClose = false;
+    const originalGetBallots = deps.getBallotsForVote;
+    deps.getBallotsForVote = async (voteId) => {
+        const vote_ = await deps.getVoteById(voteId);
+        if (vote_?.status !== VoteStatus.OPEN) readAfterClose = true;
+        return originalGetBallots(voteId);
+    };
+
+    await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
+
+    expect(readAfterClose).toBe(true);
 });
 
 test("two concurrent admin decisions on the same vote apply exactly one outcome (CAS)", async () => {
@@ -373,6 +443,72 @@ test("closeDueVotes logs and continues past one vote's failure, instead of skipp
     expect(votes.get(failing.id)?.status).toBe(VoteStatus.OPEN); // untouched by the failure
     expect(votes.get(ok.id)?.status).toBe(VoteStatus.COMMUNITY_REAL); // still processed
     expect(calls.grantBiomeReward).toHaveLength(1);
+});
+
+test("closeDueVotes renders the tally from a ballot read taken AFTER the close commits, not the stale pre-close snapshot", async () => {
+    const { deps } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
+    const { client, editCalls } = fakeClient();
+
+    let call = 0;
+    const originalGetBallots = deps.getBallotsForVote;
+    deps.getBallotsForVote = async (voteId) => {
+        call++;
+        const ballots = await originalGetBallots(voteId);
+        // A second ballot lands in the split second between the pre-close read (call 1, used to
+        // decide the resolved status) and the post-close read (call 2, used for the display).
+        if (call === 2) return [...ballots, { vote_id: voteId, user_id: "voter-2", choice: VoteChoice.REAL, created_at: new Date() }];
+        return ballots;
+    };
+
+    await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
+
+    expect(textOfEdit(editCalls[0])).toContain("2×0");
+});
+
+test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-review hint, and the vote stays closed", async () => {
+    const logError = spyOn(Logger.prototype, "error").mockImplementation(() => {});
+    try {
+        const { deps } = createFakeDeps();
+        const vote = await seedOpenVote(deps);
+        await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
+        deps.grantBiomeReward = async () => { throw new Error("db unreachable"); };
+        const { client } = fakeClient();
+
+        await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
+
+        expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.COMMUNITY_REAL); // still closed
+        const logged = logError.mock.calls.map((c) => JSON.stringify(c)).join("\n");
+        expect(logged).toContain(vote.id);
+        expect(logged).toContain("review");
+    } finally {
+        logError.mockRestore();
+    }
+});
+
+test("applyOutcome skips grant/revert once the event has already been deleted (event_id is null)", async () => {
+    const { deps, calls } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
+    const { client } = fakeClient();
+
+    await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps); // grants
+    await adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps); // denies -> reverts + deletes event -> event_id becomes null
+
+    expect(calls.grantBiomeReward).toHaveLength(1);
+    expect(calls.revertBiomeRewards).toHaveLength(1);
+    expect((await deps.getVoteById(vote.id))?.event_id).toBeNull();
+
+    calls.grantBiomeReward.length = 0;
+    calls.revertBiomeRewards.length = 0;
+    calls.deleteEventById.length = 0;
+    await adminDecide(client, vote.id, "admin-2", VoteChoice.REAL, deps); // flip-flop back to confirmed
+
+    expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.ADMIN_CONFIRMED);
+    expect(calls.grantBiomeReward).toHaveLength(0); // nothing to grant - the event is gone
+    expect(calls.revertBiomeRewards).toHaveLength(0);
+    expect(calls.deleteEventById).toHaveLength(0);
 });
 
 test("reward is granted exactly once even if the vote is somehow closed twice", async () => {

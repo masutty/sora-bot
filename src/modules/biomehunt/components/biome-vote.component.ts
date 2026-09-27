@@ -1,5 +1,5 @@
 import type { GuildMember } from "discord.js";
-import { PermissionFlagsBits } from "discord.js";
+import { MessageFlags, PermissionFlagsBits } from "discord.js";
 import { defineComponent } from "@/define";
 import { adminDecide, castBallot } from "../services/biome-vote.service";
 import { VoteChoice } from "../types";
@@ -21,9 +21,14 @@ const NO_LONGER_AVAILABLE = "This vote is no longer available.";
 
 /**
  * `biomehunt:vote:<voteId>:<real|fake>` - a click from an admin (Administrator permission) decides
- * the vote immediately and closes it; anyone else casts a community ballot. Both paths edit the
- * forward message themselves (via the service, using `client`); this handler only ever replies
- * ephemerally, for errors, or acknowledges the update.
+ * the vote immediately and closes it; anyone else casts a community ballot.
+ *
+ * `deferUpdate()` runs FIRST, before any DB/Discord work - Discord gives an interaction only 3s to
+ * be acknowledged, and `castBallot`/`adminDecide` can take longer than that (a DB round-trip plus
+ * a separate message fetch+edit). Deferring immediately means the click is never shown as "failed"
+ * to the user regardless of how long the actual work takes; the vote message itself is updated
+ * separately by the service (via `client`, not through this interaction). Any ephemeral text is
+ * sent afterward with `followUp` (a deferred interaction can no longer `reply`).
  *
  * `legacyIds` are the old bare `bh-vote-confirm`/`bh-vote-deny` customIds (matched by the router's
  * exact-equality legacyIds rule, never as a prefix) - they land here with `parts = []`, same as any
@@ -36,9 +41,11 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
         handle: async (interaction, parts, client) => {
             if (!interaction.isButton()) return;
 
+            await interaction.deferUpdate();
+
             const [voteId, choiceRaw] = parts;
             if (!voteId || (choiceRaw !== "real" && choiceRaw !== "fake")) {
-                await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
+                await interaction.followUp({ content: NO_LONGER_AVAILABLE, flags: MessageFlags.Ephemeral });
                 return;
             }
             const choice = choiceRaw === "real" ? VoteChoice.REAL : VoteChoice.FAKE;
@@ -50,13 +57,15 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
                 const result = await deps.adminDecide(client, voteId, interaction.user.id, choice);
                 switch (result.kind) {
                     case "not_found":
-                        await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
+                        await interaction.followUp({ content: NO_LONGER_AVAILABLE, flags: MessageFlags.Ephemeral });
                         return;
                     case "already_decided":
-                        await interaction.reply({ content: "This vote was already decided.", ephemeral: true });
+                        await interaction.followUp({ content: "This vote was already decided.", flags: MessageFlags.Ephemeral });
+                        return;
+                    case "finder":
+                        await interaction.followUp({ content: "You can't decide on your own find.", flags: MessageFlags.Ephemeral });
                         return;
                     case "ok":
-                        await interaction.deferUpdate();
                         return;
                 }
                 return;
@@ -65,19 +74,18 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
             const result = await deps.castBallot(client, voteId, interaction.user.id, choice);
             switch (result.kind) {
                 case "not_found":
-                    await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
+                    await interaction.followUp({ content: NO_LONGER_AVAILABLE, flags: MessageFlags.Ephemeral });
                     return;
                 case "closed":
-                    await interaction.reply({ content: "This vote is already closed.", ephemeral: true });
+                    await interaction.followUp({ content: "This vote is already closed.", flags: MessageFlags.Ephemeral });
                     return;
                 case "finder":
-                    await interaction.reply({ content: "You can't vote on your own find.", ephemeral: true });
+                    await interaction.followUp({ content: "You can't vote on your own find.", flags: MessageFlags.Ephemeral });
                     return;
                 case "already_voted":
-                    await interaction.reply({ content: "You already voted.", ephemeral: true });
+                    await interaction.followUp({ content: "You already voted.", flags: MessageFlags.Ephemeral });
                     return;
                 case "ok":
-                    await interaction.deferUpdate();
                     return;
             }
         },

@@ -471,7 +471,9 @@ export default defineCog({
 - **Loop ownership** — the cog loader starts every worker once the client is ready, AFTER the
   cog's `onReady` (which may prepare state a worker's first tick reads — e.g. biomehunt's channel
   index), and stops every one on unload/hot reload/reload. A module never writes its own
-  `setInterval` for this anymore.
+  `setInterval` for this anymore. **Stopping only cancels the SCHEDULE, not a tick already
+  running** — `stop()` clears the pending timer, but a `run` already in flight keeps executing to
+  completion; it just never gets a next tick scheduled after it.
 - **No overlapping runs** — if a tick is still running when the next is due, that due tick is
   SKIPPED (not queued): the loop just waits for the following one. A slow tick can never pile up
   concurrent runs of the same worker.

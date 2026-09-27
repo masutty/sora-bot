@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { currentTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
@@ -16,12 +17,20 @@ afterEach(() => {
     logError.mockRestore();
 });
 
-function fakeInteraction(customId: string, opts: { userId?: string; guildId?: string | null } = {}) {
-    return {
+function fakeInteraction(
+    customId: string,
+    opts: { userId?: string; guildId?: string | null; replied?: boolean; deferred?: boolean } = {},
+) {
+    const replies: unknown[] = [];
+    const interaction = {
         customId,
         user: { id: opts.userId ?? "u1", username: "tester" },
         guildId: opts.guildId ?? "g1",
-    } as unknown as Parameters<typeof dispatchComponent>[1];
+        replied: opts.replied ?? false,
+        deferred: opts.deferred ?? false,
+        reply: async (payload: unknown) => { replies.push(payload); },
+    };
+    return { interaction: interaction as unknown as Parameters<typeof dispatchComponent>[1], replies };
 }
 
 function fakeClient(cogs: Record<string, { name: string; components?: ComponentDefinition[] }>): BotClient {
@@ -85,7 +94,8 @@ test("dispatchComponent runs handle inside a trace named component:<prefix>, wit
     });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 
-    const handled = await dispatchComponent(client, fakeInteraction("mycog:vote:abc:real", { userId: "u42", guildId: "g9" }));
+    const { interaction } = fakeInteraction("mycog:vote:abc:real", { userId: "u42", guildId: "g9" });
+    const handled = await dispatchComponent(client, interaction);
 
     expect(handled).toBe(true);
     expect(seen).toHaveLength(1);
@@ -104,7 +114,8 @@ test("dispatchComponent passes parts and the client through to handle", async ()
     });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 
-    await dispatchComponent(client, fakeInteraction("mycog:vote:abc:real"));
+    const { interaction } = fakeInteraction("mycog:vote:abc:real");
+    await dispatchComponent(client, interaction);
 
     expect(calls).toEqual([[["abc", "real"], client]]);
 });
@@ -113,18 +124,37 @@ test("dispatchComponent ignores an id no cog's component owns - returns false, c
     const handle = async () => { throw new Error("should not run"); };
     const client = fakeClient({ mycog: { name: "mycog", components: [defineComponent({ prefix: "mycog:vote", handle })] } });
 
-    const handled = await dispatchComponent(client, fakeInteraction("unknown:thing:1"));
+    const { interaction } = fakeInteraction("unknown:thing:1");
+    const handled = await dispatchComponent(client, interaction);
 
     expect(handled).toBe(false);
     expect(logError).not.toHaveBeenCalled();
 });
 
-test("dispatchComponent logs (not throws) when handle rejects, and still reports handled", async () => {
+test("dispatchComponent logs (not throws) when handle rejects, and best-effort replies a generic ephemeral failure", async () => {
     const vote = defineComponent({ prefix: "mycog:vote", handle: async () => { throw new Error("boom"); } });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 
-    const handled = await dispatchComponent(client, fakeInteraction("mycog:vote:abc"));
+    const { interaction, replies } = fakeInteraction("mycog:vote:abc");
+    const handled = await dispatchComponent(client, interaction);
 
     expect(handled).toBe(true);
     expect(logError).toHaveBeenCalledTimes(1);
+    expect(replies).toHaveLength(1);
+    expect((replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+});
+
+test("dispatchComponent does NOT reply when handle throws after already answering the interaction itself", async () => {
+    const vote = defineComponent({
+        prefix: "mycog:vote",
+        handle: async () => { throw new Error("boom, but only after deferring"); },
+    });
+    const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
+
+    const { interaction, replies } = fakeInteraction("mycog:vote:abc", { deferred: true });
+    const handled = await dispatchComponent(client, interaction);
+
+    expect(handled).toBe(true);
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect(replies).toHaveLength(0); // already deferred - a reply() here would throw a second error
 });

@@ -80,6 +80,26 @@ function tallyOf(ballots: Array<Pick<BiomeVoteBallotRow, "choice">>): { real: nu
 }
 
 /**
+ * The render info for `vote`'s CURRENT status - `open` hides the tally (just a live count);
+ * anything else shows the real/fake split and, for an admin decision, who decided. Shared by
+ * every call site so a re-read right before rendering (see `castBallot`) always renders whichever
+ * state it actually finds, not an assumption baked in earlier.
+ */
+function renderInfoFor(vote: BiomeVoteRow, ballots: Array<Pick<BiomeVoteBallotRow, "choice">>): VoteRenderInfo {
+    if (vote.status === VoteStatus.OPEN) {
+        return { voteId: vote.id, status: VoteStatus.OPEN, closesAt: vote.closes_at, voteCount: ballots.length };
+    }
+    return {
+        voteId: vote.id,
+        status: vote.status,
+        closesAt: vote.closes_at,
+        voteCount: ballots.length,
+        tally: tallyOf(ballots),
+        decidedByUserId: vote.decided_by ?? undefined,
+    };
+}
+
+/**
  * Registers a rare-biome forward's community vote - replaces the old in-memory `startVoteCheck`.
  * The caller (`forward.service.ts`) generates `voteId` itself (via `newVoteId`) BEFORE sending the
  * message, so the message can show it right away; this just persists the row once the message's
@@ -130,22 +150,47 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
  * must never double-grant); `admin_denied` reverts whatever was granted (safe/no-op if nothing
  * was) and deletes the event, mirroring the existing admin-deny behavior. `no_votes`/`tie`/
  * `community_fake` do nothing - the event is kept for a possible later admin review.
+ *
+ * A `null` `event_id` (a PRIOR admin deny already deleted the event - `bh_biome_votes.event_id`
+ * is `ON DELETE SET NULL`, not cascaded away) short-circuits everything: there's no event left to
+ * credit or debit, so a later flip-flop (e.g. confirming after denying) is a pure status change.
  */
 async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+    const eventId = vote.event_id;
+    if (eventId === null) return;
+
     if (vote.status === VoteStatus.COMMUNITY_REAL || vote.status === VoteStatus.ADMIN_CONFIRMED) {
-        const existing = await deps.getRewardsByEventIds([vote.event_id]);
+        const existing = await deps.getRewardsByEventIds([eventId]);
         if (existing.length === 0) {
-            await deps.grantBiomeReward(vote.guild_id, vote.finder_user_id, vote.event_id, vote.biome);
+            await deps.grantBiomeReward(vote.guild_id, vote.finder_user_id, eventId, vote.biome);
         }
         return;
     }
 
     if (vote.status === VoteStatus.ADMIN_DENIED) {
         // Must run BEFORE the event is deleted - revertBiomeRewards reads the ledger row, which
-        // cascades away the moment the event itself is gone.
-        const { badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [vote.event_id]);
-        await deps.deleteEventById(vote.event_id);
+        // would otherwise cascade away the moment the event itself is gone.
+        const { badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [eventId]);
+        await deps.deleteEventById(eventId);
         await deps.revokeOrphanedBadges(vote.guild_id, vote.finder_user_id, badgeCandidates);
+    }
+}
+
+/**
+ * Applies the outcome, logging (rather than throwing) if it fails - by this point `vote`'s CAS
+ * close has ALREADY committed, so a failure here must never look like the vote itself failed to
+ * close: it did, just without its grant/revert applied yet. The log line names `/bh-admin review`
+ * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
+ * itself idempotent).
+ */
+async function applyOutcomeSafely(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+    try {
+        await applyOutcome(vote, deps);
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)), {
+            voteId: vote.id,
+            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /bh-admin review ${vote.id}`,
+        });
     }
 }
 
@@ -210,13 +255,14 @@ export async function castBallot(
     if (insertResult === "already_voted") return { kind: "already_voted" };
     if (insertResult === "closed") return { kind: "closed" };
 
+    // Re-read the vote right before rendering - it may have closed in the tiny window between the
+    // insert above and this refresh (an admin decision, or the closing worker). Rendering the
+    // OPEN state unconditionally here would overwrite an already-closed message with a stale
+    // "N votes · closes <t:R>" - `renderInfoFor` picks the right shape for whatever status this
+    // finds, open or not.
+    const current = (await deps.getVoteById(voteId)) ?? vote;
     const ballots = await deps.getBallotsForVote(voteId);
-    await refreshVoteMessage(client, vote, {
-        voteId: vote.id,
-        status: VoteStatus.OPEN,
-        closesAt: vote.closes_at,
-        voteCount: ballots.length,
-    });
+    await refreshVoteMessage(client, current, renderInfoFor(current, ballots));
 
     return { kind: "ok" };
 }
@@ -224,16 +270,18 @@ export async function castBallot(
 export type AdminDecideResult =
     | { kind: "ok"; status: VoteStatus.ADMIN_CONFIRMED | VoteStatus.ADMIN_DENIED }
     | { kind: "not_found" }
-    | { kind: "already_decided" };
+    | { kind: "already_decided" }
+    | { kind: "finder" };
 
 /**
  * An admin's decisive click - real (confirm) or fake (deny), inside OR after the vote's window
  * (an admin overriding a closed vote later, e.g. via `/bh-admin review`, still goes through here).
- * The close itself is a compare-and-set on the status this call just read (`vote.status`): if
- * another decision (a racing admin click, or `closeDueVotes`) already changed it in the meantime,
- * `deps.closeVote` returns `null` and this reports `already_decided` WITHOUT applying any outcome -
- * that's what keeps a close tick racing an admin click, or two admins clicking at once, from
- * double-granting or double-reverting.
+ * Rejects an admin who is also the vote's OWN finder - same rule as a regular voter not being able
+ * to vote on their own find (`castBallot`). The close itself is a compare-and-set on the status
+ * this call just read (`vote.status`): if another decision (a racing admin click, or
+ * `closeDueVotes`) already changed it in the meantime, `deps.closeVote` returns `null` and this
+ * reports `already_decided` WITHOUT applying any outcome - that's what keeps a close tick racing
+ * an admin click, or two admins clicking at once, from double-granting or double-reverting.
  */
 export async function adminDecide(
     client: BotClient,
@@ -245,18 +293,19 @@ export async function adminDecide(
     const vote = await deps.getVoteById(voteId);
     if (!vote) return { kind: "not_found" };
 
+    const finder = await deps.getUserById(vote.finder_user_id);
+    if (finder?.discord_user_id === adminDiscordId) return { kind: "finder" };
+
     const status = choice === VoteChoice.REAL ? VoteStatus.ADMIN_CONFIRMED : VoteStatus.ADMIN_DENIED;
     const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);
     if (!closed) return { kind: "already_decided" };
 
-    await applyOutcome(closed, deps);
-    await refreshVoteMessage(client, closed, {
-        voteId: closed.id,
-        status: closed.status,
-        closesAt: closed.closes_at,
-        voteCount: 0,
-        decidedByUserId: adminDiscordId,
-    });
+    await applyOutcomeSafely(closed, deps);
+
+    // Read AFTER the close committed - any ballot racing the close is now either reflected here
+    // (it landed before the commit) or cleanly rejected by insertBallot's own atomicity (after).
+    const ballots = await deps.getBallotsForVote(voteId);
+    await refreshVoteMessage(client, closed, renderInfoFor(closed, ballots));
 
     return { kind: "ok", status };
 }
@@ -274,20 +323,19 @@ export async function closeDueVotes(client: BotClient, now: Date = new Date(), d
 
     for (const vote of due) {
         try {
-            const ballots = await deps.getBallotsForVote(vote.id);
-            const status = resolveVote(ballots);
+            const preCloseBallots = await deps.getBallotsForVote(vote.id);
+            const status = resolveVote(preCloseBallots);
             const closed = await deps.closeVote(vote.id, VoteStatus.OPEN, status, null);
             if (!closed) continue; // an admin already decided it - don't apply this outcome too
 
-            await applyOutcome(closed, deps);
-            const tally = tallyOf(ballots);
-            await refreshVoteMessage(client, closed, {
-                voteId: closed.id,
-                status: closed.status,
-                closesAt: closed.closes_at,
-                voteCount: ballots.length,
-                tally,
-            });
+            await applyOutcomeSafely(closed, deps);
+
+            // Read AFTER the close committed, not the pre-close snapshot used to pick `status` -
+            // a ballot racing the close is now either reflected here (it landed before the commit)
+            // or cleanly rejected by insertBallot's own atomicity (after), so the message always
+            // shows a count/tally consistent with what's actually in the DB right now.
+            const ballots = await deps.getBallotsForVote(vote.id);
+            await refreshVoteMessage(client, closed, renderInfoFor(closed, ballots));
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { voteId: vote.id });
         }

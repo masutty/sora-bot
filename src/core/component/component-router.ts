@@ -4,7 +4,7 @@
  * handle a click; the router owns matching a click to its owner and running it in a trace - a
  * module never listens for `interactionCreate` itself for this.
  */
-import type { MessageComponentInteraction } from "discord.js";
+import { type MessageComponentInteraction, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { newTraceRef, runWithTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
@@ -101,6 +101,14 @@ export async function dispatchComponent(
                     await component.handle(interaction, parts, client);
                 } catch (err) {
                     logger.error(err instanceof Error ? err : new Error(String(err)), { component: component.prefix });
+                    // Best-effort only, and only if `handle` never answered the interaction itself
+                    // (e.g. it deferred/replied before throwing) - a reply() on an already-answered
+                    // interaction would itself throw, on top of the original failure.
+                    if (!interaction.replied && !interaction.deferred) {
+                        await interaction
+                            .reply({ content: "Something went wrong.", flags: MessageFlags.Ephemeral })
+                            .catch(() => {});
+                    }
                 }
             },
         );

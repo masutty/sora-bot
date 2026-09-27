@@ -231,6 +231,23 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_link TEXT;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS jump_link TEXT;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
 
+/*
+ * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
+ * event, which used to cascade away the vote AND its ballots too: /bh-admin review <id> would
+ * then say "No vote with that id.", and the rejected-find stats derivable from the ballot rows
+ * were gone. Now nullable with ON DELETE SET NULL: denying still deletes the event, but the vote
+ * and its ballots survive with event_id = NULL - applyOutcome (biome-vote.service.ts) skips any
+ * grant/revert once it's null (there's no event left to credit/debit), and review shows the vote
+ * normally, noting the event is gone. Re-run safely on an existing dev table: DROP CONSTRAINT IF
+ * EXISTS + ADD CONSTRAINT (Postgres has no ADD CONSTRAINT IF NOT EXISTS) always converges on the
+ * same SET NULL constraint, whether this is a fresh table or one that still has the old CASCADE.
+ */
+ALTER TABLE bh_biome_votes ALTER COLUMN event_id DROP NOT NULL;
+ALTER TABLE bh_biome_votes DROP CONSTRAINT IF EXISTS bh_biome_votes_event_id_fkey;
+ALTER TABLE bh_biome_votes
+    ADD CONSTRAINT bh_biome_votes_event_id_fkey
+    FOREIGN KEY (event_id) REFERENCES bh_activity_events(id) ON DELETE SET NULL;
+
 /* Scanned every 5s by the vote-close worker - only ever matches rows still 'open'. */
 CREATE INDEX IF NOT EXISTS bh_biome_votes_open ON bh_biome_votes(status, closes_at) WHERE status = 'open';
 

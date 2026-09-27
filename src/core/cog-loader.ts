@@ -377,12 +377,19 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
     };
 
     const onReady = cog.onReady;
+    const runOnReady = async (): Promise<void> => {
+        try {
+            await onReady?.(client);
+        } catch (err) {
+            logger.error(err instanceof Error ? err : new Error(String(err)), { cog: cog.name, phase: "onReady" });
+        }
+    };
     if (client.isReady()) {
-        await onReady?.(client)?.catch(() => { });
+        await runOnReady();
         startWorkers();
     } else {
         client.once(Events.ClientReady, async () => {
-            await onReady?.(client);
+            await runOnReady();
             startWorkers();
         });
     }
