@@ -124,9 +124,6 @@ async function decide(c: HandlerContext<VoteReviewState, void>, deps: VoteReview
         case "already_decided":
             await c.notify("This vote was already decided.");
             return;
-        case "finder":
-            await c.notify("You can't decide on your own find.");
-            return;
         case "ok":
             c.state.vote = { ...c.state.vote, status: result.status, decided_by: c.user.id };
             return;

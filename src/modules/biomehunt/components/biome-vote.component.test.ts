@@ -176,11 +176,3 @@ test("adminDecide 'already_decided' followUps ephemeral \"This vote was already 
     expect(followUps).toEqual([EPHEMERAL("This vote was already decided.")]);
 });
 
-test("adminDecide 'finder' (the admin is the vote's own finder) followUps ephemeral \"You can't decide on your own find.\"", async () => {
-    const component = biomeVoteComponent(fakeDeps({ adminDecide: async () => ({ kind: "finder" }) }));
-    const { interaction, followUps } = fakeInteraction({ isAdmin: true });
-
-    await component.handle(interaction as never, ["vote1", "real"], client);
-
-    expect(followUps).toEqual([EPHEMERAL("You can't decide on your own find.")]);
-});

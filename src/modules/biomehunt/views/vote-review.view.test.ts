@@ -157,15 +157,3 @@ test("biomehunt.vote-review: a vote deleted out from under the review notifies \
     expect(fake.notifies[0].content).toBe("This vote is no longer available.");
 });
 
-test("biomehunt.vote-review: an admin who is also the vote's finder notifies \"You can't decide on your own find.\" without changing the screen", async () => {
-    const deps = fakeDeps({ adminDecide: async () => ({ kind: "finder" }) });
-    const fake = createFakeViewTransport();
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
-    await fake.flush();
-
-    await fake.emit(fake.click("confirm", ADMIN));
-
-    expect(fake.notifies).toHaveLength(1);
-    expect(fake.notifies[0].content).toBe("You can't decide on your own find.");
-    expect(text(fake.lastPayload())).not.toContain("(admin)");
-});

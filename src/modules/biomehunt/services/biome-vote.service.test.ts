@@ -307,15 +307,15 @@ test("adminDecide on a not-found vote id reports not_found", async () => {
     expect(await adminDecide(client, "missing", "admin-1", VoteChoice.REAL, deps)).toEqual({ kind: "not_found" });
 });
 
-test("adminDecide rejects an admin who is also the vote's finder - same rule as the finder not being able to vote", async () => {
+test("adminDecide lets an admin decide their OWN find - the admin's word outranks the no-self-vote rule", async () => {
     const { deps } = createFakeDeps([fakeUser({ id: 1, discord_user_id: "finder-discord-id" })]);
     const vote = await seedOpenVote(deps);
     const { client } = fakeClient();
 
     const result = await adminDecide(client, vote.id, "finder-discord-id", VoteChoice.REAL, deps);
 
-    expect(result).toEqual({ kind: "finder" });
-    expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.OPEN); // untouched
+    expect(result).toEqual({ kind: "ok", status: VoteStatus.ADMIN_CONFIRMED });
+    expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.ADMIN_CONFIRMED);
 });
 
 test("adminDecide reads ballots AFTER the close commits (consistent with a ballot racing the close)", async () => {

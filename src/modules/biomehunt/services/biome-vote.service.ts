@@ -258,7 +258,7 @@ export async function castBallot(
     // Re-read the vote right before rendering - it may have closed in the tiny window between the
     // insert above and this refresh (an admin decision, or the closing worker). Rendering the
     // OPEN state unconditionally here would overwrite an already-closed message with a stale
-    // "N votes · closes <t:R>" - `renderInfoFor` picks the right shape for whatever status this
+    // "N votes • closes <t:R>" - `renderInfoFor` picks the right shape for whatever status this
     // finds, open or not.
     const current = (await deps.getVoteById(voteId)) ?? vote;
     const ballots = await deps.getBallotsForVote(voteId);
@@ -270,14 +270,13 @@ export async function castBallot(
 export type AdminDecideResult =
     | { kind: "ok"; status: VoteStatus.ADMIN_CONFIRMED | VoteStatus.ADMIN_DENIED }
     | { kind: "not_found" }
-    | { kind: "already_decided" }
-    | { kind: "finder" };
+    | { kind: "already_decided" };
 
 /**
  * An admin's decisive click - real (confirm) or fake (deny), inside OR after the vote's window
  * (an admin overriding a closed vote later, e.g. via `/bh-admin review`, still goes through here).
- * Rejects an admin who is also the vote's OWN finder - same rule as a regular voter not being able
- * to vote on their own find (`castBallot`). The close itself is a compare-and-set on the status
+ * An admin CAN decide on their own find: the admin's word outranks the "no self-vote" rule, which
+ * only applies to community ballots (`castBallot`). The close itself is a compare-and-set on the status
  * this call just read (`vote.status`): if another decision (a racing admin click, or
  * `closeDueVotes`) already changed it in the meantime, `deps.closeVote` returns `null` and this
  * reports `already_decided` WITHOUT applying any outcome - that's what keeps a close tick racing
@@ -292,9 +291,6 @@ export async function adminDecide(
 ): Promise<AdminDecideResult> {
     const vote = await deps.getVoteById(voteId);
     if (!vote) return { kind: "not_found" };
-
-    const finder = await deps.getUserById(vote.finder_user_id);
-    if (finder?.discord_user_id === adminDiscordId) return { kind: "finder" };
 
     const status = choice === VoteChoice.REAL ? VoteStatus.ADMIN_CONFIRMED : VoteStatus.ADMIN_DENIED;
     const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);

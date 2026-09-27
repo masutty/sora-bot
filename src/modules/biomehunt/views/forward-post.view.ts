@@ -10,7 +10,7 @@ export interface VoteRenderInfo {
     voteId: string;
     status: VoteStatus;
     closesAt: Date;
-    /** Ballots cast so far - shown while open ("N votes · closes <t:R>"). The Real/Fake split stays hidden until the vote closes. */
+    /** Ballots cast so far - shown while open ("Vote ID • N votes • closes <t:R>"). The Real/Fake split stays hidden until the vote closes. */
     voteCount: number;
     /** Real/Fake split - only rendered once `status` is no longer `open`. */
     tally?: { real: number; fake: number };
@@ -47,10 +47,8 @@ function voteStatusLine(vote: VoteRenderInfo): string {
     const fake = vote.tally?.fake ?? 0;
 
     switch (vote.status) {
-        case VoteStatus.OPEN: {
-            const epoch = Math.floor(vote.closesAt.getTime() / 1000);
-            return `## Is this biome real?\n${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · closes <t:${epoch}:R>`;
-        }
+        case VoteStatus.OPEN:
+            return "## Is this biome real?";
         case VoteStatus.NO_VOTES:
             return "Vote expired with no votes - nothing changed.";
         case VoteStatus.TIE:
@@ -70,9 +68,17 @@ function voteStatusLine(vote: VoteRenderInfo): string {
     }
 }
 
+/** Footer of the vote block: the id, plus "• N votes • closes <t:R>" while the vote is open. */
+function voteIdLine(vote: VoteRenderInfo): string {
+    const id = `-# Vote ID: \`${vote.voteId}\``;
+    if (vote.status !== VoteStatus.OPEN) return id;
+    const epoch = Math.floor(vote.closesAt.getTime() / 1000);
+    return `${id} • ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} • closes <t:${epoch}:R>`;
+}
+
 /**
- * The vote block's own components (a Large separator, the status line, the vote id, and - only
- * while open - the Real/Fake buttons plus an admin note). Shared by `buildForwardContainer` (the
+ * The vote block's own components (a Large separator, the status line, the vote id line, and -
+ * only while open - the Real/Fake buttons). Shared by `buildForwardContainer` (the
  * initial send) and `updateVoteContainer` (every later edit), so both always produce the exact
  * same shape.
  */
@@ -80,13 +86,10 @@ function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder 
     const parts: Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> = [
         new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large),
         new TextDisplayBuilder().setContent(voteStatusLine(vote)),
-        new TextDisplayBuilder().setContent(`-# Vote ID: \`${vote.voteId}\``),
+        new TextDisplayBuilder().setContent(voteIdLine(vote)),
     ];
 
-    if (vote.status === VoteStatus.OPEN) {
-        parts.push(buildVoteButtonsRow(vote.voteId));
-        parts.push(new TextDisplayBuilder().setContent("-# Admins: clicking Real/Fake decides immediately and closes the vote."));
-    }
+    if (vote.status === VoteStatus.OPEN) parts.push(buildVoteButtonsRow(vote.voteId));
 
     return parts;
 }

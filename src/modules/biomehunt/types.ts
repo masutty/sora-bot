@@ -169,7 +169,7 @@ export interface BiomeVoteRow {
     guild_id: string;
     /** `null` once an admin denies (the event is deleted, ON DELETE SET NULL) - the vote/ballots survive; `applyOutcome` skips any grant/revert once this is null. */
     event_id: number | null;
-    /** `bh_users.id` of the finder - the one Discord account barred from voting (or deciding, as an admin) on their own find. */
+    /** `bh_users.id` of the finder - barred from casting a community ballot on their own find (an admin can still decide it). */
     finder_user_id: number;
     /** The forward/vote message's own identity - needed to fetch and re-edit it after a restart. */
     channel_id: string;

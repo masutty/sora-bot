@@ -62,9 +62,6 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
                     case "already_decided":
                         await interaction.followUp({ content: "This vote was already decided.", flags: MessageFlags.Ephemeral });
                         return;
-                    case "finder":
-                        await interaction.followUp({ content: "You can't decide on your own find.", flags: MessageFlags.Ephemeral });
-                        return;
                     case "ok":
                         return;
                 }

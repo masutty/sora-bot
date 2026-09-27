@@ -37,7 +37,8 @@ test("open vote: hides the tally, shows the count + closes-at, the vote id, and 
     const text = textOf(json);
     expect(text).toContain("3 votes");
     expect(text).toContain("closes <t:");
-    expect(text).toContain("Vote ID: `abc12345`");
+    expect(text).toMatch(/Vote ID: `abc12345` • 3 votes • closes <t:\d+:R>/);
+    expect(text).not.toContain("Admins:");
     expect(text).not.toMatch(/\d+×\d+/); // the real/fake split never appears while open
 
     const customIds = customIdsOf(json);
