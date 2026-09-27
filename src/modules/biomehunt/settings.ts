@@ -11,7 +11,6 @@ export const settings = {
     },
     ui: {
         ezSetupStepTimeoutMs: 5 * 60_000,
-        forwardConfigTimeoutMs: 5 * 60_000,
         rerollIdleMs: 20_000,
         quotaReplyTimeoutMs: 60_000,
     },

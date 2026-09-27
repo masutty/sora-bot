@@ -263,7 +263,7 @@ export default defineCommand({
             // Only a truly bare `forward` opens the menu - `forward lst` (a typo) gets the usage.
             const nothingAfterGroup = ctx.raw.kind === "prefix" && ctx.raw.args.getRawArgs().length === 0;
             if (group === "forward" && nothingAfterGroup) {
-                await runForwardConfigFlow(ctx.guild, ctx.user.id, send);
+                await runForwardConfigFlow(ctx, ctx.guild.id);
                 return;
             }
             await ctx.replyUsage();
@@ -306,7 +306,7 @@ export default defineCommand({
 
         if (routeKey === "forward-menu") {
             await ctx.defer();
-            await runForwardConfigFlow(ctx.guild, ctx.user.id, send);
+            await runForwardConfigFlow(ctx, ctx.guild.id);
             return;
         }
 
