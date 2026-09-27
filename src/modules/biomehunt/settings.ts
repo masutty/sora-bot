@@ -10,7 +10,6 @@ export const settings = {
         counterTickMs: 5 * 60 * 1000,
     },
     ui: {
-        ezSetupStepTimeoutMs: 5 * 60_000,
         rerollIdleMs: 20_000,
         quotaReplyTimeoutMs: 60_000,
     },

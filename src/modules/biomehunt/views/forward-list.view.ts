@@ -13,8 +13,8 @@ export type ForwardListExit = "close" | "step";
 
 /**
  * Everything the View needs that would otherwise be a DB call, injected so its tests never hit it
- * - `runForwardConfigFlow`/`stepBiomeForwards` (`flows/forward-config.flow.ts`) wire the real
- * repository functions.
+ * - `runForwardConfigFlow` (`flows/forward-config.flow.ts`) and `ezSetupFlow`/`defaultEzSetupDeps`
+ * (`flows/ez-setup.flow.ts`) each wire the real repository functions.
  */
 export interface ForwardListDeps {
     getForwards(guildId: string): Promise<BiomeForwardRow[]>;

@@ -300,7 +300,7 @@ export default defineCommand({
 
         if (routeKey === "setup") {
             await ctx.defer();
-            await runEzSetupFlow(ctx.guild, ctx.user.id, send);
+            await runEzSetupFlow(ctx, ctx.guild.id);
             return;
         }
 
