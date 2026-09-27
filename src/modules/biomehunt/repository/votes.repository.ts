@@ -4,7 +4,7 @@ import type { BiomeVoteBallotRow, BiomeVoteRow, VoteChoice, VoteStatus } from ".
 export interface InsertVoteParams {
     id: string;
     guildId: string;
-    eventId: number;
+    eventId: number | null;
     finderUserId: number;
     channelId: string;
     messageId: string;

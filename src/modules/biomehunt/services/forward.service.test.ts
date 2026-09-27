@@ -39,7 +39,7 @@ test("checkAndForward builds the same jump link (guild/source-channel/source-mes
     expect(openVoteCalls[0].jumpLink).toBe("https://discord.com/channels/guild1/source-channel/source-msg-1");
 });
 
-test("forwardBiome (the refactored core) accepts an arbitrary jump link instead of deriving one from a source message - what /bh-owner simulate-rare relies on", async () => {
+test("forwardBiome (the refactored core) accepts an arbitrary jump link instead of deriving one from a source message - what /bh-owner simulate-biome relies on", async () => {
     const { deps, openVoteCalls } = createFakeDeps();
 
     await forwardBiome(

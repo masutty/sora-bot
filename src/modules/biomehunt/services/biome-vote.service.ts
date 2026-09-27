@@ -108,7 +108,7 @@ function renderInfoFor(vote: BiomeVoteRow, ballots: Array<Pick<BiomeVoteBallotRo
 export interface OpenVoteParams {
     voteId: string;
     guildId: string;
-    eventId: number;
+    eventId: number | null;
     finderUserId: number;
     channelId: string;
     messageId: string;

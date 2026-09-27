@@ -46,7 +46,7 @@ export async function checkAndForward(
 }
 
 /**
- * The core of `checkAndForward`, factored out so `/bh-owner simulate-rare` can drive the exact
+ * The core of `checkAndForward`, factored out so `/bh-owner simulate-biome` can drive the exact
  * same forward+vote pipeline for a synthetic event - it has no source message to derive a jump
  * link from, so it supplies its own (a link to the invoking message, or the channel). Uses a
  * Components V2 container instead of a regular embed so we get a real Separator between the
@@ -59,7 +59,8 @@ export async function forwardBiome(
     guildId: string,
     userId: number,
     parsed: ParsedEvent,
-    eventId: number,
+    /** `null` for a dry-run simulation - the vote then has nothing to reward or delete. */
+    eventId: number | null,
     jumpLink: string,
     deps: ForwardServiceDeps = defaultForwardServiceDeps(),
 ): Promise<void> {
