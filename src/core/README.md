@@ -28,7 +28,7 @@ src/modules/<name>/
     views/
         <name>.view.ts            # defineView(...) screens (`c.open`-able), or a pure
                                     # payload-builder used outside a View session too
-        <name>.view.test.ts        # fake-transport tests (see §6), next to the view
+        <name>.view.test.ts        # fake-transport tests (see §7), next to the view
         <shared-helper>.ts         # a non-screen helper shared by several views (no suffix
                                     # required - e.g. stats-builders.ts)
 
@@ -446,7 +446,35 @@ Three different places tune behavior — pick the right one:
   reasonably be tuned without changing what the feature *means*, it belongs in `settings.ts`
   instead, not here.
 
-## 6. Testing a View: the `fake-transport`
+## 6. Logging & traceability
+
+Every command invocation gets a short **`ref`** (8 base36 chars). The command handler runs the
+invocation inside a trace context (`src/utils/trace.ts`, an `AsyncLocalStorage`), and **every
+`Logger` call anywhere below it** — services, repositories, Views — prints it automatically, with
+the command path, mode, user and guild. Nothing is passed around; existing log calls need no change:
+
+```
+info  [core.commands] (ref=xv6qvdt2 !bh-stats users u=masutty(1888…) g=1289…): invoked
+info  [core.commands] (ref=xv6qvdt2 …): replied in 812ms
+info  [core.view.run] (ref=xv6qvdt2.2:tab:active …): click tab:active
+info  [core.view]     (ref=xv6qvdt2.4:next …): view biomehunt.stats-users closed: expired after 95410ms
+info  [core.commands] (ref=xv6qvdt2 …): ok in 96230ms
+```
+
+- **The command log** (`core.commands`): `invoked`, `replied in` (first reply — the latency the
+  user feels), then the outcome (`ok` / `user-error` / `error`) with the **total** time. The total
+  includes any View the command awaited (`ctx.open` resolves when the View closes), so a long
+  total isn't slowness — the View's `closed: <done|expired|failed>` line (`ViewCloseReason`)
+  explains it.
+- **Views**: a View re-enters its opener's trace for every interaction, as a numbered step
+  (`ref.N:key`). Each click, select (with the chosen values), typed text (truncated to 80 chars)
+  and modal submit/close is logged, flagged when the actor isn't the invoker.
+- **Internal errors** show the ref to the user (`-# ref: xv6qvdt2`) — search the logs for
+  `ref=xv6qvdt2` to find everything that invocation did.
+- **Not traced yet**: work that doesn't start from a command (webhook `messageCreate` events,
+  worker ticks). Wrap it with `runWithTrace({ ref: newTraceRef(), … }, fn)` to give it one.
+
+## 7. Testing a View: the `fake-transport`
 
 `createFakeViewTransport` (from `@/define`) is a TEST-ONLY in-memory `ViewTransport` + manual
 clock — never use it outside a test. It records every call the engine makes and lets the test
