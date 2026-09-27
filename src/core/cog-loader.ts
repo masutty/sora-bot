@@ -6,11 +6,15 @@ import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
 import { Logger } from "@/utils/logging";
 import type { BotClient } from "./bot-client";
+import { type RunningWorker, startWorker } from "./worker/worker";
 
 const logger = new Logger("core.cogloader");
 
 // Tracks event listeners per cog so they can be removed on unload
 const cogListeners = new Map<string, Array<{ event: string; handler: Function }>>();
+
+// Tracks running workers per cog so they can be stopped on unload/hot reload
+const cogWorkers = new Map<string, RunningWorker[]>();
 
 // Which base directory each loaded cog came from - `reloadCog` consults this instead of blindly
 // trusting the `cogsPath` it's handed.
@@ -119,6 +123,9 @@ export async function unloadCog(
         client.removeListener(event, handler as never);
     }
     cogListeners.delete(cogName);
+
+    for (const worker of cogWorkers.get(cogName) ?? []) worker.stop();
+    cogWorkers.delete(cogName);
 
     client.cogs.delete(cogName);
     logger.info(`Unloaded cog: ${cogName}`);
@@ -307,6 +314,9 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
 
     cogListeners.set(cog.name, listeners);
     client.cogs.set(cog.name, cog);
+
+    const workers = (cog.workers ?? []).map((worker) => startWorker(cog.name, worker, client));
+    cogWorkers.set(cog.name, workers);
 
     if (cog.onReady) {
         const onReady = cog.onReady;

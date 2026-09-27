@@ -38,6 +38,7 @@ export {
     type ViewPayload,
     type ViewRender,
 } from "./core/view/view";
+export { defineWorker, type WorkerDefinition } from "./core/worker/worker";
 export type {
     Cog,
     CogAuthor,

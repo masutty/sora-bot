@@ -11,6 +11,7 @@ import type {
 import type { BotClient } from "../core/bot-client";
 import type { CommandContext, GuildCommandContext } from "../core/command/command-context";
 import type { PrefixArgs } from "../core/command/prefix-args";
+import type { WorkerDefinition } from "../core/worker/worker";
 
 export { PrefixArgs } from "../core/command/prefix-args";
 
@@ -147,6 +148,8 @@ export interface Cog {
     };
     /** SQL migration strings to run on load */
     migrations?: string[];
+    /** Periodic background tasks - the framework starts each one on load, stops on unload/hot reload. */
+    workers?: WorkerDefinition[];
     start?: (client: BotClient) => void | Promise<void>;
     stop?: (client: BotClient) => void | Promise<void>;
     onReady?: (client: BotClient) => void | Promise<void>;
