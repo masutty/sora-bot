@@ -195,6 +195,48 @@ CREATE TABLE IF NOT EXISTS bh_biome_forwards (
 );
 
 /* ───────────────────────────────────────────── */
+/* Rare-biome community votes                   */
+/* ───────────────────────────────────────────── */
+
+/*
+ * id is a short random code (like a trace ref), never sequential - avoids a vote id being
+ * guessable. channel_id/message_id and closes_at let closeDueVotes (a worker) re-fetch and
+ * re-edit the forward message on its own, including for a vote left open by a restart - no
+ * in-memory state survives across a process restart, unlike the old admin-only vote check.
+ */
+CREATE TABLE IF NOT EXISTS bh_biome_votes (
+    id             TEXT PRIMARY KEY,
+    guild_id       VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    event_id       INTEGER NOT NULL REFERENCES bh_activity_events(id) ON DELETE CASCADE,
+    finder_user_id INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    channel_id     VARCHAR(20) NOT NULL,
+    message_id     VARCHAR(20) NOT NULL,
+    biome          VARCHAR(64) NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'open',   /* open | no_votes | tie | community_real | community_fake | admin_confirmed | admin_denied */
+    decided_by     VARCHAR(20),                            /* admin's discord id - set only for admin_confirmed/admin_denied */
+    closes_at      TIMESTAMPTZ NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    decided_at     TIMESTAMPTZ
+);
+
+/* Scanned every 5s by the vote-close worker - only ever matches rows still 'open'. */
+CREATE INDEX IF NOT EXISTS bh_biome_votes_open ON bh_biome_votes(status, closes_at) WHERE status = 'open';
+
+/*
+ * One row per (vote, voter) - the primary key IS the "one vote per user, no changing" rule (a
+ * second INSERT for the same pair is rejected outright by ON CONFLICT DO NOTHING in the
+ * repository, never overwritten). user_id is the voter's raw Discord id, not bh_users.id -
+ * a voter doesn't need a BiomeHunt profile to vote.
+ */
+CREATE TABLE IF NOT EXISTS bh_biome_vote_ballots (
+    vote_id    TEXT NOT NULL REFERENCES bh_biome_votes(id) ON DELETE CASCADE,
+    user_id    VARCHAR(20) NOT NULL,
+    choice     VARCHAR(10) NOT NULL,   /* real | fake */
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (vote_id, user_id)
+);
+
+/* ───────────────────────────────────────────── */
 /* Role queue                                   */
 /* ───────────────────────────────────────────── */
 

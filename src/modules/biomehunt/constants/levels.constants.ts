@@ -5,7 +5,7 @@ export const REWARD_BY_CATEGORY: Record<BiomeCategory, { seeds: number; xp: numb
     weather: { seeds: 1, xp: 2 },
     biome: { seeds: 2, xp: 4 },
     event: { seeds: 3, xp: 6 },
-    rare: { seeds: 25, xp: 50 },
+    rare: { seeds: 1500, xp: 1000 },
 };
 
 /** Cumulative XP required to REACH level `n` (n=1 is the starting level, requires 0 XP). Quadratic: early levels come fast, later ones stretch out. Pure/derived - there is no stored `level` column anywhere. */

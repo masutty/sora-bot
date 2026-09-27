@@ -140,12 +140,14 @@ export interface BiomeForwardRow {
     role_id: string | null;
 }
 
+// TODO(vote-check-removal): VoteCheckStatus/VoteCheckDecidedBy/VoteCheckState below are the OLD
+// in-memory-only vote check, replaced by the DB-backed VoteStatus/VoteChoice/BiomeVoteRow further
+// down - kept here for one commit so this one lands as a clean, independently-buildable "tables +
+// repository" step before services/vote-check.service.ts is deleted in the next commit.
 export type VoteCheckStatus = "pending" | "confirmed" | "denied";
 export type VoteCheckDecidedBy = "admin" | null;
 
-/** In-memory only - doesn't need to survive a restart, the admin-decision buttons only need to work for as long as this process is alive. */
 export interface VoteCheckState {
-    /** The forward/vote message's own identity - needed to fetch and edit it, NOT for the jump link (see originalJumpLink). */
     messageId: string;
     guildId: string;
     userId: number;
@@ -154,11 +156,59 @@ export interface VoteCheckState {
     biome: string;
     roleId: string | null;
     serverLink: string | null;
-    /** Jump link to the ORIGINAL webhook message that triggered this forward - fixed at creation, never recomputed from the forward message's own identity. */
     originalJumpLink: string;
     status: VoteCheckStatus;
     decidedBy: VoteCheckDecidedBy;
     decidedByUserId: string | null;
+}
+
+/**
+ * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
+ * every other value is terminal (the forward message is never edited again after reaching one).
+ * `NO_VOTES` and `TIE` are distinct: 0×0 is "no votes", not a tie - a tie requires at least one
+ * vote on each side.
+ */
+export enum VoteStatus {
+    OPEN = "open",
+    NO_VOTES = "no_votes",
+    TIE = "tie",
+    COMMUNITY_REAL = "community_real",
+    COMMUNITY_FAKE = "community_fake",
+    ADMIN_CONFIRMED = "admin_confirmed",
+    ADMIN_DENIED = "admin_denied",
+}
+
+/** A single ballot's choice (`bh_biome_vote_ballots.choice`) - also doubles as an admin's decisive click. */
+export enum VoteChoice {
+    REAL = "real",
+    FAKE = "fake",
+}
+
+export interface BiomeVoteRow {
+    /** Short random code (like a trace `ref`) - shown on the message, never sequential/guessable. */
+    id: string;
+    guild_id: string;
+    event_id: number;
+    /** `bh_users.id` of the finder - the one Discord account barred from voting on their own find. */
+    finder_user_id: number;
+    /** The forward/vote message's own identity - needed to fetch and re-edit it after a restart. */
+    channel_id: string;
+    message_id: string;
+    biome: string;
+    status: VoteStatus;
+    /** Discord id of the deciding admin - set only for admin_confirmed/admin_denied. */
+    decided_by: string | null;
+    closes_at: Date;
+    created_at: Date;
+    decided_at: Date | null;
+}
+
+export interface BiomeVoteBallotRow {
+    vote_id: string;
+    /** Raw Discord user id (not `bh_users.id`) - a voter need not have a BiomeHunt profile. */
+    user_id: string;
+    choice: VoteChoice;
+    created_at: Date;
 }
 
 export interface RoleJobRow {
