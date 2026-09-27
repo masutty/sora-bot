@@ -1,5 +1,5 @@
 import { defineCog } from "@/define";
-import _botAdminStuff from "./commands/bot";
+import _botAdminStuff from "./commands/bot.command";
 
 export default defineCog({
     name: "bot_internals",

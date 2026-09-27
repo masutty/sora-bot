@@ -195,6 +195,77 @@ CREATE TABLE IF NOT EXISTS bh_biome_forwards (
 );
 
 /* ───────────────────────────────────────────── */
+/* Rare-biome community votes                   */
+/* ───────────────────────────────────────────── */
+
+/*
+ * id is a short random code (like a trace ref), never sequential - avoids a vote id being
+ * guessable. channel_id/message_id and closes_at let closeDueVotes (a worker) re-fetch and
+ * re-edit the forward message on its own, including for a vote left open by a restart - no
+ * in-memory state survives across a process restart, unlike the old admin-only vote check.
+ */
+CREATE TABLE IF NOT EXISTS bh_biome_votes (
+    id             TEXT PRIMARY KEY,
+    guild_id       VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    event_id       INTEGER NOT NULL REFERENCES bh_activity_events(id) ON DELETE CASCADE,
+    finder_user_id INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    channel_id     VARCHAR(20) NOT NULL,
+    message_id     VARCHAR(20) NOT NULL,
+    biome          VARCHAR(64) NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'open',   /* open | no_votes | tie | community_real | community_fake | admin_confirmed | admin_denied */
+    decided_by     VARCHAR(20),                            /* admin's discord id - set only for admin_confirmed/admin_denied */
+    closes_at      TIMESTAMPTZ NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    decided_at     TIMESTAMPTZ
+);
+
+/*
+ * The forward message's own render inputs, captured at open time - role_id/server_link/
+ * jump_link/find_count are never re-derived from bh_biome_forwards/parsed macro text/a live
+ * recount at close/admin-decide time (a forward config can change mid-vote, the macro text isn't
+ * stored anywhere else, and a recount could differ from what the original message showed). The
+ * message is always rebuilt from THIS row, not from its own currently-rendered components.
+ */
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_link TEXT;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS jump_link TEXT;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
+
+/*
+ * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
+ * event, which used to cascade away the vote AND its ballots too: /bh-admin review <id> would
+ * then say "No vote with that id.", and the rejected-find stats derivable from the ballot rows
+ * were gone. Now nullable with ON DELETE SET NULL: denying still deletes the event, but the vote
+ * and its ballots survive with event_id = NULL - applyOutcome (biome-vote.service.ts) skips any
+ * grant/revert once it's null (there's no event left to credit/debit), and review shows the vote
+ * normally, noting the event is gone. Re-run safely on an existing dev table: DROP CONSTRAINT IF
+ * EXISTS + ADD CONSTRAINT (Postgres has no ADD CONSTRAINT IF NOT EXISTS) always converges on the
+ * same SET NULL constraint, whether this is a fresh table or one that still has the old CASCADE.
+ */
+ALTER TABLE bh_biome_votes ALTER COLUMN event_id DROP NOT NULL;
+ALTER TABLE bh_biome_votes DROP CONSTRAINT IF EXISTS bh_biome_votes_event_id_fkey;
+ALTER TABLE bh_biome_votes
+    ADD CONSTRAINT bh_biome_votes_event_id_fkey
+    FOREIGN KEY (event_id) REFERENCES bh_activity_events(id) ON DELETE SET NULL;
+
+/* Scanned every 5s by the vote-close worker - only ever matches rows still 'open'. */
+CREATE INDEX IF NOT EXISTS bh_biome_votes_open ON bh_biome_votes(status, closes_at) WHERE status = 'open';
+
+/*
+ * One row per (vote, voter) - the primary key IS the "one vote per user, no changing" rule (a
+ * second INSERT for the same pair is rejected outright by ON CONFLICT DO NOTHING in the
+ * repository, never overwritten). user_id is the voter's raw Discord id, not bh_users.id -
+ * a voter doesn't need a BiomeHunt profile to vote.
+ */
+CREATE TABLE IF NOT EXISTS bh_biome_vote_ballots (
+    vote_id    TEXT NOT NULL REFERENCES bh_biome_votes(id) ON DELETE CASCADE,
+    user_id    VARCHAR(20) NOT NULL,
+    choice     VARCHAR(10) NOT NULL,   /* real | fake */
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (vote_id, user_id)
+);
+
+/* ───────────────────────────────────────────── */
 /* Role queue                                   */
 /* ───────────────────────────────────────────── */
 

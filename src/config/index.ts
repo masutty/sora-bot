@@ -52,6 +52,19 @@ export const config = {
         // PrefixArgs). Off by default until validated in real use.
         allowArgsAsFlags: process.env.DEV_ALLOW_ARGS_AS_FLAGS === "true",
     },
+    // Framework-wide UI defaults (not env-driven) - one place to tune how every command/view behaves.
+    ui: {
+        /** Prefix commands can't send true ephemeral messages; a reply marked ephemeral is deleted after this. Must be >= the longest button timeout a command leaves on such a reply. */
+        prefixEphemeralTtlMs: 60_000,
+        /** Default idle timeout of a View: it expires after this long without an accepted interaction (click, typed reply, modal submit). */
+        viewTimeoutMs: 60_000,
+        /** Idle timeout of the `confirm` helper - short on purpose, a confirmation is a yes/no. */
+        confirmTimeoutMs: 20_000,
+        /** How long a View waits for a modal to be submitted before treating it as closed. */
+        modalTimeoutMs: 60_000,
+        /** Idle timeout of each step of the `flow` helper - steps may need the user to go look something up. */
+        flowStepTimeoutMs: 5 * 60_000,
+    },
 } as const;
 
 export type Config = typeof config;
