@@ -1,0 +1,340 @@
+import type {
+    Guild,
+    GuildBasedChannel,
+    GuildMember,
+    Role,
+    SlashCommandBuilder,
+    SlashCommandOptionsOnlyBuilder,
+    SlashCommandSubcommandsOnlyBuilder,
+    User,
+} from "discord.js";
+import { config } from "@/config";
+import type { BotClient } from "../bot-client";
+
+// ─── Schema derivation ────────────────────────────────────────────────────────
+
+type ArgType = "string" | "number" | "boolean" | "user" | "channel" | "role";
+
+interface ArgSchema {
+    name: string;
+    type: ArgType;
+    required: boolean;
+}
+
+interface SubcommandSchema {
+    name: string;
+    group: string | null;
+    options: ArgSchema[];
+}
+
+const OPTION_TYPE_MAP: Record<number, ArgType | undefined> = {
+    3: "string",
+    4: "number",
+    5: "boolean",
+    6: "user",
+    7: "channel",
+    8: "role",
+    10: "number",
+};
+
+const SUB_COMMAND = 1;
+const SUB_COMMAND_GROUP = 2;
+
+type AnyBuilder =
+    | SlashCommandBuilder
+    | SlashCommandOptionsOnlyBuilder
+    | SlashCommandSubcommandsOnlyBuilder;
+
+type RawOption = {
+    name: string;
+    type: number;
+    required?: boolean;
+    options?: RawOption[];
+};
+
+/**
+ * Derives a flat arg schema from a builder (no subcommands).
+ * Used by command-handler.ts for regular commands.
+ */
+export function deriveSchema(builder: AnyBuilder): ArgSchema[] {
+    const json = builder.toJSON() as { options?: RawOption[] };
+    if (!json.options?.length) return [];
+    return json.options.flatMap((opt): ArgSchema[] => {
+        const type = OPTION_TYPE_MAP[opt.type];
+        if (!type) return [];
+        return [{ name: opt.name, type, required: opt.required ?? false }];
+    });
+}
+
+function subcommandKey(group: string | null, name: string): string {
+    return group ? `${group}:${name}` : name;
+}
+
+function optionsOf(opt: RawOption): ArgSchema[] {
+    return (opt.options ?? []).flatMap((child): ArgSchema[] => {
+        const type = OPTION_TYPE_MAP[child.type];
+        if (!type) return [];
+        return [{ name: child.name, type, required: child.required ?? false }];
+    });
+}
+
+/**
+ * Derives a subcommand schema map from a builder.
+ * Returns a map keyed by subcommand name (or `"<group>:<name>"` for
+ * subcommands nested in a subcommand group) → its arg schemas.
+ * Used by PrefixArgs when the builder has subcommands.
+ */
+export function deriveSubcommandSchema(builder: AnyBuilder): Map<string, SubcommandSchema> {
+    const json = builder.toJSON() as { options?: RawOption[] };
+    const map = new Map<string, SubcommandSchema>();
+    if (!json.options?.length) return map;
+
+    for (const opt of json.options) {
+        if (opt.type === SUB_COMMAND) {
+            map.set(subcommandKey(null, opt.name), { name: opt.name, group: null, options: optionsOf(opt) });
+        } else if (opt.type === SUB_COMMAND_GROUP) {
+            for (const sub of opt.options ?? []) {
+                if (sub.type !== SUB_COMMAND) continue;
+                map.set(subcommandKey(opt.name, sub.name), { name: sub.name, group: opt.name, options: optionsOf(sub) });
+            }
+        }
+    }
+
+    return map;
+}
+
+// ─── ID resolvers ─────────────────────────────────────────────────────────────
+
+function extractId(input: string, pattern: RegExp): string | null {
+    const m = input.match(pattern);
+    if (m) return m[1];
+    if (/^\d{17,19}$/.test(input)) return input;
+    return null;
+}
+
+// ─── CLI-style flags (--name / --name=value) ───────────────────────────────────
+
+const FLAG_PATTERN = /^--([A-Za-z][\w-]*)(?:=(.*))?$/;
+
+/**
+ * Gated behind DEV_ALLOW_ARGS_AS_FLAGS (config.bot.allowArgsAsFlags) - with the flag off, returns
+ * the tokens untouched and no command changes behavior. When on, splits `--name`/`--name=value`
+ * tokens out from the positional ones (in any position), so a value can be set without "spending"
+ * the position of the last greedy argument (e.g. a search command keeps its full free-text query
+ * intact even when a trailing `--includeInactive` flag is present).
+ */
+function extractFlags(raw: string[]): { positional: string[]; flags: Map<string, string> } {
+    const flags = new Map<string, string>();
+    if (!config.bot.allowArgsAsFlags) return { positional: raw, flags };
+
+    const positional: string[] = [];
+    for (const token of raw) {
+        const m = token.match(FLAG_PATTERN);
+        if (m) flags.set(m[1].toLowerCase(), m[2] ?? "true");
+        else positional.push(token);
+    }
+    return { positional, flags };
+}
+
+// ─── Named args (name:value) ───────────────────────────────────────────────────
+
+const NAMED_PATTERN = /^([A-Za-z][\w-]*):(.+)$/s;
+
+/**
+ * Splits `name:value` tokens out of the positional ones (in any position), but ONLY when `name` is
+ * an arg of the active schema - so `biome:GLITCHED user:@x` and `user:@x GLITCHED` both work, while
+ * a stray `https://...` or `<t:123:R>` stays positional. A named value is one token; quote it for
+ * spaces (`reason:"two words"`).
+ */
+function extractNamed(raw: string[], schema: ArgSchema[]): { positional: string[]; named: Map<string, string> } {
+    const named = new Map<string, string>();
+    const positional: string[] = [];
+    for (const token of raw) {
+        const m = token.match(NAMED_PATTERN);
+        const arg = m && schema.find((a) => a.name.toLowerCase() === m[1].toLowerCase());
+        if (m && arg) named.set(arg.name, m[2]);
+        else positional.push(token);
+    }
+    return { positional, named };
+}
+
+// ─── PrefixArgs ───────────────────────────────────────────────────────────────
+
+/**
+ * Lightweight arg helper for prefix commands.
+ *
+ * Supports two modes:
+ *
+ * 1. Flat args — builder has regular options only.
+ *    `args.getString("message")` maps positionally from the schema.
+ *
+ * 2. Subcommand mode — builder has .addSubcommand() and/or .addSubcommandGroup().
+ *    First raw token is the subcommand (or group) name; remaining tokens are its args.
+ *    For a grouped subcommand, the first two raw tokens are `<group> <subcommand>`.
+ *    Use `args.getSubcommand()` / `args.getSubcommandGroup()` to get the active names.
+ *    Arg getters (`getString`, etc.) resolve against the subcommand's schema.
+ *
+ * Any arg can also be given by name as `name:value`, in any order; the remaining positional
+ * tokens then fill the args NOT given by name, in schema order.
+ *
+ * The last positional arg is always greedy (joins remaining tokens).
+ */
+export class PrefixArgs {
+    private readonly activeSchema: ArgSchema[];
+    private readonly activeRaw: string[];
+    /** The active schema minus the args given as `name:value` - what the positional tokens fill. */
+    private readonly positionalSchema: ArgSchema[];
+    private readonly named: Map<string, string>;
+    private readonly flags: Map<string, string>;
+    private readonly _subcommand: string | null;
+    private readonly _subcommandGroup: string | null;
+
+    constructor(
+        raw: string[],
+        schema: ArgSchema[],
+        private readonly guild: Guild | null,
+        private readonly client: BotClient,
+        subcommandMap?: Map<string, SubcommandSchema>,
+    ) {
+        const { positional, flags } = extractFlags(raw);
+        this.flags = flags;
+
+        if (subcommandMap && subcommandMap.size > 0) {
+            // Subcommand mode. Try a grouped match first (2 tokens: group + sub),
+            // then fall back to a flat match (1 token).
+            const first = positional[0]?.toLowerCase() ?? null;
+            const second = positional[1]?.toLowerCase() ?? null;
+            const grouped = first && second ? subcommandMap.get(`${first}:${second}`) : undefined;
+
+            const sub = grouped ?? (first ? subcommandMap.get(first) : undefined);
+            const consumed = grouped ? 2 : 1;
+            // A bare group name (no/unknown subcommand after it) still reports its group - mirrors
+            // slash, where a group can't be invoked without a subcommand, so callers can tell
+            // "`forward` with nothing after it" apart from "nothing at all".
+            const bareGroup = !sub && first !== null && [...subcommandMap.values()].some((s) => s.group === first);
+
+            this._subcommand = sub?.name ?? null;
+            this._subcommandGroup = sub?.group ?? (bareGroup ? first : null);
+            this.activeSchema = sub?.options ?? [];
+            const rest = sub ? positional.slice(consumed) : positional.slice(1);
+            ({ positional: this.activeRaw, named: this.named } = extractNamed(rest, this.activeSchema));
+        } else {
+            // Flat mode
+            this._subcommand = null;
+            this._subcommandGroup = null;
+            this.activeSchema = schema;
+            ({ positional: this.activeRaw, named: this.named } = extractNamed(positional, schema));
+        }
+        this.positionalSchema = this.activeSchema.filter((a) => !this.named.has(a.name));
+    }
+
+    /**
+     * Returns the active subcommand name, or null if not in subcommand mode.
+     */
+    getSubcommand(): string | null {
+        return this._subcommand;
+    }
+
+    /**
+     * Returns the active subcommand group name, or null if the matched
+     * subcommand isn't nested in a group (mirrors discord.js's
+     * `interaction.options.getSubcommandGroup(false)`).
+     */
+    getSubcommandGroup(): string | null {
+        return this._subcommandGroup;
+    }
+
+    /**
+     * Remaining raw tokens (post-subcommand), unresolved against the schema. For commands that
+     * mix free text with an optional trailing positional parameter - the derived schema only
+     * makes the LAST field greedy, which can't handle "free message + optional trailing channel".
+     */
+    /** What each schema arg got, as typed: `biome=\`GLITCHED\` user=\`<@1>\`` - shown on user errors so a misparse is obvious. */
+    describe(): string {
+        return this.activeSchema
+            .map((a) => [a.name, this.getRaw(a.name)] as const)
+            .filter(([, raw]) => raw !== null)
+            .map(([name, raw]) => `${name}=\`${raw}\``)
+            .join(" ");
+    }
+
+    getRawArgs(): string[] {
+        return this.activeRaw;
+    }
+
+    private getRaw(name: string): string | null {
+        const flagValue = this.flags.get(name.toLowerCase());
+        if (flagValue !== undefined) return flagValue;
+        const namedValue = this.named.get(name);
+        if (namedValue !== undefined) return namedValue;
+        const idx = this.positionalSchema.findIndex((a) => a.name === name);
+        if (idx === -1) return null;
+        // Last positional arg is greedy — joins all remaining tokens
+        if (idx === this.positionalSchema.length - 1 && this.activeRaw.length > idx) {
+            return this.activeRaw.slice(idx).join(" ") || null;
+        }
+        return this.activeRaw[idx] ?? null;
+    }
+
+    getString(name: string): string | null {
+        return this.getRaw(name);
+    }
+
+    /** True if the invoker supplied a value for this arg at all - even one that won't parse. */
+    has(name: string): boolean {
+        return this.getRaw(name) !== null;
+    }
+
+    /** Like `getNumber`, but a non-integer (e.g. `2.5`) is treated as invalid (`null`), matching slash's integer options. */
+    getInteger(name: string): number | null {
+        const n = this.getNumber(name);
+        return n !== null && Number.isInteger(n) ? n : null;
+    }
+
+    getNumber(name: string): number | null {
+        const raw = this.getRaw(name);
+        if (raw === null) return null;
+        const n = Number(raw);
+        return isNaN(n) ? null : n;
+    }
+
+    getBoolean(name: string): boolean | null {
+        const raw = this.getRaw(name)?.toLowerCase();
+        if (!raw) return null;
+        if (["true", "1", "yes", "sim"].includes(raw)) return true;
+        if (["false", "0", "no", "não", "nao"].includes(raw)) return false;
+        return null;
+    }
+
+    async getUser(name: string): Promise<User | null> {
+        const raw = this.getRaw(name);
+        if (!raw) return null;
+        const id = extractId(raw, /^<@!?(\d+)>$/);
+        if (!id) return null;
+        return this.client.users.cache.get(id) ?? await this.client.users.fetch(id).catch(() => null);
+    }
+
+    async getMember(name: string): Promise<GuildMember | null> {
+        const raw = this.getRaw(name);
+        if (!raw || !this.guild) return null;
+        const id = extractId(raw, /^<@!?(\d+)>$/);
+        if (!id) return null;
+        return this.guild.members.cache.get(id) ?? await this.guild.members.fetch(id).catch(() => null);
+    }
+
+    async getChannel(name: string): Promise<GuildBasedChannel | null> {
+        const raw = this.getRaw(name);
+        if (!raw || !this.guild) return null;
+        const id = extractId(raw, /^<#(\d+)>$/);
+        if (!id) return null;
+        return this.guild.channels.cache.get(id) ?? await this.guild.channels.fetch(id).catch(() => null);
+    }
+
+    async getRole(name: string): Promise<Role | null> {
+        const raw = this.getRaw(name);
+        if (!raw || !this.guild) return null;
+        const id = extractId(raw, /^<@&(\d+)>$/);
+        if (!id) return null;
+        return this.guild.roles.cache.get(id) ?? await this.guild.roles.fetch(id).catch(() => null);
+    }
+}

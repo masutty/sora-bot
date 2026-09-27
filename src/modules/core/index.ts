@@ -1,9 +1,9 @@
 import { defineCog } from "@/define";
-// import echoCommand from "./commands/echo";
-import _ping from "./commands/ping";
-import _help from "./commands/help";
-import _setprefix from "./commands/setprefix";
-import _echo from "./commands/echo";
+import _echo from "./commands/echo.command";
+import _help from "./commands/help.command";
+// import echoCommand from "./commands/echo.command";
+import _ping from "./commands/ping.command";
+import _setprefix from "./commands/setprefix.command";
 
 
 export default defineCog({

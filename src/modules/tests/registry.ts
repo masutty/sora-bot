@@ -1,15 +1,13 @@
 import { readdirSync, statSync } from "fs";
 import { join, relative, sep } from "path";
-import type { BotClient } from "@/core/BotClient";
-import type { ConfirmPayload } from "@/utils/confirm";
+import type { BotClient } from "@/core/bot-client";
+import type { ViewPayload } from "@/define";
 
 const TESTS_DIR = join(__dirname, "tests");
 
-/** Same payload shape `confirmAction`/`attachPagination` already use everywhere else (Container +
- * optionally a button row) - proven compatible with both `interaction.editReply()`/`message.reply()`
- * (the initial send) and `attachPagination`'s `render` (page flips), unlike discord.js's own
- * `MessageEditOptions`/`MessageReplyOptions`, which don't agree with each other on `flags`. */
-export type TestPayload = ConfirmPayload;
+/** Same payload shape every View/`ctx.reply` body uses (embeds or ComponentsV2) - compatible with
+ * both `interaction.editReply()`/`message.reply()` (the initial send) and `paginate`'s pages. */
+export type TestPayload = ViewPayload;
 
 /**
  * A single `!test <keyword>` preview - builds a real payload from fake/hardcoded data, so a

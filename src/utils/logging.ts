@@ -1,5 +1,6 @@
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
+import { currentTrace, formatTrace, type TraceContext } from "./trace";
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
 
@@ -14,25 +15,43 @@ const customLevels = {
 	levels: { error: 0, warn: 1, info: 2, debug: 3, verbose: 4 },
 	colors: { error: "red", warn: "yellow", info: "green", debug: "blue", verbose: "gray" },
 };
+
 winston.addColors(customLevels.colors);
 
 const LEVEL_WIDTH = 7; // longest used level: "verbose"
 
-const logFormat = printf(({ level, message, timestamp, namespace, stack }) => {
-	// level is already colorized — strip ANSI to measure true display length
+function stringify(value: unknown): string {
+	return JSON.stringify(
+		value,
+		(_, v) => (typeof v === "bigint" ? v.toString() : v),
+		2,
+	);
+}
+
+const logFormat = printf(({ level, message, timestamp, namespace, stack, trace: traceCtx, ...meta }) => {
+	// level is already colorized - strip ANSI to measure true display length
 	const displayLen = level.replace(/\x1B\[[0-9;]*m/g, "").length;
 	const padding = " ".repeat(Math.max(0, LEVEL_WIDTH - displayLen));
-	const ns = namespace ? ` [${namespace}]` : "";
+	const traceText = formatTrace(traceCtx as TraceContext | undefined);
+	const ns = (namespace ? ` [${namespace}]` : "") + (traceText ? ` (${traceText})` : "");
 	const trace = stack ? `\n${stack}` : "";
+	const metadata = Object.keys(meta).length ? `\n${stringify(meta)}` : "";
+    message = message + metadata;
+
 	return `${timestamp} ${level}${padding}${ns}: ${message}${trace}`;
 });
 
 // Shared, colorize-free base - safe to reuse across transports since it never adds ANSI codes.
 const commonFormat = combine(errors({ stack: true }), timestamp({ format: "YYYY-MM-DD HH:mm:ss" }));
+
 const plainFormat = combine(commonFormat, logFormat);
 
-/** Valid levels this app actually uses - restricts what `setLogLevel` accepts so a typo can't silently no-op. Ordered least to most verbose. */
+/**
+ * Valid levels this app actually uses - restricts what `setLogLevel` accepts so a typo can't
+ * silently no-op. Ordered least to most verbose.
+ */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "verbose"] as const;
+
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 // Each transport owns its own complete format chain (including whether to colorize) - do NOT
@@ -46,6 +65,7 @@ const consoleTransport = new winston.transports.Console({
 
 // Rotation knobs, shared by both rotated files below.
 const LOG_RETENTION_DAYS = process.env.LOG_RETENTION_DAYS ?? "14";
+
 // Optional extra rotation trigger by size (e.g. "20m") - unset means date-based rotation only.
 const LOG_MAX_SIZE = process.env.LOG_MAX_SIZE;
 
@@ -70,6 +90,7 @@ const shared = winston.createLogger({
 		// shows up here, only in the rotated file below.
 		consoleTransport,
 		combinedFileTransport,
+
 		// Errors only, same rotation - a quick "did anything critical happen" check without
 		// wading through debug noise. Deliberately not exposed to `setLogLevel` - this file's
 		// whole point is "errors only", always.
@@ -84,7 +105,9 @@ const shared = winston.createLogger({
 	],
 });
 
-/** Changes the console's or the combined file's minimum log level at runtime - no restart needed. */
+/**
+ * Changes the console's or the combined file's minimum log level at runtime - no restart needed.
+ */
 export function setLogLevel(target: "console" | "file", level: LogLevel): void {
 	if (target === "console") consoleTransport.level = level;
 	else shared.level = level;
@@ -108,18 +131,34 @@ function formatErrorChain(err: Error, depth = 0): string {
 	const lines = [err.stack ?? err.message];
 
 	const subErrors = (err as { errors?: unknown[] }).errors;
+
 	if (Array.isArray(subErrors)) {
 		for (const sub of subErrors) {
-			lines.push(sub instanceof Error ? `- ${formatErrorChain(sub, depth + 1)}` : `- ${Logger.stringify(sub)}`);
+			lines.push(
+				sub instanceof Error
+					? `- ${formatErrorChain(sub, depth + 1)}`
+					: `- ${stringify(sub)}`,
+			);
 		}
 	}
 
 	const cause = (err as { cause?: unknown }).cause;
+
 	if (cause !== undefined) {
-		lines.push(cause instanceof Error ? `Caused by: ${formatErrorChain(cause, depth + 1)}` : `Caused by: ${Logger.stringify(cause)}`);
+		lines.push(
+			cause instanceof Error
+				? `Caused by: ${formatErrorChain(cause, depth + 1)}`
+				: `Caused by: ${stringify(cause)}`,
+		);
 	}
 
 	return lines.join("\n");
+}
+
+/** Attaches the current trace (who/what/which invocation) to a log call - rendered by `logFormat`, never in the JSON metadata dump. */
+function withTrace(meta?: object): object | undefined {
+	const trace = currentTrace();
+	return trace ? { ...meta, trace } : meta;
 }
 
 export class Logger {
@@ -130,33 +169,37 @@ export class Logger {
 	}
 
 	info(message: string, meta?: object): void {
-		this.child.info(message, meta);
+		this.child.info(message, withTrace(meta));
 	}
 
 	warn(message: string, meta?: object): void {
-		this.child.warn(message, meta);
+		this.child.warn(message, withTrace(meta));
 	}
 
 	error(message: string | Error, meta?: object): void {
 		if (message instanceof Error) {
-			this.child.error(message.message, { stack: formatErrorChain(message), ...meta });
+			this.child.error(message.message, {
+				stack: formatErrorChain(message),
+				...withTrace(meta),
+			});
 		} else {
-			this.child.error(message, meta);
+			this.child.error(message, withTrace(meta));
 		}
 	}
 
 	debug(message: string, meta?: object): void {
-		this.child.debug(message, meta);
+		this.child.debug(message, withTrace(meta));
 	}
 
-	/** Below `debug` - for the noisy stuff (macro/biome parsing traces) you only want when actively digging in. */
+	/**
+	 * Below `debug` - for the noisy stuff (macro/biome parsing traces) you only want when actively
+	 * digging in.
+	 */
 	verbose(message: string, meta?: object): void {
-		this.child.log("verbose", message, meta);
+		this.child.log("verbose", message, withTrace(meta));
 	}
 
 	static stringify(value: unknown): string {
-		return JSON.stringify(value, (_, v) =>
-			typeof v === 'bigint' ? v.toString() : v, 2,
-		);
+		return stringify(value);
 	}
 }
