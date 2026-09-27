@@ -61,18 +61,22 @@ suffix convention still applies inside it.
 - Every module imports the command/view framework **only** through `@/define` — never
   `@/core/view/*` or `@/core/command/*`. (`@/core/bot-client`'s `BotClient` *type* is fine to
   import directly; it isn't the View/Command framework.)
-- `repository/` → `types.ts` only. No Discord.js types beyond raw ids, no business logic.
-- `constants/` → nothing (pure static data).
-- `services/` → `repository/`, `constants/`, `types.ts`, `settings.ts`, `@/core/bot-client`. A
-  service may import a `views/*.view.ts` export **only** when that export is a pure payload
-  builder (not a `defineView` screen) reused outside a View session — e.g. a persistent-message
-  builder shared by a worker and a View (`forward-post.view.ts`, `session-end.view.ts`).
-- `views/` (the `defineView` screens themselves) → `repository/`, `services/`, `constants/`,
-  `types.ts`, `settings.ts`, and other `views/` (children opened with `c.open`). Never `commands/`.
-- `flows/` → `views/` (its steps, including a step reused from elsewhere), `repository/`,
-  `services/` (usually through a `Deps` object handed to every step - see §4).
-- `commands/` → `views/`, `flows/`, `services/`, `types.ts`, `settings.ts`. This is the only layer
-  that starts a session (`ctx.open(...)`) from a real invocation.
+- `commands/` → `views/`, `flows/`, `services/`. This is the only layer that starts a session
+  (`ctx.open(...)`) from a real invocation.
+- `views/`/`flows/` → `services/`, `constants/`, `repository/` (read-only display data — e.g.
+  `stats-builders.ts` reads straight from `repository/` to build a stats screen), and other
+  `views/`/`flows/` (a parent opening a child with `c.open`, or a flow reusing a step from
+  another module's `views/`). Never `commands/`.
+- `services/` → `repository/`, `constants/`, other `services/`, and a pure (non-interactive)
+  message builder exported from `views/` — never a `defineView` screen itself — reused outside a
+  View session, e.g. `services/activity-session-report.service.ts` → `views/session-end.view.ts`.
+- `workers/` → `services/`, `repository/`.
+- `repository/` → `@/database/connection`, `constants/`, `@/utils/cache`, other `repository/`
+  modules (plus `types.ts` for row types).
+- A subsystem subfolder (e.g. biomehunt's `macro-parsers/*.parser.ts`) is only imported through
+  its own `index.ts` — never a file inside it directly.
+- Never: a `services/`, `workers/` or `repository/` module importing an **interactive** View
+  (`defineView`) or a `commands/` module.
 - `index.ts` wires it all together: lists `commands/` in `commands: [...]`, wires `events`/
   `onReady` to `services/`/`repository/`, starts `workers/`, and registers `migrations.ts`.
 
@@ -218,10 +222,9 @@ export function counterView(): ViewDefinition<CounterState, void, void> {
   equivalent, mutation is just less typing. A handler returning nothing leaves whatever it
   mutated as-is.
 - **`done(result)`** — ends *this* view; whoever opened it (`ctx.open`/`c.open`) resolves with
-  `result`. The root's final screen is its last render with interactive components stripped
-  (`onExpire`'s default; see below) — but calling `done` doesn't apply that stripping itself,
-  it's what happens once the session actually settles/expires. A child instead hands the message
-  straight back to its opener.
+  `result`. When the ROOT calls `done`, its final render is painted immediately with interactive
+  components stripped (Link buttons are kept) and the session ends. A child instead hands the
+  message straight back to its opener, which redraws.
 
 ### Child views with `open` — a reusable picker
 
@@ -394,9 +397,9 @@ slow — the click is acknowledged immediately, `onConfirm` runs after.
 
 `flow({ name, context, steps, onFinish, onCancel?, onTimeout? })` — runs `steps` in order as
 children on one message: step 1 shows immediately, and each step is a View (opened with the
-flow's `context` as its input) that ends with a `StepResult`: `"ok"`/`"skip"` advance,
-`"back"` goes to the previous step (stays on the first), `"cancel"` ends the whole flow with
-`onCancel`. After the last step, `onFinish(context)`'s payload is the final screen. The flow owns
+flow's `context` as its input) that ends with a `StepResult` object — `c.done({ kind: "ok" })`:
+`{ kind: "ok" }`/`{ kind: "skip" }` advance, `{ kind: "back" }` goes to the previous step (stays
+on the first), `{ kind: "cancel" }` ends the whole flow with `onCancel`. After the last step, `onFinish(context)`'s payload is the final screen. The flow owns
 the session's one clock: `stepTimeoutMs` (default `config.ui.flowStepTimeoutMs`) idle in *any*
 step ends it with `onTimeout` (default `onCancel`). Build a step's own screen with `navRow` +
 `navHandlers()`:
@@ -483,8 +486,11 @@ Useful pieces:
   **`fake.id(key)`** — the customId bound to `key` on it, if you need it directly.
 - **`fake.notifies`**, **`fake.modals`**, **`fake.renders`**, **`fake.log`** — full call history,
   for asserting a `c.notify(...)` fired, a modal was shown with the right spec, or the call order.
-- **`fake.modalResult`** — override to control what the next `c.modal(...)` resolves with (default:
-  `null`, i.e. closed) when a test needs to simulate a modal *submission*.
+- **`fake.modalResult`** — a function `(call) => Promise<{ values, ack } | null>` deciding what the
+  next `c.modal(...)` resolves with (default `async () => null`, i.e. closed). To simulate a submit:
+  ```ts
+  fake.modalResult = async () => ({ values: { hours: "12" }, ack: fake.modalSubmit(OWNER.id) });
+  ```
 
 See `src/modules/biomehunt/views/quota-delete.view.test.ts` for a full example covering a typed
 retry loop, idle expiry, another user's input being ignored, and a `start`-driven immediate `done`.
