@@ -8,6 +8,11 @@ export const settings = {
         statusTickMs: 30_000,
         roleTickMs: 2_000,
         counterTickMs: 5 * 60 * 1000,
+        voteCloseTickMs: 5_000,
+    },
+    votes: {
+        /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it. */
+        windowMs: 60_000,
     },
     ui: {
         rerollIdleMs: 20_000,

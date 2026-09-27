@@ -1,14 +1,22 @@
+import type { APIContainerComponent } from "discord.js";
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SectionBuilder, SeparatorBuilder,
-    TextDisplayBuilder, ThumbnailBuilder,
+    SeparatorSpacingSize, TextDisplayBuilder, ThumbnailBuilder,
 } from "discord.js";
 import { getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
-import type { VoteCheckDecidedBy, VoteCheckStatus } from "../types";
+import { VoteStatus } from "../types";
 
 export interface VoteRenderInfo {
-    status: VoteCheckStatus;
-    decidedBy: VoteCheckDecidedBy;
-    decidedByUserId: string | null;
+    /** Short random code, shown on the message so it can be referenced (e.g. `/bh-admin review`). */
+    voteId: string;
+    status: VoteStatus;
+    closesAt: Date;
+    /** Ballots cast so far - shown while open ("N votes · closes <t:R>"). The Real/Fake split stays hidden until the vote closes. */
+    voteCount: number;
+    /** Real/Fake split - only rendered once `status` is no longer `open`. */
+    tally?: { real: number; fake: number };
+    /** Discord id of the deciding admin - only set for admin_confirmed/admin_denied. */
+    decidedByUserId?: string;
 }
 
 export interface ForwardContainerParams {
@@ -21,10 +29,10 @@ export interface ForwardContainerParams {
     vote?: VoteRenderInfo;
 }
 
-function buildVoteButtonsRow(status: VoteCheckStatus): ActionRowBuilder<ButtonBuilder> {
+function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
     return new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId("bh-vote-confirm").setEmoji("✅").setStyle(status === "confirmed" ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("bh-vote-deny").setEmoji("❌").setStyle(status === "denied" ? ButtonStyle.Danger : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`biomehunt:vote:${voteId}:real`).setLabel("Real").setEmoji("✅").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`biomehunt:vote:${voteId}:fake`).setLabel("Fake").setEmoji("❌").setStyle(ButtonStyle.Secondary),
     );
 }
 
@@ -34,21 +42,60 @@ function buildLinkButtonsRow(jumpLink: string, serverLink: string | null): Actio
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
-/** No line while pending (just the buttons) - only shown once an admin has actually decided. */
-function voteStatusLine(vote: VoteRenderInfo): string | null {
-    if (vote.status === "pending") return "## Is this biome correct?";
+/** Main line of the vote block - one per `VoteStatus`. English, per the vote model's "Final states". */
+function voteStatusLine(vote: VoteRenderInfo): string {
+    const real = vote.tally?.real ?? 0;
+    const fake = vote.tally?.fake ?? 0;
 
-    const status = vote.status === "confirmed" ? "Marked as real" : "Marked as fake";
-    const emoji = vote.status === "confirmed" ? "✅" : "❌";
-    return `${emoji} ${status} by <@${vote.decidedByUserId}>.`;
+    switch (vote.status) {
+        case VoteStatus.OPEN: {
+            const epoch = Math.floor(vote.closesAt.getTime() / 1000);
+            return `## Is this biome real?\n${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · closes <t:${epoch}:R>`;
+        }
+        case VoteStatus.NO_VOTES:
+            return "Vote expired with no votes - nothing changed.";
+        case VoteStatus.TIE:
+            return `Tied vote (${real}×${fake}) - nothing changed.`;
+        case VoteStatus.COMMUNITY_REAL:
+            return `✅ Confirmed by community vote (${real}×${fake}).`;
+        case VoteStatus.COMMUNITY_FAKE:
+            return `❌ Rejected by community vote (${real}×${fake}) - nothing changed.`;
+        case VoteStatus.ADMIN_CONFIRMED:
+            return `✅ Confirmed by <@${vote.decidedByUserId}> (admin).`;
+        case VoteStatus.ADMIN_DENIED:
+            return `❌ Denied by <@${vote.decidedByUserId}> (admin).`;
+        default: {
+            const exhaustive: never = vote.status;
+            throw new Error(`Unhandled vote status: ${exhaustive}`);
+        }
+    }
 }
 
 /**
- * Builds the biome forward Container from scratch - used both for the initial send and for
- * every later edit (admin decision), since Components V2 messages must be edited by replacing
- * the whole component tree rather than patching one piece of it. `jumpLink` must always be the
- * ORIGINAL webhook message that triggered the forward - never recompute it from the forward
- * message's own identity, or edits will make it point to itself.
+ * The vote block's own components (a Large separator, the status line, the vote id, and - only
+ * while open - the Real/Fake buttons plus an admin note). Shared by `buildForwardContainer` (the
+ * initial send) and `updateVoteContainer` (every later edit), so both always produce the exact
+ * same shape.
+ */
+function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> {
+    const parts: Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> = [
+        new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large),
+        new TextDisplayBuilder().setContent(voteStatusLine(vote)),
+        new TextDisplayBuilder().setContent(`-# Vote ID: \`${vote.voteId}\``),
+    ];
+
+    if (vote.status === VoteStatus.OPEN) {
+        parts.push(buildVoteButtonsRow(vote.voteId));
+        parts.push(new TextDisplayBuilder().setContent("-# Admins: clicking Real/Fake decides immediately and closes the vote."));
+    }
+
+    return parts;
+}
+
+/**
+ * Builds the biome forward Container from scratch - used for the initial send. `jumpLink` must
+ * always be the ORIGINAL webhook message that triggered the forward - never recomputed from the
+ * forward message's own identity, or edits will make it point to itself.
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
     const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
@@ -69,19 +116,29 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
         container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headingLines.join("\n")));
     }
 
-    
     if (params.vote) {
-        container.addSeparatorComponents(new SeparatorBuilder());
-        const statusLine = voteStatusLine(params.vote);
-        if (statusLine) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusLine));
-        if (!params?.vote?.decidedBy)  {
-            container.addActionRowComponents(buildVoteButtonsRow(params.vote.status));
-            container.addTextDisplayComponents(new TextDisplayBuilder().setContent("-# The buttons above are meant for admins only.")); // intentional!
-        }
+        container.spliceComponents(container.components.length, 0, ...buildVoteBlockComponents(params.vote));
     }
-    
-    container.addSeparatorComponents(new SeparatorBuilder());
+
+    container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
     container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink));
 
+    return container;
+}
+
+/**
+ * Re-edits an ALREADY-SENT forward message's vote block in place, from its own current raw
+ * components (`message.components[0].toJSON()`) - never from a freshly recomputed `roleId`/
+ * `serverLink`/`jumpLink`/`findCount`, none of which are persisted on `bh_biome_votes` (the message
+ * itself is the source of truth for them, and it must still be editable after a restart).
+ *
+ * Relies on the fixed shape every render here produces: exactly one heading component at index 0,
+ * the vote block next, then exactly a closing separator + the link buttons row - so the vote block
+ * is always `components.slice(1, -2)`, regardless of its own variable length.
+ */
+export function updateVoteContainer(raw: APIContainerComponent, vote: VoteRenderInfo): ContainerBuilder {
+    const container = new ContainerBuilder(raw);
+    const deleteCount = Math.max(container.components.length - 3, 0);
+    container.spliceComponents(1, deleteCount, ...buildVoteBlockComponents(vote));
     return container;
 }

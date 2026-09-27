@@ -4,15 +4,19 @@ import _bh from "./commands/bh.command";
 import _bhAdmin from "./commands/bh-admin.command";
 import _bhOwner from "./commands/bh-owner.command";
 import _bhStats from "./commands/bh-stats.command";
+import { biomeVoteComponent } from "./components/biome-vote.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity-ingest.service";
-import { handleVoteButtonClick } from "./services/vote-check.service";
 import { counterWorker } from "./workers/counter.worker";
 import { roleWorker } from "./workers/role.worker";
 import { statusWorker } from "./workers/status.worker";
+import { voteCloseWorker } from "./workers/vote-close.worker";
 
 const logger = new Logger("biomehunt");
+
+/** Buttons on a message posted before the DB-backed vote existed - it has no vote row (its state was only ever in memory), so it can never be resolved. */
+const LEGACY_VOTE_BUTTON_IDS = new Set(["bh-vote-confirm", "bh-vote-deny"]);
 
 export default defineCog({
     name: "biomehunt",
@@ -23,7 +27,9 @@ export default defineCog({
 
     migrations: [BIOMEHUNT_SCHEMA],
 
-    workers: [statusWorker, roleWorker, counterWorker],
+    workers: [statusWorker, roleWorker, counterWorker, voteCloseWorker],
+
+    components: [biomeVoteComponent()],
 
     events: {
         async messageCreate(_client, message) {
@@ -33,8 +39,13 @@ export default defineCog({
                 logger.error(err instanceof Error ? err : new Error(String(err)));
             });
         },
-        async interactionCreate(client, interaction) {
-            await handleVoteButtonClick(client, interaction).catch((err) => {
+        // Not routed through `components:` on purpose - these bare, colon-less customIds predate
+        // defineComponent's `prefix + ":"` routing and can never match it. Kept only so a button on
+        // an old message answers instead of doing nothing.
+        async interactionCreate(_client, interaction) {
+            if (!interaction.isButton()) return;
+            if (!LEGACY_VOTE_BUTTON_IDS.has(interaction.customId)) return;
+            await interaction.reply({ content: "This vote is no longer available.", ephemeral: true }).catch((err) => {
                 logger.error(err instanceof Error ? err : new Error(String(err)));
             });
         },

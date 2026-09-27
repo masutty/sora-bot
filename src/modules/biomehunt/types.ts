@@ -140,28 +140,6 @@ export interface BiomeForwardRow {
     role_id: string | null;
 }
 
-// TODO(vote-check-removal): VoteCheckStatus/VoteCheckDecidedBy/VoteCheckState below are the OLD
-// in-memory-only vote check, replaced by the DB-backed VoteStatus/VoteChoice/BiomeVoteRow further
-// down - kept here for one commit so this one lands as a clean, independently-buildable "tables +
-// repository" step before services/vote-check.service.ts is deleted in the next commit.
-export type VoteCheckStatus = "pending" | "confirmed" | "denied";
-export type VoteCheckDecidedBy = "admin" | null;
-
-export interface VoteCheckState {
-    messageId: string;
-    guildId: string;
-    userId: number;
-    eventId: number;
-    channelId: string;
-    biome: string;
-    roleId: string | null;
-    serverLink: string | null;
-    originalJumpLink: string;
-    status: VoteCheckStatus;
-    decidedBy: VoteCheckDecidedBy;
-    decidedByUserId: string | null;
-}
-
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal (the forward message is never edited again after reaching one).

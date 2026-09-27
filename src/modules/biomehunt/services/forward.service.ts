@@ -4,9 +4,10 @@ import { Logger } from "@/utils/logging";
 import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { getBiomeCountForUser } from "../repository/activity.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
-import { BiomeHuntError, type ParsedEvent } from "../types";
+import { newVoteId, openVote } from "../services/biome-vote.service";
+import { settings } from "../settings";
+import { BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
 import { buildForwardContainer } from "../views/forward-post.view";
-import { startVoteCheck } from "./vote-check.service";
 
 const logger = new Logger("biomehunt.services.forward");
 
@@ -15,7 +16,8 @@ const logger = new Logger("biomehunt.services.forward");
  * this is a live "someone found X" alert, same trigger semantics as the badge system: only
  * a confirmed 'started' event fires it. Uses a Components V2 container instead of a regular
  * embed so we get a real Separator between the heading and the details. Rare-category biomes
- * additionally get admin confirm/deny buttons (see vote-check.service.ts).
+ * additionally open a 1-minute community vote (see services/biome-vote.service.ts) - the vote id
+ * is generated here, BEFORE the message is sent, so the message can show it right away.
  */
 export async function checkAndForward(message: Message, guildId: string, userId: number, parsed: ParsedEvent, eventId: number): Promise<void> {
     if (parsed.eventType !== "started" || !parsed.biome) return;
@@ -29,6 +31,9 @@ export async function checkAndForward(message: Message, guildId: string, userId:
     const jumpLink = `https://discord.com/channels/${guildId}/${message.channelId}/${message.id}`;
     const isRare = BIOME_META[parsed.biome]?.category === "rare";
     const findCount = await getBiomeCountForUser(userId, parsed.biome);
+    const voteId = isRare ? newVoteId() : null;
+    const now = new Date();
+    const closesAt = new Date(now.getTime() + settings.votes.windowMs);
 
     const container = buildForwardContainer({
         biome: parsed.biome,
@@ -36,12 +41,14 @@ export async function checkAndForward(message: Message, guildId: string, userId:
         serverLink: parsed.serverLink,
         jumpLink,
         findCount,
-        vote: isRare ? { status: "pending", decidedBy: null, decidedByUserId: null } : undefined,
+        vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
     });
 
     try {
         const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
-        if (isRare) startVoteCheck(sent, guildId, userId, eventId, parsed.biome, forward.role_id, parsed.serverLink, jumpLink);
+        if (voteId) {
+            await openVote({ voteId, guildId, eventId, finderUserId: userId, channelId: sent.channelId, messageId: sent.id, biome: parsed.biome, now });
+        }
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome: parsed.biome });
     }
