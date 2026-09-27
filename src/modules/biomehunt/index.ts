@@ -8,9 +8,9 @@ import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity-ingest.service";
 import { handleVoteButtonClick } from "./services/vote-check.service";
-import { startCounterWorker } from "./workers/counter.worker";
-import { startRoleWorker } from "./workers/role.worker";
-import { startStatusWorker } from "./workers/status.worker";
+import { counterWorker } from "./workers/counter.worker";
+import { roleWorker } from "./workers/role.worker";
+import { statusWorker } from "./workers/status.worker";
 
 const logger = new Logger("biomehunt");
 
@@ -22,6 +22,8 @@ export default defineCog({
     commands: [_bh, _bhAdmin, _bhOwner, _bhStats],
 
     migrations: [BIOMEHUNT_SCHEMA],
+
+    workers: [statusWorker, roleWorker, counterWorker],
 
     events: {
         async messageCreate(_client, message) {
@@ -38,14 +40,9 @@ export default defineCog({
         },
     },
 
-    async onReady(client) {
+    async onReady(_client) {
         logger.info("Loading channel index...");
         await loadChannelIndex();
-
-        logger.info("Starting workers...");
-        startStatusWorker(client);
-        startRoleWorker(client);
-        startCounterWorker(client);
 
         logger.info("BiomeHunt ready.");
     },

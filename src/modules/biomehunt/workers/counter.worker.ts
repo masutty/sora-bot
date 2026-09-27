@@ -1,5 +1,6 @@
 import { ChannelType, ContainerBuilder, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
+import { defineWorker } from "@/define";
 import { Logger } from "@/utils/logging";
 import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/guilds.repository";
 import { getGuildUserCounts } from "../repository/users.repository";
@@ -73,9 +74,8 @@ async function tick(client: BotClient): Promise<void> {
     }
 }
 
-export function startCounterWorker(client: BotClient): void {
-    setInterval(() => {
-        tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
-    }, settings.workers.counterTickMs);
-    logger.info(`Counter worker started (tick every ${settings.workers.counterTickMs}ms)`);
-}
+export const counterWorker = defineWorker({
+    name: "counter",
+    intervalMs: settings.workers.counterTickMs,
+    run: tick,
+});

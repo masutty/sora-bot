@@ -1,5 +1,6 @@
 import type { BotClient } from "@/core/bot-client";
 import { getPoolStats } from "@/database/connection";
+import { defineWorker } from "@/define";
 import { Logger } from "@/utils/logging";
 import { recordTickStats } from "@/utils/metrics";
 import { grantUserBadge } from "../repository/badges.repository";
@@ -35,9 +36,6 @@ export async function transitionUser(userId: number, guildId: string, newStatus:
         if (removeRoleId) await enqueueRoleJob(guildId, userId, removeRoleId, "remove");
     }
 }
-
-/** If a tick takes longer than this, the sweep is at real risk of falling behind its own interval - worth a heads-up before it actually overruns. */
-const SLOW_TICK_MS = 20_000;
 
 function resolveStatus(inactiveSeconds: number, idleThresholdS: number, inactiveThresholdS: number): ActivityStatus {
     if (inactiveSeconds < idleThresholdS) return "active";
@@ -101,11 +99,7 @@ async function tick(client: BotClient): Promise<void> {
         }
     }
 
-    const durationMs = Date.now() - tickStart;
-    recordTickStats(durationMs, users.length);
-    if (durationMs > SLOW_TICK_MS) {
-        logger.warn(`Status worker tick took ${durationMs}ms (interval is ${settings.workers.statusTickMs}ms) for ${users.length} user(s) - bot may be falling behind`);
-    }
+    recordTickStats(Date.now() - tickStart, users.length);
 
     const poolStats = getPoolStats();
     if (poolStats.waiting > 0) {
@@ -113,9 +107,8 @@ async function tick(client: BotClient): Promise<void> {
     }
 }
 
-export function startStatusWorker(client: BotClient): void {
-    setInterval(() => {
-        tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
-    }, settings.workers.statusTickMs);
-    logger.info(`Status worker started (tick every ${settings.workers.statusTickMs}ms)`);
-}
+export const statusWorker = defineWorker({
+    name: "status",
+    intervalMs: settings.workers.statusTickMs,
+    run: tick,
+});

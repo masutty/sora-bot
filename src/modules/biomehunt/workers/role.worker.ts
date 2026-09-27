@@ -1,4 +1,5 @@
 import type { BotClient } from "@/core/bot-client";
+import { defineWorker } from "@/define";
 import { Logger } from "@/utils/logging";
 import { getPendingJobs, markJobProcessed, rescheduleJob } from "../repository/role-jobs.repository";
 import { getUserById } from "../repository/users.repository";
@@ -57,9 +58,8 @@ async function tick(client: BotClient): Promise<void> {
     }
 }
 
-export function startRoleWorker(client: BotClient): void {
-    setInterval(() => {
-        tick(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
-    }, settings.workers.roleTickMs);
-    logger.info(`Role worker started (tick every ${settings.workers.roleTickMs}ms)`);
-}
+export const roleWorker = defineWorker({
+    name: "role",
+    intervalMs: settings.workers.roleTickMs,
+    run: tick,
+});
