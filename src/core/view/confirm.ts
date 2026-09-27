@@ -39,7 +39,7 @@ export interface ConfirmOptions {
 
 export type ConfirmState = { phase: "asking" } | { phase: "confirmed" | "cancelled" | "failed"; payload: ViewPayload };
 
-/** The summary container (same layout as the old `utils/confirm`): bold title + one line per field. */
+/** The summary container: bold title + one line per field. */
 function summaryContainer(opts: ConfirmOptions): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(opts.color ?? DEFAULT_COLOR);
     const lines = opts.fields.map((f) => `- ${f.label}: \`${f.value}\``).join("\n");

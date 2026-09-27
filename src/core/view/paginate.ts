@@ -82,9 +82,9 @@ export function paginationHandlers<S extends { page: number }, R = void>(
 }
 
 /**
- * Numbered pages on one message: `<<` `<` `[n / N]` `>` `>>` (same look as the old
- * `utils/pagination`). `<`/`>` wrap around (first page + `<` goes to the last); `<<`/`>>` jump to
- * the ends and are disabled there; the middle button opens a "Jump to page" modal (an invalid
+ * Numbered pages on one message: `<<` `<` `[n / N]` `>` `>>`. `<`/`>` wrap around (first page + `<`
+ * goes to the last); `<<`/`>>` jump to the ends and are disabled there; the middle button opens a
+ * "Jump to page" modal (an invalid
  * number answers "Enter a number between 1 and N." and stays). With one page it's just the page
  * (no row); it closes by idle expiry (the content stays, the row goes). For a custom paginated View
  * (its own buttons, typed input, a result), compose `paginationRow` + `paginationHandlers` instead.

@@ -14,7 +14,7 @@ export const settings = {
         quotaReplyTimeoutMs: 60_000,
     },
     diagnostics: {
-        /** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks (see utils/button-view.ts's own timing). */
+        /** Above this, `loadProfileData`'s DB round-trip is the likely bottleneck for a "profile felt slow" complaint - as opposed to Discord API slowness on the button clicks. */
         slowProfileLoadMs: 500,
     },
 } as const;
