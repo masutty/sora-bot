@@ -1,21 +1,29 @@
 import { SlashCommandBuilder } from "discord.js";
+import { transaction } from "@/database/connection";
 import type { BotClient } from "@/core/bot-client";
-import { type CommandContext, confirm, defineCommand } from "@/define";
+import { type CommandContext, confirm, defineCommand, UserFacingError } from "@/define";
 import { CommandCategory } from "@/types";
-import { EmbedFormatter, type FormattedReply } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory } from "../constants/biomes.constants";
+import { newTraceRef } from "@/utils/trace";
+import {
+    ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory,
+} from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
+import { insertEventIfNew } from "../repository/activity.repository";
+import { getForwardConfig } from "../repository/forwards.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
 import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
 import { applyUserRewardBackfill, planUserRewardBackfill } from "../services/biome-reward.service";
+import { forwardBiome } from "../services/forward.service";
 import { rerollFlower } from "../services/flower.service";
-import type { BiomeCategory } from "../types";
+import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-owner");
 
 const BIOME_CATEGORY_CHOICES = ALL_BIOME_CATEGORIES.map((c) => ({ name: BIOME_CATEGORY_LABELS[c], value: c }));
+const RARE_BIOME_CHOICES = getBiomesByCategory("rare").map((b) => ({ name: formatBiomeName(b), value: b }));
 
 /** Guilds with BiomeHunt data (bh_guilds) the bot is no longer a member of. */
 async function findStaleGuilds(client: BotClient): Promise<StaleGuildSummary[]> {
@@ -67,6 +75,15 @@ export default defineCommand({
                 .addStringOption((o) =>
                     o.setName("guild_id").setDescription("Guild ID - only needed if the user has a profile in more than one guild").setRequired(false),
                 ),
+        )
+        // See `runSimulateRare`'s TSDoc: this inserts a REAL event, not a dry run - it counts in
+        // stats and can grant real rewards through the normal vote/review flow.
+        .addSubcommand((s) =>
+            s
+                .setName("simulate-rare")
+                .setDescription("TESTING: fakes a rare-biome find so the owner can test the community-vote flow end to end.")
+                .addStringOption((o) => o.setName("biome").setDescription("Rare biome to simulate (default Glitched)").addChoices(...RARE_BIOME_CHOICES))
+                .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)")),
         ),
 
     async run(ctx) {
@@ -99,6 +116,11 @@ export default defineCommand({
                 ctx.client,
                 reply,
             );
+            return;
+        }
+
+        if (sub === "simulate-rare") {
+            await runSimulateRare(ctx);
             return;
         }
 
@@ -235,6 +257,82 @@ async function runOwnerRerollFlower(
     await replyPlain(
         EmbedFormatter.success(`<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`),
     );
+}
+
+/** Injectable for `resolveSimulateRareTarget`'s tests - no DB, no Discord. */
+export interface SimulateRareDeps {
+    getUserByDiscordId: typeof getUserByDiscordId;
+    getForwardConfig: typeof getForwardConfig;
+}
+
+function defaultSimulateRareDeps(): SimulateRareDeps {
+    return { getUserByDiscordId, getForwardConfig };
+}
+
+/**
+ * Validates the preconditions for `/bh-owner simulate-rare`, split out from `runSimulateRare` so
+ * its three error paths (non-rare biome, no profile, no forward configured) can be unit-tested
+ * without a real Discord context or a database. The biome is checked first, and against
+ * `BIOME_META` directly rather than trusting the slash option's `choices` - a prefix invocation
+ * isn't restricted to them (see `command-args.ts`: "Prefix does NOT enforce ... choices").
+ */
+export async function resolveSimulateRareTarget(
+    guildId: string,
+    discordUserId: string,
+    biome: string,
+    deps: SimulateRareDeps = defaultSimulateRareDeps(),
+): Promise<{ userId: number; forwardChannelId: string }> {
+    if (BIOME_META[biome]?.category !== "rare") {
+        throw new BiomeHuntError(`${formatBiomeName(biome)} is not a rare biome.`);
+    }
+
+    const user = await deps.getUserByDiscordId(guildId, discordUserId);
+    if (!user) throw new BiomeHuntError(`<@${discordUserId}> has no profile in this server.`);
+
+    const forward = await deps.getForwardConfig(guildId, biome);
+    if (!forward) throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/bh-admin forward set\`.`);
+
+    return { userId: user.id, forwardChannelId: forward.channel_id };
+}
+
+/**
+ * TESTING ONLY - fakes a rare-biome find by inserting a REAL `bh_activity_events` row (same
+ * repository insert `activity-ingest.service.ts` uses for a genuine macro message) and running it
+ * through the exact same forward+vote pipeline (`forwardBiome`) as a real find. This is NOT a dry
+ * run: the event counts in stats, a community "Real" vote or an admin `/bh-admin review` Confirm
+ * grants the finder real Seeds/XP/badge rewards, and an admin Deny deletes the event - identical
+ * consequences to an actual rare find. Meant for the bot owner to exercise the vote/close/reward/
+ * review flow end to end without waiting for a real one to happen.
+ */
+async function runSimulateRare(ctx: CommandContext): Promise<void> {
+    if (!ctx.guild) throw new UserFacingError("Run this in a server.");
+    const guild = ctx.guild;
+
+    const biome = ctx.args.getString("biome") ?? "GLITCHED";
+    const targetUser = (await ctx.args.getUser("user")) ?? ctx.user;
+
+    const { userId, forwardChannelId } = await resolveSimulateRareTarget(guild.id, targetUser.id, biome);
+
+    const now = new Date();
+    const messageId = `sim-${newTraceRef()}`;
+    const eventId = await transaction((client) =>
+        insertEventIfNew(client, userId, messageId, biome, "simulated", "started", now),
+    );
+    if (eventId === null) throw new BiomeHuntError("Failed to create the simulated event - try again.");
+
+    const parsed: ParsedEvent = { biome, macroType: "simulated", eventType: "started", eventTimestamp: now, serverLink: null };
+    const jumpLink =
+        ctx.raw.kind === "prefix"
+            ? `https://discord.com/channels/${guild.id}/${ctx.raw.message.channelId}/${ctx.raw.message.id}`
+            : `https://discord.com/channels/${guild.id}/${ctx.raw.interaction.channelId}`;
+
+    await forwardBiome(ctx.client, guild.id, userId, parsed, eventId, jumpLink);
+
+    logger.info(`Simulated ${biome} for user ${userId} (guild ${guild.id}), event ${eventId}`);
+    await ctx.reply({
+        ...EmbedFormatter.success(`Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> - vote opened in <#${forwardChannelId}>.`),
+        allowedMentions: NO_PINGS,
+    });
 }
 
 async function renderStaleList(client: BotClient): Promise<FormattedReply> {

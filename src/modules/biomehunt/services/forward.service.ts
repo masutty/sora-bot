@@ -1,4 +1,4 @@
-import type { Message } from "discord.js";
+import type { Client, Message } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
@@ -12,26 +12,68 @@ import { buildForwardContainer } from "../views/forward-post.view";
 const logger = new Logger("biomehunt.services.forward");
 
 /**
+ * Everything `forwardBiome` would otherwise call directly on the repository/vote service, injected
+ * so its tests (and `checkAndForward`'s) never touch a DB - `defaultForwardServiceDeps` wires the
+ * real functions.
+ */
+export interface ForwardServiceDeps {
+    getForwardConfig: typeof getForwardConfig;
+    getBiomeCountForUser: typeof getBiomeCountForUser;
+    newVoteId: typeof newVoteId;
+    openVote: typeof openVote;
+}
+
+export function defaultForwardServiceDeps(): ForwardServiceDeps {
+    return { getForwardConfig, getBiomeCountForUser, newVoteId, openVote };
+}
+
+/**
  * Forwards a detected biome to its configured channel, every time it happens (no throttle -
  * this is a live "someone found X" alert, same trigger semantics as the badge system: only
- * a confirmed 'started' event fires it. Uses a Components V2 container instead of a regular
- * embed so we get a real Separator between the heading and the details. Rare-category biomes
- * additionally open a 1-minute community vote (see services/biome-vote.service.ts) - the vote id
- * is generated here, BEFORE the message is sent, so the message can show it right away.
+ * a confirmed 'started' event fires it. Builds the jump link from the source message, then
+ * delegates everything else to `forwardBiome`.
  */
-export async function checkAndForward(message: Message, guildId: string, userId: number, parsed: ParsedEvent, eventId: number): Promise<void> {
+export async function checkAndForward(
+    message: Message,
+    guildId: string,
+    userId: number,
+    parsed: ParsedEvent,
+    eventId: number,
+    deps: ForwardServiceDeps = defaultForwardServiceDeps(),
+): Promise<void> {
+    const jumpLink = `https://discord.com/channels/${guildId}/${message.channelId}/${message.id}`;
+    await forwardBiome(message.client, guildId, userId, parsed, eventId, jumpLink, deps);
+}
+
+/**
+ * The core of `checkAndForward`, factored out so `/bh-owner simulate-rare` can drive the exact
+ * same forward+vote pipeline for a synthetic event - it has no source message to derive a jump
+ * link from, so it supplies its own (a link to the invoking message, or the channel). Uses a
+ * Components V2 container instead of a regular embed so we get a real Separator between the
+ * heading and the details. Rare-category biomes additionally open a 1-minute community vote (see
+ * services/biome-vote.service.ts) - the vote id is generated here, BEFORE the message is sent, so
+ * the message can show it right away.
+ */
+export async function forwardBiome(
+    client: Client,
+    guildId: string,
+    userId: number,
+    parsed: ParsedEvent,
+    eventId: number,
+    jumpLink: string,
+    deps: ForwardServiceDeps = defaultForwardServiceDeps(),
+): Promise<void> {
     if (parsed.eventType !== "started" || !parsed.biome) return;
 
-    const forward = await getForwardConfig(guildId, parsed.biome);
+    const forward = await deps.getForwardConfig(guildId, parsed.biome);
     if (!forward) return;
 
-    const channel = await message.client.channels.fetch(forward.channel_id).catch(() => null);
+    const channel = await client.channels.fetch(forward.channel_id).catch(() => null);
     if (!channel || channel.isDMBased() || !channel.isTextBased()) return;
 
-    const jumpLink = `https://discord.com/channels/${guildId}/${message.channelId}/${message.id}`;
     const isRare = BIOME_META[parsed.biome]?.category === "rare";
-    const findCount = await getBiomeCountForUser(userId, parsed.biome);
-    const voteId = isRare ? newVoteId() : null;
+    const findCount = await deps.getBiomeCountForUser(userId, parsed.biome);
+    const voteId = isRare ? deps.newVoteId() : null;
     const now = new Date();
     const closesAt = new Date(now.getTime() + settings.votes.windowMs);
 
@@ -47,7 +89,7 @@ export async function checkAndForward(message: Message, guildId: string, userId:
     try {
         const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
         if (voteId) {
-            await openVote({
+            await deps.openVote({
                 voteId, guildId, eventId, finderUserId: userId, channelId: sent.channelId, messageId: sent.id, biome: parsed.biome,
                 roleId: forward.role_id, serverLink: parsed.serverLink, jumpLink, findCount, now,
             });
