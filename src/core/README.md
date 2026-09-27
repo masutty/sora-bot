@@ -19,7 +19,7 @@ example: `src/modules/biomehunt/`.
 src/modules/<name>/
     index.ts            # defineCog(...) - the module's entry point (see below)
     types.ts             # domain types + the module's error class (extends UserFacingError)
-    settings.ts          # module tunables - how the module *behaves* (optional; see §5)
+    settings.ts          # module tunables - how the module *behaves* (optional; see §7)
     migrations.ts        # SQL schema strings run on load (optional)
 
     commands/
@@ -28,7 +28,7 @@ src/modules/<name>/
     views/
         <name>.view.ts            # defineView(...) screens (`c.open`-able), or a pure
                                     # payload-builder used outside a View session too
-        <name>.view.test.ts        # fake-transport tests (see §7), next to the view
+        <name>.view.test.ts        # fake-transport tests (see §9), next to the view
         <shared-helper>.ts         # a non-screen helper shared by several views (no suffix
                                     # required - e.g. stats-builders.ts)
 
@@ -46,7 +46,10 @@ src/modules/<name>/
         <name>.constants.ts        # static domain data (game rules) - never changes at runtime
 
     workers/
-        <name>.worker.ts            # background interval loops started from onReady
+        <name>.worker.ts            # defineWorker(...) - background interval loops (see §5)
+
+    components/
+        <name>.component.ts         # defineComponent(...) - persistent buttons/selects (see §6)
 ```
 
 Only `index.ts`, `types.ts`, `settings.ts` and `migrations.ts` are allowed loose at the module's
@@ -71,6 +74,9 @@ suffix convention still applies inside it.
   message builder exported from `views/` — never a `defineView` screen itself — reused outside a
   View session, e.g. `services/activity-session-report.service.ts` → `views/session-end.view.ts`.
 - `workers/` → `services/`, `repository/`.
+- `components/` → `services/`, `repository/`, `constants/` - same as `workers/`, never a
+  `commands/` module or an interactive View (a persistent component's own state lives in the DB,
+  not in a View session - see §6).
 - `repository/` → `@/database/connection`, `constants/`, `@/utils/cache`, other `repository/`
   modules (plus `types.ts` for row types).
 - A subsystem subfolder (e.g. biomehunt's `macro-parsers/*.parser.ts`) is only imported through
@@ -78,7 +84,8 @@ suffix convention still applies inside it.
 - Never: a `services/`, `workers/` or `repository/` module importing an **interactive** View
   (`defineView`) or a `commands/` module.
 - `index.ts` wires it all together: lists `commands/` in `commands: [...]`, wires `events`/
-  `onReady` to `services/`/`repository/`, starts `workers/`, and registers `migrations.ts`.
+  `onReady` to `services/`/`repository/`, lists `workers/` in `workers: [...]` and `components/` in
+  `components: [...]`, and registers `migrations.ts`.
 
 ## 2. Commands
 
@@ -430,7 +437,102 @@ return flow<EzSetupContext>({
 await ctx.open(forwardListView(deps, "close"), { guildId });
 ```
 
-## 5. Config
+## 5. Workers
+
+A worker is a periodic background loop — the framework owns the loop itself; a module only
+declares WHAT to do and how often. Declare one with `defineWorker` (from `@/define`) and list it
+in the cog's `workers: [...]` (see `Cog.workers`):
+
+```ts
+import { defineWorker } from "@/define";
+import { settings } from "../settings";
+import { closeDueVotes } from "../services/biome-vote.service";
+
+export const voteCloseWorker = defineWorker({
+    name: "vote-close",
+    intervalMs: settings.workers.voteCloseTickMs,
+    run: (client) => closeDueVotes(client),
+});
+```
+
+```ts
+// index.ts
+export default defineCog({
+    name: "biomehunt",
+    workers: [voteCloseWorker /* , ...more */],
+    // ...
+});
+```
+
+- **`name`/`intervalMs`/`run`** — `name` is unique within its cog (it names the trace command,
+  below, and shows up in logs); `run(client)` is one tick's work, firing every `intervalMs`
+  regardless of how long the previous tick took. **`runOnStart`** (default `false`) also fires one
+  tick immediately when the worker starts, instead of waiting for the first `intervalMs`.
+- **Loop ownership** — the cog loader starts every worker once the client is ready, AFTER the
+  cog's `onReady` (which may prepare state a worker's first tick reads — e.g. biomehunt's channel
+  index), and stops every one on unload/hot reload/reload. A module never writes its own
+  `setInterval` for this anymore.
+- **No overlapping runs** — if a tick is still running when the next is due, that due tick is
+  SKIPPED (not queued): the loop just waits for the following one. A slow tick can never pile up
+  concurrent runs of the same worker.
+- **Error isolation** — a `run` that throws or rejects is logged and does NOT stop the loop; the
+  next tick still fires on schedule.
+- **Overrun warn** — a tick that takes longer than `intervalMs` logs a warn (the bot may be falling
+  behind) — informational only, nothing is skipped or cancelled because of it.
+- **Traced** — every tick runs inside its own trace (`ref`, `command: "worker:<cog>.<name>"`), so
+  every `Logger` call inside it — services, repositories — is prefixed the same way a command
+  invocation's is (see §8).
+- **Testing** — the underlying `startWorker` takes an injectable clock (`setTimeout`/
+  `clearTimeout`) instead of the real timers, so a test can fire ticks deterministically rather
+  than waiting on real time to pass.
+
+## 6. Persistent components
+
+A persistent component is a button/select on a message that outlives any View session — it still
+works after a bot restart, or indefinitely on a message a command never revisits. The framework
+routes every button/select interaction to whichever component owns its customId; a module never
+listens for `interactionCreate` itself for this. Declare one with `defineComponent` (from
+`@/define`) and list it in the cog's `components: [...]` (see `Cog.components`):
+
+```ts
+import { defineComponent } from "@/define";
+
+export function biomeVoteComponent(deps = defaultBiomeVoteComponentDeps()) {
+    return defineComponent({
+        prefix: "biomehunt:vote",
+        legacyIds: ["bh-vote-confirm", "bh-vote-deny"],
+        handle: async (interaction, parts, client) => {
+            const [voteId, choice] = parts; // "biomehunt:vote:<voteId>:<real|fake>"
+            // ...
+        },
+    });
+}
+```
+
+- **`prefix`** — the customId prefix this component owns, matched as `prefix + ":"` (an id that
+  merely starts with the bare prefix, with no `:` after it, does NOT match). MUST start with
+  `<cog>:` — checked when the cog loads (`<cog>:<feature>`), so a typo'd prefix fails the load
+  instead of silently never routing.
+- **`handle(interaction, parts, client)`** — `parts` is the customId's `:`-separated segments after
+  the matched prefix.
+- **`legacyIds`** — fixed customIds still answered by EXACT-match equality (never as a prefix) — a
+  bare pre-`defineComponent` button id with no dynamic `:`-segments, so a button already sitting on
+  an old message doesn't dead-end forever after a refactor. Routed to the same `handle`, with an
+  empty `parts` array; not checked against the cog name (it may predate the component entirely).
+- **When to use vs a View** — a View is the default choice: it owns its own message, its buttons
+  only exist for as long as that session is alive, and everything (state, timeouts) lives in
+  memory for the life of the process. Reach for `defineComponent` instead when a button must keep
+  working AFTER the process/session that created the message is gone — across a restart, or on a
+  message posted once and never revisited by a command (e.g. a rare-biome forward's Real/Fake
+  vote buttons). Its state can't live in memory (there's no running View instance to hold it) —
+  **keep it in the DB**, keyed by whatever the customId encodes, and read it fresh on every click.
+- **Traced** — every `handle` runs inside its own trace (`ref`, `command: "component:<prefix>"`,
+  with the clicking user/guild attached), the same as a command invocation's (see §8).
+- **Unrouted ids** — a customId nothing owns (no `prefix`/`legacyIds` match) is silently ignored:
+  no log, no throw. A throw from `handle` itself IS logged, but not re-thrown — routing keeps
+  working for the next interaction.
+
+## 7. Config
 
 Three different places tune behavior — pick the right one:
 
@@ -446,12 +548,13 @@ Three different places tune behavior — pick the right one:
   reasonably be tuned without changing what the feature *means*, it belongs in `settings.ts`
   instead, not here.
 
-## 6. Logging & traceability
+## 8. Logging & traceability
 
-Every command invocation gets a short **`ref`** (8 base36 chars). The command handler runs the
-invocation inside a trace context (`src/utils/trace.ts`, an `AsyncLocalStorage`), and **every
-`Logger` call anywhere below it** — services, repositories, Views — prints it automatically, with
-the command path, mode, user and guild. Nothing is passed around; existing log calls need no change:
+Every entry point — not just a command invocation, but a worker tick, a cog event, and a
+persistent component click too — gets a short **`ref`** (8 base36 chars) and runs inside a trace
+context (`src/utils/trace.ts`, an `AsyncLocalStorage`). **Every `Logger` call anywhere below it** —
+services, repositories, Views — prints it automatically, with the command path, mode, user and
+guild when known. Nothing is passed around; existing log calls need no change:
 
 ```
 info  [core.commands] (ref=xv6qvdt2 !bh-stats users u=masutty(1888…) g=1289…): invoked
@@ -471,10 +574,16 @@ info  [core.commands] (ref=xv6qvdt2 …): ok in 96230ms
   and modal submit/close is logged, flagged when the actor isn't the invoker.
 - **Internal errors** show the ref to the user (`-# ref: xv6qvdt2`) — search the logs for
   `ref=xv6qvdt2` to find everything that invocation did.
-- **Not traced yet**: work that doesn't start from a command (webhook `messageCreate` events,
-  worker ticks). Wrap it with `runWithTrace({ ref: newTraceRef(), … }, fn)` to give it one.
+- **Workers, cog events and persistent components are traced the same way**, each with its own
+  `command` so a log line still says what kind of entry point it was:
+  `worker:<cog>.<name>` (§5, one trace per tick), `event:<cog>.<event>` (a cog's `events` handler —
+  e.g. the webhook `messageCreate` that drives BiomeHunt's macro parsing — one trace per firing,
+  with user/guild attached whenever the event's own arguments expose them), and
+  `component:<prefix>` (§6, one trace per click, with the clicking user/guild attached). All three
+  are wrapped by the framework itself (the cog loader, and the component router) — a module never
+  calls `runWithTrace` directly for these.
 
-## 7. Testing a View: the `fake-transport`
+## 9. Testing a View: the `fake-transport`
 
 `createFakeViewTransport` (from `@/define`) is a TEST-ONLY in-memory `ViewTransport` + manual
 clock — never use it outside a test. It records every call the engine makes and lets the test
