@@ -2,6 +2,10 @@ import type { Message, User } from "discord.js";
 import { createDiscordTransport, type DiscordTransportOptions } from "./discord-transport";
 import type { ViewDefinition, ViewPayload } from "./view";
 import { type ComponentEvent, createViewSession, type TextEvent, type ViewTransport } from "./view-engine";
+import { Logger } from "@/utils/logging";
+import { currentTrace, runWithTrace } from "@/utils/trace";
+
+const logger = new Logger("core.view.run");
 
 export interface RunViewOptions {
     /** Sends the View's first render and returns the sent message - the one the View then lives on. */
@@ -24,16 +28,28 @@ export interface RunViewOptions {
  * can't be built or sent. Inside a command, prefer `ctx.open(view, input)`.
  */
 export function runView<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts: RunViewOptions): Promise<R | undefined> {
+    // The View outlives the command that opened it, and its clicks arrive from the gateway, outside
+    // any async context. Capture the opener's trace now and re-enter it for every event, as a
+    // numbered step - so a click's log lines still say which invocation (and user/guild) they belong to.
+    const trace = currentTrace();
+    let step = 0;
+    const traced = (onEvent: (e: ComponentEvent | TextEvent) => Promise<void>) => (e: ComponentEvent | TextEvent) => {
+        if (!trace) return onEvent(e);
+        const key = e.kind === "text" ? "text" : e.customId.split(":").pop();
+        return runWithTrace({ ...trace, step: `${++step}:${key}` }, () => onEvent(e));
+    };
+    logger.debug(`view ${view.name} opened`);
+
     const factory = opts.transportFactory ?? createDiscordTransport;
     // The engine calls no transport method before `respond` resolves, so the transport is bound
     // to the sent message then, and this forwarder only has to exist before that.
     let bound: ViewTransport | null = null;
     const transport = (): ViewTransport => {
-        if (!bound) throw new Error("View transport used before the first render was sent");
+        if (!bound) throw new Error(`View ${view.name}: transport used before the first render was sent`);
         return bound;
     };
     const forward: ViewTransport = {
-        listen: (onEvent: (e: ComponentEvent | TextEvent) => Promise<void>) => transport().listen(onEvent),
+        listen: (onEvent: (e: ComponentEvent | TextEvent) => Promise<void>) => transport().listen(traced(onEvent)),
         setTextListening: (on) => transport().setTextListening(on),
         render: (e, payload) => transport().render(e, payload),
         acknowledge: (e) => transport().acknowledge(e),

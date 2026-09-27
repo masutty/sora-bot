@@ -33,8 +33,8 @@ export interface TabsOptions<T extends { tab: string }, I> {
     // biome-ignore lint/suspicious/noConfusingVoidType: same convention as HandlerResult - mutate (void) or return a state.
     onTabChange?: (state: T, key: string) => T | void;
     /**
-     * Disables the active tab's button so it can't be reclicked - default `true`, the old
-     * `button-view` tabs' behavior. Set `false` to let the active tab be reclicked (still Primary,
+     * Disables the active tab's button so it can't be reclicked - default `true`, the usual tab
+     * look. Set `false` to let the active tab be reclicked (still Primary,
      * just not disabled): the click still sets `state.tab` to the same key and runs
      * `onTabChange` - useful when reclicking should reset something (e.g. a list's page).
      */
@@ -62,8 +62,8 @@ function tabRows(tabs: TabSpec[], active: string, kit: RenderKit, disableActive:
 }
 
 /**
- * Tabs on one message: a button per tab (the active one Primary, and disabled by default - same
- * look as the old `button-view` tabs; pass `disableActive: false` to leave it clickable) below the
+ * Tabs on one message: a button per tab (the active one Primary, and disabled by default - the
+ * usual tab look; pass `disableActive: false` to leave it clickable) below the
  * tab's content, then the tab's own `extraRows`. Clicking a tab (including the already-active one,
  * with `disableActive: false`) sets `state.tab` (the rest of the state is kept), then runs
  * `onTabChange` if given.

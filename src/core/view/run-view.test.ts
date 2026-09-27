@@ -56,3 +56,39 @@ test("the module-author test seam: createFakeViewTransport from @/define runs a 
     await fake.clock.advance(1_000);
     expect(await result).toBeUndefined();
 });
+
+test("a View opened inside an invocation trace logs its clicks under that invocation, one step per click", async () => {
+    const { currentTrace, runWithTrace } = await import("@/utils/trace");
+    const fake = createFakeTransport();
+    const seen: Array<string | undefined> = [];
+    const counter = defineView<{ n: number }, void, void>({
+        name: "test.counter",
+        initial: () => ({ n: 0 }),
+        render: (s, kit) => ({ content: `n=${s.n}`, components: [kit.row(kit.button("inc", label))] }),
+        on: {
+            inc: (c) => {
+                const t = currentTrace();
+                seen.push(t ? `${t.inv}.${t.step}` : undefined);
+                c.state.n++;
+            },
+        },
+    });
+
+    // The command runs inside its trace; the View outlives the command, and its clicks arrive from
+    // the gateway (outside any context) - runView must re-enter the invocation's trace for them.
+    runWithTrace({ inv: "inv00001" }, () => {
+        void runView(counter, undefined, {
+            respond: async (payload) => {
+                fake.responded.push(payload as never);
+                return { id: "m" } as unknown as Message;
+            },
+            invoker: { id: OWNER } as User,
+            transportFactory: () => fake,
+        });
+    });
+    await fake.flush();
+    await fake.emit(fake.click("inc", OWNER));
+    await fake.emit(fake.click("inc", OWNER));
+
+    expect(seen).toEqual(["inv00001.1:inc", "inv00001.2:inc"]);
+});

@@ -17,9 +17,12 @@ import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler
 import { buildUsagePayload } from "./command-usage";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 import { describeCommandError, errorReply } from "./user-facing-error";
+import { newInvocationId, runWithTrace, type TraceContext } from "@/utils/trace";
 
 const logger = new Logger("core.commandhandlers");
 const slashLogger = new Logger("core.slashcommands");
+/** The command log: one line when an invocation starts, one when it ends (outcome + duration). */
+const commandLogger = new Logger("core.commands");
 
 // ─── Arg parser ───────────────────────────────────────────────────────────────
 
@@ -101,15 +104,64 @@ function usageFor(def: CommandDefinition, invokePrefix: string, group: string | 
     return buildUsagePayload(def, invokePrefix, group, mode, mode === "prefix" && config.bot.allowArgsAsFlags);
 }
 
-/** A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip. */
-async function reportFailure(err: unknown, commandName: string, reply: (payload: ReplyPayload) => Promise<unknown>): Promise<void> {
+/**
+ * A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip
+ * with the invocation id as a "ref", so a user's screenshot leads straight to the log lines.
+ */
+async function reportFailure(err: unknown, inv: string, reply: (payload: ReplyPayload) => Promise<unknown>): Promise<"user-error" | "error"> {
     const view = describeCommandError(err);
     if (view.kind === "user") {
         await reply(errorReply(view.message)).catch(() => { });
-        return;
+        return "user-error";
     }
-    logger.error(err instanceof Error ? err : new Error(String(err)), { command: commandName });
-    await reply(errorReply(getFailureQuip())).catch(() => { });
+    logger.error(err instanceof Error ? err : new Error(String(err)));
+    await reply(errorReply(`${getFailureQuip()}\n-# ref: \`${inv}\``)).catch(() => { });
+    return "error";
+}
+
+/** The trace of one invocation: who, where, which command path - every log line below it carries this. */
+function invocationTrace(def: CommandDefinition, ctx: CommandContext): TraceContext {
+    // Subcommand names are read defensively: a malformed invocation must still get a trace.
+    const path = [def.name, safe(() => ctx.args.getSubcommandGroup()), safe(() => ctx.args.getSubcommand())].filter(Boolean).join(" ");
+    return {
+        inv: newInvocationId(),
+        command: path,
+        mode: ctx.mode,
+        userId: ctx.user.id,
+        userTag: ctx.user.username,
+        guildId: ctx.guild?.id,
+    };
+}
+
+function safe<T>(fn: () => T): T | null {
+    try {
+        return fn();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Runs one invocation inside its trace, logging when it starts and how it ended (ok / user-error /
+ * error) with its duration - the "command log". Errors are reported to the user through `reply`.
+ */
+async function runInvocation(
+    trace: TraceContext,
+    dispatchIt: () => Promise<void>,
+    reply: (payload: ReplyPayload) => Promise<unknown>,
+): Promise<void> {
+    await runWithTrace(trace, async () => {
+        const started = Date.now();
+        commandLogger.info("invoked");
+        let outcome = "ok";
+        try {
+            await dispatchIt();
+        } catch (err) {
+            outcome = await reportFailure(err, trace.inv, reply);
+        } finally {
+            commandLogger.info(`${outcome} in ${Date.now() - started}ms`);
+        }
+    });
 }
 
 // ─── Command Handlers ─────────────────────────────────────────────────────────
@@ -139,15 +191,15 @@ export function registerCommandHandlers(client: BotClient): void {
             usage: () => usageFor(command, prefix, args.getSubcommandGroup(), "prefix"),
         });
 
-        try {
-            await dispatch(command, ctx, {
+        await runInvocation(
+            invocationTrace(command, ctx),
+            () => dispatch(command, ctx, {
                 guardFailure: (guardError) => errorReply(`Error! ${getFailureQuip()}\n${guardError}`),
                 override: () => (command.executeAsPrefix as NonNullable<typeof command.executeAsPrefix>)(message, args, client),
                 noHandler: async () => { },
-            });
-        } catch (err) {
-            await reportFailure(err, commandName, (payload) => ctx.reply(payload, { ephemeral: true }));
-        }
+            }),
+            (payload) => ctx.reply(payload, { ephemeral: true }),
+        );
     });
 
     // ── Autocomplete ──────────────────────────────────────────────────────────
@@ -182,24 +234,25 @@ export function registerCommandHandlers(client: BotClient): void {
         });
         const overrode = selectHandler(command, "slash").kind === "override-slash";
 
-        try {
-            await dispatch(command, ctx, {
+        // An override replies on the raw interaction, so ctx doesn't know its state - pick the call from the interaction itself.
+        const reply = overrode
+            ? (payload: ReplyPayload) => {
+                const body = { ...(typeof payload === "string" ? { content: payload } : payload), ephemeral: true };
+                return interaction.replied || interaction.deferred ? interaction.followUp(body) : interaction.reply(body);
+            }
+            : (payload: ReplyPayload) => ctx.reply(payload, { ephemeral: true });
+
+        await runInvocation(
+            invocationTrace(command, ctx),
+            () => dispatch(command, ctx, {
                 guardFailure: (guardError) => errorReply(`${getFailureQuip()}\n${guardError}`),
                 override: () => (command.executeAsSlash as NonNullable<typeof command.executeAsSlash>)(interaction as ChatInputCommandInteraction, client),
                 noHandler: async () => {
                     await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });
                 },
-            });
-        } catch (err) {
-            // An override replies on the raw interaction, so ctx doesn't know its state - pick the call from the interaction itself.
-            const reply = overrode
-                ? (payload: ReplyPayload) => {
-                    const body = { ...(typeof payload === "string" ? { content: payload } : payload), ephemeral: true };
-                    return interaction.replied || interaction.deferred ? interaction.followUp(body) : interaction.reply(body);
-                }
-                : (payload: ReplyPayload) => ctx.reply(payload, { ephemeral: true });
-            await reportFailure(err, interaction.commandName, reply);
-        }
+            }),
+            reply,
+        );
     });
 }
 
