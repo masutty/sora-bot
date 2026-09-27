@@ -604,9 +604,12 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
                 }
                 armTimer();
                 if (!submitted) {
+                    logger.info(`modal "${spec.title}" closed without submitting`);
                     run.skipRedraw = true;
                     return null;
                 }
+                // Field keys only - values can be free text; the handler logs what it accepts.
+                logger.info(`modal "${spec.title}" submitted (${Object.keys(submitted.values).join(", ")})`);
                 run.pending = track(submitted.ack, true);
                 return submitted.values;
             },

@@ -34,9 +34,13 @@ export function runView<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts: 
     const trace = currentTrace();
     let step = 0;
     const traced = (onEvent: (e: ComponentEvent | TextEvent) => Promise<void>) => (e: ComponentEvent | TextEvent) => {
-        if (!trace) return onEvent(e);
-        const key = e.kind === "text" ? "text" : e.customId.split(":").pop();
-        return runWithTrace({ ...trace, step: `${++step}:${key}` }, () => onEvent(e));
+        const handle = () => {
+            // Every interaction is logged (who did what), so a user's path through a View is traceable.
+            logger.info(describeViewEvent(e, opts.invoker.id));
+            return onEvent(e);
+        };
+        if (!trace) return handle();
+        return runWithTrace({ ...trace, step: `${++step}:${viewEventKey(e)}` }, handle);
     };
     logger.debug(`view ${view.name} opened`);
 
@@ -63,4 +67,23 @@ export function runView<S, R, I>(view: ViewDefinition<S, R, I>, input: I, opts: 
         const message = await opts.respond(payload);
         bound = factory(message, { editMessage: opts.editMessage });
     });
+}
+
+/** The View key an event targets - customIds are `<view>:<instance>:<key>`, and a key may itself contain ":" (e.g. `tab:sessions`). */
+export function viewEventKey(e: ComponentEvent | TextEvent): string {
+    return e.kind === "text" ? "text" : e.customId.split(":").slice(2).join(":");
+}
+
+const MAX_LOGGED_TEXT = 80;
+
+/** One log line per interaction: `click back`, `select pick = [a, b]`, `text "3"` - plus who, when it isn't the invoker. */
+export function describeViewEvent(e: ComponentEvent | TextEvent, invokerId: string): string {
+    let what: string;
+    if (e.kind === "text") {
+        const text = e.content.length > MAX_LOGGED_TEXT ? `${e.content.slice(0, MAX_LOGGED_TEXT)}…` : e.content;
+        what = `text "${text}"`;
+    } else {
+        what = e.values.length ? `select ${viewEventKey(e)} = [${e.values.join(", ")}]` : `click ${viewEventKey(e)}`;
+    }
+    return e.userId === invokerId ? what : `${what} (by ${e.userId} - not the invoker)`;
 }

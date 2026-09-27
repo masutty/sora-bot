@@ -3,6 +3,7 @@ import type { ButtonBuilder, Message, User } from "discord.js";
 import { createFakeTransport } from "./fake-transport";
 import { runView } from "./run-view";
 import { defineView } from "./view";
+import type { ComponentEvent, TextEvent } from "./view-engine";
 
 const OWNER = "owner";
 const label = (b: ButtonBuilder) => b.setLabel("x");
@@ -91,4 +92,15 @@ test("a View opened inside an invocation trace logs its clicks under that invoca
     await fake.emit(fake.click("inc", OWNER));
 
     expect(seen).toEqual(["inv00001.1:inc", "inv00001.2:inc"]);
+});
+
+test("describeViewEvent: clicks, selects, typed text (truncated) and someone other than the invoker", async () => {
+    const { describeViewEvent, viewEventKey } = await import("./run-view");
+    const click: ComponentEvent = { kind: "component", customId: "biomehunt.profile:ab12:tab:sessions", userId: OWNER, values: [], raw: null };
+    expect(viewEventKey(click)).toBe("tab:sessions");
+    expect(describeViewEvent(click, OWNER)).toBe("click tab:sessions");
+    expect(describeViewEvent({ ...click, customId: "tests.picker:x1:pick", values: ["embed/session-end"] }, OWNER)).toBe("select pick = [embed/session-end]");
+    expect(describeViewEvent({ ...click, userId: "someone" }, OWNER)).toBe("click tab:sessions (by someone - not the invoker)");
+    const text: TextEvent = { kind: "text", userId: OWNER, content: "x".repeat(100), raw: null };
+    expect(describeViewEvent(text, OWNER)).toBe(`text "${"x".repeat(80)}…"`);
 });
