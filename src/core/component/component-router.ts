@@ -25,9 +25,10 @@ export interface ComponentDefinition {
      */
     prefix: string;
     /**
-     * Extra prefixes this component still answers to (e.g. a renamed feature's old customId) -
-     * so a component already out on an old message doesn't dead-end forever. Routed the same way,
-     * to the same `handle`; NOT checked against the cog name (may predate a rename).
+     * Fixed legacy customIds this component still answers to, matched by EXACT equality (never as
+     * a prefix) - e.g. a bare pre-`defineComponent` button id with no dynamic `:`-segments at all,
+     * so a component already out on an old message doesn't dead-end forever. Routed to the same
+     * `handle`, with an empty `parts` array; NOT checked against the cog name (may predate it).
      */
     legacyIds?: string[];
     /** `parts`: the customId's `:`-separated segments after the matched prefix. */
@@ -50,20 +51,22 @@ export function validateComponentPrefix(cogName: string, def: ComponentDefinitio
 }
 
 /**
- * The component (and its `parts`) that owns `customId`, across `prefix` and every `legacyIds`
- * entry - `undefined` if none does. An id that merely starts with a bare prefix (no `:` after it)
- * does NOT match - the marker is always `prefix + ":"`.
+ * The component (and its `parts`) that owns `customId` - `undefined` if none does. `prefix`
+ * matches as `prefix + ":"` (an id that merely starts with a bare prefix, no `:` after it, does
+ * NOT match); each `legacyIds` entry matches only by EXACT equality to the whole `customId`, never
+ * as a prefix, and always yields an empty `parts` array.
  */
 export function matchComponent(
     components: ComponentDefinition[],
     customId: string,
 ): { component: ComponentDefinition; parts: string[] } | undefined {
     for (const component of components) {
-        for (const id of [component.prefix, ...(component.legacyIds ?? [])]) {
-            const marker = `${id}:`;
-            if (customId.startsWith(marker)) {
-                return { component, parts: customId.slice(marker.length).split(":") };
-            }
+        const marker = `${component.prefix}:`;
+        if (customId.startsWith(marker)) {
+            return { component, parts: customId.slice(marker.length).split(":") };
+        }
+        if (component.legacyIds?.includes(customId)) {
+            return { component, parts: [] };
         }
     }
     return undefined;

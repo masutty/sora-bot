@@ -1,4 +1,3 @@
-import type { APIContainerComponent } from "discord.js";
 import {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SectionBuilder, SeparatorBuilder,
     SeparatorSpacingSize, TextDisplayBuilder, ThumbnailBuilder,
@@ -123,22 +122,5 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
     container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink));
 
-    return container;
-}
-
-/**
- * Re-edits an ALREADY-SENT forward message's vote block in place, from its own current raw
- * components (`message.components[0].toJSON()`) - never from a freshly recomputed `roleId`/
- * `serverLink`/`jumpLink`/`findCount`, none of which are persisted on `bh_biome_votes` (the message
- * itself is the source of truth for them, and it must still be editable after a restart).
- *
- * Relies on the fixed shape every render here produces: exactly one heading component at index 0,
- * the vote block next, then exactly a closing separator + the link buttons row - so the vote block
- * is always `components.slice(1, -2)`, regardless of its own variable length.
- */
-export function updateVoteContainer(raw: APIContainerComponent, vote: VoteRenderInfo): ContainerBuilder {
-    const container = new ContainerBuilder(raw);
-    const deleteCount = Math.max(container.components.length - 3, 0);
-    container.spliceComponents(1, deleteCount, ...buildVoteBlockComponents(vote));
     return container;
 }

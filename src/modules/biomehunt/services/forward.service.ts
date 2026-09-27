@@ -47,7 +47,10 @@ export async function checkAndForward(message: Message, guildId: string, userId:
     try {
         const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
         if (voteId) {
-            await openVote({ voteId, guildId, eventId, finderUserId: userId, channelId: sent.channelId, messageId: sent.id, biome: parsed.biome, now });
+            await openVote({
+                voteId, guildId, eventId, finderUserId: userId, channelId: sent.channelId, messageId: sent.id, biome: parsed.biome,
+                roleId: forward.role_id, serverLink: parsed.serverLink, jumpLink, findCount, now,
+            });
         }
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome: parsed.biome });

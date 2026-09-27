@@ -173,6 +173,11 @@ export interface BiomeVoteRow {
     channel_id: string;
     message_id: string;
     biome: string;
+    /** The forward message's own render inputs, captured at open time - never re-derived later (a forward config can change mid-vote; the macro's server link isn't stored anywhere else). */
+    role_id: string | null;
+    server_link: string | null;
+    jump_link: string;
+    find_count: number | null;
     status: VoteStatus;
     /** Discord id of the deciding admin - set only for admin_confirmed/admin_denied. */
     decided_by: string | null;

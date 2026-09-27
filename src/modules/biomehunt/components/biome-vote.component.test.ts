@@ -35,17 +35,31 @@ test("ignores an interaction that isn't a button", async () => {
     expect(true).toBe(true);
 });
 
-test("ignores malformed parts (missing voteId or an unknown choice)", async () => {
+test("a legacyIds match (empty parts - bh-vote-confirm/bh-vote-deny) answers ephemeral \"This vote is no longer available.\", without calling castBallot/adminDecide", async () => {
+    const calls: string[] = [];
+    const component = biomeVoteComponent(fakeDeps({
+        castBallot: async () => { calls.push("castBallot"); return { kind: "ok" }; },
+        adminDecide: async () => { calls.push("adminDecide"); return { kind: "ok", status: VoteStatus.ADMIN_CONFIRMED }; },
+    }));
+    const { interaction, replies } = fakeInteraction();
+
+    await component.handle(interaction as never, [], client);
+
+    expect(calls).toHaveLength(0);
+    expect(replies).toEqual([{ content: "This vote is no longer available.", ephemeral: true }]);
+});
+
+test("malformed parts (an unknown choice segment) are treated the same as a legacy match", async () => {
     const calls: string[] = [];
     const component = biomeVoteComponent(fakeDeps({
         castBallot: async () => { calls.push("castBallot"); return { kind: "ok" }; },
     }));
-    const { interaction } = fakeInteraction();
+    const { interaction, replies } = fakeInteraction();
 
-    await component.handle(interaction as never, [], client);
     await component.handle(interaction as never, ["vote1", "maybe"], client);
 
     expect(calls).toHaveLength(0);
+    expect(replies).toEqual([{ content: "This vote is no longer available.", ephemeral: true }]);
 });
 
 test("a non-admin click calls castBallot with the real/fake choice parsed from parts", async () => {
@@ -95,15 +109,22 @@ test("castBallot 'already_voted' answers ephemeral \"You already voted.\"", asyn
     expect(replies).toEqual([{ content: "You already voted.", ephemeral: true }]);
 });
 
-test("castBallot 'not_found'/'closed' answer ephemeral \"This vote is no longer available.\"", async () => {
-    for (const kind of ["not_found", "closed"] as const) {
-        const component = biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind }) }));
-        const { interaction, replies } = fakeInteraction();
+test("castBallot 'not_found' answers ephemeral \"This vote is no longer available.\"", async () => {
+    const component = biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind: "not_found" }) }));
+    const { interaction, replies } = fakeInteraction();
 
-        await component.handle(interaction as never, ["vote1", "real"], client);
+    await component.handle(interaction as never, ["vote1", "real"], client);
 
-        expect(replies).toEqual([{ content: "This vote is no longer available.", ephemeral: true }]);
-    }
+    expect(replies).toEqual([{ content: "This vote is no longer available.", ephemeral: true }]);
+});
+
+test("castBallot 'closed' answers ephemeral \"This vote is already closed.\"", async () => {
+    const component = biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind: "closed" }) }));
+    const { interaction, replies } = fakeInteraction();
+
+    await component.handle(interaction as never, ["vote1", "real"], client);
+
+    expect(replies).toEqual([{ content: "This vote is already closed.", ephemeral: true }]);
 });
 
 test("adminDecide 'not_found' answers ephemeral \"This vote is no longer available.\"", async () => {
@@ -113,5 +134,15 @@ test("adminDecide 'not_found' answers ephemeral \"This vote is no longer availab
     await component.handle(interaction as never, ["vote1", "real"], client);
 
     expect(replies).toEqual([{ content: "This vote is no longer available.", ephemeral: true }]);
+    expect(deferUpdates).toHaveLength(0);
+});
+
+test("adminDecide 'already_decided' answers ephemeral \"This vote was already decided.\"", async () => {
+    const component = biomeVoteComponent(fakeDeps({ adminDecide: async () => ({ kind: "already_decided" }) }));
+    const { interaction, replies, deferUpdates } = fakeInteraction({ isAdmin: true });
+
+    await component.handle(interaction as never, ["vote1", "real"], client);
+
+    expect(replies).toEqual([{ content: "This vote was already decided.", ephemeral: true }]);
     expect(deferUpdates).toHaveLength(0);
 });

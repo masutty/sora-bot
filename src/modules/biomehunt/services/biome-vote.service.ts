@@ -1,6 +1,6 @@
-import type { APIContainerComponent } from "discord.js";
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
+import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
 import { deleteEventById } from "../repository/activity.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
@@ -11,8 +11,10 @@ import {
 import { settings } from "../settings";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
-import { updateVoteContainer, type VoteRenderInfo } from "../views/forward-post.view";
+import { buildForwardContainer, type VoteRenderInfo } from "../views/forward-post.view";
 import { grantBiomeReward, revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
+
+const logger = new Logger("biomehunt.services.biome-vote");
 
 /**
  * Everything this service would otherwise call directly on the DB/reward ledger, injected so its
@@ -91,6 +93,14 @@ export interface OpenVoteParams {
     channelId: string;
     messageId: string;
     biome: string;
+    /**
+     * The forward message's own render inputs, captured now and persisted verbatim - never
+     * re-derived later (see `updateVoteContainer`'s docstring for why).
+     */
+    roleId: string | null;
+    serverLink: string | null;
+    jumpLink: string;
+    findCount?: number | null;
     /** Injectable for tests - defaults to now. */
     now?: Date;
 }
@@ -106,6 +116,10 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
         channelId: params.channelId,
         messageId: params.messageId,
         biome: params.biome,
+        roleId: params.roleId,
+        serverLink: params.serverLink,
+        jumpLink: params.jumpLink,
+        findCount: params.findCount ?? null,
         closesAt,
     });
 }
@@ -142,14 +156,24 @@ async function fetchVoteMessage(client: BotClient, vote: BiomeVoteRow) {
     return channel.messages.fetch(vote.message_id).catch(() => null);
 }
 
+/**
+ * Rebuilds the forward message from `vote`'s OWN stored render inputs (role_id/server_link/
+ * jump_link/find_count) - never from the message's own currently-rendered components, and never
+ * re-derived from `bh_biome_forwards`/the macro's parsed text/a live recount, none of which are
+ * guaranteed to still match what the ORIGINAL message showed by the time this runs.
+ */
 async function refreshVoteMessage(client: BotClient, vote: BiomeVoteRow, render: VoteRenderInfo): Promise<void> {
     const message = await fetchVoteMessage(client, vote);
     if (!message) return;
 
-    const raw = message.components[0]?.toJSON() as APIContainerComponent | undefined;
-    if (!raw) return;
-
-    const container = updateVoteContainer(raw, render);
+    const container = buildForwardContainer({
+        biome: vote.biome,
+        roleId: vote.role_id,
+        serverLink: vote.server_link,
+        jumpLink: vote.jump_link,
+        findCount: vote.find_count ?? undefined,
+        vote: render,
+    });
     await message.edit({ components: [container], flags: MessageFlags.IsComponentsV2 }).catch(() => {});
 }
 
@@ -179,8 +203,12 @@ export async function castBallot(
     const finder = await deps.getUserById(vote.finder_user_id);
     if (finder?.discord_user_id === discordUserId) return { kind: "finder" };
 
-    const inserted = await deps.insertBallot(voteId, discordUserId, choice);
-    if (!inserted) return { kind: "already_voted" };
+    // Atomic: the INSERT itself is conditioned on the vote still being open, closing the race
+    // window between the `getVoteById` read above and this write (a `closeDueVotes`/`adminDecide`
+    // closing the vote in between yields "closed" here, not a recorded ballot on a dead vote).
+    const insertResult = await deps.insertBallot(voteId, discordUserId, choice);
+    if (insertResult === "already_voted") return { kind: "already_voted" };
+    if (insertResult === "closed") return { kind: "closed" };
 
     const ballots = await deps.getBallotsForVote(voteId);
     await refreshVoteMessage(client, vote, {
@@ -195,12 +223,17 @@ export async function castBallot(
 
 export type AdminDecideResult =
     | { kind: "ok"; status: VoteStatus.ADMIN_CONFIRMED | VoteStatus.ADMIN_DENIED }
-    | { kind: "not_found" };
+    | { kind: "not_found" }
+    | { kind: "already_decided" };
 
 /**
  * An admin's decisive click - real (confirm) or fake (deny), inside OR after the vote's window
  * (an admin overriding a closed vote later, e.g. via `/bh-admin review`, still goes through here).
- * Always overrides whatever the vote's current status is and closes it for good.
+ * The close itself is a compare-and-set on the status this call just read (`vote.status`): if
+ * another decision (a racing admin click, or `closeDueVotes`) already changed it in the meantime,
+ * `deps.closeVote` returns `null` and this reports `already_decided` WITHOUT applying any outcome -
+ * that's what keeps a close tick racing an admin click, or two admins clicking at once, from
+ * double-granting or double-reverting.
  */
 export async function adminDecide(
     client: BotClient,
@@ -213,7 +246,9 @@ export async function adminDecide(
     if (!vote) return { kind: "not_found" };
 
     const status = choice === VoteChoice.REAL ? VoteStatus.ADMIN_CONFIRMED : VoteStatus.ADMIN_DENIED;
-    const closed = await deps.closeVote(voteId, status, adminDiscordId);
+    const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);
+    if (!closed) return { kind: "already_decided" };
+
     await applyOutcome(closed, deps);
     await refreshVoteMessage(client, closed, {
         voteId: closed.id,
@@ -229,23 +264,32 @@ export async function adminDecide(
 /**
  * Resolves every vote whose window has elapsed - called every 5s by `workers/vote-close.worker.ts`,
  * which also covers a vote left `open` by a restart (there's no in-memory state to lose anymore).
+ * Each vote is handled independently (its own try/catch, logged with its id) so one failure never
+ * skips the rest of the tick. The close itself is a compare-and-set expecting `open` - if an admin
+ * already decided this vote between the scan (`getOpenVotesPastClose`) and this write, `closeVote`
+ * returns `null` and the resolved outcome (reward grant, in particular) is never applied.
  */
 export async function closeDueVotes(client: BotClient, now: Date = new Date(), deps: VoteServiceDeps = defaultVoteServiceDeps()): Promise<void> {
     const due = await deps.getOpenVotesPastClose(now);
 
     for (const vote of due) {
-        const ballots = await deps.getBallotsForVote(vote.id);
-        const status = resolveVote(ballots);
-        const closed = await deps.closeVote(vote.id, status, null);
-        await applyOutcome(closed, deps);
+        try {
+            const ballots = await deps.getBallotsForVote(vote.id);
+            const status = resolveVote(ballots);
+            const closed = await deps.closeVote(vote.id, VoteStatus.OPEN, status, null);
+            if (!closed) continue; // an admin already decided it - don't apply this outcome too
 
-        const tally = tallyOf(ballots);
-        await refreshVoteMessage(client, closed, {
-            voteId: closed.id,
-            status: closed.status,
-            closesAt: closed.closes_at,
-            voteCount: ballots.length,
-            tally,
-        });
+            await applyOutcome(closed, deps);
+            const tally = tallyOf(ballots);
+            await refreshVoteMessage(client, closed, {
+                voteId: closed.id,
+                status: closed.status,
+                closesAt: closed.closes_at,
+                voteCount: ballots.length,
+                tally,
+            });
+        } catch (err) {
+            logger.error(err instanceof Error ? err : new Error(String(err)), { voteId: vote.id });
+        }
     }
 }

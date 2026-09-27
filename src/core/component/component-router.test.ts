@@ -44,13 +44,19 @@ test("matchComponent routes a customId that starts with prefix + \":\", splittin
     expect(found?.parts).toEqual(["abc123", "real"]);
 });
 
-test("matchComponent also routes a legacyIds entry, to the same handler", () => {
-    const vote = defineComponent({ prefix: "mycog:vote", legacyIds: ["mycog:oldvote"], handle: async () => {} });
+test("matchComponent routes a legacyIds entry by EXACT customId equality, with empty parts", () => {
+    const vote = defineComponent({ prefix: "mycog:vote", legacyIds: ["bh-vote-confirm"], handle: async () => {} });
 
-    const found = matchComponent([vote], "mycog:oldvote:abc123");
+    const found = matchComponent([vote], "bh-vote-confirm");
 
     expect(found?.component).toBe(vote);
-    expect(found?.parts).toEqual(["abc123"]);
+    expect(found?.parts).toEqual([]);
+});
+
+test("matchComponent's legacyIds is exact-match only, never a prefix - trailing segments don't match", () => {
+    const vote = defineComponent({ prefix: "mycog:vote", legacyIds: ["bh-vote-confirm"], handle: async () => {} });
+
+    expect(matchComponent([vote], "bh-vote-confirm:extra")).toBeUndefined();
 });
 
 test("matchComponent ignores an id that starts with the bare prefix but not prefix + \":\"", () => {

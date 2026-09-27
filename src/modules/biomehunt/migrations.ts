@@ -219,6 +219,18 @@ CREATE TABLE IF NOT EXISTS bh_biome_votes (
     decided_at     TIMESTAMPTZ
 );
 
+/*
+ * The forward message's own render inputs, captured at open time - role_id/server_link/
+ * jump_link/find_count are never re-derived from bh_biome_forwards/parsed macro text/a live
+ * recount at close/admin-decide time (a forward config can change mid-vote, the macro text isn't
+ * stored anywhere else, and a recount could differ from what the original message showed). The
+ * message is always rebuilt from THIS row, not from its own currently-rendered components.
+ */
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_link TEXT;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS jump_link TEXT;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
+
 /* Scanned every 5s by the vote-close worker - only ever matches rows still 'open'. */
 CREATE INDEX IF NOT EXISTS bh_biome_votes_open ON bh_biome_votes(status, closes_at) WHERE status = 'open';
 

@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
-import type { APIContainerComponent } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
+import type { InsertBallotResult } from "../repository/votes.repository";
 import type { BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
-import { buildForwardContainer } from "../views/forward-post.view";
 import {
     adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps,
 } from "./biome-vote.service";
@@ -17,7 +16,12 @@ function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
     };
 }
 
-/** An in-memory `VoteServiceDeps` - never touches the DB. `calls` records every reward/revert/delete invocation. */
+/**
+ * An in-memory `VoteServiceDeps` - never touches the DB. `closeVote` mimics the repository's real
+ * compare-and-set contract (only writes, and returns non-null, when the row's CURRENT status still
+ * matches `expectedStatus`) so tests can exercise the same race the real UPDATE...WHERE guards
+ * against. `calls` records every reward/revert/delete invocation.
+ */
 function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
     const votes = new Map<string, BiomeVoteRow>();
     const ballots = new Map<string, BiomeVoteBallotRow[]>();
@@ -35,6 +39,7 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
             const row: BiomeVoteRow = {
                 id: params.id, guild_id: params.guildId, event_id: params.eventId, finder_user_id: params.finderUserId,
                 channel_id: params.channelId, message_id: params.messageId, biome: params.biome,
+                role_id: params.roleId, server_link: params.serverLink, jump_link: params.jumpLink, find_count: params.findCount,
                 status: VoteStatus.OPEN, decided_by: null, closes_at: params.closesAt, created_at: new Date(), decided_at: null,
             };
             votes.set(row.id, row);
@@ -43,17 +48,19 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         },
         getVoteById: async (id) => votes.get(id) ?? null,
         getOpenVotesPastClose: async (now) => [...votes.values()].filter((v) => v.status === VoteStatus.OPEN && v.closes_at <= now),
-        insertBallot: async (voteId, userId, choice) => {
+        insertBallot: async (voteId, userId, choice): Promise<InsertBallotResult> => {
+            const vote = votes.get(voteId);
+            if (!vote || vote.status !== VoteStatus.OPEN) return "closed";
             const list = ballots.get(voteId) ?? [];
-            if (list.some((b) => b.user_id === userId)) return false;
+            if (list.some((b) => b.user_id === userId)) return "already_voted";
             list.push({ vote_id: voteId, user_id: userId, choice, created_at: new Date() });
             ballots.set(voteId, list);
-            return true;
+            return "inserted";
         },
         getBallotsForVote: async (voteId) => ballots.get(voteId) ?? [],
-        closeVote: async (voteId, status, decidedBy) => {
+        closeVote: async (voteId, expectedStatus, status, decidedBy) => {
             const row = votes.get(voteId);
-            if (!row) throw new Error("vote not found");
+            if (!row || row.status !== expectedStatus) return null; // CAS miss - someone else already decided it
             const updated: BiomeVoteRow = { ...row, status, decided_by: decidedBy, decided_at: new Date() };
             votes.set(voteId, updated);
             return updated;
@@ -84,11 +91,10 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
     return { deps, votes, ballots, calls, rewardedEventIds };
 }
 
-/** A `BotClient` whose only working part is `channels.fetch(...).messages.fetch(...)` -> a fake message backed by `raw` (its "current" rendered container), recording every `.edit(...)` call. */
-function fakeClient(raw: APIContainerComponent | null) {
+/** A `BotClient` whose only working part is `channels.fetch(...).messages.fetch(...)` -> a fake message, recording every `.edit(...)` call. `hasMessage: false` simulates a missing/deleted message. */
+function fakeClient(hasMessage = true) {
     const editCalls: Array<{ components: unknown[] }> = [];
     const message = {
-        components: raw ? [{ toJSON: () => raw }] : [],
         edit: async (payload: { components: unknown[] }) => {
             editCalls.push(payload);
             return message;
@@ -97,20 +103,21 @@ function fakeClient(raw: APIContainerComponent | null) {
     const channel = {
         isDMBased: () => false,
         isTextBased: () => true,
-        messages: { fetch: async () => message },
+        messages: { fetch: async () => (hasMessage ? message : null) },
     };
     const client = { channels: { fetch: async () => channel } } as unknown as BotClient;
     return { client, editCalls };
 }
 
-function openContainerJson(voteId: string, closesAt: Date): APIContainerComponent {
-    return buildForwardContainer({
-        biome: "GLITCHED",
-        roleId: null,
-        serverLink: null,
-        jumpLink: "https://discord.com/channels/g/c/m",
-        vote: { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 },
-    }).toJSON();
+async function seedOpenVote(deps: VoteServiceDeps, overrides: Partial<Parameters<typeof openVote>[0]> = {}) {
+    return openVote(
+        {
+            voteId: "vote0001", guildId: "g1", eventId: 10, finderUserId: 1, channelId: "c1", messageId: "m1",
+            biome: "GLITCHED", roleId: null, serverLink: null, jumpLink: "https://discord.com/channels/g/c/m",
+            findCount: 3, now: new Date("2026-01-01T00:00:00Z"), ...overrides,
+        },
+        deps,
+    );
 }
 
 // ─── resolveVote (pure, exhaustive) ─────────────────────────────────────────────────────────────
@@ -141,36 +148,34 @@ test("resolveVote: a single fake vote -> community_fake", () => {
 
 // ─── openVote ───────────────────────────────────────────────────────────────────────────────────
 
-test("openVote persists a row with status open and closes_at = now + windowMs", async () => {
+test("openVote persists a row with status open, closes_at = now + windowMs, and the render inputs", async () => {
     const { deps, votes } = createFakeDeps();
     const now = new Date("2026-01-01T00:00:00Z");
 
     const row = await openVote(
-        { voteId: "abc12345", guildId: "g1", eventId: 10, finderUserId: 1, channelId: "c1", messageId: "m1", biome: "GLITCHED", now },
+        {
+            voteId: "abc12345", guildId: "g1", eventId: 10, finderUserId: 1, channelId: "c1", messageId: "m1",
+            biome: "GLITCHED", roleId: "role1", serverLink: "https://discord.gg/x", jumpLink: "https://discord.com/channels/g/c/orig",
+            findCount: 2, now,
+        },
         deps,
     );
 
     expect(row.status).toBe(VoteStatus.OPEN);
     expect(row.closes_at.getTime()).toBe(now.getTime() + 60_000);
+    expect(row.role_id).toBe("role1");
+    expect(row.server_link).toBe("https://discord.gg/x");
+    expect(row.jump_link).toBe("https://discord.com/channels/g/c/orig");
+    expect(row.find_count).toBe(2);
     expect(votes.get("abc12345")).toEqual(row);
 });
 
 // ─── castBallot ─────────────────────────────────────────────────────────────────────────────────
 
-async function seedOpenVote(deps: VoteServiceDeps, overrides: Partial<Parameters<typeof openVote>[0]> = {}) {
-    return openVote(
-        {
-            voteId: "vote0001", guildId: "g1", eventId: 10, finderUserId: 1, channelId: "c1", messageId: "m1",
-            biome: "GLITCHED", now: new Date("2026-01-01T00:00:00Z"), ...overrides,
-        },
-        deps,
-    );
-}
-
 test("castBallot rejects the finder voting on their own find", async () => {
     const { deps } = createFakeDeps([fakeUser({ id: 1, discord_user_id: "finder-discord-id" })]);
     await seedOpenVote(deps);
-    const { client } = fakeClient(null);
+    const { client } = fakeClient();
 
     const result = await castBallot(client, "vote0001", "finder-discord-id", VoteChoice.REAL, deps);
 
@@ -180,7 +185,7 @@ test("castBallot rejects the finder voting on their own find", async () => {
 test("castBallot rejects a duplicate vote - no changing an existing ballot", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client } = fakeClient();
 
     const first = await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps);
     const second = await castBallot(client, vote.id, "voter-1", VoteChoice.FAKE, deps);
@@ -192,18 +197,34 @@ test("castBallot rejects a duplicate vote - no changing an existing ballot", asy
 test("castBallot rejects a vote that no longer exists, and one that's already closed", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client } = fakeClient(null);
+    const { client } = fakeClient();
 
     expect(await castBallot(client, "no-such-id", "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "not_found" });
 
-    await deps.closeVote(vote.id, VoteStatus.NO_VOTES, null);
+    await deps.closeVote(vote.id, VoteStatus.OPEN, VoteStatus.NO_VOTES, null);
+    expect(await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "closed" });
+});
+
+test("castBallot maps an insert-time 'closed' race (vote closed between the read and the insert) to kind: closed", async () => {
+    const { deps } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    const { client } = fakeClient();
+
+    // Simulate the vote closing AFTER castBallot's own getVoteById read but BEFORE its insert -
+    // deps.insertBallot re-checks live status itself, same as the real atomic INSERT...WHERE EXISTS.
+    const originalInsertBallot = deps.insertBallot;
+    deps.insertBallot = async (voteId, userId, choice) => {
+        await deps.closeVote(vote.id, VoteStatus.OPEN, VoteStatus.NO_VOTES, null);
+        return originalInsertBallot(voteId, userId, choice);
+    };
+
     expect(await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "closed" });
 });
 
 test("castBallot on success re-edits the forward message with the updated (still-hidden) vote count", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client, editCalls } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client, editCalls } = fakeClient();
 
     const result = await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps);
 
@@ -216,7 +237,7 @@ test("castBallot on success re-edits the forward message with the updated (still
 test("an admin click inside the window decides immediately and closes the vote", async () => {
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client, editCalls } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client, editCalls } = fakeClient();
 
     const result = await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
 
@@ -230,7 +251,7 @@ test("an admin click inside the window decides immediately and closes the vote",
 test("adminDecide denying reverts any granted reward and deletes the event", async () => {
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client } = fakeClient();
 
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps); // grants first
     await adminDecide(client, vote.id, "admin-2", VoteChoice.FAKE, deps); // then overridden to deny
@@ -241,9 +262,39 @@ test("adminDecide denying reverts any granted reward and deletes the event", asy
 
 test("adminDecide on a not-found vote id reports not_found", async () => {
     const { deps } = createFakeDeps();
-    const { client } = fakeClient(null);
+    const { client } = fakeClient();
 
     expect(await adminDecide(client, "missing", "admin-1", VoteChoice.REAL, deps)).toEqual({ kind: "not_found" });
+});
+
+test("two concurrent admin decisions on the same vote apply exactly one outcome (CAS)", async () => {
+    const { deps, calls } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    const { client } = fakeClient();
+
+    // Both "read" the vote (still open) before either writes - simulated by closing the vote out
+    // from under the second call right before its own CAS write runs.
+    const originalCloseVote = deps.closeVote;
+    let calls_ = 0;
+    deps.closeVote = async (voteId, expectedStatus, status, decidedBy) => {
+        calls_++;
+        if (calls_ === 2) {
+            // The "other admin" wins the race first.
+            await originalCloseVote(voteId, expectedStatus, VoteStatus.ADMIN_DENIED, "admin-1");
+        }
+        return originalCloseVote(voteId, expectedStatus, status, decidedBy);
+    };
+
+    const [first, second] = await Promise.all([
+        adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps),
+        adminDecide(client, vote.id, "admin-2", VoteChoice.REAL, deps),
+    ]);
+
+    const results = [first, second];
+    expect(results.filter((r) => r.kind === "ok")).toHaveLength(1);
+    expect(results.filter((r) => r.kind === "already_decided")).toHaveLength(1);
+    expect(calls.revertBiomeRewards).toHaveLength(1); // the applied outcome (deny) ran exactly once
+    expect(calls.grantBiomeReward).toHaveLength(0);
 });
 
 // ─── closeDueVotes ──────────────────────────────────────────────────────────────────────────────
@@ -255,7 +306,7 @@ test("closeDueVotes resolves an elapsed community_real vote, grants the reward o
     await deps.insertBallot(vote.id, "voter-2", VoteChoice.REAL);
     await deps.insertBallot(vote.id, "voter-3", VoteChoice.FAKE);
 
-    const { client, editCalls } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client, editCalls } = fakeClient();
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
 
     const closed = await deps.getVoteById(vote.id);
@@ -267,7 +318,7 @@ test("closeDueVotes resolves an elapsed community_real vote, grants the reward o
 test("closeDueVotes leaves a still-open vote untouched", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client } = fakeClient(null);
+    const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() - 1_000), deps);
 
@@ -277,7 +328,7 @@ test("closeDueVotes leaves a still-open vote untouched", async () => {
 test("closeDueVotes with no votes cast closes as no_votes and grants nothing", async () => {
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
-    const { client } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
 
@@ -285,11 +336,50 @@ test("closeDueVotes with no votes cast closes as no_votes and grants nothing", a
     expect(calls.grantBiomeReward).toHaveLength(0);
 });
 
+test("closeDueVotes yields (no outcome applied) when an admin already decided the vote between the scan and the write", async () => {
+    const { deps, calls } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
+    const { client } = fakeClient();
+
+    // The admin decides first, right as closeDueVotes is about to write its own resolution.
+    const originalCloseVote = deps.closeVote;
+    deps.closeVote = async (voteId, expectedStatus, status, decidedBy) => {
+        await originalCloseVote(voteId, expectedStatus, VoteStatus.ADMIN_DENIED, "admin-1");
+        return originalCloseVote(voteId, expectedStatus, status, decidedBy);
+    };
+
+    await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
+
+    expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.ADMIN_DENIED);
+    expect(calls.grantBiomeReward).toHaveLength(0); // the community_real outcome was never applied
+});
+
+test("closeDueVotes logs and continues past one vote's failure, instead of skipping the rest of the tick", async () => {
+    const { deps, calls, votes } = createFakeDeps();
+    const failing = await seedOpenVote(deps, { voteId: "fails0001", eventId: 20 });
+    const ok = await seedOpenVote(deps, { voteId: "ok0000002", eventId: 21 });
+    await deps.insertBallot(ok.id, "voter-1", VoteChoice.REAL);
+
+    const originalGetBallots = deps.getBallotsForVote;
+    deps.getBallotsForVote = async (voteId) => {
+        if (voteId === failing.id) throw new Error("boom");
+        return originalGetBallots(voteId);
+    };
+
+    const { client } = fakeClient();
+    await closeDueVotes(client, new Date(Math.max(failing.closes_at.getTime(), ok.closes_at.getTime()) + 1), deps);
+
+    expect(votes.get(failing.id)?.status).toBe(VoteStatus.OPEN); // untouched by the failure
+    expect(votes.get(ok.id)?.status).toBe(VoteStatus.COMMUNITY_REAL); // still processed
+    expect(calls.grantBiomeReward).toHaveLength(1);
+});
+
 test("reward is granted exactly once even if the vote is somehow closed twice", async () => {
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
     await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
-    const { client } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
     // A later admin re-confirmation (e.g. `/bh-admin review`) must not double-grant.
@@ -302,7 +392,7 @@ test("admin deny after a community_real resolution reverts the granted reward", 
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
     await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
-    const { client } = fakeClient(openContainerJson(vote.id, vote.closes_at));
+    const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
     expect(calls.grantBiomeReward).toHaveLength(1);

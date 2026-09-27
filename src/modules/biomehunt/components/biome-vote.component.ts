@@ -24,15 +24,23 @@ const NO_LONGER_AVAILABLE = "This vote is no longer available.";
  * the vote immediately and closes it; anyone else casts a community ballot. Both paths edit the
  * forward message themselves (via the service, using `client`); this handler only ever replies
  * ephemerally, for errors, or acknowledges the update.
+ *
+ * `legacyIds` are the old bare `bh-vote-confirm`/`bh-vote-deny` customIds (matched by the router's
+ * exact-equality legacyIds rule, never as a prefix) - they land here with `parts = []`, same as any
+ * other malformed/unparseable parts, and always just answer `NO_LONGER_AVAILABLE`.
  */
 export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVoteComponentDeps()) {
     return defineComponent({
         prefix: "biomehunt:vote",
+        legacyIds: ["bh-vote-confirm", "bh-vote-deny"],
         handle: async (interaction, parts, client) => {
             if (!interaction.isButton()) return;
 
             const [voteId, choiceRaw] = parts;
-            if (!voteId || (choiceRaw !== "real" && choiceRaw !== "fake")) return;
+            if (!voteId || (choiceRaw !== "real" && choiceRaw !== "fake")) {
+                await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
+                return;
+            }
             const choice = choiceRaw === "real" ? VoteChoice.REAL : VoteChoice.FAKE;
 
             const member = interaction.member as GuildMember | null;
@@ -40,19 +48,27 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
 
             if (isAdmin) {
                 const result = await deps.adminDecide(client, voteId, interaction.user.id, choice);
-                if (result.kind === "not_found") {
-                    await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
-                    return;
+                switch (result.kind) {
+                    case "not_found":
+                        await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
+                        return;
+                    case "already_decided":
+                        await interaction.reply({ content: "This vote was already decided.", ephemeral: true });
+                        return;
+                    case "ok":
+                        await interaction.deferUpdate();
+                        return;
                 }
-                await interaction.deferUpdate();
                 return;
             }
 
             const result = await deps.castBallot(client, voteId, interaction.user.id, choice);
             switch (result.kind) {
                 case "not_found":
-                case "closed":
                     await interaction.reply({ content: NO_LONGER_AVAILABLE, ephemeral: true });
+                    return;
+                case "closed":
+                    await interaction.reply({ content: "This vote is already closed.", ephemeral: true });
                     return;
                 case "finder":
                     await interaction.reply({ content: "You can't vote on your own find.", ephemeral: true });

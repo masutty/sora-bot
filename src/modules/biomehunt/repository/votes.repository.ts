@@ -9,15 +9,22 @@ export interface InsertVoteParams {
     channelId: string;
     messageId: string;
     biome: string;
+    roleId: string | null;
+    serverLink: string | null;
+    jumpLink: string;
+    findCount: number | null;
     closesAt: Date;
 }
 
 export async function insertVote(params: InsertVoteParams): Promise<BiomeVoteRow> {
     const result = await query<BiomeVoteRow>(
-        `INSERT INTO bh_biome_votes (id, guild_id, event_id, finder_user_id, channel_id, message_id, biome, closes_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO bh_biome_votes (id, guild_id, event_id, finder_user_id, channel_id, message_id, biome, role_id, server_link, jump_link, find_count, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
-        [params.id, params.guildId, params.eventId, params.finderUserId, params.channelId, params.messageId, params.biome, params.closesAt],
+        [
+            params.id, params.guildId, params.eventId, params.finderUserId, params.channelId, params.messageId,
+            params.biome, params.roleId, params.serverLink, params.jumpLink, params.findCount, params.closesAt,
+        ],
     );
     return result.rows[0];
 }
@@ -36,15 +43,33 @@ export async function getOpenVotesPastClose(now: Date): Promise<BiomeVoteRow[]> 
     return result.rows;
 }
 
-/** Inserts one ballot - `ON CONFLICT DO NOTHING` on (vote_id, user_id) is the "no changing" rule: a second vote from the same user is silently rejected, never overwritten. Returns whether it was actually recorded. */
-export async function insertBallot(voteId: string, userId: string, choice: VoteChoice): Promise<boolean> {
-    const result = await query(
-        `INSERT INTO bh_biome_vote_ballots (vote_id, user_id, choice)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (vote_id, user_id) DO NOTHING`,
+export type InsertBallotResult = "inserted" | "already_voted" | "closed";
+
+/**
+ * Inserts one ballot ATOMICALLY conditioned on the vote still being `open` (the `WHERE EXISTS`
+ * subquery inside the same statement as the `INSERT` - closes the race window between an earlier
+ * "is it open?" read and this write: a `closeDueVotes`/`adminDecide` closing the vote in between
+ * makes this INSERT a no-op instead of recording a ballot on a vote that's no longer open).
+ * `ON CONFLICT DO NOTHING` on (vote_id, user_id) is the "no changing" rule - a second vote from the
+ * same user is silently rejected, never overwritten. The trailing `SELECT` distinguishes WHY
+ * nothing was inserted: still open (so it must be a duplicate) vs. no longer open.
+ */
+export async function insertBallot(voteId: string, userId: string, choice: VoteChoice): Promise<InsertBallotResult> {
+    const result = await query<{ inserted: boolean; still_open: boolean }>(
+        `WITH ins AS (
+             INSERT INTO bh_biome_vote_ballots (vote_id, user_id, choice)
+             SELECT $1, $2, $3
+             WHERE EXISTS (SELECT 1 FROM bh_biome_votes WHERE id = $1 AND status = 'open')
+             ON CONFLICT (vote_id, user_id) DO NOTHING
+             RETURNING 1
+         )
+         SELECT EXISTS(SELECT 1 FROM ins) AS inserted,
+                EXISTS(SELECT 1 FROM bh_biome_votes WHERE id = $1 AND status = 'open') AS still_open`,
         [voteId, userId, choice],
     );
-    return (result.rowCount ?? 0) > 0;
+    const row = result.rows[0];
+    if (row?.inserted) return "inserted";
+    return row?.still_open ? "already_voted" : "closed";
 }
 
 export async function getBallotsForVote(voteId: string): Promise<BiomeVoteBallotRow[]> {
@@ -52,11 +77,25 @@ export async function getBallotsForVote(voteId: string): Promise<BiomeVoteBallot
     return result.rows;
 }
 
-/** Closes a vote (or overrides a previous close - `/bh-admin review` may decide after the fact), stamping `decided_at`. `decidedBy` is the admin's discord id, or `null` for a community/expiry resolution. */
-export async function closeVote(voteId: string, status: VoteStatus, decidedBy: string | null): Promise<BiomeVoteRow> {
+/**
+ * Compare-and-set close: only actually closes the vote (and stamps `decided_at`) if its status is
+ * STILL `expectedStatus` (whatever the caller read just before deciding) - `null` otherwise,
+ * meaning someone else (a racing admin click, or `closeDueVotes`) already decided it first. The
+ * caller MUST treat `null` as a no-op and skip applying any outcome (reward grant/revert) - this
+ * is what makes a close tick racing an admin click, or two admins clicking at once, apply the
+ * outcome exactly once instead of double-granting/double-reverting.
+ */
+export async function closeVote(
+    voteId: string,
+    expectedStatus: VoteStatus,
+    status: VoteStatus,
+    decidedBy: string | null,
+): Promise<BiomeVoteRow | null> {
     const result = await query<BiomeVoteRow>(
-        `UPDATE bh_biome_votes SET status = $2, decided_by = $3, decided_at = NOW() WHERE id = $1 RETURNING *`,
-        [voteId, status, decidedBy],
+        `UPDATE bh_biome_votes SET status = $3, decided_by = $4, decided_at = NOW()
+         WHERE id = $1 AND status = $2
+         RETURNING *`,
+        [voteId, expectedStatus, status, decidedBy],
     );
-    return result.rows[0];
+    return result.rows[0] ?? null;
 }

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { SeparatorSpacingSize } from "discord.js";
 import { VoteStatus } from "../types";
-import { buildForwardContainer, updateVoteContainer } from "./forward-post.view";
+import { buildForwardContainer } from "./forward-post.view";
 
 type Json = { type?: number; content?: string; spacing?: number; custom_id?: string; url?: string; components?: Json[] };
 
@@ -70,19 +70,14 @@ test("uses Large separator spacing", () => {
     for (const sep of separators) expect(sep.spacing).toBe(SeparatorSpacingSize.Large);
 });
 
-test("updateVoteContainer replaces only the vote block, keeping the heading and link row", () => {
-    const openJson = buildForwardContainer({
+test("admin_confirmed: shows who decided, no closes-at line, and the link row is unaffected", () => {
+    const json = buildForwardContainer({
         ...BASE,
-        vote: { voteId: "abc12345", status: VoteStatus.OPEN, closesAt: new Date(), voteCount: 1 },
+        vote: { voteId: "abc12345", status: VoteStatus.ADMIN_CONFIRMED, closesAt: new Date(), voteCount: 0, decidedByUserId: "admin-1" },
     }).toJSON();
 
-    const updated = updateVoteContainer(openJson, {
-        voteId: "abc12345", status: VoteStatus.ADMIN_CONFIRMED, closesAt: new Date(), voteCount: 0, decidedByUserId: "admin-1",
-    }).toJSON();
-
-    const text = textOf(updated);
+    const text = textOf(json);
     expect(text).toContain("Confirmed by <@admin-1> (admin)");
     expect(text).not.toContain("closes <t:");
-    // The link row (outside the vote block) must survive the splice untouched.
-    expect(flatten(updated).some((c) => c.url === BASE.jumpLink)).toBe(true);
+    expect(flatten(json).some((c) => c.url === BASE.jumpLink)).toBe(true);
 });

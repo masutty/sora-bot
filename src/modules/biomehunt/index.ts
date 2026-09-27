@@ -15,9 +15,6 @@ import { voteCloseWorker } from "./workers/vote-close.worker";
 
 const logger = new Logger("biomehunt");
 
-/** Buttons on a message posted before the DB-backed vote existed - it has no vote row (its state was only ever in memory), so it can never be resolved. */
-const LEGACY_VOTE_BUTTON_IDS = new Set(["bh-vote-confirm", "bh-vote-deny"]);
-
 export default defineCog({
     name: "biomehunt",
     description: "Tracks macro-driven activity, enforces quotas, and automates roles.",
@@ -36,16 +33,6 @@ export default defineCog({
             if (!message.guild) return;
             if (!message.webhookId) return;
             await processIncomingMessage(message).catch((err) => {
-                logger.error(err instanceof Error ? err : new Error(String(err)));
-            });
-        },
-        // Not routed through `components:` on purpose - these bare, colon-less customIds predate
-        // defineComponent's `prefix + ":"` routing and can never match it. Kept only so a button on
-        // an old message answers instead of doing nothing.
-        async interactionCreate(_client, interaction) {
-            if (!interaction.isButton()) return;
-            if (!LEGACY_VOTE_BUTTON_IDS.has(interaction.customId)) return;
-            await interaction.reply({ content: "This vote is no longer available.", ephemeral: true }).catch((err) => {
                 logger.error(err instanceof Error ? err : new Error(String(err)));
             });
         },
