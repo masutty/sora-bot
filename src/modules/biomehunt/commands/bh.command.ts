@@ -3,8 +3,10 @@ import { SlashCommandBuilder } from "discord.js";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
+import { getBalance } from "../services/economy.service";
 import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
+import { buildBalanceReply } from "../views/balance.view";
 import { openProfileView } from "../views/profile.view";
 import { openRerollView } from "../views/reroll.view";
 
@@ -21,7 +23,11 @@ export default defineCommand({
             sub.setName("profile").setDescription("View your hunt profile, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose profile to view (defaults to yourself)")),
         )
-        .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds.")),
+        .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds."))
+        .addSubcommand((sub) =>
+            sub.setName("balance").setDescription("View your Seeds and level, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),
+        ),
         // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
         // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
@@ -33,6 +39,14 @@ export default defineCommand({
             const target = (await ctx.args.getMember("user")) ?? ctx.member;
             await ctx.defer();
             await openProfileView(ctx, ctx.guild.id, target);
+            return;
+        }
+
+        if (sub === "balance") {
+            // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
+            const target = (await ctx.args.getMember("user")) ?? ctx.member;
+            const balance = await getBalance(ctx.guild.id, target.id);
+            await ctx.reply(buildBalanceReply(target.id, target.id === ctx.user.id, balance));
             return;
         }
 

@@ -3,6 +3,15 @@ import { adjustUserBalance } from "../repository/rewards.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
 
+/** A user's Seeds/XP, or null when they have no profile. Throws when the economy is off for the guild. */
+export async function getBalance(guildId: string, discordUserId: string): Promise<{ seeds: number; xp: number } | null> {
+    if (!(await isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"))) {
+        throw new BiomeHuntError("The economy isn't enabled on this server.");
+    }
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    return user ? { seeds: user.seeds, xp: user.xp } : null;
+}
+
 export async function grantEconomy(
     guildId: string,
     discordUserId: string,
