@@ -28,11 +28,13 @@ import {
     clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember, pauseMember,
     resetMemberChannel, softDeleteMember, unpauseMember,
 } from "../services/member.service";
+import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import {
-    createQuota, deleteQuotas, forceQuotaEval, listQuotas, setQuotaEvalHour,
+    createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour,
 } from "../services/quota.service";
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
 import { openProfileView } from "../views/profile.view";
+import { quotaDeleteView } from "../views/quota-delete.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 
 
@@ -294,7 +296,11 @@ export default defineCommand({
         if (routeKey === "quotas-delete") {
             await ctx.defer();
             const roleId = (await ctx.args.getRole("role"))?.id ?? null;
-            await deleteQuotas(ctx.guild.id, roleId, ctx.user.id, send);
+            if (roleId) {
+                await send(EmbedFormatter.success(await removeQuotaRole(ctx.guild.id, roleId)));
+                return;
+            }
+            await ctx.open(quotaDeleteView({ getQuotaRoles: getQuotaRolesForGuild, removeQuotaRole }), { guildId: ctx.guild.id });
             return;
         }
 

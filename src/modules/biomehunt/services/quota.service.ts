@@ -1,10 +1,7 @@
-import type { GuildTextBasedChannel, Message } from "discord.js";
-import { ContainerBuilder, MessageFlags } from "discord.js";
+import { ContainerBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { markQuotaEvaluated, updateQuotaEvalHour } from "../repository/guilds.repository";
 import { deleteQuotaRole, getQuotaRolesForGuild, upsertQuotaRole } from "../repository/quota-roles.repository";
-import { settings } from "../settings";
 import { BiomeHuntError, type QuotaRoleMode, type QuotaRoleRow } from "../types";
 import { evaluateFixedRewardsForGuild } from "./reward.service";
 
@@ -46,56 +43,6 @@ export async function removeQuotaRole(guildId: string, roleId: string): Promise<
     const removed = await deleteQuotaRole(guildId, roleId);
     if (!removed) throw new BiomeHuntError("That quota role isn't configured.");
     return `Quota role <@&${roleId}> removed. Members who already hold it keep it until it expires (Fixed mode) or is removed manually.`;
-}
-
-/**
- * `roleId` given -> deletes it directly. `roleId` omitted -> shows a numbered list (mirroring
- * ez-setup's quota role removal screen) and waits for the admin to type the number to delete.
- *
- * TODO(etapa-3): UI in a service (message collector) - becomes a View step.
- */
-export async function deleteQuotas(
-    guildId: string,
-    roleId: string | null,
-    invokerId: string,
-    respond: (payload: FormattedReply | { flags: MessageFlags.IsComponentsV2; components: ContainerBuilder[] }) => Promise<Message>,
-): Promise<void> {
-    if (roleId) {
-        const message = await removeQuotaRole(guildId, roleId);
-        await respond({ ...EmbedFormatter.success(message), allowedMentions: NO_PINGS });
-        return;
-    }
-
-    const roles = await getQuotaRolesForGuild(guildId);
-    if (roles.length === 0) {
-        await respond(EmbedFormatter.info("No quota roles configured yet."));
-        return;
-    }
-
-    const lines = roles.map((r, i) => `${i + 1}. ${formatQuotaRoleLine(r)}`);
-    const listContainer = new ContainerBuilder().setAccentColor(0x5865f2);
-    listContainer.addTextDisplayComponents((td) =>
-        td.setContent(`**Delete Quota Role**\nType the number of the quota role you want to delete:\n\n${lines.join("\n")}`),
-    );
-    const msg = await respond({ flags: MessageFlags.IsComponentsV2, components: [listContainer] });
-
-    const channel = msg.channel as GuildTextBasedChannel;
-    const collector = channel.createMessageCollector({ filter: (m) => m.author.id === invokerId, time: settings.ui.quotaReplyTimeoutMs, max: 1 });
-
-    collector.on("collect", async (m) => {
-        const n = Number(m.content.trim());
-        if (!Number.isInteger(n) || n < 1 || n > roles.length) {
-            await m.reply(`Please type a number between 1 and ${roles.length}.`).catch(() => {});
-            return;
-        }
-        const target = roles[n - 1];
-        const message = await removeQuotaRole(guildId, target.role_id);
-        await msg.edit({ ...EmbedFormatter.success(message), allowedMentions: NO_PINGS }).catch(() => {});
-    });
-
-    collector.on("end", (collected) => {
-        if (collected.size === 0) msg.edit(EmbedFormatter.info("Timed out, nothing removed.")).catch(() => {});
-    });
 }
 
 export async function listQuotas(guildId: string): Promise<ContainerBuilder> {
