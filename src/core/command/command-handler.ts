@@ -17,7 +17,7 @@ import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler
 import { buildUsagePayload } from "./command-usage";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 import { describeCommandError, errorReply } from "./user-facing-error";
-import { newInvocationId, runWithTrace, type TraceContext } from "@/utils/trace";
+import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 
 const logger = new Logger("core.commandhandlers");
 const slashLogger = new Logger("core.slashcommands");
@@ -108,14 +108,14 @@ function usageFor(def: CommandDefinition, invokePrefix: string, group: string | 
  * A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip
  * with the invocation id as a "ref", so a user's screenshot leads straight to the log lines.
  */
-async function reportFailure(err: unknown, inv: string, reply: (payload: ReplyPayload) => Promise<unknown>): Promise<"user-error" | "error"> {
+async function reportFailure(err: unknown, ref: string, reply: (payload: ReplyPayload) => Promise<unknown>): Promise<"user-error" | "error"> {
     const view = describeCommandError(err);
     if (view.kind === "user") {
         await reply(errorReply(view.message)).catch(() => { });
         return "user-error";
     }
     logger.error(err instanceof Error ? err : new Error(String(err)));
-    await reply(errorReply(`${getFailureQuip()}\n-# ref: \`${inv}\``)).catch(() => { });
+    await reply(errorReply(`${getFailureQuip()}\n-# ref: \`${ref}\``)).catch(() => { });
     return "error";
 }
 
@@ -124,7 +124,7 @@ function invocationTrace(def: CommandDefinition, ctx: CommandContext): TraceCont
     // Subcommand names are read defensively: a malformed invocation must still get a trace.
     const path = [def.name, safe(() => ctx.args.getSubcommandGroup()), safe(() => ctx.args.getSubcommand())].filter(Boolean).join(" ");
     return {
-        inv: newInvocationId(),
+        ref: newTraceRef(),
         command: path,
         mode: ctx.mode,
         userId: ctx.user.id,
@@ -157,7 +157,7 @@ async function runInvocation(
         try {
             await dispatchIt();
         } catch (err) {
-            outcome = await reportFailure(err, trace.inv, reply);
+            outcome = await reportFailure(err, trace.ref, reply);
         } finally {
             commandLogger.info(`${outcome} in ${Date.now() - started}ms`);
         }

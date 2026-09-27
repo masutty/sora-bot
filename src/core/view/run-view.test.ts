@@ -68,7 +68,7 @@ test("a View opened inside an invocation trace logs its clicks under that invoca
         on: {
             inc: (c) => {
                 const t = currentTrace();
-                seen.push(t ? `${t.inv}.${t.step}` : undefined);
+                seen.push(t ? `${t.ref}.${t.step}` : undefined);
                 c.state.n++;
             },
         },
@@ -76,7 +76,7 @@ test("a View opened inside an invocation trace logs its clicks under that invoca
 
     // The command runs inside its trace; the View outlives the command, and its clicks arrive from
     // the gateway (outside any context) - runView must re-enter the invocation's trace for them.
-    runWithTrace({ inv: "inv00001" }, () => {
+    runWithTrace({ ref: "inv00001" }, () => {
         void runView(counter, undefined, {
             respond: async (payload) => {
                 fake.responded.push(payload as never);
