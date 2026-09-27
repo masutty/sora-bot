@@ -20,6 +20,8 @@ export interface CommandArgs {
     getSubcommandGroup(): string | null;
     /** True if the invoker supplied a value for this option (even an invalid one). */
     has(name: string): boolean;
+    /** What was parsed, as `name=`value`` pairs (empty when nothing) - appended to user-error replies and logs. */
+    describe(): string;
     getString(name: string, required: true): string;
     getString(name: string, required?: false): string | null;
     getInteger(name: string, required: true): number;
@@ -90,6 +92,7 @@ export function slashArgs(interaction: ChatInputCommandInteraction): CommandArgs
     const args = {
         getSubcommand: () => o.getSubcommand(false),
         getSubcommandGroup: () => o.getSubcommandGroup(false),
+        describe: () => describeSlashOptions(o.data ?? []),
         has,
         getString: (name: string, required?: boolean) => primitive<string>(name, "string", slashValue(o, name, "string"), has(name), required),
         getInteger: (name: string, required?: boolean) => primitive<number>(name, "integer", slashValue(o, name, "integer"), has(name), required),
@@ -138,6 +141,7 @@ export function prefixArgs(a: PrefixArgs): CommandArgs {
     const args = {
         getSubcommand: () => a.getSubcommand(),
         getSubcommandGroup: () => a.getSubcommandGroup(),
+        describe: () => a.describe(),
         has: (name: string) => a.has(name),
         getString: (name: string, required?: boolean) => primitive(name, "string", a.getString(name), a.has(name), required),
         getInteger: (name: string, required?: boolean) => primitive(name, "integer", a.getInteger(name), a.has(name), required),
@@ -149,4 +153,13 @@ export function prefixArgs(a: PrefixArgs): CommandArgs {
         getRole: (name: string) => entity(name, () => a.getRole(name), UNKNOWN_ROLE),
     };
     return args as CommandArgs;
+}
+
+type RawSlashOption = { name: string; value?: unknown; options?: readonly RawSlashOption[] };
+
+/** Flattens slash option data (subcommand / group nesting included) into `name=\`value\`` pairs. */
+function describeSlashOptions(options: readonly RawSlashOption[]): string {
+    const flat = (list: readonly RawSlashOption[]): string[] =>
+        list.flatMap((opt) => (opt.options ? flat(opt.options) : opt.value !== undefined ? [`${opt.name}=\`${opt.value}\``] : []));
+    return flat(options).join(" ");
 }

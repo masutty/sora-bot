@@ -95,3 +95,19 @@ describe("review fixes", () => {
         expect(args.getInteger("count")).toBe(3);
     });
 });
+
+describe("describe() - what was parsed, for user-error replies and logs", () => {
+    test("prefix shows each schema arg with the raw token it got", () => {
+        const args = prefix(["set", "abc"]);
+        expect(args.describe()).toBe("count=`abc`");
+    });
+
+    test("prefix with nothing parsed is empty", () => {
+        expect(prefix(["profile"]).describe()).toBe("");
+    });
+
+    test("slash shows the supplied option values", () => {
+        const args = slashArgs(fakeInteraction({ sub: "set", values: { count: 3 }, guild: fakeGuild() }));
+        expect(args.describe()).toBe("count=`3`");
+    });
+});

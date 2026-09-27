@@ -219,6 +219,15 @@ export class PrefixArgs {
      * mix free text with an optional trailing positional parameter - the derived schema only
      * makes the LAST field greedy, which can't handle "free message + optional trailing channel".
      */
+    /** What each schema arg got, as typed: `biome=\`GLITCHED\` user=\`<@1>\`` - shown on user errors so a misparse is obvious. */
+    describe(): string {
+        return this.activeSchema
+            .map((a) => [a.name, this.getRaw(a.name)] as const)
+            .filter(([, raw]) => raw !== null)
+            .map(([name, raw]) => `${name}=\`${raw}\``)
+            .join(" ");
+    }
+
     getRawArgs(): string[] {
         return this.activeRaw;
     }

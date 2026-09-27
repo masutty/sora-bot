@@ -53,6 +53,10 @@ export function fakeInteractionOptions(opts: { sub?: string | null; group?: stri
     return {
         getSubcommand: () => opts.sub ?? null,
         getSubcommandGroup: () => opts.group ?? null,
+        // Mirrors discord.js's `options.data`: a subcommand wraps its options.
+        data: opts.sub
+            ? [{ name: opts.sub, type: 1, options: Object.entries(values).map(([name, value]) => ({ name, value })) }]
+            : Object.entries(values).map(([name, value]) => ({ name, value })),
         get: (name: string) => (name in values ? { name, type: types[name], value: values[name] } : null),
         getString: (name: string) => get<string>(name),
         getInteger: (name: string) => { strict(name, 4); return get<number>(name); },
