@@ -74,7 +74,7 @@ export default defineCommand({
                 .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
         )
         .addSubcommand((s) =>
-            s.setName("review").setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
+            s.setName("review-voting").setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
                 .addStringOption((o) => o.setName("id").setDescription("Vote id (shown on the forward message)").setRequired(true)),
         )
         .addSubcommandGroup((g) =>
@@ -298,7 +298,7 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "review") {
+        if (routeKey === "review-voting") {
             const voteId = ctx.args.getString("id");
             if (!voteId) throw new BiomeHuntError("Missing required argument: id");
             await ctx.defer();

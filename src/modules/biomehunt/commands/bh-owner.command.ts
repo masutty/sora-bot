@@ -333,9 +333,10 @@ async function runSimulateBiome(ctx: CommandContext): Promise<void> {
     await forwardBiome(ctx.client, guild.id, userId, parsed, eventId, jumpLink);
 
     logger.info(`Simulated ${biome} for user ${userId} (guild ${guild.id}), ${dryRun ? "dry run" : `event ${eventId}`}`);
-    const mode = dryRun ? "dry run - stats untouched" : "REAL - counts in stats";
+    const mode = dryRun ? "Dry run, no event was inserted" : `Event ID: \`#${eventId}\`.`;
+    
     await ctx.reply({
-        ...EmbedFormatter.success(`Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> (${mode}) - forwarded to <#${forwardChannelId}>.`),
+        ...EmbedFormatter.success(`Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> - forwarded to <#${forwardChannelId}>.\n${mode}`),
         allowedMentions: NO_PINGS,
     });
 }

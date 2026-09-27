@@ -48,19 +48,19 @@ function voteStatusLine(vote: VoteRenderInfo): string {
 
     switch (vote.status) {
         case VoteStatus.OPEN:
-            return "## Is this biome real?";
+            return "**Is this biome real?**\n-# Administrators can immediately decide this vote";
         case VoteStatus.NO_VOTES:
-            return "Vote expired with no votes - nothing changed.";
+            return "*Vote expired with no votes*";
         case VoteStatus.TIE:
-            return `Tied vote (${real}×${fake}) - nothing changed.`;
+            return `Tied vote (${real}/${fake})`;
         case VoteStatus.COMMUNITY_REAL:
-            return `✅ Confirmed by community vote (${real}×${fake}).`;
+            return `✅ Ruled real via voting (${real}/${fake})`;
         case VoteStatus.COMMUNITY_FAKE:
-            return `❌ Rejected by community vote (${real}×${fake}) - nothing changed.`;
+            return `❌ Ruled fake via voting (${real}/${fake})`;
         case VoteStatus.ADMIN_CONFIRMED:
-            return `✅ Confirmed by <@${vote.decidedByUserId}> (admin).`;
+            return `✅ Ruled real by <@${vote.decidedByUserId}>`;
         case VoteStatus.ADMIN_DENIED:
-            return `❌ Denied by <@${vote.decidedByUserId}> (admin).`;
+            return `❌ Ruled fake by <@${vote.decidedByUserId}>`;
         default: {
             const exhaustive: never = vote.status;
             throw new Error(`Unhandled vote status: ${exhaustive}`);

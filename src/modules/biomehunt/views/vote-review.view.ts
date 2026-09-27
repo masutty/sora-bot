@@ -59,20 +59,20 @@ function voteStateLine(vote: BiomeVoteRow, tally: { real: number; fake: number }
     switch (vote.status) {
         case VoteStatus.OPEN: {
             const epoch = Math.floor(vote.closes_at.getTime() / 1000);
-            return `Open - ${real}×${fake} so far, closes <t:${epoch}:R>.`;
+            return `Open - ${real}/${fake} so far, closes <t:${epoch}:R>.`;
         }
         case VoteStatus.NO_VOTES:
-            return "Vote expired with no votes - nothing changed.";
+            return "*Vote expired with no votes*";
         case VoteStatus.TIE:
-            return `Tied vote (${real}×${fake}) - nothing changed.`;
+            return `Tied vote (${real}/${fake})`;
         case VoteStatus.COMMUNITY_REAL:
-            return `Confirmed by community vote (${real}×${fake}).`;
+            return `✅ Ruled real via voting (${real}/${fake})`;
         case VoteStatus.COMMUNITY_FAKE:
-            return `Rejected by community vote (${real}×${fake}) - nothing changed.`;
+            return `❌ Ruled fake via voting (${real}/${fake})`;
         case VoteStatus.ADMIN_CONFIRMED:
-            return `Confirmed by <@${vote.decided_by}> (admin).`;
+            return `✅ Ruled real by <@${vote.decided_by}>`;
         case VoteStatus.ADMIN_DENIED:
-            return `Denied by <@${vote.decided_by}> (admin).`;
+            return `❌ Ruled fake by <@${vote.decided_by}>`;
         default: {
             const exhaustive: never = vote.status;
             throw new Error(`Unhandled vote status: ${exhaustive}`);
@@ -98,14 +98,15 @@ function reviewContainer(state: VoteReviewState): ContainerBuilder {
         td.setContent(
             `**Vote Review: \`${vote.id}\`**\n` +
                 `${voteStateLine(vote, tally)}\n\n` +
-                `Finder: ${finder}\n` +
-                `Biome: ${formatBiomeName(vote.biome)}\n` +
-                `When: <t:${openedEpoch}:R>`,
+                `- Finder: ${finder}\n` +
+                `- Biome: ${formatBiomeName(vote.biome)}\n` +
+                `- When: <t:${openedEpoch}:R>`,
         ),
     );
     container.addSeparatorComponents((sep) => sep.setDivider(true));
-    container.addTextDisplayComponents((td) => td.setContent(`Real voters: ${votersLine(ballots, VoteChoice.REAL)}`));
-    container.addTextDisplayComponents((td) => td.setContent(`Fake voters: ${votersLine(ballots, VoteChoice.FAKE)}`));
+    container.addTextDisplayComponents((td) => td.setContent(`### Community votes (\`${tally.real}\`/\`${tally.fake}\`)`));
+    container.addTextDisplayComponents((td) => td.setContent(`:white_check_mark: : ${votersLine(ballots, VoteChoice.REAL)}`));
+    container.addTextDisplayComponents((td) => td.setContent(`:x: : ${votersLine(ballots, VoteChoice.FAKE)}`));
 
     return container;
 }
@@ -154,8 +155,8 @@ export function voteReviewView(deps: VoteReviewDeps): ViewDefinition<VoteReviewS
             components: [
                 reviewContainer(state),
                 kit.row(
-                    kit.button("confirm", (b) => b.setLabel("Confirm").setEmoji("✅").setStyle(ButtonStyle.Success)),
-                    kit.button("deny", (b) => b.setLabel("Deny").setEmoji("❌").setStyle(ButtonStyle.Danger)),
+                    kit.button("confirm", (b) => b.setLabel("Confirm").setStyle(ButtonStyle.Success)),
+                    kit.button("deny", (b) => b.setLabel("Deny").setStyle(ButtonStyle.Danger)),
                 ),
             ],
             allowedMentions: NO_PINGS,
