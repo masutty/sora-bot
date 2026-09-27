@@ -36,6 +36,7 @@ import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type Qu
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
+import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
 
 
 const FLAG_CHOICES = ALL_FLAGS.map((name) => ({ name: FLAG_DEFINITIONS[name].label, value: name }));
@@ -71,6 +72,10 @@ export default defineCommand({
         .addSubcommand((s) =>
             s.setName("profile").setDescription("View a user's BiomeHunt profile.")
                 .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
+        )
+        .addSubcommand((s) =>
+            s.setName("review").setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
+                .addStringOption((o) => o.setName("id").setDescription("Vote id (shown on the forward message)").setRequired(true)),
         )
         .addSubcommandGroup((g) =>
             g.setName("config").setDescription("Overall BiomeHunt configuration.")
@@ -290,6 +295,14 @@ export default defineCommand({
             const member = await requireMember(ctx.args, "user");
             await ctx.defer();
             await openProfileView(ctx, ctx.guild.id, member);
+            return;
+        }
+
+        if (routeKey === "review") {
+            const voteId = ctx.args.getString("id");
+            if (!voteId) throw new BiomeHuntError("Missing required argument: id");
+            await ctx.defer();
+            await ctx.open(voteReviewView(defaultVoteReviewDeps(ctx.client, voteId)), { voteId, guildId: ctx.guild.id });
             return;
         }
 
