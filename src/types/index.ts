@@ -11,6 +11,7 @@ import type {
 import type { BotClient } from "../core/bot-client";
 import type { CommandContext, GuildCommandContext } from "../core/command/command-context";
 import type { PrefixArgs } from "../core/command/prefix-args";
+import type { ComponentDefinition } from "../core/component/component-router";
 import type { WorkerDefinition } from "../core/worker/worker";
 
 export { PrefixArgs } from "../core/command/prefix-args";
@@ -150,6 +151,8 @@ export interface Cog {
     migrations?: string[];
     /** Periodic background tasks - the framework starts each one on load, stops on unload/hot reload. */
     workers?: WorkerDefinition[];
+    /** Persistent components (buttons/selects) - the framework routes every click to its owner. */
+    components?: ComponentDefinition[];
     start?: (client: BotClient) => void | Promise<void>;
     stop?: (client: BotClient) => void | Promise<void>;
     onReady?: (client: BotClient) => void | Promise<void>;

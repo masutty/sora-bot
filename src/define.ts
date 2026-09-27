@@ -7,6 +7,7 @@ export type { CommandContext, GuildCommandContext, ReplyOptions, ReplyPayload } 
 export { buildHelpContainer } from "./core/command/command-usage";
 export type { PrefixArgs } from "./core/command/prefix-args";
 export { UserFacingError } from "./core/command/user-facing-error";
+export { type ComponentDefinition, defineComponent } from "./core/component/component-router";
 export { type ConfirmField, type ConfirmOptions, type ConfirmState, confirm } from "./core/view/confirm";
 export {
     /** TEST-ONLY: an in-memory View transport + manual clock, to test a module's Views (`fake.run(view, input)`). */

@@ -5,7 +5,9 @@ import { config } from "@/config";
 import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
 import { Logger } from "@/utils/logging";
+import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 import type { BotClient } from "./bot-client";
+import { dispatchComponent, validateComponentPrefix } from "./component/component-router";
 import { type RunningWorker, startWorker } from "./worker/worker";
 
 const logger = new Logger("core.cogloader");
@@ -45,6 +47,8 @@ export async function loadCogs(
     client: BotClient,
     cogsPath: string,
 ): Promise<LoadCogsResult> {
+    ensureComponentRouter(client);
+
     const entries = readdirSync(cogsPath);
     const failures: CogLoadFailure[] = [];
 
@@ -294,7 +298,50 @@ export async function hotReloadBot(
 
 // ─── Internals ────────────────────────────────────────────────────────────────
 
+/**
+ * Best-effort user/guild for an event's trace, read from the first arg discord.js hands the
+ * handler: a `Message` exposes `.author`/`.guildId`, an `Interaction` exposes `.user`/`.guildId` -
+ * anything else (a shard event, `ClientReady`, ...) contributes nothing, harmlessly.
+ */
+export function eventTraceSubject(args: unknown[]): Pick<TraceContext, "userId" | "userTag" | "guildId"> {
+    const first = args[0] as {
+        user?: { id?: string; username?: string } | null;
+        author?: { id?: string; username?: string } | null;
+        guildId?: string | null;
+    } | null | undefined;
+    if (!first || typeof first !== "object") return {};
+
+    const person = first.user ?? first.author ?? undefined;
+    const subject: Pick<TraceContext, "userId" | "userTag" | "guildId"> = {};
+    if (person?.id) subject.userId = person.id;
+    if (person?.username) subject.userTag = person.username;
+    if (first.guildId) subject.guildId = first.guildId;
+    return subject;
+}
+
+// Whether `ensureComponentRouter` has already wired its listener THIS module lifetime - a hot
+// reload gets a fresh one (this whole module, and this flag, are re-required from scratch).
+let componentRouterListening = false;
+
+/**
+ * Wires the single global `interactionCreate` listener that routes persistent components
+ * (`Cog.components`, see `dispatchComponent`) - called once from `loadCogs` (boot, and again after
+ * `hotReloadBot` wipes every `InteractionCreate` listener and calls `loadCogs` fresh).
+ */
+function ensureComponentRouter(client: BotClient): void {
+    if (componentRouterListening) return;
+    componentRouterListening = true;
+    client.on(Events.InteractionCreate, (interaction) => {
+        if (!interaction.isMessageComponent()) return;
+        void dispatchComponent(client, interaction);
+    });
+}
+
 async function registerCog(client: BotClient, cog: Cog): Promise<void> {
+    for (const component of cog.components ?? []) {
+        validateComponentPrefix(cog.name, component);
+    }
+
     if (cog.migrations?.length) {
         await runModuleMigrations(cog.name, cog.migrations);
     }
@@ -307,7 +354,11 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
 
     for (const [event, handler] of Object.entries(cog.events ?? {})) {
         if (!handler) continue;
-        const wrapped = (...args: unknown[]) => (handler as Function)(client, ...args);
+        const wrapped = (...args: unknown[]) =>
+            runWithTrace(
+                { ref: newTraceRef(), command: `event:${cog.name}.${event}`, ...eventTraceSubject(args) },
+                () => (handler as Function)(client, ...args),
+            );
         client.on(event, wrapped as never);
         listeners.push({ event, handler: wrapped });
     }
