@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { config } from "@/config";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
 import type { BiomeForwardRow } from "../types";
 import { type ForwardListDeps, forwardListView } from "./forward-list.view";
@@ -82,6 +83,18 @@ test("biomehunt.forward-list (close): starts empty, Create -> pick biome+channel
 
     await fake.emit(fake.click("close", OWNER));
     expect(await resultP).toBeUndefined();
+});
+
+test("biomehunt.forward-list (close): idling past the timeout shows \"Menu timed out.\", not just the last screen stripped", async () => {
+    const { deps } = fakeDeps();
+    const fake = createFakeViewTransport();
+    const resultP = fake.run(forwardListView(deps, "close"), { guildId: GUILD_ID }, OWNER);
+    await fake.flush();
+
+    await fake.clock.advance(config.ui.flowStepTimeoutMs);
+
+    expect(await resultP).toBeUndefined();
+    expect(text(fake.lastPayload())).toContain("Menu timed out.");
 });
 
 test("biomehunt.forward-list (close): Create -> Cancel creates nothing", async () => {

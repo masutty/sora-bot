@@ -1,7 +1,7 @@
 import { ButtonStyle, ContainerBuilder, MessageFlags } from "discord.js";
 import { config } from "@/config";
 import { defineView, type HandlerContext, type HandlerResult, type StepResult, type ViewDefinition, type ViewPayload } from "@/define";
-import { NO_PINGS } from "@/utils/format";
+import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import type { BiomeForwardRow } from "../types";
 import { forwardCreateView } from "./forward-create.view";
@@ -113,5 +113,7 @@ export function forwardListView(deps: ForwardListDeps, exit: ForwardListExit): V
                       skip: (c) => c.done({ kind: "skip" }),
                       cancel: (c) => c.done({ kind: "cancel" }),
                   },
+        // Step mode has none: ez-setup's own flow owns the timeout screen for its whole session.
+        onExpire: exit === "close" ? () => EmbedFormatter.info("Menu timed out.") : undefined,
     });
 }
