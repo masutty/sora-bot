@@ -39,7 +39,7 @@ test("open vote: hides the tally, shows the count + closes-at, the vote id, and 
     expect(text).toContain("closes <t:");
     expect(text).toMatch(/Vote ID: `abc12345` • 3 votes • closes <t:\d+:R>/);
     expect(text).not.toContain("Admins:");
-    expect(text).not.toMatch(/\d+×\d+/); // the real/fake split never appears while open
+    expect(text).not.toMatch(/\(\d+\/\d+\)/); // the real/fake split never appears while open
 
     const customIds = customIdsOf(json);
     expect(customIds).toContain("biomehunt:vote:abc12345:real");
@@ -56,7 +56,7 @@ test("a closed vote hides the buttons and shows the real/fake split", () => {
     }).toJSON();
 
     const text = textOf(json);
-    expect(text).toContain("Confirmed by community vote (3×2)");
+    expect(text).toContain("Ruled real via voting (3/2)");
     expect(customIdsOf(json).some((id) => id.startsWith("biomehunt:vote:"))).toBe(false);
 });
 
@@ -78,7 +78,7 @@ test("admin_confirmed: shows who decided, no closes-at line, and the link row is
     }).toJSON();
 
     const text = textOf(json);
-    expect(text).toContain("Confirmed by <@admin-1> (admin)");
+    expect(text).toContain("Ruled real by <@admin-1>");
     expect(text).not.toContain("closes <t:");
     expect(flatten(json).some((c) => c.url === BASE.jumpLink)).toBe(true);
 });

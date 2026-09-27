@@ -80,8 +80,8 @@ test("biomehunt.vote-review: shows the finder, biome, state and Real/Fake voter 
     const rendered = text(fake.lastPayload());
     expect(rendered).toContain("Finder: <@finder-1>");
     expect(rendered).toContain("Biome:");
-    expect(rendered).toContain("Real voters: <@real-voter>");
-    expect(rendered).toContain("Fake voters: <@fake-voter>");
+    expect(rendered).toContain(":white_check_mark: : <@real-voter>");
+    expect(rendered).toContain(":x: : <@fake-voter>");
 });
 
 test("biomehunt.vote-review: no ballots shows \"*none*\" on both sides", async () => {
@@ -92,8 +92,8 @@ test("biomehunt.vote-review: no ballots shows \"*none*\" on both sides", async (
     await fake.flush();
 
     const rendered = text(fake.lastPayload());
-    expect(rendered).toContain("Real voters: *none*");
-    expect(rendered).toContain("Fake voters: *none*");
+    expect(rendered).toContain(":white_check_mark: : *none*");
+    expect(rendered).toContain(":x: : *none*");
 });
 
 test("biomehunt.vote-review: Confirm calls adminDecide(REAL) and redraws as admin-confirmed", async () => {
@@ -111,7 +111,7 @@ test("biomehunt.vote-review: Confirm calls adminDecide(REAL) and redraws as admi
     await fake.emit(fake.click("confirm", ADMIN));
 
     expect(calls).toEqual([[ADMIN, VoteChoice.REAL]]);
-    expect(text(fake.lastPayload())).toContain(`Confirmed by <@${ADMIN}> (admin).`);
+    expect(text(fake.lastPayload())).toContain(`Ruled real by <@${ADMIN}>`);
 });
 
 test("biomehunt.vote-review: Deny calls adminDecide(FAKE) and redraws as admin-denied", async () => {
@@ -129,7 +129,7 @@ test("biomehunt.vote-review: Deny calls adminDecide(FAKE) and redraws as admin-d
     await fake.emit(fake.click("deny", ADMIN));
 
     expect(calls).toEqual([[ADMIN, VoteChoice.FAKE]]);
-    expect(text(fake.lastPayload())).toContain(`Denied by <@${ADMIN}> (admin).`);
+    expect(text(fake.lastPayload())).toContain(`Ruled fake by <@${ADMIN}>`);
 });
 
 test("biomehunt.vote-review: a CAS miss notifies \"This vote was already decided.\" without changing the screen", async () => {
