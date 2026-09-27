@@ -136,6 +136,28 @@ function extractFlags(raw: string[]): { positional: string[]; flags: Map<string,
     return { positional, flags };
 }
 
+// ─── Named args (name:value) ───────────────────────────────────────────────────
+
+const NAMED_PATTERN = /^([A-Za-z][\w-]*):(.+)$/s;
+
+/**
+ * Splits `name:value` tokens out of the positional ones (in any position), but ONLY when `name` is
+ * an arg of the active schema - so `biome:GLITCHED user:@x` and `user:@x GLITCHED` both work, while
+ * a stray `https://...` or `<t:123:R>` stays positional. A named value is one token; quote it for
+ * spaces (`reason:"two words"`).
+ */
+function extractNamed(raw: string[], schema: ArgSchema[]): { positional: string[]; named: Map<string, string> } {
+    const named = new Map<string, string>();
+    const positional: string[] = [];
+    for (const token of raw) {
+        const m = token.match(NAMED_PATTERN);
+        const arg = m && schema.find((a) => a.name.toLowerCase() === m[1].toLowerCase());
+        if (m && arg) named.set(arg.name, m[2]);
+        else positional.push(token);
+    }
+    return { positional, named };
+}
+
 // ─── PrefixArgs ───────────────────────────────────────────────────────────────
 
 /**
@@ -152,11 +174,17 @@ function extractFlags(raw: string[]): { positional: string[]; flags: Map<string,
  *    Use `args.getSubcommand()` / `args.getSubcommandGroup()` to get the active names.
  *    Arg getters (`getString`, etc.) resolve against the subcommand's schema.
  *
- * The last defined arg in a schema is always greedy (joins remaining tokens).
+ * Any arg can also be given by name as `name:value`, in any order; the remaining positional
+ * tokens then fill the args NOT given by name, in schema order.
+ *
+ * The last positional arg is always greedy (joins remaining tokens).
  */
 export class PrefixArgs {
     private readonly activeSchema: ArgSchema[];
     private readonly activeRaw: string[];
+    /** The active schema minus the args given as `name:value` - what the positional tokens fill. */
+    private readonly positionalSchema: ArgSchema[];
+    private readonly named: Map<string, string>;
     private readonly flags: Map<string, string>;
     private readonly _subcommand: string | null;
     private readonly _subcommandGroup: string | null;
@@ -188,14 +216,16 @@ export class PrefixArgs {
             this._subcommand = sub?.name ?? null;
             this._subcommandGroup = sub?.group ?? (bareGroup ? first : null);
             this.activeSchema = sub?.options ?? [];
-            this.activeRaw = sub ? positional.slice(consumed) : positional.slice(1);
+            const rest = sub ? positional.slice(consumed) : positional.slice(1);
+            ({ positional: this.activeRaw, named: this.named } = extractNamed(rest, this.activeSchema));
         } else {
             // Flat mode
             this._subcommand = null;
             this._subcommandGroup = null;
             this.activeSchema = schema;
-            this.activeRaw = positional;
+            ({ positional: this.activeRaw, named: this.named } = extractNamed(positional, schema));
         }
+        this.positionalSchema = this.activeSchema.filter((a) => !this.named.has(a.name));
     }
 
     /**
@@ -235,10 +265,12 @@ export class PrefixArgs {
     private getRaw(name: string): string | null {
         const flagValue = this.flags.get(name.toLowerCase());
         if (flagValue !== undefined) return flagValue;
-        const idx = this.activeSchema.findIndex((a) => a.name === name);
+        const namedValue = this.named.get(name);
+        if (namedValue !== undefined) return namedValue;
+        const idx = this.positionalSchema.findIndex((a) => a.name === name);
         if (idx === -1) return null;
-        // Last arg is greedy — joins all remaining tokens
-        if (idx === this.activeSchema.length - 1 && this.activeRaw.length > idx) {
+        // Last positional arg is greedy — joins all remaining tokens
+        if (idx === this.positionalSchema.length - 1 && this.activeRaw.length > idx) {
             return this.activeRaw.slice(idx).join(" ") || null;
         }
         return this.activeRaw[idx] ?? null;

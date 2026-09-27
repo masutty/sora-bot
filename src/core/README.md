@@ -123,6 +123,9 @@ subcommand, and `modes`/`subcommandModes`. After `run` returns or throws: a thro
   `async`; they return `null` only when the option wasn't supplied — supplied-but-unresolvable
   (a user who left, a garbage mention) throws, so a bad target is never mistaken for "not given"
   (which would e.g. show the invoker's own profile by accident).
+  On prefix, args are positional (the last one greedy) or named as `name:value` in any order
+  (`!bh-owner simulate-rare user:@x biome:GLITCHED`); leftover positional tokens fill the args
+  not given by name. A named value is one token — quote it for spaces (`note:"two words"`).
 - **`ctx.reply`/`ctx.defer`/`ctx.editReply`/`ctx.replyUsage`** — replying is stateful:
   the 1st `reply()` becomes the command's response (or fills the `defer()`ed one); later
   `reply()`s are follow-ups; `editReply()` edits the first response. `replyUsage()` sends this

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { SlashCommandBuilder } from "discord.js";
 import { type CommandArgs, prefixArgs, slashArgs } from "./command-args";
 import { fakeClient, fakeGuild, fakeInteraction, fakeMember, fakeUser } from "./fakes";
-import { deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
+import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 import { UserFacingError } from "./user-facing-error";
 
 const builder = new SlashCommandBuilder()
@@ -109,5 +109,43 @@ describe("describe() - what was parsed, for user-error replies and logs", () => 
     test("slash shows the supplied option values", () => {
         const args = slashArgs(fakeInteraction({ sub: "set", values: { count: 3 }, guild: fakeGuild() }));
         expect(args.describe()).toBe("count=`3`");
+    });
+});
+
+describe("prefix name:value args", () => {
+    const flat = new SlashCommandBuilder().setName("sim").setDescription("s")
+        .addStringOption((o) => o.setName("biome").setDescription("b"))
+        .addStringOption((o) => o.setName("note").setDescription("n"));
+    const schema = deriveSchema(flat);
+    const args = (tokens: string[]) => new PrefixArgs(tokens, schema, null, fakeClient());
+
+    test("named args work in any order", () => {
+        const a = args(["note:hi", "biome:GLITCHED"]);
+        expect(a.getString("biome")).toBe("GLITCHED");
+        expect(a.getString("note")).toBe("hi");
+    });
+
+    test("positional tokens fill the args not given by name, last one greedy", () => {
+        const a = args(["biome:GLITCHED", "two", "words"]);
+        expect(a.getString("biome")).toBe("GLITCHED");
+        expect(a.getString("note")).toBe("two words");
+    });
+
+    test("name matching is case-insensitive; unknown names stay positional", () => {
+        const a = args(["https://x.y", "BIOME:GLITCHED"]);
+        expect(a.getString("biome")).toBe("GLITCHED");
+        expect(a.getString("note")).toBe("https://x.y");
+    });
+
+    test("pure positional still works", () => {
+        const a = args(["GLITCHED", "some", "note"]);
+        expect(a.getString("biome")).toBe("GLITCHED");
+        expect(a.getString("note")).toBe("some note");
+    });
+
+    test("subcommand args accept name:value too", async () => {
+        const u = fakeUser("111111111111111111");
+        expect((await prefix(["profile", "user:111111111111111111"], fakeGuild(), { "111111111111111111": u }).getUser("user"))?.id).toBe("111111111111111111");
+        expect(prefix(["set", "count:5"]).getInteger("count")).toBe(5);
     });
 });
