@@ -85,6 +85,16 @@ const realClock: ViewClock = {
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
+/** Why a View session ended - logged when it closes. */
+export enum ViewCloseReason {
+    /** The root called `done`. */
+    Done = "done",
+    /** The idle timeout ran out. */
+    Expired = "expired",
+    /** The root couldn't be created or its first message couldn't be sent. */
+    Failed = "failed",
+}
+
 export interface ViewSession {
     /**
      * Runs `view` as the root of this message: builds its initial state, runs its `start`, sends
@@ -246,6 +256,7 @@ function disableInteractive(list: JsonComponent[]): JsonComponent[] {
  */
 export function createViewSession(transport: ViewTransport, invoker: User, clock: ViewClock = realClock): ViewSession {
     const stack: Instance[] = [];
+    let openedAt = 0;
     const cancelModals = new Set<() => void>();
     let respond: ((payload: ViewPayload) => Promise<unknown>) | null = null;
     /** The first render went out through `respond` (then the transport is usable). */
@@ -338,7 +349,9 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         await transport.acknowledge(e);
     }
 
-    function end() {
+    /** Ends the session; logs why and how long the root lived (the trace, if any, says which invocation). */
+    function end(reason: ViewCloseReason) {
+        if (stack[0]) logger.info(`view ${stack[0].def.name} closed: ${reason} after ${Date.now() - openedAt}ms`);
         ended = true;
         stopTimer();
         stack.length = 0;
@@ -370,7 +383,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
             await (respond as (payload: ViewPayload) => Promise<unknown>)(payload);
         } catch (err) {
             firstSendError = { err };
-            end();
+            end(ViewCloseReason.Failed);
             throw err;
         }
         sent = true;
@@ -410,7 +423,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         const all = [...stack].reverse();
         // Snapshot before cancelling modals (a cancelled modal un-parks its handler).
         const running = new Set(all.filter(isRunningOwnCode));
-        end();
+        end(ViewCloseReason.Expired);
         for (const cancel of cancelModals) cancel();
         for (const inst of all) {
             if (running.has(inst)) continue;
@@ -450,7 +463,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         if (!inst.opener) {
             const payload = finalPayload(inst, "strip"); // may throw - the view then stays alive
             const ev = takePending(run);
-            end();
+            end(ViewCloseReason.Done);
             try {
                 await paint(ev, payload);
             } finally {
@@ -683,7 +696,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
             inst.opener.pending = run.pending;
             run.pending = null;
         } else if (!ended) {
-            end();
+            end(ViewCloseReason.Failed);
         }
         (run.start as StartPhase).reject(err);
     }
@@ -805,13 +818,14 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         async run<S, R, I>(view: ViewDefinition<S, R, I>, input: I, send: (payload: ViewPayload) => Promise<unknown>) {
             if (respond) throw new Error("A ViewSession runs a single root view");
             respond = send;
+            openedAt = Date.now();
             const { inst, result } = await createInstance(view as unknown as AnyView, input, null);
             stack.push(inst);
             try {
                 if (inst.def.start) await runStart(inst, null);
                 else await show(inst, null);
             } catch (err) {
-                if (!ended) end();
+                if (!ended) end(ViewCloseReason.Failed);
                 throw err;
             }
             if (!sent) throw (firstSendError?.err ?? new Error(`View "${inst.def.name}": its start() ended without anything being sent`));

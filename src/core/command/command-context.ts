@@ -32,6 +32,8 @@ export interface ReplyOptions {
 export interface ContextDeps {
     schedule?: (fn: () => void, ms: number) => void;
     usage?: () => ReplyPayload | null;
+    /** Called once, right after the first reply is sent - the command log's "replied in". */
+    onFirstReply?: () => void;
     /** Test seam: the transport `open` runs its View on. Default: the discord.js transport. */
     viewTransport?: RunViewOptions["transportFactory"];
 }
@@ -148,7 +150,7 @@ export function createSlashContext(interaction: ChatInputCommandInteraction, cli
             });
         },
     };
-    return ctx;
+    return withFirstReplyHook(ctx, deps.onFirstReply);
 }
 
 export function createPrefixContext(
@@ -218,6 +220,22 @@ export function createPrefixContext(
                 if (sent) scheduleDelete(sent, opts);
             });
         },
+    };
+    return withFirstReplyHook(ctx, deps.onFirstReply);
+}
+
+/** Wraps `ctx.reply` so `hook` fires once, after the first reply is actually sent. */
+function withFirstReplyHook(ctx: CommandContext, hook: (() => void) | undefined): CommandContext {
+    if (!hook) return ctx;
+    const send = ctx.reply;
+    let fired = false;
+    ctx.reply = async (payload, opts) => {
+        const sent = await send(payload, opts);
+        if (!fired) {
+            fired = true;
+            hook();
+        }
+        return sent;
     };
     return ctx;
 }

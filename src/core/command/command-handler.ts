@@ -142,16 +142,19 @@ function safe<T>(fn: () => T): T | null {
 }
 
 /**
- * Runs one invocation inside its trace, logging when it starts and how it ended (ok / user-error /
- * error) with its duration - the "command log". Errors are reported to the user through `reply`.
+ * Runs one invocation inside its trace - the "command log": "invoked", then "replied in Xms" at the
+ * first reply (the latency the user feels; logged by the context's onFirstReply), then how it ended
+ * (ok / user-error / error) and the TOTAL time. The total includes any View the command awaited
+ * (`ctx.open` resolves only when the View closes), so it can be long without anything being slow -
+ * the View's own "closed: <reason>" line explains it. Errors reach the user through `reply`.
  */
 async function runInvocation(
     trace: TraceContext,
+    started: number,
     dispatchIt: () => Promise<void>,
     reply: (payload: ReplyPayload) => Promise<unknown>,
 ): Promise<void> {
     await runWithTrace(trace, async () => {
-        const started = Date.now();
         commandLogger.info("invoked");
         let outcome = "ok";
         try {
@@ -187,12 +190,15 @@ export function registerCommandHandlers(client: BotClient): void {
         const schema = command.options ? deriveSchema(command.options) : [];
         const subcommandMap = command.options ? deriveSubcommandSchema(command.options) : undefined;
         const args = new PrefixArgs(rawArgs, schema, message.guild, client, subcommandMap);
+        const started = Date.now();
         const ctx: CommandContext = createPrefixContext(message, args, client, prefix, {
+            onFirstReply: () => commandLogger.info(`replied in ${Date.now() - started}ms`),
             usage: () => usageFor(command, prefix, args.getSubcommandGroup(), "prefix"),
         });
 
         await runInvocation(
             invocationTrace(command, ctx),
+            started,
             () => dispatch(command, ctx, {
                 guardFailure: (guardError) => errorReply(`Error! ${getFailureQuip()}\n${guardError}`),
                 override: () => (command.executeAsPrefix as NonNullable<typeof command.executeAsPrefix>)(message, args, client),
@@ -229,7 +235,9 @@ export function registerCommandHandlers(client: BotClient): void {
         }
 
         const slash = interaction as ChatInputCommandInteraction;
+        const started = Date.now();
         const ctx: CommandContext = createSlashContext(slash, client, {
+            onFirstReply: () => commandLogger.info(`replied in ${Date.now() - started}ms`),
             usage: () => usageFor(command, "/", slash.options.getSubcommandGroup(false), "slash"),
         });
         const overrode = selectHandler(command, "slash").kind === "override-slash";
@@ -244,6 +252,7 @@ export function registerCommandHandlers(client: BotClient): void {
 
         await runInvocation(
             invocationTrace(command, ctx),
+            started,
             () => dispatch(command, ctx, {
                 guardFailure: (guardError) => errorReply(`${getFailureQuip()}\n${guardError}`),
                 override: () => (command.executeAsSlash as NonNullable<typeof command.executeAsSlash>)(interaction as ChatInputCommandInteraction, client),

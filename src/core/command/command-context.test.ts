@@ -223,3 +223,17 @@ describe("ctx.open", () => {
         expect(deleted).toEqual(["sent1"]);
     });
 });
+
+test("onFirstReply fires once, after the first reply is sent (the command log's 'replied in')", async () => {
+    const { message } = recordingMessage();
+    let fired = 0;
+    const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", {
+        schedule: () => {},
+        onFirstReply: () => fired++,
+    });
+    await ctx.defer();
+    expect(fired).toBe(0);
+    await ctx.reply("a");
+    await ctx.reply("b");
+    expect(fired).toBe(1);
+});
