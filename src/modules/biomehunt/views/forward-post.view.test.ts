@@ -3,7 +3,7 @@ import { SeparatorSpacingSize } from "discord.js";
 import { VoteStatus } from "../types";
 import { buildForwardContainer } from "./forward-post.view";
 
-type Json = { type?: number; content?: string; spacing?: number; custom_id?: string; url?: string; components?: Json[] };
+type Json = { type?: number; content?: string; spacing?: number; divider?: boolean; custom_id?: string; url?: string; components?: Json[] };
 
 /** Every component in the tree, depth-first (the container itself, then every descendant at any depth - sections, action rows, buttons, text displays, ...). */
 function flatten(json: Json): Json[] {
@@ -60,13 +60,13 @@ test("a closed vote hides the buttons and shows the real/fake split", () => {
     expect(customIdsOf(json).some((id) => id.startsWith("biomehunt:vote:"))).toBe(false);
 });
 
-test("uses Large separator spacing", () => {
+test("dividers use Large separator spacing (the top spacer under the vote id is a small blank gap)", () => {
     const json = buildForwardContainer({
         ...BASE,
         vote: { voteId: "abc12345", status: VoteStatus.OPEN, closesAt: new Date(), voteCount: 0 },
     }).toJSON();
 
-    const separators = flatten(json).filter((c) => c.spacing !== undefined);
+    const separators = flatten(json).filter((c) => c.spacing !== undefined && c.divider !== false);
     expect(separators.length).toBeGreaterThan(0);
     for (const sep of separators) expect(sep.spacing).toBe(SeparatorSpacingSize.Large);
 });
@@ -81,4 +81,12 @@ test("admin_confirmed: shows who decided, no closes-at line, and the link row is
     expect(text).toContain("Confirmed by <@admin-1> (admin)");
     expect(text).not.toContain("closes <t:");
     expect(flatten(json).some((c) => c.url === BASE.jumpLink)).toBe(true);
+});
+
+test("the vote id line is the container's FIRST component (top of the card, like the profile's level line)", () => {
+    const json = buildForwardContainer({
+        ...BASE,
+        vote: { voteId: "abc12345", status: VoteStatus.OPEN, closesAt: new Date(Date.now() + 60_000), voteCount: 0 },
+    }).toJSON() as Json;
+    expect(json.components?.[0]?.content).toStartWith("-# Vote ID: `abc12345`");
 });

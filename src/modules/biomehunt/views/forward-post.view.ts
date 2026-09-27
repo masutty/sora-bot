@@ -68,7 +68,7 @@ function voteStatusLine(vote: VoteRenderInfo): string {
     }
 }
 
-/** Footer of the vote block: the id, plus "• N votes • closes <t:R>" while the vote is open. */
+/** Top line of a voted forward (where the profile shows the level): the id, plus "• N votes • closes <t:R>" while the vote is open. */
 function voteIdLine(vote: VoteRenderInfo): string {
     const id = `-# Vote ID: \`${vote.voteId}\``;
     if (vote.status !== VoteStatus.OPEN) return id;
@@ -77,16 +77,14 @@ function voteIdLine(vote: VoteRenderInfo): string {
 }
 
 /**
- * The vote block's own components (a Large separator, the status line, the vote id line, and -
- * only while open - the Real/Fake buttons). Shared by `buildForwardContainer` (the
- * initial send) and `updateVoteContainer` (every later edit), so both always produce the exact
- * same shape.
+ * The vote block's own components (a Large separator, the status line, and - only while open -
+ * the Real/Fake buttons). The vote id line sits at the TOP of the container instead (see
+ * `buildForwardContainer`), which every render - initial send and later edits - goes through.
  */
 function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> {
     const parts: Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> = [
         new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large),
         new TextDisplayBuilder().setContent(voteStatusLine(vote)),
-        new TextDisplayBuilder().setContent(voteIdLine(vote)),
     ];
 
     if (vote.status === VoteStatus.OPEN) parts.push(buildVoteButtonsRow(vote.voteId));
@@ -106,6 +104,11 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);
 
     const container = new ContainerBuilder().setAccentColor(getBiomeColor(params.biome));
+    const { vote } = params;
+    if (vote) {
+        container.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
+        container.addSeparatorComponents((sep) => sep.setDivider(false).setSpacing(SeparatorSpacingSize.Small));
+    }
 
     const iconUrl = getBiomeIconUrl(params.biome);
     if (iconUrl) {
