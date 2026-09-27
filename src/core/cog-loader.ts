@@ -366,16 +366,25 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
     cogListeners.set(cog.name, listeners);
     client.cogs.set(cog.name, cog);
 
-    const workers = (cog.workers ?? []).map((worker) => startWorker(cog.name, worker, client));
+    // Workers start once the client is ready, AFTER the cog's onReady (which may prepare state they
+    // read, e.g. biomehunt's channel index) - never at load time before login. The array is
+    // registered now so an unload before "ready" finds it and nothing starts afterwards.
+    const workers: RunningWorker[] = [];
     cogWorkers.set(cog.name, workers);
+    const startWorkers = () => {
+        if (cogWorkers.get(cog.name) !== workers) return; // unloaded (or reloaded) before ready
+        for (const worker of cog.workers ?? []) workers.push(startWorker(cog.name, worker, client));
+    };
 
-    if (cog.onReady) {
-        const onReady = cog.onReady;
-        if (client.isReady()) {
-            await onReady(client)?.catch(() => { });
-        } else {
-            client.once(Events.ClientReady, () => onReady(client));
-        }
+    const onReady = cog.onReady;
+    if (client.isReady()) {
+        await onReady?.(client)?.catch(() => { });
+        startWorkers();
+    } else {
+        client.once(Events.ClientReady, async () => {
+            await onReady?.(client);
+            startWorkers();
+        });
     }
 
     await cog.start?.(client);
