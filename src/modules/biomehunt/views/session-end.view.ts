@@ -25,9 +25,10 @@ export function buildSessionEndContainer(session: ActivitySessionRow, biomes: Ar
 
     addDivider(container);
 
-    const biomesBody = biomes.length > 0
-        ? formatCodeblock(biomes.map((b) => ansiBiomeLine(b.biome, b.count)).join("\n"), "ansi")
-        : "*No biomes recorded.*";
+    const biomesBody =
+        biomes.length > 0
+            ? formatCodeblock(biomes.map((b) => ansiBiomeLine(b.biome, b.count)).join("\n"), "ansi")
+            : "*No biomes recorded.*";
     container.addTextDisplayComponents((td) => td.setContent(`**Biomes found**\n${biomesBody}`));
 
     return container;

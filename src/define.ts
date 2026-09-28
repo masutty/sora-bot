@@ -51,8 +51,12 @@ export type {
  * Declares a command. Overloaded so `run`'s `ctx` is typed by `guildOnly`: with
  * `guildOnly: true` it's a GuildCommandContext (guild/member non-null), otherwise a CommandContext.
  */
-export function defineCommand(def: CommandDefinitionBase & { guildOnly: true; run?: (ctx: GuildCommandContext) => Promise<void> }): CommandDefinition;
-export function defineCommand(def: CommandDefinitionBase & { guildOnly?: false; run?: (ctx: CommandContext) => Promise<void> }): CommandDefinition;
+export function defineCommand(
+    def: CommandDefinitionBase & { guildOnly: true; run?: (ctx: GuildCommandContext) => Promise<void> },
+): CommandDefinition;
+export function defineCommand(
+    def: CommandDefinitionBase & { guildOnly?: false; run?: (ctx: CommandContext) => Promise<void> },
+): CommandDefinition;
 export function defineCommand(def: CommandDefinition): CommandDefinition {
     // Sync name/description into the SlashCommandBuilder
     if (def.options) {

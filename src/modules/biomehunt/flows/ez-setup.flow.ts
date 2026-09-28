@@ -1,11 +1,4 @@
-import {
-    ButtonStyle,
-    ChannelType,
-    ContainerBuilder,
-    MessageFlags,
-    SeparatorSpacingSize,
-    TextDisplayBuilder,
-} from "discord.js";
+import { ButtonStyle, ChannelType, ContainerBuilder, MessageFlags, SeparatorSpacingSize, TextDisplayBuilder } from "discord.js";
 import {
     type CommandContext,
     defineView,
@@ -22,36 +15,15 @@ import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
-import {
-    getForwardConfigs,
-    removeForwardConfig,
-    setForwardConfig,
-} from "../repository/forwards.repository";
-import {
-    getEnabledCategories,
-    getGuildRoles,
-    getOrCreateGuildConfig,
-    isGuildReady,
-} from "../repository/guilds.repository";
+import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
+import { getEnabledCategories, getGuildRoles, getOrCreateGuildConfig, isGuildReady } from "../repository/guilds.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
-import {
-    setActivityThresholds,
-    setAutoDeleteThreshold,
-} from "../services/activity.service";
+import { setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { setBadges } from "../services/badge.service";
-import {
-    addCategory,
-    disableCounter,
-    setCounterChannel,
-    setRoles,
-    showConfig,
-} from "../services/guild-config.service";
+import { addCategory, disableCounter, setCounterChannel, setRoles, showConfig } from "../services/guild-config.service";
 import { createQuota, removeQuotaRole } from "../services/quota.service";
 import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
-import {
-    type ForwardListDeps,
-    forwardListView,
-} from "../views/forward-list.view";
+import { type ForwardListDeps, forwardListView } from "../views/forward-list.view";
 
 /**
  * Everything the wizard needs that would otherwise be a DB call, injected so its tests never hit
@@ -122,19 +94,13 @@ export interface EzSetupContext {
 
 function stepContainer(title: string, description: string): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    container.addTextDisplayComponents((td) =>
-        td.setContent(`## bh-admin setup: ${title}`),
-    );
-    container.addSeparatorComponents((sep) =>
-        sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-    );
+    container.addTextDisplayComponents((td) => td.setContent(`## bh-admin setup: ${title}`));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     container.addTextDisplayComponents((td) => td.setContent(description));
     return container;
 }
 
-function stepPayload(
-    components: NonNullable<ViewPayload["components"]>,
-): ViewPayload {
+function stepPayload(components: NonNullable<ViewPayload["components"]>): ViewPayload {
     return {
         flags: MessageFlags.IsComponentsV2,
         components,
@@ -145,8 +111,7 @@ function stepPayload(
 function formatQuotaRoleLine(qr: QuotaRoleRow): string {
     const modeLabel = qr.mode === "F" ? "Fixed" : "RW";
     const hours = qr.quota_target_seconds / 3600;
-    const durationNote =
-        qr.mode === "F" ? `, ${qr.access_duration_days}d access` : "";
+    const durationNote = qr.mode === "F" ? `, ${qr.access_duration_days}d access` : "";
     return `<@&${qr.role_id}> - ${modeLabel} ${hours}h/${qr.quota_window_hours}h${durationNote}`;
 }
 
@@ -185,12 +150,8 @@ function welcomeStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                         "If this is __NOT__ the first time you're running this wizard, feel free to skip any setting you already configured.",
                 ),
                 kit.row(
-                    kit.button("start", (b) =>
-                        b.setLabel("Start").setStyle(ButtonStyle.Success),
-                    ),
-                    kit.button("cancel", (b) =>
-                        b.setLabel("Cancel").setStyle(ButtonStyle.Danger),
-                    ),
+                    kit.button("start", (b) => b.setLabel("Start").setStyle(ButtonStyle.Success)),
+                    kit.button("cancel", (b) => b.setLabel("Cancel").setStyle(ButtonStyle.Danger)),
                 ),
             ]),
         on: {
@@ -220,9 +181,7 @@ function categoriesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
         initial: async (ctx) => {
             const enabled = await deps.getEnabledCategories(ctx.guildId);
             const categoryList =
-                enabled.length > 0
-                    ? enabled.map((c) => `<#${c.discord_category_id}>`).join(", ")
-                    : "`no categories selected`";
+                enabled.length > 0 ? enabled.map((c) => `<#${c.discord_category_id}>`).join(", ") : "`no categories selected`";
             return { guildId: ctx.guildId, categoryList };
         },
         render: (state, kit) =>
@@ -237,19 +196,14 @@ function categoriesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                 ),
                 kit.row(
                     kit.channelSelect("categories", (s) =>
-                        s
-                            .setChannelTypes(ChannelType.GuildCategory)
-                            .setMinValues(1)
-                            .setMaxValues(25)
-                            .setPlaceholder("Select categories"),
+                        s.setChannelTypes(ChannelType.GuildCategory).setMinValues(1).setMaxValues(25).setPlaceholder("Select categories"),
                     ),
                 ),
                 navRow(kit, { canBack: false }),
             ]),
         on: {
             categories: async (c) => {
-                for (const categoryId of c.values)
-                    await deps.addCategory(c.state.guildId, categoryId);
+                for (const categoryId of c.values) await deps.addCategory(c.state.guildId, categoryId);
                 c.done({ kind: "ok" });
             },
             ...navHandlers<CategoriesState>(),
@@ -269,10 +223,7 @@ interface RolesState {
     inactive?: string;
 }
 
-async function maybeSaveRoles(
-    c: HandlerContext<RolesState, StepResult>,
-    deps: EzSetupDeps,
-): Promise<void> {
+async function maybeSaveRoles(c: HandlerContext<RolesState, StepResult>, deps: EzSetupDeps): Promise<void> {
     const { active, idle, inactive, guildId } = c.state;
     if (!active || !idle || !inactive) return;
     await deps.setRoles(guildId, active, idle, inactive);
@@ -300,13 +251,9 @@ function rolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                         "Currently, I have these:\n" +
                         `${roleLine("Active", state.currentActive)}\n${roleLine("Idle", state.currentIdle)}\n${roleLine("Inactive", state.currentInactive)}`,
                 ),
-                kit.row(
-                    kit.roleSelect("active", (s) => s.setPlaceholder("Active role")),
-                ),
+                kit.row(kit.roleSelect("active", (s) => s.setPlaceholder("Active role"))),
                 kit.row(kit.roleSelect("idle", (s) => s.setPlaceholder("Idle role"))),
-                kit.row(
-                    kit.roleSelect("inactive", (s) => s.setPlaceholder("Inactive role")),
-                ),
+                kit.row(kit.roleSelect("inactive", (s) => s.setPlaceholder("Inactive role"))),
                 navRow(kit, { canBack: true }),
             ]),
         on: {
@@ -376,11 +323,7 @@ function thresholdsStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                 ),
                 navRow(kit, {
                     canBack: true,
-                    extra: [
-                        kit.button("fill", (b) =>
-                            b.setLabel("Fill Form").setStyle(ButtonStyle.Primary),
-                        ),
-                    ],
+                    extra: [kit.button("fill", (b) => b.setLabel("Fill Form").setStyle(ButtonStyle.Primary))],
                 }),
             ]),
         on: {
@@ -434,10 +377,7 @@ function autoDeleteStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
         name: "biomehunt.ez-setup.auto-delete",
         initial: async (ctx) => {
             const config = await deps.getOrCreateGuildConfig(ctx.guildId);
-            const enabled = await deps.isFlagEnabled(
-                ctx.guildId,
-                "AUTO_DELETE_ENABLED",
-            );
+            const enabled = await deps.isFlagEnabled(ctx.guildId, "AUTO_DELETE_ENABLED");
             return {
                 guildId: ctx.guildId,
                 enabled,
@@ -455,12 +395,8 @@ function autoDeleteStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                 navRow(kit, {
                     canBack: true,
                     extra: [
-                        kit.button("enable", (b) =>
-                            b.setLabel("Enable").setStyle(ButtonStyle.Primary),
-                        ),
-                        kit.button("disable", (b) =>
-                            b.setLabel("Disable").setStyle(ButtonStyle.Secondary),
-                        ),
+                        kit.button("enable", (b) => b.setLabel("Enable").setStyle(ButtonStyle.Primary)),
+                        kit.button("disable", (b) => b.setLabel("Disable").setStyle(ButtonStyle.Secondary)),
                     ],
                 }),
             ]),
@@ -495,9 +431,7 @@ interface AutoDeleteHoursState {
     currentHours: string;
 }
 
-function autoDeleteHoursView(
-    deps: EzSetupDeps,
-): ViewDefinition<AutoDeleteHoursState, StepResult, AutoDeleteHoursInput> {
+function autoDeleteHoursView(deps: EzSetupDeps): ViewDefinition<AutoDeleteHoursState, StepResult, AutoDeleteHoursInput> {
     return defineView<AutoDeleteHoursState, StepResult, AutoDeleteHoursInput>({
         name: "biomehunt.ez-setup.auto-delete-hours",
         initial: async (input) => {
@@ -515,11 +449,7 @@ function autoDeleteHoursView(
                 ),
                 navRow(kit, {
                     canBack: true,
-                    extra: [
-                        kit.button("fill", (b) =>
-                            b.setLabel("Fill Form").setStyle(ButtonStyle.Primary),
-                        ),
-                    ],
+                    extra: [kit.button("fill", (b) => b.setLabel("Fill Form").setStyle(ButtonStyle.Primary))],
                 }),
             ]),
         on: {
@@ -574,12 +504,8 @@ function counterStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                 navRow(kit, {
                     canBack: true,
                     extra: [
-                        kit.button("set", (b) =>
-                            b.setLabel("Set Channel").setStyle(ButtonStyle.Primary),
-                        ),
-                        kit.button("disable", (b) =>
-                            b.setLabel("Disable").setStyle(ButtonStyle.Secondary),
-                        ),
+                        kit.button("set", (b) => b.setLabel("Set Channel").setStyle(ButtonStyle.Primary)),
+                        kit.button("disable", (b) => b.setLabel("Disable").setStyle(ButtonStyle.Secondary)),
                     ],
                 }),
             ]),
@@ -612,25 +538,14 @@ interface CounterChannelState {
     guildId: string;
 }
 
-function counterChannelView(
-    deps: EzSetupDeps,
-): ViewDefinition<CounterChannelState, StepResult, CounterChannelInput> {
+function counterChannelView(deps: EzSetupDeps): ViewDefinition<CounterChannelState, StepResult, CounterChannelInput> {
     return defineView<CounterChannelState, StepResult, CounterChannelInput>({
         name: "biomehunt.ez-setup.counter-channel",
         initial: (input) => ({ guildId: input.guildId }),
         render: (_state, kit) =>
             stepPayload([
-                stepContainer(
-                    "Live Counter",
-                    "Pick the text channel for the live counter.",
-                ),
-                kit.row(
-                    kit.channelSelect("channel", (s) =>
-                        s
-                            .setChannelTypes(ChannelType.GuildText)
-                            .setPlaceholder("Select a channel"),
-                    ),
-                ),
+                stepContainer("Live Counter", "Pick the text channel for the live counter."),
+                kit.row(kit.channelSelect("channel", (s) => s.setChannelTypes(ChannelType.GuildText).setPlaceholder("Select a channel"))),
                 navRow(kit, { canBack: true }),
             ]),
         on: {
@@ -668,9 +583,7 @@ function quotaRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                 navRow(kit, {
                     canBack: true,
                     extra: [
-                        kit.button("add", (b) =>
-                            b.setLabel("Add").setStyle(ButtonStyle.Success),
-                        ),
+                        kit.button("add", (b) => b.setLabel("Add").setStyle(ButtonStyle.Success)),
                         kit.button("remove", (b) =>
                             b
                                 .setLabel("Remove")
@@ -690,9 +603,7 @@ function quotaRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                     c.done({ kind: "cancel" });
                     return;
                 }
-                c.state.existingRewards = await deps.getQuotaRolesForGuild(
-                    c.state.guildId,
-                );
+                c.state.existingRewards = await deps.getQuotaRolesForGuild(c.state.guildId);
                 // ok/back/skip all just refresh the gate screen - adding never advances the step on its own.
             },
             remove: async (c) => {
@@ -701,9 +612,7 @@ function quotaRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                 });
                 if (picked) {
                     await deps.removeQuotaRole(c.state.guildId, picked.role_id);
-                    c.state.existingRewards = await deps.getQuotaRolesForGuild(
-                        c.state.guildId,
-                    );
+                    c.state.existingRewards = await deps.getQuotaRolesForGuild(c.state.guildId);
                 }
             },
             ...navHandlers<QuotaRolesState>(),
@@ -722,9 +631,7 @@ interface QuotaAddState {
     mode?: QuotaRoleMode;
 }
 
-function quotaRoleAddView(
-    deps: EzSetupDeps,
-): ViewDefinition<QuotaAddState, StepResult, QuotaAddInput> {
+function quotaRoleAddView(deps: EzSetupDeps): ViewDefinition<QuotaAddState, StepResult, QuotaAddInput> {
     return defineView<QuotaAddState, StepResult, QuotaAddInput>({
         name: "biomehunt.ez-setup.quota-role-add",
         initial: (input) => ({ guildId: input.guildId, phase: "role" }),
@@ -732,9 +639,7 @@ function quotaRoleAddView(
             if (state.phase === "role") {
                 return stepPayload([
                     stepContainer("Quota Reward Roles", "Pick the role to grant."),
-                    kit.row(
-                        kit.roleSelect("role", (s) => s.setPlaceholder("Reward role")),
-                    ),
+                    kit.row(kit.roleSelect("role", (s) => s.setPlaceholder("Reward role"))),
                     navRow(kit, { canBack: true }),
                 ]);
             }
@@ -751,12 +656,8 @@ function quotaRoleAddView(
                     navRow(kit, {
                         canBack: true,
                         extra: [
-                            kit.button("modeF", (b) =>
-                                b.setLabel("Fixed").setStyle(ButtonStyle.Primary),
-                            ),
-                            kit.button("modeRW", (b) =>
-                                b.setLabel("Rolling Window").setStyle(ButtonStyle.Primary),
-                            ),
+                            kit.button("modeF", (b) => b.setLabel("Fixed").setStyle(ButtonStyle.Primary)),
+                            kit.button("modeRW", (b) => b.setLabel("Rolling Window").setStyle(ButtonStyle.Primary)),
                         ],
                     }),
                 ]);
@@ -771,11 +672,7 @@ function quotaRoleAddView(
                 ),
                 navRow(kit, {
                     canBack: true,
-                    extra: [
-                        kit.button("fill", (b) =>
-                            b.setLabel("Fill Form").setStyle(ButtonStyle.Primary),
-                        ),
-                    ],
+                    extra: [kit.button("fill", (b) => b.setLabel("Fill Form").setStyle(ButtonStyle.Primary))],
                 }),
             ]);
         },
@@ -798,22 +695,20 @@ function quotaRoleAddView(
                     title: "Quota Reward Roles",
                     fields: needsDuration
                         ? [
-                                { key: "hours", label: "Required hours" },
-                                { key: "window", label: "Window (hours)" },
-                                { key: "duration", label: "Access duration (days)" },
-                            ]
+                              { key: "hours", label: "Required hours" },
+                              { key: "window", label: "Window (hours)" },
+                              { key: "duration", label: "Access duration (days)" },
+                          ]
                         : [
-                                { key: "hours", label: "Required hours" },
-                                { key: "window", label: "Window (hours)" },
-                            ],
+                              { key: "hours", label: "Required hours" },
+                              { key: "window", label: "Window (hours)" },
+                          ],
                 });
                 if (!v) return;
                 const hours = Number(v.hours);
                 const windowHours = Number(v.window);
                 const duration = needsDuration ? Number(v.duration) : null;
-                const numbers = needsDuration
-                    ? [hours, windowHours, duration as number]
-                    : [hours, windowHours];
+                const numbers = needsDuration ? [hours, windowHours, duration as number] : [hours, windowHours];
                 if (numbers.some((n) => Number.isNaN(n) || n <= 0)) {
                     await c.notify("Please enter valid positive numbers.");
                     return;
@@ -841,16 +736,8 @@ interface QuotaRemoveState {
     roles: QuotaRoleRow[];
 }
 
-function quotaRoleRemoveView(): ViewDefinition<
-    QuotaRemoveState,
-    QuotaRoleRow | undefined,
-    QuotaRemoveInput
-> {
-    return defineView<
-        QuotaRemoveState,
-        QuotaRoleRow | undefined,
-        QuotaRemoveInput
-    >({
+function quotaRoleRemoveView(): ViewDefinition<QuotaRemoveState, QuotaRoleRow | undefined, QuotaRemoveInput> {
+    return defineView<QuotaRemoveState, QuotaRoleRow | undefined, QuotaRemoveInput>({
         name: "biomehunt.ez-setup.quota-role-remove",
         initial: (input) => ({ roles: input.roles }),
         render: (state, kit) => ({
@@ -867,9 +754,7 @@ function quotaRoleRemoveView(): ViewDefinition<
         onText: async (c) => {
             const n = Number(c.text.trim());
             if (!Number.isInteger(n) || n < 1 || n > c.state.roles.length) {
-                await c.notify(
-                    `Please type a number between 1 and ${c.state.roles.length}.`,
-                );
+                await c.notify(`Please type a number between 1 and ${c.state.roles.length}.`);
                 return;
             }
             c.done(c.state.roles[n - 1]);
@@ -901,35 +786,16 @@ function badgeRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                     "Some biomes are rare: Glitched, Cyberspace and Dreamspace. The first time a user's macro reports one of them, they permanently earn a badge on their profile.\n\n" +
                         "You can optionally also grant a role for each one found. Pick a role for any (or none) of them below.\n\n" +
                         "Currently:\n" +
-                        ALL_BADGES.map((b) =>
-                            roleLine(
-                                `${BADGE_META[b].emoji} ${BADGE_META[b].display}`,
-                                state.current[b] ?? null,
-                            ),
-                        ).join("\n"),
+                        ALL_BADGES.map((b) => roleLine(`${BADGE_META[b].emoji} ${BADGE_META[b].display}`, state.current[b] ?? null)).join(
+                            "\n",
+                        ),
                 ),
-                kit.row(
-                    kit.roleSelect("GLITCHED", (s) =>
-                        s.setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`),
-                    ),
-                ),
-                kit.row(
-                    kit.roleSelect("CYBERSPACE", (s) =>
-                        s.setPlaceholder(`${BADGE_META.CYBERSPACE.emoji} Cyberspace role`),
-                    ),
-                ),
-                kit.row(
-                    kit.roleSelect("DREAMSPACE", (s) =>
-                        s.setPlaceholder(`${BADGE_META.DREAMSPACE.emoji} Dreamspace role`),
-                    ),
-                ),
+                kit.row(kit.roleSelect("GLITCHED", (s) => s.setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`))),
+                kit.row(kit.roleSelect("CYBERSPACE", (s) => s.setPlaceholder(`${BADGE_META.CYBERSPACE.emoji} Cyberspace role`))),
+                kit.row(kit.roleSelect("DREAMSPACE", (s) => s.setPlaceholder(`${BADGE_META.DREAMSPACE.emoji} Dreamspace role`))),
                 navRow(kit, {
                     canBack: true,
-                    extra: [
-                        kit.button("done", (b) =>
-                            b.setLabel("Done").setStyle(ButtonStyle.Primary),
-                        ),
-                    ],
+                    extra: [kit.button("done", (b) => b.setLabel("Done").setStyle(ButtonStyle.Primary))],
                 }),
             ]),
         on: {
@@ -956,10 +822,7 @@ function badgeRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
 
 // ─── Final summary ──────────────────────────────────────────────────────────────────────────────
 
-async function buildSummary(
-    ctx: EzSetupContext,
-    deps: EzSetupDeps,
-): Promise<ViewPayload> {
+async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<ViewPayload> {
     const [summary, quotaRoles, readiness] = await Promise.all([
         deps.showConfig(ctx.guildId),
         deps.getQuotaRolesForGuild(ctx.guildId),
@@ -968,11 +831,7 @@ async function buildSummary(
 
     summary
         .setAccentColor(readiness.ready ? 0x57f287 : 0xed4245)
-        .spliceComponents(
-            0,
-            1,
-            new TextDisplayBuilder().setContent("## bh-admin setup: Complete"),
-        )
+        .spliceComponents(0, 1, new TextDisplayBuilder().setContent("## bh-admin setup: Complete"))
         .spliceComponents(
             1,
             0,
@@ -980,17 +839,9 @@ async function buildSummary(
                 `**Setup Status**\n${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\n${readiness.hasRoles ? "✅" : "❌"} All 3 status roles configured`,
             ),
         )
-        .addSeparatorComponents((sep) =>
-            sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-        )
-        .addTextDisplayComponents((td) =>
-            td.setContent(
-                `**Quota Reward Roles**\n${formatQuotaRoleList(quotaRoles)}`,
-            ),
-        )
-        .addSeparatorComponents((sep) =>
-            sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-        )
+        .addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+        .addTextDisplayComponents((td) => td.setContent(`**Quota Reward Roles**\n${formatQuotaRoleList(quotaRoles)}`))
+        .addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small))
         .addTextDisplayComponents((td) =>
             td.setContent(
                 `-# ${readiness.ready ? "Setup finished. /bh setup is enabled." : "Setup finished, but something's still missing - check above."}`,
@@ -1010,11 +861,7 @@ async function buildSummary(
 export function ezSetupFlow(
     deps: EzSetupDeps,
     guildId: string,
-): ViewDefinition<
-    { index: number; final?: ViewPayload },
-    "finished" | "cancelled",
-    void
-> {
+): ViewDefinition<{ index: number; final?: ViewPayload }, "finished" | "cancelled", void> {
     const context: EzSetupContext = { guildId, canGoBack: true };
     return flow<EzSetupContext>({
         name: "biomehunt.ez-setup",
@@ -1036,9 +883,6 @@ export function ezSetupFlow(
     });
 }
 
-export async function runEzSetupFlow(
-    ctx: CommandContext,
-    guildId: string,
-): Promise<void> {
+export async function runEzSetupFlow(ctx: CommandContext, guildId: string): Promise<void> {
     await ctx.open(ezSetupFlow(defaultEzSetupDeps(), guildId), undefined);
 }

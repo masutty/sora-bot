@@ -26,7 +26,9 @@ export function forwardCreateView(): ViewDefinition<CreateForwardState, CreatedF
         initial: () => ({}),
         render: (state, kit): ViewPayload => {
             const biomeMenu = kit.stringSelect("biome", (s) =>
-                s.setPlaceholder("Select biome").addOptions(BIOME_SELECTOR_CHOICES.map(({ name, value }) => ({ label: name, value, default: value === state.biome }))),
+                s
+                    .setPlaceholder("Select biome")
+                    .addOptions(BIOME_SELECTOR_CHOICES.map(({ name, value }) => ({ label: name, value, default: value === state.biome }))),
             );
             const channelMenu = kit.channelSelect("channel", (s) => {
                 s.setPlaceholder("Select destination channel").setChannelTypes(ChannelType.GuildText);
@@ -41,7 +43,9 @@ export function forwardCreateView(): ViewDefinition<CreateForwardState, CreatedF
 
             const container = new ContainerBuilder().setAccentColor(0x5865f2);
             container.addTextDisplayComponents((td) =>
-                td.setContent("**Create Biome Forward**\nPick a biome (or a whole category, or All), a destination channel, and optionally a role to ping. Role is optional."),
+                td.setContent(
+                    "**Create Biome Forward**\nPick a biome (or a whole category, or All), a destination channel, and optionally a role to ping. Role is optional.",
+                ),
             );
 
             return {
@@ -52,7 +56,12 @@ export function forwardCreateView(): ViewDefinition<CreateForwardState, CreatedF
                     kit.row(channelMenu),
                     kit.row(roleMenu),
                     kit.row(
-                        kit.button("confirm", (b) => b.setLabel("Confirm").setStyle(ButtonStyle.Success).setDisabled(!state.biome || !state.channelId)),
+                        kit.button("confirm", (b) =>
+                            b
+                                .setLabel("Confirm")
+                                .setStyle(ButtonStyle.Success)
+                                .setDisabled(!state.biome || !state.channelId),
+                        ),
                         kit.button("cancel", (b) => b.setLabel("Cancel").setStyle(ButtonStyle.Danger)),
                     ),
                 ],

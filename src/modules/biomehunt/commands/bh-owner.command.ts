@@ -1,23 +1,28 @@
 import { SlashCommandBuilder } from "discord.js";
-import { transaction } from "@/database/connection";
 import type { BotClient } from "@/core/bot-client";
+import { transaction } from "@/database/connection";
 import { type CommandContext, confirm, defineCommand, UserFacingError } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
 import {
-    ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, BIOME_ONLY_CHOICES, formatBiomeName, getBiomesByCategory,
+    ALL_BIOME_CATEGORIES,
+    BIOME_CATEGORY_LABELS,
+    BIOME_META,
+    BIOME_ONLY_CHOICES,
+    formatBiomeName,
+    getBiomesByCategory,
 } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { insertEventIfNew } from "../repository/activity.repository";
-import { getForwardConfig } from "../repository/forwards.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
+import { getForwardConfig } from "../repository/forwards.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
 import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
-import { forwardBiome } from "../services/forward.service";
 import { rerollFlower } from "../services/flower.service";
+import { forwardBiome } from "../services/forward.service";
 import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
 
 const logger = new Logger("biomehunt.commands.bh-owner");
@@ -32,9 +37,7 @@ async function findStaleGuilds(client: BotClient): Promise<StaleGuildSummary[]> 
 }
 
 function formatGuildList(guilds: StaleGuildSummary[]): string {
-    return guilds
-        .map((g) => `- \`${g.guild_id}\` - ${g.user_count} user(s), ${g.macro_channel_count} macro channel(s)`)
-        .join("\n");
+    return guilds.map((g) => `- \`${g.guild_id}\` - ${g.user_count} user(s), ${g.macro_channel_count} macro channel(s)`).join("\n");
 }
 
 export default defineCommand({
@@ -45,9 +48,7 @@ export default defineCommand({
     showOnHelp: false,
 
     options: new SlashCommandBuilder()
-        .addSubcommand((s) =>
-            s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."),
-        )
+        .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."))
         .addSubcommand((s) =>
             s
                 .setName("stale-cleanup")
@@ -63,8 +64,18 @@ export default defineCommand({
                 .addStringOption((o) => o.setName("guild_id").setDescription("Guild ID the user's profile is in").setRequired(true))
                 .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
                 .addStringOption((o) => o.setName("after_date").setDescription("Only events on/after this date (YYYY-MM-DD)"))
-                .addStringOption((o) => o.setName("biome").setDescription("Only this specific biome").addChoices(...BIOME_ONLY_CHOICES))
-                .addStringOption((o) => o.setName("category").setDescription("Only this biome category (ignored if biome is given)").addChoices(...BIOME_CATEGORY_CHOICES)),
+                .addStringOption((o) =>
+                    o
+                        .setName("biome")
+                        .setDescription("Only this specific biome")
+                        .addChoices(...BIOME_ONLY_CHOICES),
+                )
+                .addStringOption((o) =>
+                    o
+                        .setName("category")
+                        .setDescription("Only this biome category (ignored if biome is given)")
+                        .addChoices(...BIOME_CATEGORY_CHOICES),
+                ),
         )
         .addSubcommand((s) =>
             s
@@ -72,7 +83,10 @@ export default defineCommand({
                 .setDescription("Rerolls a user's Flower - the only admin-side way to change one once set.")
                 .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
                 .addStringOption((o) =>
-                    o.setName("guild_id").setDescription("Guild ID - only needed if the user has a profile in more than one guild").setRequired(false),
+                    o
+                        .setName("guild_id")
+                        .setDescription("Guild ID - only needed if the user has a profile in more than one guild")
+                        .setRequired(false),
                 ),
         )
         // See `runSimulateBiome`'s TSDoc: a dry run (the default) never touches the user's stats;
@@ -81,9 +95,16 @@ export default defineCommand({
             s
                 .setName("simulate-biome")
                 .setDescription("TESTING: fakes a biome find to test the forward (and, for rare biomes, the community vote).")
-                .addStringOption((o) => o.setName("biome").setDescription("Biome to simulate (default Glitched)").addChoices(...BIOME_ONLY_CHOICES))
+                .addStringOption((o) =>
+                    o
+                        .setName("biome")
+                        .setDescription("Biome to simulate (default Glitched)")
+                        .addChoices(...BIOME_ONLY_CHOICES),
+                )
                 .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)"))
-                .addBooleanOption((o) => o.setName("dry_run").setDescription("Leave the user's stats untouched - no event, seeds, XP or badges (default true)")),
+                .addBooleanOption((o) =>
+                    o.setName("dry_run").setDescription("Leave the user's stats untouched - no event, seeds, XP or badges (default true)"),
+                ),
         ),
 
     async run(ctx) {
@@ -146,7 +167,7 @@ async function runRecalculateUser(ctx: CommandContext, args: RecalculateUserArgs
     let afterDate: Date | null = null;
     if (args.afterDateStr) {
         afterDate = new Date(args.afterDateStr);
-        if (isNaN(afterDate.getTime())) {
+        if (Number.isNaN(afterDate.getTime())) {
             await ctx.reply(EmbedFormatter.error("Invalid after_date - use YYYY-MM-DD."));
             return;
         }
@@ -187,10 +208,12 @@ async function runRecalculateUser(ctx: CommandContext, args: RecalculateUserArgs
             ],
             onConfirm: async () => {
                 const updated = await applyUserRewardBackfill(user.id, plan);
-                logger.info(`Backfilled ${plan.events.length} event(s) for user ${user.id} in guild ${guildId}: +${plan.totalSeeds} seeds, +${plan.totalXp} xp`);
+                logger.info(
+                    `Backfilled ${plan.events.length} event(s) for user ${user.id} in guild ${guildId}: +${plan.totalSeeds} seeds, +${plan.totalXp} xp`,
+                );
                 return EmbedFormatter.success(
                     `Backfilled ${plan.events.length} event(s) for <@${discordUserId}>: +${plan.totalSeeds} 🌱, +${plan.totalXp} XP.\n` +
-                    `New balance: ${updated.seeds} 🌱, ${updated.xp} XP.`,
+                        `New balance: ${updated.seeds} 🌱, ${updated.xp} XP.`,
                 );
             },
         }),
@@ -241,7 +264,9 @@ async function runOwnerRerollFlower(
     const { guildId } = resolved;
 
     if (!(await isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"))) {
-        await replyPlain(EmbedFormatter.error(`Flowers aren't enabled in guild \`${guildId}\`. Enable \`EXPERIMENT_WEBHOOK_FLOWERS\` there first.`));
+        await replyPlain(
+            EmbedFormatter.error(`Flowers aren't enabled in guild \`${guildId}\`. Enable \`EXPERIMENT_WEBHOOK_FLOWERS\` there first.`),
+        );
         return;
     }
 
@@ -255,7 +280,9 @@ async function runOwnerRerollFlower(
     const { flower } = await rerollFlower(client, user.id);
     logger.info(`Rerolled Flower for user ${user.id} (guild ${guildId}): ${flower}`);
     await replyPlain(
-        EmbedFormatter.success(`<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`),
+        EmbedFormatter.success(
+            `<@${discordUserId}>'s flower rerolled in guild \`${guildId}\`: **${FLOWER_META[flower].label}** (${FLOWER_META[flower].rarity}).`,
+        ),
     );
 }
 
@@ -288,7 +315,8 @@ export async function resolveSimulateBiomeTarget(
     if (!user) throw new BiomeHuntError(`<@${discordUserId}> has no profile in this server.`);
 
     const forward = await deps.getForwardConfig(guildId, biome);
-    if (!forward) throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/bh-admin forward set\`.`);
+    if (!forward)
+        throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/bh-admin forward set\`.`);
 
     return { userId: user.id, forwardChannelId: forward.channel_id };
 }
@@ -334,9 +362,11 @@ async function runSimulateBiome(ctx: CommandContext): Promise<void> {
 
     logger.info(`Simulated ${biome} for user ${userId} (guild ${guild.id}), ${dryRun ? "dry run" : `event ${eventId}`}`);
     const mode = dryRun ? "Dry run, no event was inserted" : `Event ID: \`#${eventId}\`.`;
-    
+
     await ctx.reply({
-        ...EmbedFormatter.success(`Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> - forwarded to <#${forwardChannelId}>.\n${mode}`),
+        ...EmbedFormatter.success(
+            `Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> - forwarded to <#${forwardChannelId}>.\n${mode}`,
+        ),
         allowedMentions: NO_PINGS,
     });
 }
@@ -356,9 +386,7 @@ async function runStaleCleanup(ctx: CommandContext, client: BotClient, guildId: 
     const targets = guildId ? await getGuildDataSummary([guildId]) : await findStaleGuilds(client);
 
     if (!targets.length) {
-        await ctx.reply(
-            EmbedFormatter.info(guildId ? `Guild \`${guildId}\` has no BiomeHunt data.` : "No stale guilds to clean up."),
-        );
+        await ctx.reply(EmbedFormatter.info(guildId ? `Guild \`${guildId}\` has no BiomeHunt data.` : "No stale guilds to clean up."));
         return;
     }
 

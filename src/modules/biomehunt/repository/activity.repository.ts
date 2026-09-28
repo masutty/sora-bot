@@ -148,10 +148,10 @@ export async function decrementBiomeEvents(userId: number, biome: string, amount
 
 /** Removes every recorded event (both "started" and "ended") for a biome, fully resetting its count to 0. */
 export async function clearBiomeEvents(userId: number, biome: string): Promise<number[]> {
-    const result = await query<{ id: number }>(
-        `DELETE FROM bh_activity_events WHERE user_id = $1 AND biome = $2 RETURNING id`,
-        [userId, biome],
-    );
+    const result = await query<{ id: number }>(`DELETE FROM bh_activity_events WHERE user_id = $1 AND biome = $2 RETURNING id`, [
+        userId,
+        biome,
+    ]);
     return result.rows.map((r) => r.id);
 }
 
@@ -250,7 +250,12 @@ export interface GuildSessionOverview {
 
 /** Aggregate session stats across the whole guild - total sessions logged, total/average time spent, and how many distinct members have ever logged one. */
 export async function getGuildSessionOverview(guildId: string): Promise<GuildSessionOverview> {
-    const result = await query<{ total_sessions: string; total_seconds: string | null; avg_seconds: string | null; distinct_users: string }>(
+    const result = await query<{
+        total_sessions: string;
+        total_seconds: string | null;
+        avg_seconds: string | null;
+        distinct_users: string;
+    }>(
         `SELECT COUNT(*) AS total_sessions,
                 COALESCE(SUM(s.duration_seconds), 0) AS total_seconds,
                 COALESCE(AVG(s.duration_seconds), 0) AS avg_seconds,
@@ -289,12 +294,19 @@ export async function getLongestSessions(guildId: string, limit: number): Promis
         [guildId, limit],
     );
     return result.rows.map((r) => ({
-        id: r.id, discordUserId: r.discord_user_id, started_at: r.started_at, ended_at: r.ended_at, duration_seconds: r.duration_seconds,
+        id: r.id,
+        discordUserId: r.discord_user_id,
+        started_at: r.started_at,
+        ended_at: r.ended_at,
+        duration_seconds: r.duration_seconds,
     }));
 }
 
 /** Where a user's single longest session ranks against every other session in the guild (1 = the longest session anyone has ever logged). `null` if they have no sessions at all. */
-export async function getUserLongestSessionRank(guildId: string, userId: number): Promise<{ rank: number; totalSessions: number; longestSeconds: number } | null> {
+export async function getUserLongestSessionRank(
+    guildId: string,
+    userId: number,
+): Promise<{ rank: number; totalSessions: number; longestSeconds: number } | null> {
     const longest = await query<{ duration_seconds: number }>(
         `SELECT MAX(duration_seconds) AS duration_seconds FROM bh_activity_sessions WHERE user_id = $1`,
         [userId],
@@ -312,4 +324,3 @@ export async function getUserLongestSessionRank(guildId: string, userId: number)
     );
     return { rank: Number(result.rows[0].rank), totalSessions: Number(result.rows[0].total), longestSeconds };
 }
-

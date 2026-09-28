@@ -91,8 +91,18 @@ export async function forwardBiome(
         const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
         if (voteId) {
             await deps.openVote({
-                voteId, guildId, eventId, finderUserId: userId, channelId: sent.channelId, messageId: sent.id, biome: parsed.biome,
-                roleId: forward.role_id, serverLink: parsed.serverLink, jumpLink, findCount, now,
+                voteId,
+                guildId,
+                eventId,
+                finderUserId: userId,
+                channelId: sent.channelId,
+                messageId: sent.id,
+                biome: parsed.biome,
+                roleId: forward.role_id,
+                serverLink: parsed.serverLink,
+                jumpLink,
+                findCount,
+                now,
             });
         }
     } catch (err) {

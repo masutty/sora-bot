@@ -7,9 +7,17 @@ import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
 import {
-    clearCounterChannel, deleteCategory, getEnabledCategories, getGuildRoles, getOrCreateGuildConfig,
+    clearCounterChannel,
+    deleteCategory,
+    getEnabledCategories,
+    getGuildRoles,
+    getOrCreateGuildConfig,
     insertCategory,
-    isGuildReady, resetGuildConfig, setGuildRoles, updateAutoCreateCategories, updateCounterChannel,
+    isGuildReady,
+    resetGuildConfig,
+    setGuildRoles,
+    updateAutoCreateCategories,
+    updateCounterChannel,
 } from "../repository/guilds.repository";
 import { BiomeHuntError } from "../types";
 import { updateCounterForGuild } from "../workers/counter.worker";
@@ -32,26 +40,33 @@ export async function showConfig(guildId: string): Promise<ContainerBuilder> {
         return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display}: ${roleId ? `<@&${roleId}>` : "not set"}`;
     });
 
-    const forwardLines = forwards.length > 0
-        ? forwards.map((f) => `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`)
-        : ["None configured."];
+    const forwardLines =
+        forwards.length > 0
+            ? forwards.map((f) => `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`)
+            : ["None configured."];
 
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
     container.addTextDisplayComponents((td) => td.setContent("**Configuration**"));
 
     addDivider(container);
     container.addTextDisplayComponents((td) =>
-        td.setContent(`**Activity Thresholds**\nSession gap: ${formatTime(config.session_gap_threshold_s)}\nIdle: ${formatTime(config.idle_threshold_s)}\nInactive: ${formatTime(config.inactive_threshold_s)}`),
+        td.setContent(
+            `**Activity Thresholds**\nSession gap: ${formatTime(config.session_gap_threshold_s)}\nIdle: ${formatTime(config.idle_threshold_s)}\nInactive: ${formatTime(config.inactive_threshold_s)}`,
+        ),
     );
 
     addDivider(container);
     container.addTextDisplayComponents((td) =>
-        td.setContent(`**Categories**\n${categories.length > 0 ? categories.map((c) => `<#${c.discord_category_id}>`).join(", ") : "None"}`),
+        td.setContent(
+            `**Categories**\n${categories.length > 0 ? categories.map((c) => `<#${c.discord_category_id}>`).join(", ") : "None"}`,
+        ),
     );
 
     addDivider(container);
     container.addTextDisplayComponents((td) =>
-        td.setContent(`**Roles**\nActive: ${roles.active ? `<@&${roles.active}>` : "not set"}\nIdle: ${roles.idle ? `<@&${roles.idle}>` : "not set"}\nInactive: ${roles.inactive ? `<@&${roles.inactive}>` : "not set"}`),
+        td.setContent(
+            `**Roles**\nActive: ${roles.active ? `<@&${roles.active}>` : "not set"}\nIdle: ${roles.idle ? `<@&${roles.idle}>` : "not set"}\nInactive: ${roles.inactive ? `<@&${roles.inactive}>` : "not set"}`,
+        ),
     );
 
     addDivider(container);
@@ -131,7 +146,9 @@ export async function testConfig(guildId: string): Promise<ContainerBuilder> {
     container.addTextDisplayComponents((td) => td.setContent(`**Configuration Check**\n${lines.join("\n")}`));
     addDivider(container);
     container.addTextDisplayComponents((td) =>
-        td.setContent(`-# ${ready ? "System ready - /bh setup is enabled." : "System incomplete - /bh setup is blocked until required items are set."}`),
+        td.setContent(
+            `-# ${ready ? "System ready - /bh setup is enabled." : "System incomplete - /bh setup is blocked until required items are set."}`,
+        ),
     );
     return container;
 }

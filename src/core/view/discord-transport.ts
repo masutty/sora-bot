@@ -1,6 +1,13 @@
 import {
-    ActionRowBuilder, type Message, type MessageCollector, type MessageComponentInteraction,
-    MessageFlags, ModalBuilder, type ModalSubmitInteraction, TextInputBuilder, TextInputStyle,
+    ActionRowBuilder,
+    type Message,
+    type MessageCollector,
+    type MessageComponentInteraction,
+    MessageFlags,
+    ModalBuilder,
+    type ModalSubmitInteraction,
+    TextInputBuilder,
+    TextInputStyle,
 } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { type Answerable, createInteractionAnswers } from "./interaction-answers";
@@ -128,7 +135,10 @@ export function createDiscordTransport(message: Message, opts: DiscordTransportO
             try {
                 const shown = await answers.showModal(asAnswerable(clicked), buildModal(spec, customId));
                 // Already answered, or a modal submit (Discord can't answer one with a modal).
-                if (!shown) throw new Error(`Can't show modal "${customId}": the interaction was already answered or can't show a modal (a modal submit)`);
+                if (!shown)
+                    throw new Error(
+                        `Can't show modal "${customId}": the interaction was already answered or can't show a modal (a modal submit)`,
+                    );
             } catch (err) {
                 // A bad ModalSpec, a rejected showModal or an interaction that can't show one:
                 // answer it (no "interaction failed") and reject, so the engine logs it - it's a

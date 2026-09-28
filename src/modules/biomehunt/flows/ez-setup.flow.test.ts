@@ -21,10 +21,7 @@ function flatten(payload: ViewPayload): Json[] {
     const out: Json[] = [];
     const walk = (node: unknown) => {
         if (node === null || typeof node !== "object") return;
-        const json =
-            typeof (node as { toJSON?: unknown }).toJSON === "function"
-                ? (node as { toJSON(): unknown }).toJSON()
-                : node;
+        const json = typeof (node as { toJSON?: unknown }).toJSON === "function" ? (node as { toJSON(): unknown }).toJSON() : node;
         if (Array.isArray(json)) {
             for (const child of json) walk(child);
             return;
@@ -39,12 +36,7 @@ function flatten(payload: ViewPayload): Json[] {
 }
 
 function text(payload: ViewPayload): string {
-    return [
-        payload.content ?? "",
-        ...flatten(payload).map((c) => c.content ?? ""),
-    ]
-        .filter(Boolean)
-        .join("\n");
+    return [payload.content ?? "", ...flatten(payload).map((c) => c.content ?? "")].filter(Boolean).join("\n");
 }
 
 function comp(payload: ViewPayload, key: string): Json {
@@ -53,9 +45,7 @@ function comp(payload: ViewPayload, key: string): Json {
     return found;
 }
 
-function fakeGuildConfig(
-    overrides: Partial<GuildConfigRow> = {},
-): GuildConfigRow {
+function fakeGuildConfig(overrides: Partial<GuildConfigRow> = {}): GuildConfigRow {
     return {
         guild_id: GUILD_ID,
         session_gap_threshold_s: 1200,
@@ -202,9 +192,7 @@ test("biomehunt.ez-setup: thresholds step's Fill Form modal retries on invalid v
     });
     await fake.emit(fake.click("fill", OWNER));
     expect(fake.notifies).toHaveLength(1);
-    expect(fake.notifies[0].content).toContain(
-        "Please enter valid positive numbers.",
-    );
+    expect(fake.notifies[0].content).toContain("Please enter valid positive numbers.");
     expect(text(fake.lastPayload())).toContain("Activity Thresholds"); // still on the thresholds screen
 
     fake.modalResult = async () => ({
@@ -235,15 +223,11 @@ test("biomehunt.ez-setup: quota role Remove -> typed number retries on invalid, 
 
     await fake.emit(fake.text(OWNER, "5"));
     expect(fake.notifies).toHaveLength(1);
-    expect(fake.notifies[0].content).toContain(
-        "Please type a number between 1 and 1.",
-    );
+    expect(fake.notifies[0].content).toContain("Please type a number between 1 and 1.");
     expect(removeQuotaRoleCalls).toHaveLength(0);
 
     await fake.emit(fake.text(OWNER, "1"));
-    expect(removeQuotaRoleCalls).toEqual([
-        { guildId: GUILD_ID, roleId: "role1" },
-    ]);
+    expect(removeQuotaRoleCalls).toEqual([{ guildId: GUILD_ID, roleId: "role1" }]);
     expect(text(fake.lastPayload())).toContain("None configured yet.");
 });
 

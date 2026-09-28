@@ -20,11 +20,26 @@ function recordingInteraction() {
         options: fakeInteractionOptions({}),
         replied: false,
         deferred: false,
-        async reply(arg: unknown) { calls.push(["reply", arg]); (this as { replied: boolean }).replied = true; },
-        async fetchReply() { calls.push(["fetchReply"]); return sent("first"); },
-        async deferReply(arg: unknown) { calls.push(["deferReply", arg]); (this as { deferred: boolean }).deferred = true; },
-        async editReply(arg: unknown) { calls.push(["editReply", arg]); return sent("first"); },
-        async followUp(arg: unknown) { calls.push(["followUp", arg]); return sent("followup"); },
+        async reply(arg: unknown) {
+            calls.push(["reply", arg]);
+            (this as { replied: boolean }).replied = true;
+        },
+        async fetchReply() {
+            calls.push(["fetchReply"]);
+            return sent("first");
+        },
+        async deferReply(arg: unknown) {
+            calls.push(["deferReply", arg]);
+            (this as { deferred: boolean }).deferred = true;
+        },
+        async editReply(arg: unknown) {
+            calls.push(["editReply", arg]);
+            return sent("first");
+        },
+        async followUp(arg: unknown) {
+            calls.push(["followUp", arg]);
+            return sent("followup");
+        },
     } as unknown as ChatInputCommandInteraction;
     return { interaction, calls };
 }
@@ -35,7 +50,11 @@ function recordingMessage() {
     let n = 0;
     const message = {
         author: fakeUser("1"),
-        channel: { async sendTyping() { calls.push(["sendTyping"]); } },
+        channel: {
+            async sendTyping() {
+                calls.push(["sendTyping"]);
+            },
+        },
         guild: fakeGuild(),
         member: null,
         createdTimestamp: 1_000,
@@ -44,15 +63,19 @@ function recordingMessage() {
             const id = `sent${++n}`;
             return {
                 id,
-                async delete() { deleted.push(id); },
-                async edit(e: unknown) { calls.push(["edit", e]); },
+                async delete() {
+                    deleted.push(id);
+                },
+                async edit(e: unknown) {
+                    calls.push(["edit", e]);
+                },
             } as unknown as Message;
         },
     } as unknown as Message;
     return { message, calls, deleted };
 }
 
-const isEphemeral = (arg: unknown) => ((((arg as { flags?: number }).flags ?? 0) & MessageFlags.Ephemeral) !== 0);
+const isEphemeral = (arg: unknown) => (((arg as { flags?: number }).flags ?? 0) & MessageFlags.Ephemeral) !== 0;
 const methods = (calls: Call[]) => calls.map(([m]) => m);
 
 describe("slash replies", () => {
@@ -169,7 +192,9 @@ describe("review fixes", () => {
     test("prefix: a per-reply ttlMs overrides the configured TTL", async () => {
         const { message } = recordingMessage();
         const scheduled: number[] = [];
-        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", { schedule: (_fn, ms) => scheduled.push(ms) });
+        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", {
+            schedule: (_fn, ms) => scheduled.push(ms),
+        });
         await ctx.reply("a", { ephemeral: true, ttlMs: 300_000 });
         expect(scheduled).toEqual([300_000]);
     });
@@ -184,7 +209,10 @@ describe("review fixes", () => {
     test("replyUsage replies with the usage the framework supplied", async () => {
         const { message, calls } = recordingMessage();
         const usage = { components: [], flags: MessageFlags.IsComponentsV2 } as const;
-        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", { schedule: () => {}, usage: () => usage });
+        const ctx = createPrefixContext(message, new PrefixArgs([], [], null, fakeClient()), fakeClient(), "!", {
+            schedule: () => {},
+            usage: () => usage,
+        });
         await ctx.replyUsage();
         expect(calls[0]).toEqual(["reply", usage]);
     });

@@ -1,6 +1,13 @@
 import {
-    ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SectionBuilder, SeparatorBuilder,
-    SeparatorSpacingSize, TextDisplayBuilder, ThumbnailBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ContainerBuilder,
+    SectionBuilder,
+    SeparatorBuilder,
+    SeparatorSpacingSize,
+    TextDisplayBuilder,
+    ThumbnailBuilder,
 } from "discord.js";
 import { getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
@@ -37,7 +44,8 @@ function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
 
 function buildLinkButtonsRow(jumpLink: string, serverLink: string | null): ActionRowBuilder<ButtonBuilder> {
     const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(jumpLink).setLabel("Jump to Message")];
-    if (serverLink) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(serverLink).setLabel("Join Private Server").setEmoji("🔗"));
+    if (serverLink)
+        buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(serverLink).setLabel("Join Private Server").setEmoji("🔗"));
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 

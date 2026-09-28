@@ -46,18 +46,20 @@ interface SessionsStatsState {
 }
 
 /** Guild-wide session stats: Overview / Longest Sessions tabs over two already-built containers. */
-export const sessionsStatsView: ViewDefinition<SessionsStatsState, void, SessionsStatsInput> = tabs<SessionsStatsState, SessionsStatsInput>({
-    name: "biomehunt.stats-sessions",
-    initial: (containers) => ({ tab: "overview", containers }),
-    disableActive: false,
-    tabs: [
-        { key: "overview", label: "Overview" },
-        { key: "longest", label: "🏆 Longest Sessions" },
-    ],
-    renderTab: (state) => ({
-        payload: { flags: MessageFlags.IsComponentsV2, components: [state.containers[state.tab as SessionsTab]] },
-    }),
-});
+export const sessionsStatsView: ViewDefinition<SessionsStatsState, void, SessionsStatsInput> = tabs<SessionsStatsState, SessionsStatsInput>(
+    {
+        name: "biomehunt.stats-sessions",
+        initial: (containers) => ({ tab: "overview", containers }),
+        disableActive: false,
+        tabs: [
+            { key: "overview", label: "Overview" },
+            { key: "longest", label: "🏆 Longest Sessions" },
+        ],
+        renderTab: (state) => ({
+            payload: { flags: MessageFlags.IsComponentsV2, components: [state.containers[state.tab as SessionsTab]] },
+        }),
+    },
+);
 
 // ─── Users ──────────────────────────────────────────────────────────────────
 
@@ -104,12 +106,15 @@ export const usersStatsView: ViewDefinition<UsersStatsState, void, UsersStatsInp
         const users = state.data.usersByStatus[status];
         const container = buildUserListContainer(users, state.page, status);
         const pages = pagesFor(state) ?? 1;
-        const extraRows = pages > 1
-            ? [kit.row(
-                kit.button("prev", (b) => b.setEmoji("⬅️")),
-                kit.button("next", (b) => b.setEmoji("➡️")),
-            )]
-            : [];
+        const extraRows =
+            pages > 1
+                ? [
+                      kit.row(
+                          kit.button("prev", (b) => b.setEmoji("⬅️")),
+                          kit.button("next", (b) => b.setEmoji("➡️")),
+                      ),
+                  ]
+                : [];
         return { payload: { flags: MessageFlags.IsComponentsV2, components: [container] }, extraRows };
     },
     on: {

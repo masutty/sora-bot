@@ -31,7 +31,7 @@ ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
 `;
 
 function hashOf(sql: string): string {
-	return createHash("sha256").update(sql).digest("hex");
+    return createHash("sha256").update(sql).digest("hex");
 }
 
 /**
@@ -41,71 +41,59 @@ function hashOf(sql: string): string {
  * (CREATE TABLE/INDEX IF NOT EXISTS, etc).
  */
 async function runMigration(name: string, sql: string): Promise<void> {
-	const hash = hashOf(sql);
-	const check = await query<{ hash: string | null }>(
-		`SELECT hash FROM _migrations WHERE name = $1`,
-		[name],
-	);
+    const hash = hashOf(sql);
+    const check = await query<{ hash: string | null }>(`SELECT hash FROM _migrations WHERE name = $1`, [name]);
 
-	if (check.rowCount && check.rowCount > 0) {
-		if (check.rows[0].hash === hash) {
-			logger.debug(`Migration already applied: ${name}`);
-			return;
-		}
+    if (check.rowCount && check.rowCount > 0) {
+        if (check.rows[0].hash === hash) {
+            logger.debug(`Migration already applied: ${name}`);
+            return;
+        }
 
-		await query(sql);
-		await query(
-			`UPDATE _migrations SET hash = $2, applied_at = NOW() WHERE name = $1`,
-			[name, hash],
-		);
-		logger.info(`Migration content changed, re-applied: ${name}`);
-		return;
-	}
+        await query(sql);
+        await query(`UPDATE _migrations SET hash = $2, applied_at = NOW() WHERE name = $1`, [name, hash]);
+        logger.info(`Migration content changed, re-applied: ${name}`);
+        return;
+    }
 
-	await query(sql);
-	await query(`INSERT INTO _migrations (name, hash) VALUES ($1, $2)`, [
-		name,
-		hash,
-	]);
-	logger.info(`Migration applied: ${name}`);
+    await query(sql);
+    await query(`INSERT INTO _migrations (name, hash) VALUES ($1, $2)`, [name, hash]);
+    logger.info(`Migration applied: ${name}`);
 }
 
 /**
  * Ponto de entrada para migrações adicionais (módulos podem chamar isso).
  */
-export async function runModuleMigrations(
-	moduleName: string,
-	migrations: string[],
-): Promise<void> {
-	for (let i = 0; i < migrations.length; i++) {
-		await runMigration(`${moduleName}_${i + 1}`, migrations[i]);
-	}
+export async function runModuleMigrations(moduleName: string, migrations: string[]): Promise<void> {
+    for (let i = 0; i < migrations.length; i++) {
+        await runMigration(`${moduleName}_${i + 1}`, migrations[i]);
+    }
 }
 
 /**
  * Bootstrap completo do banco.
  */
 export async function migrate(): Promise<void> {
-	await testConnection();
+    await testConnection();
 
-	// Schema base sempre primeiro (inclui bootstrap de _migrations)
-	await query(BASE_SCHEMA);
+    // Schema base sempre primeiro (inclui bootstrap de _migrations)
+    await query(BASE_SCHEMA);
 
-	logger.info("Base schema ready.");
+    logger.info("Base schema ready.");
 }
 
 // ─── CLI runner ───────────────────────────────────────────────────────────────
 // Permite rodar: ts-node src/database/migrate.ts
 
 if (require.main === module) {
-	migrate()
-		.then(() => {
-			logger.info("Migrations complete.");
-			process.exit(0);
-		})
-		.catch((err) => {
-			logger.error(err instanceof Error ? err : new Error(String(err)));
-			process.exit(1);
-		})
-		.finally(closePool);
+    migrate()
+        .then(() => {
+            logger.info("Migrations complete.");
+            process.exit(0);
+        })
+        .catch((err) => {
+            logger.error(err instanceof Error ? err : new Error(String(err)));
+            process.exit(1);
+        })
+        .finally(closePool);
 }

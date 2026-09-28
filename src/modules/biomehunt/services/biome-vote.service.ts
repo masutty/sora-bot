@@ -5,9 +5,7 @@ import { newTraceRef } from "@/utils/trace";
 import { deleteEventById } from "../repository/activity.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
-import {
-    closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote,
-} from "../repository/votes.repository";
+import { closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote } from "../repository/votes.repository";
 import { settings } from "../settings";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
@@ -222,12 +220,7 @@ async function refreshVoteMessage(client: BotClient, vote: BiomeVoteRow, render:
     await message.edit({ components: [container], flags: MessageFlags.IsComponentsV2 }).catch(() => {});
 }
 
-export type CastBallotResult =
-    | { kind: "ok" }
-    | { kind: "not_found" }
-    | { kind: "closed" }
-    | { kind: "finder" }
-    | { kind: "already_voted" };
+export type CastBallotResult = { kind: "ok" } | { kind: "not_found" } | { kind: "closed" } | { kind: "finder" } | { kind: "already_voted" };
 
 /**
  * Casts one community ballot. Rejects the finder voting on their own find, a duplicate vote (no
@@ -314,7 +307,11 @@ export async function adminDecide(
  * already decided this vote between the scan (`getOpenVotesPastClose`) and this write, `closeVote`
  * returns `null` and the resolved outcome (reward grant, in particular) is never applied.
  */
-export async function closeDueVotes(client: BotClient, now: Date = new Date(), deps: VoteServiceDeps = defaultVoteServiceDeps()): Promise<void> {
+export async function closeDueVotes(
+    client: BotClient,
+    now: Date = new Date(),
+    deps: VoteServiceDeps = defaultVoteServiceDeps(),
+): Promise<void> {
     const due = await deps.getOpenVotesPastClose(now);
 
     for (const vote of due) {

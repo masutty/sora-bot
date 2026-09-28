@@ -12,13 +12,7 @@ export default defineCommand({
     guildOnly: true,
 
     options: new SlashCommandBuilder()
-        .addStringOption((opt) =>
-            opt
-                .setName("prefix")
-                .setDescription("New prefix")
-                .setRequired(true)
-                .setMaxLength(5),
-        )
+        .addStringOption((opt) => opt.setName("prefix").setDescription("New prefix").setRequired(true).setMaxLength(5))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async run(ctx) {

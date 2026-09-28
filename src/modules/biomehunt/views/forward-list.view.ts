@@ -51,7 +51,9 @@ function listContainer(forwards: BiomeForwardRow[]): ContainerBuilder {
 }
 
 /** The list's own Create/Remove handlers - shared by both exit modes. */
-function sharedHandlers(deps: ForwardListDeps): Record<"add" | "remove", (c: HandlerContext<ForwardListState, ForwardListResult>) => HandlerResult<ForwardListState>> {
+function sharedHandlers(
+    deps: ForwardListDeps,
+): Record<"add" | "remove", (c: HandlerContext<ForwardListState, ForwardListResult>) => HandlerResult<ForwardListState>> {
     return {
         add: async (c) => {
             const created = await c.open(forwardCreateView(), undefined);
@@ -77,7 +79,10 @@ function sharedHandlers(deps: ForwardListDeps): Record<"add" | "remove", (c: Han
  */
 export function forwardListView(deps: ForwardListDeps, exit: "close"): ViewDefinition<ForwardListState, void, ForwardListInput>;
 export function forwardListView(deps: ForwardListDeps, exit: "step"): ViewDefinition<ForwardListState, StepResult, ForwardListInput>;
-export function forwardListView(deps: ForwardListDeps, exit: ForwardListExit): ViewDefinition<ForwardListState, ForwardListResult, ForwardListInput> {
+export function forwardListView(
+    deps: ForwardListDeps,
+    exit: ForwardListExit,
+): ViewDefinition<ForwardListState, ForwardListResult, ForwardListInput> {
     return defineView<ForwardListState, ForwardListResult, ForwardListInput>({
         name: "biomehunt.forward-list",
         initial: async (input) => ({
@@ -92,7 +97,12 @@ export function forwardListView(deps: ForwardListDeps, exit: ForwardListExit): V
                 listContainer(state.forwards),
                 kit.row(
                     kit.button("add", (b) => b.setLabel("Create").setStyle(ButtonStyle.Success)),
-                    kit.button("remove", (b) => b.setLabel("Remove").setStyle(ButtonStyle.Danger).setDisabled(state.forwards.length === 0)),
+                    kit.button("remove", (b) =>
+                        b
+                            .setLabel("Remove")
+                            .setStyle(ButtonStyle.Danger)
+                            .setDisabled(state.forwards.length === 0),
+                    ),
                     ...(exit === "close"
                         ? [kit.button("close", (b) => b.setLabel("Close"))]
                         : [

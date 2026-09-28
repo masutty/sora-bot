@@ -5,7 +5,6 @@ import _help from "./commands/help.command";
 import _ping from "./commands/ping.command";
 import _setprefix from "./commands/setprefix.command";
 
-
 export default defineCog({
     name: "core",
     description: "Built-in bot commands",

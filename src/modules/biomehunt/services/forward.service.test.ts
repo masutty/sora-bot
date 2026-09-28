@@ -4,7 +4,9 @@ import type { BiomeForwardRow } from "../types";
 import { checkAndForward, type ForwardServiceDeps, forwardBiome } from "./forward.service";
 
 /** An in-memory `ForwardServiceDeps` - never touches the DB. `openVote` just records its params. */
-function createFakeDeps(forward: BiomeForwardRow | null = { guild_id: "g1", biome: "GLITCHED", channel_id: "forward-channel", role_id: null }) {
+function createFakeDeps(
+    forward: BiomeForwardRow | null = { guild_id: "g1", biome: "GLITCHED", channel_id: "forward-channel", role_id: null },
+) {
     const openVoteCalls: Array<{ jumpLink: string; channelId: string; messageId: string }> = [];
     const deps: ForwardServiceDeps = {
         getForwardConfig: async () => forward,
@@ -27,12 +29,17 @@ function fakeClient(): Client {
 
 test("checkAndForward builds the same jump link (guild/source-channel/source-message) it always did, and passes it through to the opened vote", async () => {
     const { deps, openVoteCalls } = createFakeDeps();
-    const message = { client: fakeClient(), channelId: "source-channel", id: "source-msg-1" } as unknown as Parameters<typeof checkAndForward>[0];
+    const message = { client: fakeClient(), channelId: "source-channel", id: "source-msg-1" } as unknown as Parameters<
+        typeof checkAndForward
+    >[0];
 
     await checkAndForward(
-        message, "guild1", 42,
+        message,
+        "guild1",
+        42,
         { biome: "GLITCHED", macroType: "rare_biome", eventType: "started", eventTimestamp: new Date(), serverLink: null },
-        10, deps,
+        10,
+        deps,
     );
 
     expect(openVoteCalls).toHaveLength(1);
@@ -43,9 +50,13 @@ test("forwardBiome (the refactored core) accepts an arbitrary jump link instead 
     const { deps, openVoteCalls } = createFakeDeps();
 
     await forwardBiome(
-        fakeClient(), "guild1", 42,
+        fakeClient(),
+        "guild1",
+        42,
         { biome: "GLITCHED", macroType: "simulated", eventType: "started", eventTimestamp: new Date(), serverLink: null },
-        10, "https://discord.com/channels/guild1/some-channel", deps,
+        10,
+        "https://discord.com/channels/guild1/some-channel",
+        deps,
     );
 
     expect(openVoteCalls).toHaveLength(1);
@@ -56,9 +67,33 @@ test("forwardBiome does nothing for a non-'started' event, a null biome, or when
     const { deps: noForwardDeps, openVoteCalls: noForwardCalls } = createFakeDeps(null);
     const { deps, openVoteCalls } = createFakeDeps();
 
-    await forwardBiome(fakeClient(), "guild1", 42, { biome: "GLITCHED", macroType: "rare_biome", eventType: "ended", eventTimestamp: new Date(), serverLink: null }, 10, "https://discord.com/channels/guild1/x", deps);
-    await forwardBiome(fakeClient(), "guild1", 42, { biome: null, macroType: null, eventType: "started", eventTimestamp: new Date(), serverLink: null }, 10, "https://discord.com/channels/guild1/x", deps);
-    await forwardBiome(fakeClient(), "guild1", 42, { biome: "GLITCHED", macroType: "rare_biome", eventType: "started", eventTimestamp: new Date(), serverLink: null }, 10, "https://discord.com/channels/guild1/x", noForwardDeps);
+    await forwardBiome(
+        fakeClient(),
+        "guild1",
+        42,
+        { biome: "GLITCHED", macroType: "rare_biome", eventType: "ended", eventTimestamp: new Date(), serverLink: null },
+        10,
+        "https://discord.com/channels/guild1/x",
+        deps,
+    );
+    await forwardBiome(
+        fakeClient(),
+        "guild1",
+        42,
+        { biome: null, macroType: null, eventType: "started", eventTimestamp: new Date(), serverLink: null },
+        10,
+        "https://discord.com/channels/guild1/x",
+        deps,
+    );
+    await forwardBiome(
+        fakeClient(),
+        "guild1",
+        42,
+        { biome: "GLITCHED", macroType: "rare_biome", eventType: "started", eventTimestamp: new Date(), serverLink: null },
+        10,
+        "https://discord.com/channels/guild1/x",
+        noForwardDeps,
+    );
 
     expect(openVoteCalls).toHaveLength(0);
     expect(noForwardCalls).toHaveLength(0);

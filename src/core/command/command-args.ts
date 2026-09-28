@@ -66,10 +66,13 @@ function slashValue(o: ChatInputCommandInteraction["options"], name: string, kin
     const v = o.get(name)?.value;
     if (v === undefined || v === null) return null;
     const ok =
-        kind === "string" ? typeof v === "string"
-        : kind === "integer" ? typeof v === "number" && Number.isInteger(v)
-        : kind === "number" ? typeof v === "number"
-        : typeof v === "boolean";
+        kind === "string"
+            ? typeof v === "string"
+            : kind === "integer"
+              ? typeof v === "number" && Number.isInteger(v)
+              : kind === "number"
+                ? typeof v === "number"
+                : typeof v === "boolean";
     return ok ? (v as never) : null;
 }
 
@@ -94,10 +97,14 @@ export function slashArgs(interaction: ChatInputCommandInteraction): CommandArgs
         getSubcommandGroup: () => o.getSubcommandGroup(false),
         describe: () => describeSlashOptions(o.data ?? []),
         has,
-        getString: (name: string, required?: boolean) => primitive<string>(name, "string", slashValue(o, name, "string"), has(name), required),
-        getInteger: (name: string, required?: boolean) => primitive<number>(name, "integer", slashValue(o, name, "integer"), has(name), required),
-        getNumber: (name: string, required?: boolean) => primitive<number>(name, "number", slashValue(o, name, "number"), has(name), required),
-        getBoolean: (name: string, required?: boolean) => primitive<boolean>(name, "boolean", slashValue(o, name, "boolean"), has(name), required),
+        getString: (name: string, required?: boolean) =>
+            primitive<string>(name, "string", slashValue(o, name, "string"), has(name), required),
+        getInteger: (name: string, required?: boolean) =>
+            primitive<number>(name, "integer", slashValue(o, name, "integer"), has(name), required),
+        getNumber: (name: string, required?: boolean) =>
+            primitive<number>(name, "number", slashValue(o, name, "number"), has(name), required),
+        getBoolean: (name: string, required?: boolean) =>
+            primitive<boolean>(name, "boolean", slashValue(o, name, "boolean"), has(name), required),
         async getUser(name: string) {
             return o.getUser(name);
         },

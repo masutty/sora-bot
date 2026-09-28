@@ -9,8 +9,9 @@ export default defineCommand({
     showOnHelp: false,
     botOwnerOnly: true,
 
-    options: new SlashCommandBuilder()
-        .addStringOption((opt) => opt.setName("message").setDescription("Message to repeat").setRequired(true)),
+    options: new SlashCommandBuilder().addStringOption((opt) =>
+        opt.setName("message").setDescription("Message to repeat").setRequired(true),
+    ),
 
     async run(ctx) {
         // Required on slash, so only a bare prefix `echo` ever reaches the empty case.

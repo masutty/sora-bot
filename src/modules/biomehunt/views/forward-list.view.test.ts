@@ -85,7 +85,7 @@ test("biomehunt.forward-list (close): starts empty, Create -> pick biome+channel
     expect(await resultP).toBeUndefined();
 });
 
-test("biomehunt.forward-list (close): idling past the timeout shows \"Menu timed out.\", not just the last screen stripped", async () => {
+test('biomehunt.forward-list (close): idling past the timeout shows "Menu timed out.", not just the last screen stripped', async () => {
     const { deps } = fakeDeps();
     const fake = createFakeViewTransport();
     const resultP = fake.run(forwardListView(deps, "close"), { guildId: GUILD_ID }, OWNER);

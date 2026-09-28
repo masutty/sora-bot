@@ -26,26 +26,23 @@ export async function deleteQuotaRole(guildId: string, roleId: string): Promise<
 }
 
 export async function getQuotaRolesForGuild(guildId: string): Promise<QuotaRoleRow[]> {
-    const result = await query<QuotaRoleRow>(
-        `SELECT * FROM bh_quota_roles WHERE guild_id = $1 ORDER BY created_at`,
-        [guildId],
-    );
+    const result = await query<QuotaRoleRow>(`SELECT * FROM bh_quota_roles WHERE guild_id = $1 ORDER BY created_at`, [guildId]);
     return result.rows;
 }
 
 export async function getQuotaRolesByMode(guildId: string, mode: QuotaRoleMode): Promise<QuotaRoleRow[]> {
-    const result = await query<QuotaRoleRow>(
-        `SELECT * FROM bh_quota_roles WHERE guild_id = $1 AND mode = $2 ORDER BY created_at`,
-        [guildId, mode],
-    );
+    const result = await query<QuotaRoleRow>(`SELECT * FROM bh_quota_roles WHERE guild_id = $1 AND mode = $2 ORDER BY created_at`, [
+        guildId,
+        mode,
+    ]);
     return result.rows;
 }
 
 export async function getUserQuotaRole(userId: number, quotaRoleId: number): Promise<UserQuotaRoleRow | null> {
-    const result = await query<UserQuotaRoleRow>(
-        `SELECT * FROM bh_user_quota_roles WHERE user_id = $1 AND quota_role_id = $2`,
-        [userId, quotaRoleId],
-    );
+    const result = await query<UserQuotaRoleRow>(`SELECT * FROM bh_user_quota_roles WHERE user_id = $1 AND quota_role_id = $2`, [
+        userId,
+        quotaRoleId,
+    ]);
     return result.rows[0] ?? null;
 }
 
@@ -60,10 +57,7 @@ export async function grantQuotaRole(userId: number, quotaRoleId: number, expire
 }
 
 export async function revokeQuotaRole(userId: number, quotaRoleId: number): Promise<boolean> {
-    const result = await query(
-        `DELETE FROM bh_user_quota_roles WHERE user_id = $1 AND quota_role_id = $2`,
-        [userId, quotaRoleId],
-    );
+    const result = await query(`DELETE FROM bh_user_quota_roles WHERE user_id = $1 AND quota_role_id = $2`, [userId, quotaRoleId]);
     return (result.rowCount ?? 0) > 0;
 }
 

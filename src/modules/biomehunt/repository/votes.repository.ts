@@ -22,8 +22,18 @@ export async function insertVote(params: InsertVoteParams): Promise<BiomeVoteRow
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
         [
-            params.id, params.guildId, params.eventId, params.finderUserId, params.channelId, params.messageId,
-            params.biome, params.roleId, params.serverLink, params.jumpLink, params.findCount, params.closesAt,
+            params.id,
+            params.guildId,
+            params.eventId,
+            params.finderUserId,
+            params.channelId,
+            params.messageId,
+            params.biome,
+            params.roleId,
+            params.serverLink,
+            params.jumpLink,
+            params.findCount,
+            params.closesAt,
         ],
     );
     return result.rows[0];
@@ -36,10 +46,7 @@ export async function getVoteById(voteId: string): Promise<BiomeVoteRow | null> 
 
 /** Every still-`open` vote whose window has already elapsed by `now` - what `closeDueVotes` resolves each tick, including anything left open by a restart. */
 export async function getOpenVotesPastClose(now: Date): Promise<BiomeVoteRow[]> {
-    const result = await query<BiomeVoteRow>(
-        `SELECT * FROM bh_biome_votes WHERE status = 'open' AND closes_at <= $1`,
-        [now],
-    );
+    const result = await query<BiomeVoteRow>(`SELECT * FROM bh_biome_votes WHERE status = 'open' AND closes_at <= $1`, [now]);
     return result.rows;
 }
 

@@ -23,10 +23,11 @@ export function buildBalanceReply(targetId: string, isSelf: boolean, balance: Ba
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
     container.addTextDisplayComponents((td) => td.setContent(`### ${isSelf ? "Your balance" : `<@${targetId}>'s balance`}`));
     container.addTextDisplayComponents((td) =>
-        td.setContent([
-            `🌱 Seeds: ${balance.seeds}`,
-            `-# Level ${level} (${balance.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`,
-        ].join("\n")),
+        td.setContent(
+            [`🌱 Seeds: ${balance.seeds}`, `-# Level ${level} (${balance.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`].join(
+                "\n",
+            ),
+        ),
     );
     return { components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: NO_PINGS };
 }

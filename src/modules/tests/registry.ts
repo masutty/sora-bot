@@ -1,5 +1,5 @@
-import { readdirSync, statSync } from "fs";
-import { join, relative, sep } from "path";
+import { readdirSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import type { BotClient } from "@/core/bot-client";
 import type { ViewPayload } from "@/define";
 

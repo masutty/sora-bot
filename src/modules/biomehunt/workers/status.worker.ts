@@ -8,7 +8,11 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import {
-    deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState, updateUserStatus,
+    deleteMacroChannelOnly,
+    deleteUserCascade,
+    getUsersForStatusSweep,
+    resetActivityState,
+    updateUserStatus,
 } from "../repository/users.repository";
 import { reportSessionEnd } from "../services/activity-session-report.service";
 import { evaluateRollingRewards, runFixedRewardSweep } from "../services/reward.service";
@@ -64,7 +68,7 @@ async function tick(client: BotClient): Promise<void> {
         if (newStatus !== user.current_status) {
             await transitionUser(user.id, user.guild_id, newStatus);
 
-            if (wasActive && newStatus !== "active" && await isFlagEnabled(user.guild_id, "REPORT_SESSION_ON_END")) {
+            if (wasActive && newStatus !== "active" && (await isFlagEnabled(user.guild_id, "REPORT_SESSION_ON_END"))) {
                 await reportSessionEnd(client, user.id).catch((err) =>
                     logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }),
                 );
@@ -79,7 +83,7 @@ async function tick(client: BotClient): Promise<void> {
             newStatus === "inactive" &&
             user.paused_at === null &&
             inactiveSeconds > guildConfig.inactive_threshold_s + guildConfig.delete_inactive_after_s &&
-            await isFlagEnabled(user.guild_id, "AUTO_DELETE_ENABLED");
+            (await isFlagEnabled(user.guild_id, "AUTO_DELETE_ENABLED"));
 
         if (shouldDelete) {
             const hardWipe = await isFlagEnabled(user.guild_id, "CLEAR_PROFILE_ON_AUTODELETE");
@@ -88,7 +92,9 @@ async function tick(client: BotClient): Promise<void> {
             // `deleted` is null once there's nothing left to remove (already handled on a prior tick,
             // or a hard-wiped row is simply gone) - skip side effects so this doesn't repeat forever.
             if (deleted) {
-                logger.info(`Auto-deleting user ${user.id} (guild ${user.guild_id}) after prolonged inactivity (${hardWipe ? "full wipe" : "channel only"})`);
+                logger.info(
+                    `Auto-deleting user ${user.id} (guild ${user.guild_id}) after prolonged inactivity (${hardWipe ? "full wipe" : "channel only"})`,
+                );
                 const channel = await client.channels.fetch(deleted.channelId).catch(() => null);
                 if (channel) await channel.delete().catch(() => {});
                 if (!hardWipe) {

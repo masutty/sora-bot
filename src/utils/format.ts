@@ -1,5 +1,5 @@
-import { ContainerBuilder, MessageFlags } from "discord.js";
 import type { MessageMentionOptions } from "discord.js";
+import { ContainerBuilder, MessageFlags } from "discord.js";
 
 /** Renders `<@userId>`/`<@&roleId>` mentions as the normal clickable chip, but suppresses the
  * actual ping - for admin/config/stats screens that display a user or role (e.g. a leaderboard,
@@ -14,9 +14,7 @@ export function formatTime(seconds: number): string {
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
 
-    return [d && `${d}d`, h && `${h}h`, m && `${m}m`, s && `${s}s`]
-        .filter(Boolean)
-        .join(" ") || "?s";
+    return [d && `${d}d`, h && `${h}h`, m && `${m}m`, s && `${s}s`].filter(Boolean).join(" ") || "?s";
 }
 
 export function formatCodeblock(code: string, language: string = "txt"): string {
@@ -69,10 +67,10 @@ function statusReply(
 }
 
 export const EmbedFormatter = {
-    error: (msg: string, options?: FormattedReplyOptions) => statusReply(0xF43F5E, "❌", msg, options), // rose-500
-    success: (msg: string, options?: FormattedReplyOptions) => statusReply(0x10B981, "✅", msg, options), // emerald-500
-    info: (msg: string, options?: FormattedReplyOptions) => statusReply(0x0EA5E9, "ℹ️", msg, options), // sky-500
-    warn: (msg: string, options?: FormattedReplyOptions) => statusReply(0xEAB308, "⚠️", msg, options), // yellow-500
+    error: (msg: string, options?: FormattedReplyOptions) => statusReply(0xf43f5e, "❌", msg, options), // rose-500
+    success: (msg: string, options?: FormattedReplyOptions) => statusReply(0x10b981, "✅", msg, options), // emerald-500
+    info: (msg: string, options?: FormattedReplyOptions) => statusReply(0x0ea5e9, "ℹ️", msg, options), // sky-500
+    warn: (msg: string, options?: FormattedReplyOptions) => statusReply(0xeab308, "⚠️", msg, options), // yellow-500
     /** No color, no emoji - for plain reading (a listing, a queried value), when labeling as
      * success/error/warning/info doesn't make sense. */
     plain: (msg: string): FormattedReply => statusReply(undefined, null, msg),

@@ -26,8 +26,9 @@ test("trace refs are short and distinct", () => {
 });
 
 test("formatTrace renders only the fields that are set, in a fixed order", () => {
-    expect(formatTrace({ ref: "abc123", step: "2:back", command: "bh balance", mode: "slash", userTag: "masutty", userId: "1", guildId: "9" }))
-        .toBe("ref=abc123.2:back /bh balance u=masutty(1) g=9");
+    expect(
+        formatTrace({ ref: "abc123", step: "2:back", command: "bh balance", mode: "slash", userTag: "masutty", userId: "1", guildId: "9" }),
+    ).toBe("ref=abc123.2:back /bh balance u=masutty(1) g=9");
     expect(formatTrace({ ref: "abc123", command: "bh balance", mode: "prefix", userId: "1" })).toBe("ref=abc123 !bh balance u=1");
     expect(formatTrace(undefined)).toBe("");
 });
