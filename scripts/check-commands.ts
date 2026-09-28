@@ -10,6 +10,8 @@
  * Also fails on command-name conflicts between modules (see src/core/command/command-conflicts.ts) -
  * across EVERY module on disk, ignoring DISABLED_COGS: the build doesn't know which .env will run,
  * so two modules that can't coexist in the repo are already an error.
+ *
+ * `--verbose` / `-v` also lists which top-level commands each module declares.
  */
 
 import { readdirSync, statSync } from "node:fs";
@@ -19,6 +21,7 @@ import { buildSlashJson } from "@/core/command/command-dispatch";
 import type { Cog } from "@/types";
 
 const modulesPath = join(__dirname, "../src/modules");
+const verbose = process.argv.includes("--verbose") || process.argv.includes("-v");
 let ok = true;
 const cogs: Cog[] = [];
 
@@ -38,6 +41,14 @@ for (const entry of readdirSync(modulesPath)) {
     } catch (err) {
         ok = false;
         console.error(`❌ ${entry}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+}
+
+if (verbose) {
+    const width = Math.max(0, ...cogs.map((c) => c.name.length));
+    for (const cog of cogs) {
+        const names = (cog.commands ?? []).map((c) => c.name);
+        console.log(`   ${cog.name.padEnd(width)}  ${names.length ? names.join(", ") : "(no commands)"}`);
     }
 }
 
