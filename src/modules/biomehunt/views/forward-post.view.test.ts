@@ -3,7 +3,7 @@ import { SeparatorSpacingSize } from "discord.js";
 import { VoteStatus } from "../types";
 import {
     buildForwardContainer,
-    buildForwardInfoText,
+    buildForwardInfoContainer,
     FORWARD_INFO_PREFIX,
     forwardInfoCustomId,
     parseForwardInfoParts,
@@ -145,8 +145,10 @@ test("forward info id round-trips, rejects malformed parts, and the explanation 
     expect(parseForwardInfoParts(["x", "1"])).toBeNull();
     expect(parseForwardInfoParts([])).toBeNull();
 
-    const text = buildForwardInfoText(badges);
-    expect(text).toContain("**Delayed**");
-    expect(text).toContain("**Simulated**");
+    const text = textOf(buildForwardInfoContainer(badges).toJSON() as Json);
+    expect(text).toContain("## Extra information");
+    expect(text).toContain("**⏳ Delayed**");
+    expect(text).toContain("**🧪 Simulated**");
     expect(text).not.toMatch(/\d+s\b|<t:/);
+    expect(textOf(buildForwardInfoContainer({ delayed: true }).toJSON() as Json)).not.toContain("Simulated");
 });

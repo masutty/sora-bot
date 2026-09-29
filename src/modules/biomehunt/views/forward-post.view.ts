@@ -64,15 +64,28 @@ export function parseForwardInfoParts(parts: string[]): ForwardBadges | null {
     return { delayed: delayed === "1", simulated: simulated === "1" };
 }
 
-/**
- * The "?" button's ephemeral explanation - one short line per badge. Deliberately vague: it must
- * not reveal how long the delay is or that other channels were pinged first.
- */
-export function buildForwardInfoText(badges: ForwardBadges): string {
-    const lines = ["**Badges**"];
-    if (badges.delayed) lines.push(`${DELAYED_EMOJI} **Delayed** - this forward was sent with a delay.`);
-    if (badges.simulated) lines.push(`${SIMULATED_EMOJI} **Simulated** - not real, a bot developer is probably testing something!`);
-    return lines.join("\n");
+/** Each forward type the "?" explains - deliberately vague: never how long the delay is, or that other channels were pinged first. */
+const FORWARD_TYPE_INFO: Array<{ key: keyof ForwardBadges; emoji: string; name: string; description: string }> = [
+    { key: "delayed", emoji: DELAYED_EMOJI, name: "Delayed", description: "This forward was sent with a delay." },
+    {
+        key: "simulated",
+        emoji: SIMULATED_EMOJI,
+        name: "Simulated",
+        description: "Not real, a bot developer is probably testing something!",
+    },
+];
+
+/** The "?" button's ephemeral reply - laid out like the profile's Badges tab: a title, then one divided block per type. */
+export function buildForwardInfoContainer(badges: ForwardBadges): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent("## Extra information\n-# What type of forward this is"));
+
+    for (const type of FORWARD_TYPE_INFO.filter((t) => badges[t.key])) {
+        container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        container.addTextDisplayComponents((td) => td.setContent(`**${type.emoji} ${type.name}**\n${type.description}`));
+    }
+
+    return container;
 }
 
 function hasBadges(badges: ForwardBadges | undefined): badges is ForwardBadges {
