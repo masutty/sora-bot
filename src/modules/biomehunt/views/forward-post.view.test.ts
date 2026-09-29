@@ -105,29 +105,34 @@ test("the vote id line is the container's FIRST component (top of the card, like
     expect(json.components?.[0]?.content).toStartWith("-# Vote ID: `abc12345`");
 });
 
-test("no badges: no badges block, no simulated banner, no '?' button", () => {
+test("no badges: no badge emojis, no simulated banner, no '?' button", () => {
     const json = buildForwardContainer(BASE).toJSON();
-    expect(textOf(json)).not.toContain("**Badges**");
+    expect(textOf(json)).not.toContain("⏳");
     expect(textOf(json)).not.toContain("SIMULATED");
     expect(customIdsOf(json).some((id) => id.startsWith(FORWARD_INFO_PREFIX))).toBe(false);
 });
 
-test("delayed badge: a divider, then a profile-style badges block, plus a '?' button", () => {
-    const json = buildForwardContainer({ ...BASE, badges: { delayed: true } }).toJSON() as Json;
-    const components = json.components ?? [];
-    const blockIndex = components.findIndex((c) => c.content?.startsWith("**Badges**"));
-    expect(components[blockIndex]?.content).toBe("**Badges**\n⏳");
-    expect(components[blockIndex - 1]?.divider).not.toBe(false);
-    expect(textOf(json)).not.toContain("SIMULATED FORWARD");
-    expect(customIdsOf(json)).toContain(`${FORWARD_INFO_PREFIX}:1:0`);
+test("no server link: the biome title is plain text, not a broken `[name](null)` link", () => {
+    expect(textOf(buildForwardContainer(BASE).toJSON())).not.toContain("(null)");
 });
 
-test("simulated badge: a one-line banner on top, a divider under it, and the badge in the badges block", () => {
+test("delayed badge: divider, then just the emojis (no title) sitting directly on top of the buttons row, plus a '?' button", () => {
+    const json = buildForwardContainer({ ...BASE, badges: { delayed: true } }).toJSON() as Json;
+    const components = json.components ?? [];
+    const [divider, emojis, buttons] = components.slice(-3);
+    expect(divider.divider).not.toBe(false);
+    expect(emojis.content).toBe("⏳");
+    expect(buttons.components?.some((b) => b.custom_id === `${FORWARD_INFO_PREFIX}:1:0`)).toBe(true);
+    expect(textOf(json)).not.toContain("Badges");
+    expect(textOf(json)).not.toContain("SIMULATED FORWARD");
+});
+
+test("simulated badge: a one-line banner on top, a divider under it, and the emoji above the buttons", () => {
     const json = buildForwardContainer({ ...BASE, badges: { delayed: true, simulated: true } }).toJSON() as Json;
     const top = (json.components ?? []).slice(0, 2);
     expect(top[0].content).toBe("### 🧪 SIMULATED FORWARD - TESTING ONLY");
     expect(top[1].divider).toBe(true);
-    expect(textOf(json)).toContain("**Badges**\n⏳ 🧪");
+    expect((json.components ?? []).at(-2)?.content).toBe("⏳ 🧪");
     expect(customIdsOf(json)).toContain(`${FORWARD_INFO_PREFIX}:1:1`);
 });
 

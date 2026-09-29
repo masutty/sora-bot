@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Client } from "discord.js";
 import { type BiomeVoteRow, VoteStatus } from "../types";
+import { FORWARD_INFO_PREFIX } from "../views/forward-post.view";
 import { type DelayedForwardDeps, type DelayedForwardJob, scheduleDelayedForward, sendDelayedForward } from "./delayed-forward.service";
 
 /** A fake client whose one channel records every `send`. */
@@ -48,7 +49,7 @@ test("sendDelayedForward sends when the find is still valid (vote open, event pr
     const { client, sent } = fakeClient();
     await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
     expect(sent).toHaveLength(1);
-    expect(JSON.stringify(sent[0])).toContain("**Badges**");
+    expect(JSON.stringify(sent[0])).toContain(`${FORWARD_INFO_PREFIX}:1:0`);
     expect(JSON.stringify(sent[0])).not.toContain("SIMULATED");
     expect(JSON.stringify(sent[0])).toContain("<@&public-role>");
 });

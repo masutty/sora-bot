@@ -71,7 +71,7 @@ export function parseForwardInfoParts(parts: string[]): ForwardBadges | null {
 export function buildForwardInfoText(badges: ForwardBadges): string {
     const lines = ["**Badges**"];
     if (badges.delayed) lines.push(`${DELAYED_EMOJI} **Delayed** - this forward was sent with a delay.`);
-    if (badges.simulated) lines.push(`${SIMULATED_EMOJI} **Simulated** - a test forward, not a real find.`);
+    if (badges.simulated) lines.push(`${SIMULATED_EMOJI} **Simulated** - not real, a bot developer is probably testing something!`);
     return lines.join("\n");
 }
 
@@ -79,9 +79,9 @@ function hasBadges(badges: ForwardBadges | undefined): badges is ForwardBadges {
     return Boolean(badges?.delayed || badges?.simulated);
 }
 
-/** Same shape as the profile's badges block (`**Badges**` + the emojis) - the "?" button explains them. */
-function badgesBlock(badges: ForwardBadges): string {
-    return `**Badges**\n${[badges.delayed ? DELAYED_EMOJI : null, badges.simulated ? SIMULATED_EMOJI : null].filter(Boolean).join(" ")}`;
+/** Just the emojis, like the profile's badges - the "?" button explains them. */
+function badgeEmojis(badges: ForwardBadges): string {
+    return [badges.delayed ? DELAYED_EMOJI : null, badges.simulated ? SIMULATED_EMOJI : null].filter(Boolean).join(" ");
 }
 
 function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
@@ -162,7 +162,8 @@ function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder 
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
     const { badges } = params;
-    const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
+    const biomeName = spoofBiomeName(params.biome);
+    const headingLines = [params.serverLink ? `# [${biomeName}](${params.serverLink})` : `# ${biomeName}`];
     if (params.roleId) headingLines.push(`<@&${params.roleId}>`);
     if (params.findCount) headingLines.push(`This is the #${params.findCount} ${spoofBiomeName(params.biome)} they found!`);
     if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);
@@ -190,16 +191,13 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
         container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headingLines.join("\n")));
     }
 
-    if (hasBadges(badges)) {
-        container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
-        container.addTextDisplayComponents((td) => td.setContent(badgesBlock(badges)));
-    }
-
     if (params.vote) {
         container.spliceComponents(container.components.length, 0, ...buildVoteBlockComponents(params.vote));
     }
 
     container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
+    // Badges sit right on top of the buttons (no separator in between), so the "?" reads as theirs.
+    if (hasBadges(badges)) container.addTextDisplayComponents((td) => td.setContent(badgeEmojis(badges)));
     container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink, badges));
 
     return container;
