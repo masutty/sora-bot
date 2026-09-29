@@ -19,20 +19,15 @@ import {
     getBiomeIconUrl,
 } from "@/modules/biomehunt/constants/biomes.constants";
 import { VoteStatus } from "@/modules/biomehunt/types";
-import {
-    type ForwardBadges,
-    forwardInfoCustomId,
-    type VoteRenderInfo,
-    voteIdLine,
-    voteStatusLine,
-} from "@/modules/biomehunt/views/forward-post.view";
+import { type ForwardBadges, forwardInfoCustomId, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
 import { NO_PINGS, unix } from "@/utils/format";
 import type { TestCase } from "../../registry";
 
 /**
  * The "Announcement" forward redesign (design 5 of the first round), previewed interactively: pick
  * any biome and any scenario (vote states, delayed, simulated, first find, no server link) from the
- * two selects. Fake data only. What the new lines need at forward time:
+ * two selects. Fake data only. Rare biomes get the big "🎉 @finder found a X!" headline; everything
+ * else keeps a simple biome-name title. What the new lines need at forward time:
  * - finder: `bh_users.discord_user_id`; personal count: `getBiomeCountForUser` (both already loaded)
  * - server count / last one in this server: one COUNT / one MAX(started_at) over `bh_activity_events` (new queries)
  * The finder mention must never ping: the real send would use `allowedMentions: { roles: [roleId] }`.
@@ -122,14 +117,42 @@ function voteRow(): ActionRowBuilder<ButtonBuilder> {
     );
 }
 
+/** Top line of a voted forward: the id, plus the ballot count while it's still open. */
+function voteIdLine(vote: VoteRenderInfo): string {
+    const id = `-# Vote ID: \`${vote.voteId}\``;
+    if (vote.status !== VoteStatus.OPEN) return id;
+    return `${id} • ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"}`;
+}
+
+/** The vote block's text - "Is this biome real?" while open, then "Marked as real/fake by ..." once decided. */
+function voteStatusLine(vote: VoteRenderInfo): string {
+    const tally = vote.tally ? ` (${vote.tally.real}/${vote.tally.fake})` : "";
+    switch (vote.status) {
+        case VoteStatus.OPEN:
+            return `**Is this biome real?** · ⏰ voting closes <t:${unix(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
+        case VoteStatus.NO_VOTES:
+            return "*Vote expired with no votes*";
+        case VoteStatus.TIE:
+            return `Tied vote${tally}`;
+        case VoteStatus.COMMUNITY_REAL:
+            return `✅ Marked as real by community voting${tally}`;
+        case VoteStatus.COMMUNITY_FAKE:
+            return `❌ Marked as fake by community voting${tally}`;
+        case VoteStatus.ADMIN_CONFIRMED:
+            return `✅ Marked as real by <@${vote.decidedByUserId}>`;
+        case VoteStatus.ADMIN_DENIED:
+            return `❌ Marked as fake by <@${vote.decidedByUserId}>`;
+    }
+}
+
 /** The Announcement card itself - what `buildForwardContainer` would become. */
 function buildAnnouncement(biome: string, scenario: Scenario, finderId: string): ContainerBuilder {
     const now = Date.now();
     const name = formatBiomeName(biome);
-    const category = BIOME_CATEGORY_LABELS[BIOME_META[biome].category];
+    const isRare = BIOME_META[biome].category === "rare";
     const serverLink = scenario.noServerLink ? null : FAKE_SERVER_LINK;
-    const title = serverLink ? `[${name}](${serverLink})` : `**${name}**`;
-    const foundAt = unix(new Date(now - 8_000));
+    const title = serverLink ? `[${name}](${serverLink})` : name;
+    const lastOneHere = unix(new Date(now - 2 * 86_400_000 - 5 * 3_600_000));
     const vote: VoteRenderInfo | undefined = scenario.vote && {
         ...scenario.vote,
         voteId: FAKE_VOTE_ID,
@@ -145,14 +168,18 @@ function buildAnnouncement(biome: string, scenario: Scenario, finderId: string):
     if (vote) c.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
     c.addTextDisplayComponents((td) => td.setContent(`<@&${FAKE_ROLE_ID}>`));
 
-    const lines = [
-        `## 🎉 <@${finderId}> found ${/^[AEIOU]/i.test(name) ? "an" : "a"} ${title}!`,
-        scenario.firstFind
+    // Rare: the big "🎉 @finder found a X!" headline. Everything else: just the biome name, finder in the count line.
+    const counts = scenario.firstFind
+        ? isRare
             ? `That's their **first** ${name} ever, and the **first** one in this server!`
-            : `That's their **3rd** ${name}, and the **${ordinal(41)}** in this server.`,
-        scenario.firstFind
-            ? `-# ${category} · found <t:${foundAt}:R>`
-            : `-# ${category} · found <t:${foundAt}:R> · last one here <t:${unix(new Date(now - 2 * 86_400_000 - 5 * 3_600_000))}:R>`,
+            : `<@${finderId}>'s **first** ${name} ever, and the **first** one in this server!`
+        : isRare
+          ? `That's their **3rd** ${name}, and the **${ordinal(41)}** in this server.`
+          : `<@${finderId}>'s **3rd** ${name}, and the **${ordinal(41)}** in this server.`;
+    const lines = [
+        isRare ? `## 🎉 <@${finderId}> found ${/^[AEIOU]/i.test(name) ? "an" : "a"} ${title}!` : `# ${title}`,
+        counts,
+        ...(scenario.firstFind ? [] : [`-# Last one here <t:${lastOneHere}:R>`]),
     ].join("\n");
     const iconUrl = getBiomeIconUrl(biome);
     if (iconUrl) {
