@@ -194,6 +194,20 @@ CREATE TABLE IF NOT EXISTS bh_biome_forwards (
     PRIMARY KEY (guild_id, biome)
 );
 
+/*
+ * Same shape as bh_biome_forwards plus a delay - fully independent of it (a biome can have either,
+ * both, or neither). The pending sends themselves live only in memory (a setTimeout per find), so a
+ * restart drops them; with delays capped at 60s that's accepted.
+ */
+CREATE TABLE IF NOT EXISTS bh_biome_delayed_forwards (
+    guild_id   VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    biome      VARCHAR(20) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    role_id    VARCHAR(20),
+    delay_s    SMALLINT NOT NULL,
+    PRIMARY KEY (guild_id, biome)
+);
+
 /* ───────────────────────────────────────────── */
 /* Rare-biome community votes                   */
 /* ───────────────────────────────────────────── */

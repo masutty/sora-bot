@@ -144,6 +144,11 @@ export interface BiomeForwardRow {
     role_id: string | null;
 }
 
+/** `bh_biome_delayed_forwards` - a `BiomeForwardRow` sent `delay_s` seconds after the find. */
+export interface BiomeDelayedForwardRow extends BiomeForwardRow {
+    delay_s: number;
+}
+
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later

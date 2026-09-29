@@ -33,6 +33,8 @@ export interface ForwardContainerParams {
     /** How many times (including this one) the finder has found this specific biome - shown as "this is the #N <biome> they found!". Omit to not show the line. */
     findCount?: number;
     vote?: VoteRenderInfo;
+    /** Set on a delayed forward - adds a subheading saying so, with when the biome was actually found. */
+    delayedFoundAt?: Date;
 }
 
 function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
@@ -107,6 +109,8 @@ function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder 
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
     const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
+    if (params.delayedFoundAt)
+        headingLines.push(`-# ⏳ Delayed forward - found <t:${Math.floor(params.delayedFoundAt.getTime() / 1000)}:R>`);
     if (params.roleId) headingLines.push(`<@&${params.roleId}>`);
     if (params.findCount) headingLines.push(`This is the #${params.findCount} ${spoofBiomeName(params.biome)} they found!`);
     if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);

@@ -1,23 +1,30 @@
 import { expect, test } from "bun:test";
 import type { Client } from "discord.js";
-import type { BiomeForwardRow } from "../types";
+import type { BiomeDelayedForwardRow, BiomeForwardRow } from "../types";
+import type { DelayedForwardJob } from "./delayed-forward.service";
 import { checkAndForward, type ForwardServiceDeps, forwardBiome } from "./forward.service";
 
 /** An in-memory `ForwardServiceDeps` - never touches the DB. `openVote` just records its params. */
 function createFakeDeps(
     forward: BiomeForwardRow | null = { guild_id: "g1", biome: "GLITCHED", channel_id: "forward-channel", role_id: null },
+    delayed: BiomeDelayedForwardRow | null = null,
 ) {
     const openVoteCalls: Array<{ jumpLink: string; channelId: string; messageId: string }> = [];
+    const scheduled: DelayedForwardJob[] = [];
     const deps: ForwardServiceDeps = {
         getForwardConfig: async () => forward,
+        getDelayedForwardConfig: async () => delayed,
         getBiomeCountForUser: async () => 3,
         newVoteId: () => "vote0001",
         openVote: async (params) => {
             openVoteCalls.push(params);
             return params as never;
         },
+        scheduleDelayedForward: (job) => {
+            scheduled.push(job);
+        },
     };
-    return { deps, openVoteCalls };
+    return { deps, openVoteCalls, scheduled };
 }
 
 /** A minimal fake channel/client - `send` returns a fixed message id/channel id, matching what `forwardBiome` needs to open a vote. */
@@ -97,4 +104,41 @@ test("forwardBiome does nothing for a non-'started' event, a null biome, or when
 
     expect(openVoteCalls).toHaveLength(0);
     expect(noForwardCalls).toHaveLength(0);
+});
+
+const DELAYED: BiomeDelayedForwardRow = {
+    guild_id: "g1",
+    biome: "GLITCHED",
+    channel_id: "delayed-channel",
+    role_id: "public-role",
+    delay_s: 30,
+};
+const STARTED = { biome: "GLITCHED", macroType: "rare_biome", eventType: "started", eventTimestamp: new Date(), serverLink: null } as const;
+
+test("forwardBiome schedules the delayed forward alongside the live one, carrying the live forward's vote id so a fake/denied vote can cancel it", async () => {
+    const { deps, openVoteCalls, scheduled } = createFakeDeps(undefined, DELAYED);
+
+    await forwardBiome(fakeClient(), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+
+    expect(openVoteCalls).toHaveLength(1);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]).toMatchObject({ config: DELAYED, biome: "GLITCHED", eventId: 10, voteId: "vote0001", findCount: 3 });
+});
+
+test("forwardBiome schedules a delayed forward on its own when the biome has no live forward - no vote is opened", async () => {
+    const { deps, openVoteCalls, scheduled } = createFakeDeps(null, DELAYED);
+
+    await forwardBiome(fakeClient(), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+
+    expect(openVoteCalls).toHaveLength(0);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].voteId).toBeNull();
+});
+
+test("forwardBiome schedules nothing for a non-'started' event", async () => {
+    const { deps, scheduled } = createFakeDeps(null, DELAYED);
+
+    await forwardBiome(fakeClient(), "guild1", 42, { ...STARTED, eventType: "ended" }, 10, "https://discord.com/channels/guild1/x", deps);
+
+    expect(scheduled).toHaveLength(0);
 });

@@ -3,10 +3,12 @@ import { ContainerBuilder, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { getBiomeCountForUser } from "../repository/activity.repository";
+import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { newVoteId, openVote } from "../services/biome-vote.service";
+import { scheduleDelayedForward } from "../services/delayed-forward.service";
 import { settings } from "../settings";
-import { BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
+import { type BiomeForwardRow, BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
 import { buildForwardContainer } from "../views/forward-post.view";
 
 const logger = new Logger("biomehunt.services.forward");
@@ -18,13 +20,15 @@ const logger = new Logger("biomehunt.services.forward");
  */
 export interface ForwardServiceDeps {
     getForwardConfig: typeof getForwardConfig;
+    getDelayedForwardConfig: typeof getDelayedForwardConfig;
     getBiomeCountForUser: typeof getBiomeCountForUser;
     newVoteId: typeof newVoteId;
     openVote: typeof openVote;
+    scheduleDelayedForward: typeof scheduleDelayedForward;
 }
 
 export function defaultForwardServiceDeps(): ForwardServiceDeps {
-    return { getForwardConfig, getBiomeCountForUser, newVoteId, openVote };
+    return { getForwardConfig, getDelayedForwardConfig, getBiomeCountForUser, newVoteId, openVote, scheduleDelayedForward };
 }
 
 /**
@@ -48,11 +52,9 @@ export async function checkAndForward(
 /**
  * The core of `checkAndForward`, factored out so `/bh-owner simulate-biome` can drive the exact
  * same forward+vote pipeline for a synthetic event - it has no source message to derive a jump
- * link from, so it supplies its own (a link to the invoking message, or the channel). Uses a
- * Components V2 container instead of a regular embed so we get a real Separator between the
- * heading and the details. Rare-category biomes additionally open a 1-minute community vote (see
- * services/biome-vote.service.ts) - the vote id is generated here, BEFORE the message is sent, so
- * the message can show it right away.
+ * link from, so it supplies its own (a link to the invoking message, or the channel). Sends the
+ * live forward (if configured) right away and schedules the delayed forward (if configured) -
+ * the two are independent, a biome can have either or both.
  */
 export async function forwardBiome(
     client: Client,
@@ -65,21 +67,61 @@ export async function forwardBiome(
     deps: ForwardServiceDeps = defaultForwardServiceDeps(),
 ): Promise<void> {
     if (parsed.eventType !== "started" || !parsed.biome) return;
+    const biome = parsed.biome;
 
-    const forward = await deps.getForwardConfig(guildId, parsed.biome);
-    if (!forward) return;
+    const [forward, delayed] = await Promise.all([deps.getForwardConfig(guildId, biome), deps.getDelayedForwardConfig(guildId, biome)]);
+    if (!forward && !delayed) return;
 
-    const channel = await client.channels.fetch(forward.channel_id).catch(() => null);
-    if (!channel || channel.isDMBased() || !channel.isTextBased()) return;
-
-    const isRare = BIOME_META[parsed.biome]?.category === "rare";
-    const findCount = await deps.getBiomeCountForUser(userId, parsed.biome);
-    const voteId = isRare ? deps.newVoteId() : null;
+    const findCount = await deps.getBiomeCountForUser(userId, biome);
     const now = new Date();
+    const voteId = forward
+        ? await sendLiveForward(client, guildId, userId, parsed, biome, eventId, jumpLink, forward, findCount, now, deps)
+        : null;
+
+    if (delayed) {
+        deps.scheduleDelayedForward({
+            client,
+            guildId,
+            config: delayed,
+            biome,
+            serverLink: parsed.serverLink,
+            jumpLink,
+            findCount,
+            eventId,
+            voteId,
+            foundAt: now,
+        });
+    }
+}
+
+/**
+ * Uses a Components V2 container instead of a regular embed so we get a real Separator between the
+ * heading and the details. Rare-category biomes additionally open a 1-minute community vote (see
+ * services/biome-vote.service.ts) - the vote id is generated here, BEFORE the message is sent, so
+ * the message can show it right away. Resolves the opened vote's id, or `null` if none was opened.
+ */
+async function sendLiveForward(
+    client: Client,
+    guildId: string,
+    userId: number,
+    parsed: ParsedEvent,
+    biome: string,
+    eventId: number | null,
+    jumpLink: string,
+    forward: BiomeForwardRow,
+    findCount: number,
+    now: Date,
+    deps: ForwardServiceDeps,
+): Promise<string | null> {
+    const channel = await client.channels.fetch(forward.channel_id).catch(() => null);
+    if (!channel || channel.isDMBased() || !channel.isTextBased()) return null;
+
+    const isRare = BIOME_META[biome]?.category === "rare";
+    const voteId = isRare ? deps.newVoteId() : null;
     const closesAt = new Date(now.getTime() + settings.votes.windowMs);
 
     const container = buildForwardContainer({
-        biome: parsed.biome,
+        biome,
         roleId: forward.role_id,
         serverLink: parsed.serverLink,
         jumpLink,
@@ -89,24 +131,25 @@ export async function forwardBiome(
 
     try {
         const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
-        if (voteId) {
-            await deps.openVote({
-                voteId,
-                guildId,
-                eventId,
-                finderUserId: userId,
-                channelId: sent.channelId,
-                messageId: sent.id,
-                biome: parsed.biome,
-                roleId: forward.role_id,
-                serverLink: parsed.serverLink,
-                jumpLink,
-                findCount,
-                now,
-            });
-        }
+        if (!voteId) return null;
+        await deps.openVote({
+            voteId,
+            guildId,
+            eventId,
+            finderUserId: userId,
+            channelId: sent.channelId,
+            messageId: sent.id,
+            biome,
+            roleId: forward.role_id,
+            serverLink: parsed.serverLink,
+            jumpLink,
+            findCount,
+            now,
+        });
+        return voteId;
     } catch (err) {
-        logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome: parsed.biome });
+        logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome });
+        return null;
     }
 }
 

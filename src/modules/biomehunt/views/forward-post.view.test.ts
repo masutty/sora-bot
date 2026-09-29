@@ -98,3 +98,11 @@ test("the vote id line is the container's FIRST component (top of the card, like
     }).toJSON() as Json;
     expect(json.components?.[0]?.content).toStartWith("-# Vote ID: `abc12345`");
 });
+
+test("delayed forward: adds the 'Delayed forward - found <t:R>' subheading; a live forward never has it", () => {
+    const foundAt = new Date(1_700_000_000_000);
+    expect(textOf(buildForwardContainer({ ...BASE, delayedFoundAt: foundAt }).toJSON())).toContain(
+        "Delayed forward - found <t:1700000000:R>",
+    );
+    expect(textOf(buildForwardContainer(BASE).toJSON())).not.toContain("Delayed forward");
+});

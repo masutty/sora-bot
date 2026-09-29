@@ -160,6 +160,12 @@ export async function deleteEventById(eventId: number): Promise<void> {
     await query(`DELETE FROM bh_activity_events WHERE id = $1`, [eventId]);
 }
 
+/** False once the event is gone - e.g. deleted by a fake/denied vote (`applyOutcome` in biome-vote.service.ts). */
+export async function eventExists(eventId: number): Promise<boolean> {
+    const result = await query(`SELECT 1 FROM bh_activity_events WHERE id = $1`, [eventId]);
+    return (result.rowCount ?? 0) > 0;
+}
+
 /** Total confirmed "started" finds of one specific biome for a user - used to show "this is the #N <biome> they found!" on forwards. */
 export async function getBiomeCountForUser(userId: number, biome: string): Promise<number> {
     const result = await query<{ count: string }>(
