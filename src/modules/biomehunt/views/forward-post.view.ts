@@ -117,7 +117,7 @@ function buildLinkButtonsRow(
 }
 
 /** Main line of the vote block - one per `VoteStatus`. English, per the vote model's "Final states". */
-function voteStatusLine(vote: VoteRenderInfo): string {
+export function voteStatusLine(vote: VoteRenderInfo): string {
     const real = vote.tally?.real ?? 0;
     const fake = vote.tally?.fake ?? 0;
 
@@ -144,7 +144,7 @@ function voteStatusLine(vote: VoteRenderInfo): string {
 }
 
 /** Top line of a voted forward (where the profile shows the level): the id, plus "• N votes • closes <t:R>" while the vote is open. */
-function voteIdLine(vote: VoteRenderInfo): string {
+export function voteIdLine(vote: VoteRenderInfo): string {
     const id = `-# Vote ID: \`${vote.voteId}\``;
     if (vote.status !== VoteStatus.OPEN) return id;
     const epoch = Math.floor(vote.closesAt.getTime() / 1000);
