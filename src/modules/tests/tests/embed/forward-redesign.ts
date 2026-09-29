@@ -128,7 +128,7 @@ function voteIdLine(vote: VoteRenderInfo): string {
 
 /** The vote block's text - "Is this biome real?" while open, then "Marked as real/fake by ..." once decided. */
 function voteStatusLine(vote: VoteRenderInfo): string {
-    const tally = vote.tally ? ` (${vote.tally.real}/${vote.tally.fake})` : "";
+    const tally = vote.tally ? ` \`✅ ${vote.tally.real}\` \`❌ ${vote.tally.fake}\`` : "";
     switch (vote.status) {
         case VoteStatus.OPEN:
             return `**Is this biome real?** · ⏰ voting closes <t:${unix(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
