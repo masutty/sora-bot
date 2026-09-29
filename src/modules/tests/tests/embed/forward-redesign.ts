@@ -135,7 +135,7 @@ function voteStatusLine(vote: VoteRenderInfo): string {
         case VoteStatus.NO_VOTES:
             return "*Vote expired with no votes*";
         case VoteStatus.TIE:
-            return `Tied vote${tally}`;
+            return "⚖️ Tied vote";
         case VoteStatus.COMMUNITY_REAL:
             return `✅ Marked as real by community voting${tally}`;
         case VoteStatus.COMMUNITY_FAKE:
