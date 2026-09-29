@@ -94,7 +94,6 @@ export async function forwardBiome(
             findCount,
             eventId,
             voteId,
-            foundAt: now,
             dryRun,
         });
     }

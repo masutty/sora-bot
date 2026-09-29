@@ -21,7 +21,6 @@ function job(client: Client, overrides: Partial<DelayedForwardJob> = {}): Delaye
         findCount: 1,
         eventId: 10,
         voteId: "vote0001",
-        foundAt: new Date(1_700_000_000_000),
         dryRun: false,
         ...overrides,
     };
@@ -49,7 +48,7 @@ test("sendDelayedForward sends when the find is still valid (vote open, event pr
     const { client, sent } = fakeClient();
     await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
     expect(sent).toHaveLength(1);
-    expect(JSON.stringify(sent[0])).toContain("⏳ DELAYED");
+    expect(JSON.stringify(sent[0])).toContain("**Badges**");
     expect(JSON.stringify(sent[0])).not.toContain("SIMULATED");
     expect(JSON.stringify(sent[0])).toContain("<@&public-role>");
 });
@@ -73,5 +72,5 @@ test("sendDelayedForward dry run: sent with no pings", async () => {
     await sendDelayedForward(job(client, { eventId: null, voteId: null, dryRun: true }), fakeDeps().deps);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ allowedMentions: { parse: [] } });
-    expect(JSON.stringify(sent[0])).toContain("THIS IS A SIMULATED FORWARD");
+    expect(JSON.stringify(sent[0])).toContain("SIMULATED FORWARD - TESTING ONLY");
 });

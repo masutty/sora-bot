@@ -43,7 +43,6 @@ export interface DelayedForwardJob {
     eventId: number | null;
     /** The live forward's vote, if it opened one - a fake/denied outcome cancels the delayed send. */
     voteId: string | null;
-    foundAt: Date;
     /** A `/bh-owner simulate-biome` dry run - sent without pinging anyone. */
     dryRun: boolean;
 }
@@ -80,7 +79,7 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             serverLink: job.serverLink,
             jumpLink: job.jumpLink,
             findCount: job.findCount,
-            badges: { delayed: { foundAt: job.foundAt, delayS: job.config.delay_s }, simulated: job.dryRun },
+            badges: { delayed: true, simulated: job.dryRun },
         });
         await channel.send({
             components: [container],
