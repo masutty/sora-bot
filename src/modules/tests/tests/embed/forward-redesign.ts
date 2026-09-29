@@ -131,7 +131,7 @@ function voteStatusLine(vote: VoteRenderInfo): string {
     const tally = vote.tally ? ` \`✅ ${vote.tally.real}\` \`❌ ${vote.tally.fake}\`` : "";
     switch (vote.status) {
         case VoteStatus.OPEN:
-            return `**Is this biome real?** · ⏰ voting closes <t:${unix(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
+            return `**Is this biome real?** · voting closes <t:${unix(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
         case VoteStatus.NO_VOTES:
             return "*Vote expired with no votes*";
         case VoteStatus.TIE:
