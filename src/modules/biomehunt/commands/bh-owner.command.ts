@@ -90,8 +90,8 @@ export default defineCommand({
                         .setRequired(false),
                 ),
         )
-        // See `runSimulateBiome`'s TSDoc: a dry run (the default) never touches the user's stats;
-        // `dry_run:false` inserts a REAL event that counts and can grant real rewards.
+        // See `runSimulateBiome`'s TSDoc: a dry run (the default) pings nobody, opens no vote and never
+        // touches the user's stats; `dry_run:false` inserts a REAL event that counts and can grant real rewards.
         .addSubcommand((s) =>
             s
                 .setName("simulate-biome")
@@ -104,7 +104,7 @@ export default defineCommand({
                 )
                 .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)"))
                 .addBooleanOption((o) =>
-                    o.setName("dry_run").setDescription("Leave the user's stats untouched - no event, seeds, XP or badges (default true)"),
+                    o.setName("dry_run").setDescription("No pings, no vote, no event/seeds/XP/badges - nothing changes (default true)"),
                 ),
         ),
 
@@ -329,11 +329,11 @@ export async function resolveSimulateBiomeTarget(
 
 /**
  * TESTING ONLY - fakes a biome find and runs it through the exact same forward pipeline
- * (`forwardBiome`) as a real one; a rare biome also opens the community vote.
+ * (`forwardBiome`) as a real one.
  *
- * `dry_run` (default true) inserts NO event: the vote row gets a `null` `event_id`, which the
- * close/decide path already treats as "nothing to reward or delete" - so the user's biome count,
- * Seeds, XP and badges never change, whatever the vote outcome. With `dry_run:false` it inserts a
+ * `dry_run` (default true) bothers no one and changes nothing: no event is inserted, the forward
+ * messages (live and delayed) ping nobody, and no community vote is opened (no vote/ballot rows) -
+ * so the user's biome count, Seeds, XP and badges never change. With `dry_run:false` it inserts a
  * REAL `bh_activity_events` row (same insert as `activity-ingest.service.ts`) with the same
  * consequences as an actual find: it counts in stats, a non-rare biome is rewarded right away, and
  * a rare one is rewarded (or its event deleted) through the normal vote/review flow.

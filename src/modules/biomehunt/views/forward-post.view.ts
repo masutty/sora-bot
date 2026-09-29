@@ -35,6 +35,8 @@ export interface ForwardContainerParams {
     vote?: VoteRenderInfo;
     /** Set on a delayed forward - adds a subheading saying so, with when the biome was actually found. */
     delayedFoundAt?: Date;
+    /** A `/bh-owner simulate-biome` dry run - adds a subheading saying nobody was pinged and nothing counts. */
+    dryRun?: boolean;
 }
 
 function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
@@ -111,6 +113,7 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
     if (params.delayedFoundAt)
         headingLines.push(`-# ⏳ Delayed forward - found <t:${Math.floor(params.delayedFoundAt.getTime() / 1000)}:R>`);
+    if (params.dryRun) headingLines.push("-# 🧪 Simulated (dry run) - nobody was pinged, nothing counts");
     if (params.roleId) headingLines.push(`<@&${params.roleId}>`);
     if (params.findCount) headingLines.push(`This is the #${params.findCount} ${spoofBiomeName(params.biome)} they found!`);
     if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);

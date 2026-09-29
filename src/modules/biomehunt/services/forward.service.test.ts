@@ -28,9 +28,16 @@ function createFakeDeps(
 }
 
 /** A minimal fake channel/client - `send` returns a fixed message id/channel id, matching what `forwardBiome` needs to open a vote. */
-function fakeClient(): Client {
+function fakeClient(sent: unknown[] = []): Client {
     const sentMessage = { id: "sent-msg-1", channelId: "forward-channel" };
-    const channel = { isDMBased: () => false, isTextBased: () => true, send: async () => sentMessage };
+    const channel = {
+        isDMBased: () => false,
+        isTextBased: () => true,
+        send: async (payload: unknown) => {
+            sent.push(payload);
+            return sentMessage;
+        },
+    };
     return { channels: { fetch: async () => channel } } as unknown as Client;
 }
 
@@ -141,4 +148,26 @@ test("forwardBiome schedules nothing for a non-'started' event", async () => {
     await forwardBiome(fakeClient(), "guild1", 42, { ...STARTED, eventType: "ended" }, 10, "https://discord.com/channels/guild1/x", deps);
 
     expect(scheduled).toHaveLength(0);
+});
+
+test("forwardBiome dry run (null event id): pings nobody, opens no vote, and the delayed forward is flagged dry-run too", async () => {
+    const { deps, openVoteCalls, scheduled } = createFakeDeps(undefined, DELAYED);
+    const sent: unknown[] = [];
+
+    await forwardBiome(fakeClient(sent), "guild1", 42, STARTED, null, "https://discord.com/channels/guild1/x", deps);
+
+    expect(openVoteCalls).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ allowedMentions: { parse: [] } });
+    expect(JSON.stringify(sent[0])).not.toContain("biomehunt:vote:");
+    expect(scheduled[0]).toMatchObject({ dryRun: true, voteId: null });
+});
+
+test("forwardBiome real find: the live forward is sent with default mentions (the role does get pinged)", async () => {
+    const { deps } = createFakeDeps();
+    const sent: unknown[] = [];
+
+    await forwardBiome(fakeClient(sent), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+
+    expect(sent[0]).not.toHaveProperty("allowedMentions");
 });

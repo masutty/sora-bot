@@ -22,6 +22,7 @@ function job(client: Client, overrides: Partial<DelayedForwardJob> = {}): Delaye
         eventId: 10,
         voteId: "vote0001",
         foundAt: new Date(1_700_000_000_000),
+        dryRun: false,
         ...overrides,
     };
 }
@@ -64,4 +65,11 @@ test("sendDelayedForward is cancelled on a fake/denied vote even with no event (
         await sendDelayedForward(job(client, { eventId: null }), fakeDeps({ voteStatus: status }).deps);
         expect(sent).toHaveLength(0);
     }
+});
+
+test("sendDelayedForward dry run: sent with no pings", async () => {
+    const { client, sent } = fakeClient();
+    await sendDelayedForward(job(client, { eventId: null, voteId: null, dryRun: true }), fakeDeps().deps);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ allowedMentions: { parse: [] } });
 });

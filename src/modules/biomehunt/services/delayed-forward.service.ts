@@ -1,5 +1,6 @@
 import type { Client } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
+import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { eventExists } from "../repository/activity.repository";
@@ -43,6 +44,8 @@ export interface DelayedForwardJob {
     /** The live forward's vote, if it opened one - a fake/denied outcome cancels the delayed send. */
     voteId: string | null;
     foundAt: Date;
+    /** A `/bh-owner simulate-biome` dry run - sent without pinging anyone. */
+    dryRun: boolean;
 }
 
 /**
@@ -78,8 +81,13 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             jumpLink: job.jumpLink,
             findCount: job.findCount,
             delayedFoundAt: job.foundAt,
+            dryRun: job.dryRun,
         });
-        await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
+        await channel.send({
+            components: [container],
+            flags: MessageFlags.IsComponentsV2,
+            ...(job.dryRun ? { allowedMentions: NO_PINGS } : {}),
+        });
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId: job.guildId, biome: job.biome });
     }

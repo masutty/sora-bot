@@ -1,5 +1,6 @@
 import type { Client, Message } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
+import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { getBiomeCountForUser } from "../repository/activity.repository";
@@ -55,13 +56,16 @@ export async function checkAndForward(
  * link from, so it supplies its own (a link to the invoking message, or the channel). Sends the
  * live forward (if configured) right away and schedules the delayed forward (if configured) -
  * the two are independent, a biome can have either or both.
+ *
+ * A dry run (`eventId === null`, only `/bh-owner simulate-biome` does that) must bother no one and
+ * change nothing: neither message pings anyone and no vote is opened (no vote/ballot rows).
  */
 export async function forwardBiome(
     client: Client,
     guildId: string,
     userId: number,
     parsed: ParsedEvent,
-    /** `null` for a dry-run simulation - the vote then has nothing to reward or delete. */
+    /** `null` for a dry-run simulation - see above. */
     eventId: number | null,
     jumpLink: string,
     deps: ForwardServiceDeps = defaultForwardServiceDeps(),
@@ -74,6 +78,7 @@ export async function forwardBiome(
 
     const findCount = await deps.getBiomeCountForUser(userId, biome);
     const now = new Date();
+    const dryRun = eventId === null;
     const voteId = forward
         ? await sendLiveForward(client, guildId, userId, parsed, biome, eventId, jumpLink, forward, findCount, now, deps)
         : null;
@@ -90,6 +95,7 @@ export async function forwardBiome(
             eventId,
             voteId,
             foundAt: now,
+            dryRun,
         });
     }
 }
@@ -116,8 +122,9 @@ async function sendLiveForward(
     const channel = await client.channels.fetch(forward.channel_id).catch(() => null);
     if (!channel || channel.isDMBased() || !channel.isTextBased()) return null;
 
+    const dryRun = eventId === null;
     const isRare = BIOME_META[biome]?.category === "rare";
-    const voteId = isRare ? deps.newVoteId() : null;
+    const voteId = isRare && !dryRun ? deps.newVoteId() : null;
     const closesAt = new Date(now.getTime() + settings.votes.windowMs);
 
     const container = buildForwardContainer({
@@ -127,10 +134,15 @@ async function sendLiveForward(
         jumpLink,
         findCount,
         vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
+        dryRun,
     });
 
     try {
-        const sent = await channel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
+        const sent = await channel.send({
+            components: [container],
+            flags: MessageFlags.IsComponentsV2,
+            ...(dryRun ? { allowedMentions: NO_PINGS } : {}),
+        });
         if (!voteId) return null;
         await deps.openVote({
             voteId,
