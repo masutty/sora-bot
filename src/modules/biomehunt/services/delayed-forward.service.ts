@@ -80,8 +80,7 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             serverLink: job.serverLink,
             jumpLink: job.jumpLink,
             findCount: job.findCount,
-            delayedFoundAt: job.foundAt,
-            dryRun: job.dryRun,
+            badges: { delayed: { foundAt: job.foundAt, delayS: job.config.delay_s }, simulated: job.dryRun },
         });
         await channel.send({
             components: [container],

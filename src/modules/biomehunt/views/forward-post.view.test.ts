@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { SeparatorSpacingSize } from "discord.js";
 import { VoteStatus } from "../types";
-import { buildForwardContainer } from "./forward-post.view";
+import {
+    buildForwardContainer,
+    buildForwardInfoText,
+    FORWARD_INFO_PREFIX,
+    forwardInfoCustomId,
+    parseForwardInfoParts,
+} from "./forward-post.view";
 
 type Json = { type?: number; content?: string; spacing?: number; divider?: boolean; custom_id?: string; url?: string; components?: Json[] };
 
@@ -99,10 +105,40 @@ test("the vote id line is the container's FIRST component (top of the card, like
     expect(json.components?.[0]?.content).toStartWith("-# Vote ID: `abc12345`");
 });
 
-test("delayed forward: adds the 'Delayed forward - found <t:R>' subheading; a live forward never has it", () => {
-    const foundAt = new Date(1_700_000_000_000);
-    expect(textOf(buildForwardContainer({ ...BASE, delayedFoundAt: foundAt }).toJSON())).toContain(
-        "Delayed forward - found <t:1700000000:R>",
-    );
-    expect(textOf(buildForwardContainer(BASE).toJSON())).not.toContain("Delayed forward");
+test("no badges: no badge line, no simulated banner, no '?' button", () => {
+    const json = buildForwardContainer(BASE).toJSON();
+    expect(textOf(json)).not.toContain("DELAYED");
+    expect(textOf(json)).not.toContain("SIMULATED");
+    expect(customIdsOf(json).some((id) => id.startsWith(FORWARD_INFO_PREFIX))).toBe(false);
+});
+
+test("delayed badge: shows the badge under the biome and a '?' button that encodes the delay + find time", () => {
+    const json = buildForwardContainer({ ...BASE, badges: { delayed: { foundAt: new Date(1_700_000_000_000), delayS: 30 } } }).toJSON();
+    expect(textOf(json)).toContain("`⏳ DELAYED`");
+    expect(textOf(json)).not.toContain("SIMULATED FORWARD");
+    expect(customIdsOf(json)).toContain(`${FORWARD_INFO_PREFIX}:30:1700000000:0`);
+});
+
+test("simulated badge: big banner on top, then a divider, then the heading with the badge", () => {
+    const json = buildForwardContainer({ ...BASE, badges: { simulated: true } }).toJSON() as Json;
+    const top = (json.components ?? []).slice(0, 2);
+    expect(top[0].content).toBe("# THIS IS A SIMULATED FORWARD FOR TESTING PURPOSES");
+    expect(top[1].divider).toBe(true);
+    expect(textOf(json)).toContain("`🧪 SIMULATED`");
+    expect(customIdsOf(json)).toContain(`${FORWARD_INFO_PREFIX}:-:-:1`);
+});
+
+test("forward info id round-trips, rejects malformed parts, and the explanation covers each badge", () => {
+    const badges = { delayed: { foundAt: new Date(1_700_000_000_000), delayS: 45 }, simulated: true };
+    const parts = forwardInfoCustomId(badges)
+        .slice(FORWARD_INFO_PREFIX.length + 1)
+        .split(":");
+    expect(parseForwardInfoParts(parts)).toEqual(badges);
+    expect(parseForwardInfoParts(["x", "y", "1"])).toBeNull();
+    expect(parseForwardInfoParts([])).toBeNull();
+
+    const text = buildForwardInfoText(badges);
+    expect(text).toContain("sent 45s after the biome was found");
+    expect(text).toContain("<t:1700000000:R>");
+    expect(text).toContain("nobody was pinged");
 });

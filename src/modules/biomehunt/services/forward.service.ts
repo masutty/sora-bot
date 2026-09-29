@@ -134,7 +134,7 @@ async function sendLiveForward(
         jumpLink,
         findCount,
         vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
-        dryRun,
+        badges: dryRun ? { simulated: true } : undefined,
     });
 
     try {

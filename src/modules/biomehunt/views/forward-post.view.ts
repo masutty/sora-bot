@@ -33,10 +33,68 @@ export interface ForwardContainerParams {
     /** How many times (including this one) the finder has found this specific biome - shown as "this is the #N <biome> they found!". Omit to not show the line. */
     findCount?: number;
     vote?: VoteRenderInfo;
-    /** Set on a delayed forward - adds a subheading saying so, with when the biome was actually found. */
-    delayedFoundAt?: Date;
-    /** A `/bh-owner simulate-biome` dry run - adds a subheading saying nobody was pinged and nothing counts. */
-    dryRun?: boolean;
+    badges?: ForwardBadges;
+}
+
+/**
+ * What sets a forward apart from a plain live one - each shows as a badge under the biome name, and
+ * any badge adds a "?" button whose ephemeral reply explains them (see `forward-info.component.ts`).
+ */
+export interface ForwardBadges {
+    /** A delayed forward - when the biome was actually found, and how long the send waited. */
+    delayed?: { foundAt: Date; delayS: number };
+    /** A `/bh-owner simulate-biome` dry run - also gets a big "simulated" banner on top. */
+    simulated?: boolean;
+}
+
+export const FORWARD_INFO_PREFIX = "biomehunt:forward-info";
+
+/** `biomehunt:forward-info:<delayS|->:<foundAt epoch|->:<1|0>` - everything the "?" reply needs lives in the id, no DB lookup. */
+export function forwardInfoCustomId(badges: ForwardBadges): string {
+    const delayed = badges.delayed;
+    const delayS = delayed ? String(delayed.delayS) : "-";
+    const foundAt = delayed ? String(Math.floor(delayed.foundAt.getTime() / 1000)) : "-";
+    return `${FORWARD_INFO_PREFIX}:${delayS}:${foundAt}:${badges.simulated ? "1" : "0"}`;
+}
+
+/** Inverse of `forwardInfoCustomId` (the parts after the prefix) - `null` if malformed. */
+export function parseForwardInfoParts(parts: string[]): ForwardBadges | null {
+    const [delayRaw, foundAtRaw, simulatedRaw] = parts;
+    if (simulatedRaw !== "1" && simulatedRaw !== "0") return null;
+    const badges: ForwardBadges = { simulated: simulatedRaw === "1" };
+    if (delayRaw !== "-") {
+        const delayS = Number(delayRaw);
+        const foundAtS = Number(foundAtRaw);
+        if (!Number.isInteger(delayS) || !Number.isInteger(foundAtS)) return null;
+        badges.delayed = { delayS, foundAt: new Date(foundAtS * 1000) };
+    }
+    return badges;
+}
+
+/** The "?" button's ephemeral explanation - one paragraph per badge. */
+export function buildForwardInfoText(badges: ForwardBadges): string {
+    const lines = ["**About this forward**"];
+    if (badges.delayed) {
+        const epoch = Math.floor(badges.delayed.foundAt.getTime() / 1000);
+        lines.push(
+            `\`⏳ DELAYED\` - sent ${badges.delayed.delayS}s after the biome was found (found <t:${epoch}:T>, <t:${epoch}:R>). Another channel may have been alerted the moment it was found.`,
+        );
+    }
+    if (badges.simulated) {
+        lines.push(
+            "`🧪 SIMULATED` - a test sent with `/bh-owner simulate-biome` (dry run). It's not a real find: nobody was pinged, no vote was opened, and nothing counts toward anyone's stats.",
+        );
+    }
+    if (lines.length === 1) lines.push("A regular forward, sent the moment the biome was found.");
+    return lines.join("\n\n");
+}
+
+function hasBadges(badges: ForwardBadges | undefined): badges is ForwardBadges {
+    return Boolean(badges?.delayed || badges?.simulated);
+}
+
+function badgeLine(badges: ForwardBadges): string {
+    return [badges.delayed ? "`⏳ DELAYED`" : null, badges.simulated ? "`🧪 SIMULATED`" : null].filter(Boolean).join(" ");
 }
 
 function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
@@ -46,10 +104,16 @@ function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
     );
 }
 
-function buildLinkButtonsRow(jumpLink: string, serverLink: string | null): ActionRowBuilder<ButtonBuilder> {
+function buildLinkButtonsRow(
+    jumpLink: string,
+    serverLink: string | null,
+    badges: ForwardBadges | undefined,
+): ActionRowBuilder<ButtonBuilder> {
     const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(jumpLink).setLabel("Jump to Message")];
     if (serverLink)
         buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(serverLink).setLabel("Join Private Server").setEmoji("🔗"));
+    if (hasBadges(badges))
+        buttons.push(new ButtonBuilder().setCustomId(forwardInfoCustomId(badges)).setLabel("?").setStyle(ButtonStyle.Secondary));
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
@@ -110,15 +174,19 @@ function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder 
  * forward message's own identity, or edits will make it point to itself.
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
+    const { badges } = params;
     const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
-    if (params.delayedFoundAt)
-        headingLines.push(`-# ⏳ Delayed forward - found <t:${Math.floor(params.delayedFoundAt.getTime() / 1000)}:R>`);
-    if (params.dryRun) headingLines.push("-# 🧪 Simulated (dry run) - nobody was pinged, nothing counts");
+    if (hasBadges(badges)) headingLines.push(badgeLine(badges));
     if (params.roleId) headingLines.push(`<@&${params.roleId}>`);
     if (params.findCount) headingLines.push(`This is the #${params.findCount} ${spoofBiomeName(params.biome)} they found!`);
     if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);
 
     const container = new ContainerBuilder().setAccentColor(getBiomeColor(params.biome));
+    if (badges?.simulated) {
+        container.addTextDisplayComponents((td) => td.setContent("# THIS IS A SIMULATED FORWARD FOR TESTING PURPOSES"));
+        container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
+    }
+
     const { vote } = params;
     if (vote) {
         container.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
@@ -141,7 +209,7 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     }
 
     container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
-    container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink));
+    container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink, badges));
 
     return container;
 }
