@@ -147,8 +147,8 @@ test("forward info id round-trips, rejects malformed parts, and the explanation 
 
     const text = textOf(buildForwardInfoContainer(badges).toJSON() as Json);
     expect(text).toContain("## Extra information");
-    expect(text).toContain("**⏳ Delayed**");
-    expect(text).toContain("**🧪 Simulated**");
+    expect(text).toContain("- `⏳ Delayed`\n> This forward was sent with a delay.");
+    expect(text).toContain("- `🧪 Simulated`\n> Not real");
     expect(text).not.toMatch(/\d+s\b|<t:/);
     expect(textOf(buildForwardInfoContainer({ delayed: true }).toJSON() as Json)).not.toContain("Simulated");
 });
