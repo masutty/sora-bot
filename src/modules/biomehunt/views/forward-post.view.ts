@@ -78,7 +78,7 @@ const FORWARD_TYPE_INFO: Array<{ key: keyof ForwardBadges; emoji: string; name: 
 /** The "?" button's ephemeral reply - a title, a divider, then each type as "- `emoji name`" with its explanation quoted under it. */
 export function buildForwardInfoContainer(badges: ForwardBadges): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent("## Extra information\n-# What type of forward this is"));
+    container.addTextDisplayComponents((td) => td.setContent("## Extra information"));
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 
     const types = FORWARD_TYPE_INFO.filter((t) => badges[t.key]).map((t) => `- \`${t.emoji} ${t.name}\`\n> ${t.description}`);
