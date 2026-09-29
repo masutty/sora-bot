@@ -30,7 +30,9 @@ import type { TestCase } from "../../registry";
  * else keeps a simple biome-name title. What the new lines need at forward time:
  * - finder: `bh_users.discord_user_id`; personal count: `getBiomeCountForUser` (both already loaded)
  * - server count / last one in this server: one COUNT / one MAX(started_at) over `bh_activity_events` (new queries)
- * The finder mention must never ping: the real send would use `allowedMentions: { roles: [roleId] }`.
+ * No user is ever pinged - not the finder, not the deciding admin: the real send must use
+ * `allowedMentions: { roles: [roleId] }` (only the forward's role pings), and vote-close edits
+ * `allowedMentions: { parse: [] }`. This preview pings nobody at all.
  */
 const FAKE_ROLE_ID = "1";
 const FAKE_VOTE_ID = "preview0";
