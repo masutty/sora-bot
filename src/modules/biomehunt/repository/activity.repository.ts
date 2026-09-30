@@ -87,6 +87,10 @@ export async function getActiveSecondsBetween(userId: number, start: Date, end: 
 /**
  * `getActiveSecondsBetween` for every non-paused user of a guild at once - one query instead of one
  * per member, for `/bh-stats quotas`. Users with no activity in the range are included with 0.
+ *
+ * The `FILTER (WHERE s.id IS NOT NULL)` matters: for a user with no session in the range the LEFT
+ * JOIN yields NULL session times, and Postgres' LEAST/GREATEST skip NULLs - so the clip would
+ * collapse to `$3 - $2` and credit that user the whole window (a full 24h) instead of 0.
  */
 export async function getGuildActiveSecondsBetween(
     guildId: string,
@@ -95,7 +99,8 @@ export async function getGuildActiveSecondsBetween(
 ): Promise<Array<{ userId: number; discordUserId: string; activeSeconds: number }>> {
     const result = await query<{ id: number; discord_user_id: string; total: string | null }>(
         `SELECT u.id, u.discord_user_id,
-                SUM(GREATEST(0, EXTRACT(EPOCH FROM (LEAST(s.ended_at, $3) - GREATEST(s.started_at, $2))))) AS total
+                SUM(GREATEST(0, EXTRACT(EPOCH FROM (LEAST(s.ended_at, $3) - GREATEST(s.started_at, $2)))))
+                    FILTER (WHERE s.id IS NOT NULL) AS total
          FROM bh_users u
          LEFT JOIN bh_activity_sessions s ON s.user_id = u.id AND s.ended_at >= $2 AND s.started_at <= $3
          WHERE u.guild_id = $1 AND u.paused_at IS NULL
