@@ -14,7 +14,9 @@ import {
     getUserLongestSessionRank,
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
+import { loadQuotaDayReport } from "../services/quota-report.service";
 import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/bh-stats.view";
+import { buildQuotaDayContainer, quotaStatsView } from "../views/quota-report.view";
 import { buildGuildStatsContainer, getUserListPage } from "../views/stats-builders";
 
 const ANSI_RESET = "\u001b[0m";
@@ -212,6 +214,15 @@ async function runUsersStats(ctx: CommandContext, guildId: string): Promise<void
     await ctx.open(usersStatsView, { overview, usersByStatus: { active, idle, inactive } });
 }
 
+async function runQuotasStats(ctx: CommandContext, guildId: string): Promise<void> {
+    const now = new Date();
+    const [today, yesterday] = await Promise.all([loadQuotaDayReport(guildId, 0, now), loadQuotaDayReport(guildId, 1, now)]);
+    await ctx.open(quotaStatsView, {
+        today: buildQuotaDayContainer(today, "Today"),
+        yesterday: buildQuotaDayContainer(yesterday, "Yesterday"),
+    });
+}
+
 // ─── Command ────────────────────────────────────────────────────────────────
 
 export default defineCommand({
@@ -236,7 +247,8 @@ export default defineCommand({
                 .setDescription("Guild-wide session stats, or one user's if given.")
                 .addUserOption((o) => o.setName("user").setDescription("Scope to one user instead of the whole guild")),
         )
-        .addSubcommand((s) => s.setName("users").setDescription("Browse guild members by activity status.")),
+        .addSubcommand((s) => s.setName("users").setDescription("Browse guild members by activity status."))
+        .addSubcommand((s) => s.setName("quotas").setDescription("Who hit each quota today (or yesterday).")),
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
@@ -252,6 +264,10 @@ export default defineCommand({
         if (sub === "sessions") {
             const target = await ctx.args.getUser("user");
             await (target ? runUserSessionsStats(guildId, target, send) : runSessionsStats(ctx, guildId));
+            return;
+        }
+        if (sub === "quotas") {
+            await runQuotasStats(ctx, guildId);
             return;
         }
         await runUsersStats(ctx, guildId);

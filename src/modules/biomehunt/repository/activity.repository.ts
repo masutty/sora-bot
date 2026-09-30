@@ -84,6 +84,27 @@ export async function getActiveSecondsBetween(userId: number, start: Date, end: 
     return Number(result.rows[0]?.total ?? 0);
 }
 
+/**
+ * `getActiveSecondsBetween` for every non-paused user of a guild at once - one query instead of one
+ * per member, for `/bh-stats quotas`. Users with no activity in the range are included with 0.
+ */
+export async function getGuildActiveSecondsBetween(
+    guildId: string,
+    start: Date,
+    end: Date,
+): Promise<Array<{ userId: number; discordUserId: string; activeSeconds: number }>> {
+    const result = await query<{ id: number; discord_user_id: string; total: string | null }>(
+        `SELECT u.id, u.discord_user_id,
+                SUM(GREATEST(0, EXTRACT(EPOCH FROM (LEAST(s.ended_at, $3) - GREATEST(s.started_at, $2))))) AS total
+         FROM bh_users u
+         LEFT JOIN bh_activity_sessions s ON s.user_id = u.id AND s.ended_at >= $2 AND s.started_at <= $3
+         WHERE u.guild_id = $1 AND u.paused_at IS NULL
+         GROUP BY u.id, u.discord_user_id`,
+        [guildId, start, end],
+    );
+    return result.rows.map((r) => ({ userId: r.id, discordUserId: r.discord_user_id, activeSeconds: Number(r.total ?? 0) }));
+}
+
 export async function getLatestSessionForUser(userId: number): Promise<ActivitySessionRow | null> {
     const result = await query<ActivitySessionRow>(
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
@@ -169,7 +190,7 @@ export async function eventExists(eventId: number): Promise<boolean> {
 /**
  * Server-wide stats for one biome, shown on its forward: how many "started" finds the guild has
  * (the current find included, once inserted) and when the last one OTHER than `excludeEventId`
- * happened (`null` if never) - "Server find #N" / "Last one here".
+ * happened (`null` if never) - "Server find #N" / "Last one".
  */
 export async function getGuildBiomeFindStats(
     guildId: string,
