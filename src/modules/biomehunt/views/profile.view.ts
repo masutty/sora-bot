@@ -9,6 +9,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
+import { quotaDayWindow } from "../services/quota-report.service";
 import { settings } from "../settings";
 import {
     buildBadgesTabContainer,
@@ -43,16 +44,6 @@ async function getQuotaRewardSummaryLines(guildId: string, userId: number): Prom
     return progress.map(({ p, qualifies }) => `${qualifies ? "✅" : "❌"} <@&${p.role_id}>`);
 }
 
-/** The current "quota day"'s `[start, end)` - the most recent occurrence of `quotaEvalHourUtc`
- * (UTC) at or before `now`, through the same hour 24h later. Mirrors the day boundary the
- * Fixed-mode quota sweep rolls over on (see `getGuildsDueForFixedRewardEval`), so "today" in the
- * profile always lines up with when that reward actually resets. */
-function computeQuotaDayWindow(quotaEvalHourUtc: number, now: Date): { start: Date; end: Date } {
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), quotaEvalHourUtc, 0, 0, 0));
-    if (start > now) start.setUTCDate(start.getUTCDate() - 1);
-    return { start, end: new Date(start.getTime() + 86_400_000) };
-}
-
 /** Loads everything the Profile view's tabs render from, once upfront - `null` if the user has no
  * BiomeHunt profile in this guild. Warns if the DB round-trip is slow (see settings.diagnostics.slowProfileLoadMs). */
 export async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
@@ -61,12 +52,12 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
     if (!user) return null;
 
     const guildConfig = await getOrCreateGuildConfig(guildId);
-    const quotaDayWindow = computeQuotaDayWindow(guildConfig.quota_eval_hour_utc, new Date());
+    const quotaDay = quotaDayWindow(guildConfig.quota_eval_hour_utc, new Date());
 
     const [activeSeconds, activeSecondsToday, biomes, channel, quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled] =
         await Promise.all([
             getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
-            getActiveSecondsBetween(user.id, quotaDayWindow.start, quotaDayWindow.end),
+            getActiveSecondsBetween(user.id, quotaDay.start, quotaDay.end),
             getBiomeCounts(user.id),
             getMacroChannelByUserId(user.id),
             getQuotaRewardSummaryLines(guildId, user.id),
@@ -85,8 +76,8 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
         user,
         activeSeconds,
         activeSecondsToday,
-        quotaDayStart: quotaDayWindow.start,
-        quotaDayEnd: quotaDayWindow.end,
+        quotaDayStart: quotaDay.start,
+        quotaDayEnd: quotaDay.end,
         biomes,
         channelId: channel?.channel_id ?? null,
         flower: user.flower,
