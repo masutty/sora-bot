@@ -68,11 +68,6 @@ async function runTestCase(ctx: CommandContext, key: string, client: BotClient):
         return;
     }
 
-    if (testCase.view) {
-        await ctx.open(testCase.view(client), undefined, REPLY_OPTS);
-        return;
-    }
-
     let pages: TestPayload[];
     try {
         pages = await resolveTestPages(testCase, client);
@@ -124,11 +119,6 @@ export function pickerView(client: BotClient): ViewDefinition<PickerState, void,
                 const key = c.values[0];
                 const testCase = loadTestCases().get(key);
                 if (!testCase) return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` isn't registered anymore.`) };
-                if (testCase.view) {
-                    c.state = { screen: "shown", payload: EmbedFormatter.info(`Opened \`${key}\`.`) };
-                    await c.open(testCase.view(client), undefined);
-                    return;
-                }
 
                 let pages: TestPayload[];
                 try {

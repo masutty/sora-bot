@@ -11,9 +11,6 @@ import { forwardRemoveView } from "./forward-remove.view";
  * or is a step in a bigger flow (Back/Skip/Cancel, driving a `StepResult`). */
 export type ForwardListExit = "close" | "step";
 
-/** Live forwards (`bh_biome_forwards`) or delayed forwards (`bh_biome_delayed_forwards`) - same screens, the delayed one also picks a delay. */
-export type ForwardListVariant = "live" | "delayed";
-
 /**
  * Everything the View needs that would otherwise be a DB call, injected so its tests never hit it
  * - `runForwardConfigFlow` (`flows/forward-config.flow.ts`) and `ezSetupFlow`/`defaultEzSetupDeps`
@@ -21,8 +18,7 @@ export type ForwardListVariant = "live" | "delayed";
  */
 export interface ForwardListDeps {
     getForwards(guildId: string): Promise<BiomeForwardRow[]>;
-    /** `delayS` is always set for the "delayed" variant, never for "live". */
-    setForward(guildId: string, biome: string, channelId: string, roleId: string | null, delayS?: number): Promise<void>;
+    setForward(guildId: string, biome: string, channelId: string, roleId: string | null): Promise<void>;
     removeForward(guildId: string, biome: string): Promise<void>;
 }
 
@@ -41,17 +37,15 @@ interface ForwardListState {
 // biome-ignore lint/suspicious/noConfusingVoidType: `void` (not `undefined`) is what lets `close`'s handler call `c.done()` with no argument below.
 type ForwardListResult = void | StepResult;
 
-/** `<biome name> - <#channel>` (` after Ns` for a delayed forward, ` (pings <@&role>)` if one is set). Shared with `forward-remove.view.ts`'s numbered list. */
-export function formatForwardLine(f: BiomeForwardRow & { delay_s?: number }): string {
-    const delay = f.delay_s !== undefined ? ` after ${f.delay_s}s` : "";
-    return `${formatBiomeName(f.biome)} - <#${f.channel_id}>${delay}${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`;
+/** `<biome name> - <#channel>` (` (pings <@&role>)` if one is set). Shared with `forward-remove.view.ts`'s numbered list. */
+export function formatForwardLine(f: BiomeForwardRow): string {
+    return `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`;
 }
 
-function listContainer(forwards: BiomeForwardRow[], variant: ForwardListVariant): ContainerBuilder {
-    const title = variant === "delayed" ? "Delayed Biome Forwards" : "Biome Forwards";
+function listContainer(forwards: BiomeForwardRow[]): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
     container.addTextDisplayComponents((td) =>
-        td.setContent(`**${title}**\n${forwards.length > 0 ? forwards.map(formatForwardLine).join("\n") : "None configured yet."}`),
+        td.setContent(`**Biome Forwards**\n${forwards.length > 0 ? forwards.map(formatForwardLine).join("\n") : "None configured yet."}`),
     );
     return container;
 }
@@ -59,15 +53,13 @@ function listContainer(forwards: BiomeForwardRow[], variant: ForwardListVariant)
 /** The list's own Create/Remove handlers - shared by both exit modes. */
 function sharedHandlers(
     deps: ForwardListDeps,
-    variant: ForwardListVariant,
 ): Record<"add" | "remove", (c: HandlerContext<ForwardListState, ForwardListResult>) => HandlerResult<ForwardListState>> {
     return {
         add: async (c) => {
-            const created = await c.open(forwardCreateView(variant), undefined);
+            const created = await c.open(forwardCreateView(), undefined);
             if (created) {
                 const biomes = resolveBiomeSelector(created.biome);
-                for (const biome of biomes)
-                    await deps.setForward(c.state.guildId, biome, created.channelId, created.roleId, created.delayS);
+                for (const biome of biomes) await deps.setForward(c.state.guildId, biome, created.channelId, created.roleId);
             }
             c.state.forwards = await deps.getForwards(c.state.guildId);
         },
@@ -85,23 +77,14 @@ function sharedHandlers(
  * for `ez-setup.flow.ts`'s wizard). Both modes share the same list/Create/Remove behavior; only the
  * exit row and what `done` resolves with differ.
  */
-export function forwardListView(
-    deps: ForwardListDeps,
-    exit: "close",
-    variant?: ForwardListVariant,
-): ViewDefinition<ForwardListState, void, ForwardListInput>;
-export function forwardListView(
-    deps: ForwardListDeps,
-    exit: "step",
-    variant?: ForwardListVariant,
-): ViewDefinition<ForwardListState, StepResult, ForwardListInput>;
+export function forwardListView(deps: ForwardListDeps, exit: "close"): ViewDefinition<ForwardListState, void, ForwardListInput>;
+export function forwardListView(deps: ForwardListDeps, exit: "step"): ViewDefinition<ForwardListState, StepResult, ForwardListInput>;
 export function forwardListView(
     deps: ForwardListDeps,
     exit: ForwardListExit,
-    variant: ForwardListVariant = "live",
 ): ViewDefinition<ForwardListState, ForwardListResult, ForwardListInput> {
     return defineView<ForwardListState, ForwardListResult, ForwardListInput>({
-        name: variant === "delayed" ? "biomehunt.delayed-forward-list" : "biomehunt.forward-list",
+        name: "biomehunt.forward-list",
         initial: async (input) => ({
             guildId: input.guildId,
             canGoBack: input.canGoBack ?? false,
@@ -111,7 +94,7 @@ export function forwardListView(
         render: (state, kit): ViewPayload => ({
             flags: MessageFlags.IsComponentsV2,
             components: [
-                listContainer(state.forwards, variant),
+                listContainer(state.forwards),
                 kit.row(
                     kit.button("add", (b) => b.setLabel("Create").setStyle(ButtonStyle.Success)),
                     kit.button("remove", (b) =>
@@ -133,9 +116,9 @@ export function forwardListView(
         }),
         on:
             exit === "close"
-                ? { ...sharedHandlers(deps, variant), close: (c) => c.done() }
+                ? { ...sharedHandlers(deps), close: (c) => c.done() }
                 : {
-                      ...sharedHandlers(deps, variant),
+                      ...sharedHandlers(deps),
                       back: (c) => c.done({ kind: "back" }),
                       skip: (c) => c.done({ kind: "skip" }),
                       cancel: (c) => c.done({ kind: "cancel" }),

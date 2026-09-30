@@ -194,20 +194,6 @@ CREATE TABLE IF NOT EXISTS bh_biome_forwards (
     PRIMARY KEY (guild_id, biome)
 );
 
-/*
- * Same shape as bh_biome_forwards plus a delay - fully independent of it (a biome can have either,
- * both, or neither). The pending sends themselves live only in memory (a setTimeout per find), so a
- * restart drops them; with delays capped at 60s that's accepted.
- */
-CREATE TABLE IF NOT EXISTS bh_biome_delayed_forwards (
-    guild_id   VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
-    biome      VARCHAR(20) NOT NULL,
-    channel_id VARCHAR(20) NOT NULL,
-    role_id    VARCHAR(20),
-    delay_s    SMALLINT NOT NULL,
-    PRIMARY KEY (guild_id, biome)
-);
-
 /* ───────────────────────────────────────────── */
 /* Rare-biome community votes                   */
 /* ───────────────────────────────────────────── */
@@ -244,10 +230,6 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_link TEXT;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS jump_link TEXT;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
-/* Same idea for the redesigned forward card's finder / "Server find #N" / "Last one here" - NULL on votes opened before it. */
-ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS finder_discord_id VARCHAR(20);
-ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_find_count INTEGER;
-ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS last_seen_in_server_at TIMESTAMPTZ;
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying

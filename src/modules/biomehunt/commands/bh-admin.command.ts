@@ -8,12 +8,11 @@ import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.co
 import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
-import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
+import { runForwardConfigFlow } from "../flows/forward-config.flow";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import { resetActivityThresholds, setActivityRole, setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
-import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
 import { listFlags, setFlag } from "../services/flag.service";
 import { listForwards, setForward } from "../services/forward.service";
@@ -40,7 +39,6 @@ import {
     unpauseMember,
 } from "../services/member.service";
 import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
-import { settings } from "../settings";
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
@@ -454,38 +452,6 @@ export default defineCommand({
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all configured biome forwards."))
                 .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove biome forwards.")),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("delayed-forward")
-                .setDescription("Forward detected biomes to a channel after a delay.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Delay-forward a biome to a channel, optionally pinging a role. Omit channel to remove it.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("biome")
-                                .setDescription("Biome")
-                                .setRequired(true)
-                                .addChoices(...BIOME_SELECTOR_CHOICES),
-                        )
-                        .addChannelOption((o) =>
-                            o
-                                .setName("channel")
-                                .setDescription("Destination channel (omit to remove the delayed forward)")
-                                .addChannelTypes(ChannelType.GuildText),
-                        )
-                        .addIntegerOption((o) =>
-                            o
-                                .setName("delay")
-                                .setDescription("Seconds to wait after the find (required with channel)")
-                                .addChoices(...settings.delayedForward.delayChoicesS.map((d) => ({ name: `${d}s`, value: d }))),
-                        )
-                        .addRoleOption((o) => o.setName("role").setDescription("Role to ping (optional, requires channel)")),
-                )
-                .addSubcommand((s) => s.setName("list").setDescription("List all configured delayed biome forwards."))
-                .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove delayed biome forwards.")),
         ),
 
     async run(ctx) {
@@ -493,17 +459,13 @@ export default defineCommand({
         const sub = ctx.args.getSubcommand();
         const send = (payload: Exclude<ReplyPayload, string>) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
 
-        // onMissingSubcommand: "run" - a bare `!bh-admin forward` / `delayed-forward` opens its menu; any other
+        // onMissingSubcommand: "run" - a bare `!bh-admin forward` opens the forward menu; any other
         // missing/unknown subcommand gets the framework's usage.
         if (!sub) {
             // Only a truly bare `forward` opens the menu - `forward lst` (a typo) gets the usage.
             const nothingAfterGroup = ctx.raw.kind === "prefix" && ctx.raw.args.getRawArgs().length === 0;
             if (group === "forward" && nothingAfterGroup) {
                 await runForwardConfigFlow(ctx, ctx.guild.id);
-                return;
-            }
-            if (group === "delayed-forward" && nothingAfterGroup) {
-                await runDelayedForwardConfigFlow(ctx, ctx.guild.id);
                 return;
             }
             await ctx.replyUsage();
@@ -559,12 +521,6 @@ export default defineCommand({
         if (routeKey === "forward-menu") {
             await ctx.defer();
             await runForwardConfigFlow(ctx, ctx.guild.id);
-            return;
-        }
-
-        if (routeKey === "delayed-forward-menu") {
-            await ctx.defer();
-            await runDelayedForwardConfigFlow(ctx, ctx.guild.id);
             return;
         }
 
@@ -677,15 +633,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "forward-list":
             return listForwards(guildId);
-        case "delayed-forward-set": {
-            const biome = args.getString("biome");
-            const channelId = await idOf(args.getChannel("channel"));
-            const roleId = await idOf(args.getRole("role"));
-            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
-            return setDelayedForward(guildId, biome, channelId, roleId, args.getInteger("delay"));
-        }
-        case "delayed-forward-list":
-            return listDelayedForwards(guildId);
         case "counter-set": {
             const id = await idOf(args.getChannel("channel"));
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
