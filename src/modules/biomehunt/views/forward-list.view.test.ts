@@ -41,12 +41,12 @@ function comp(payload: ViewPayload, key: string): Json {
 /** A `ForwardListDeps` that never touches the DB - forwards live in a plain in-memory array. */
 function fakeDeps(initial: BiomeForwardRow[] = []) {
     let forwards = [...initial];
-    const setCalls: Array<{ guildId: string; biome: string; channelId: string; roleId: string | null }> = [];
+    const setCalls: Array<{ guildId: string; biome: string; channelId: string; roleId: string | null; delayS?: number }> = [];
     const removeCalls: Array<{ guildId: string; biome: string }> = [];
     const deps: ForwardListDeps = {
         getForwards: async () => forwards,
-        setForward: async (guildId, biome, channelId, roleId) => {
-            setCalls.push({ guildId, biome, channelId, roleId });
+        setForward: async (guildId, biome, channelId, roleId, delayS) => {
+            setCalls.push({ guildId, biome, channelId, roleId, ...(delayS !== undefined ? { delayS } : {}) });
             forwards = [...forwards.filter((f) => f.biome !== biome), { guild_id: guildId, biome, channel_id: channelId, role_id: roleId }];
         },
         removeForward: async (guildId, biome) => {
@@ -177,4 +177,25 @@ test("biomehunt.forward-list (step): Cancel resolves {kind: 'cancel'}", async ()
 
     await fake.emit(fake.click("cancel", OWNER));
     expect(await resultP).toEqual({ kind: "cancel" });
+});
+
+test("biomehunt.delayed-forward-list: Create also requires a delay, and passes it through to setForward", async () => {
+    const { deps, setCalls } = fakeDeps();
+    const fake = createFakeViewTransport();
+    void fake.run(forwardListView(deps, "close", "delayed"), { guildId: GUILD_ID }, OWNER);
+    await fake.flush();
+
+    expect(text(fake.lastPayload())).toContain("Delayed Biome Forwards");
+    await fake.emit(fake.click("add", OWNER));
+    expect(text(fake.lastPayload())).toContain("Create Delayed Biome Forward");
+
+    await fake.emit(fake.click("biome", OWNER, ["HELL"]));
+    await fake.emit(fake.click("channel", OWNER, ["c1"]));
+    expect(comp(fake.lastPayload(), "confirm").disabled).toBe(true); // delay still missing
+
+    await fake.emit(fake.click("delay", OWNER, ["30"]));
+    expect(comp(fake.lastPayload(), "confirm").disabled).toBe(false);
+
+    await fake.emit(fake.click("confirm", OWNER));
+    expect(setCalls).toEqual([{ guildId: GUILD_ID, biome: "HELL", channelId: "c1", roleId: null, delayS: 30 }]);
 });
