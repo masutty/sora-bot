@@ -10,7 +10,7 @@ import {
     TextDisplayBuilder,
     ThumbnailBuilder,
 } from "discord.js";
-import { BIOME_META, formatBiomeName, getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
+import { BIOME_META, getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
 
 export interface VoteRenderInfo {
@@ -37,7 +37,7 @@ export interface ForwardContainerParams {
     findCount?: number | null;
     /** How many times (including this one) this biome was found in the server - "Server find #N". */
     serverFindCount?: number | null;
-    /** When this biome was last found in the server before this find - "Last one here <t:R>". `null` = never. */
+    /** When this biome was last found in the server before this find - "Last one <t:R>". `null` = never. */
     lastSeenInServerAt?: Date | null;
     vote?: VoteRenderInfo;
     badges?: ForwardBadges;
@@ -140,7 +140,7 @@ function voteStatusLine(vote: VoteRenderInfo): string {
 
     switch (vote.status) {
         case VoteStatus.OPEN:
-            return `**Is this biome real?** · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
+            return `**Is this biome real?** · ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
         case VoteStatus.NO_VOTES:
             return "*Vote expired with no votes*";
         case VoteStatus.TIE:
@@ -160,13 +160,6 @@ function voteStatusLine(vote: VoteRenderInfo): string {
     }
 }
 
-/** Top line of a voted forward: the id, plus "• N votes" while the vote is open (when it closes is on the vote block itself). */
-function voteIdLine(vote: VoteRenderInfo): string {
-    const id = `-# Vote ID: \`${vote.voteId}\``;
-    if (vote.status !== VoteStatus.OPEN) return id;
-    return `${id} • ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"}`;
-}
-
 function epochOf(date: Date): number {
     return Math.floor(date.getTime() / 1000);
 }
@@ -180,33 +173,34 @@ function findCountsLine(findCount: number | null | undefined, serverFindCount: n
 }
 
 /**
- * The card's heading. Rare biomes get the big "🎉 @finder found a X!" announcement; everything
- * else keeps a plain biome-name title, with the finder leading the counts line instead.
+ * The card's heading, byline first: a small "Found by @finder" (the vote id rides after it, as
+ * secondary info), then the title - a big "🎉 X found!" for rare biomes, the plain name otherwise -
+ * then the counts and "Last one <t:R>". The finder never sits on the title or counts line: a long
+ * display name there made every card a different width.
  */
 function headingLines(params: ForwardContainerParams): string[] {
     const name = spoofBiomeName(params.biome);
     const title = params.serverLink ? `[${name}](${params.serverLink})` : name;
-    const finder = params.finderDiscordId ? `<@${params.finderDiscordId}>` : null;
-    const counts = findCountsLine(params.findCount, params.serverFindCount);
     const isRare = BIOME_META[params.biome]?.category === "rare";
+    const counts = findCountsLine(params.findCount, params.serverFindCount);
+
+    const byline = [
+        params.finderDiscordId ? `Found by <@${params.finderDiscordId}>` : null,
+        params.vote ? `Vote \`${params.vote.voteId}\`` : null,
+    ].filter(Boolean);
 
     const lines: string[] = [];
-    if (isRare && finder) {
-        lines.push(`## 🎉 ${finder} found ${/^[AEIOU]/i.test(formatBiomeName(params.biome)) ? "an" : "a"} ${title}!`);
-        if (counts) lines.push(counts);
-    } else {
-        lines.push(`# ${title}`);
-        const byLine = [finder, counts].filter(Boolean).join(" · ");
-        if (byLine) lines.push(byLine);
-    }
-    if (params.lastSeenInServerAt) lines.push(`-# Last one here <t:${epochOf(params.lastSeenInServerAt)}:R>`);
+    if (byline.length > 0) lines.push(`-# ${byline.join(" · ")}`);
+    lines.push(isRare ? `## 🎉 ${title} found!` : `# ${title}`);
+    if (counts) lines.push(counts);
+    if (params.lastSeenInServerAt) lines.push(`-# Last one <t:${epochOf(params.lastSeenInServerAt)}:R>`);
     return lines;
 }
 
 /**
  * The vote block's own components (a Large separator, the status line, and - only while open -
- * the Real/Fake buttons). The vote id line sits at the TOP of the container instead (see
- * `buildForwardContainer`), which every render - initial send and later edits - goes through.
+ * the Real/Fake buttons). The vote id sits in the heading's byline instead (see `headingLines`),
+ * which every render - initial send and later edits - goes through.
  */
 function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> {
     const parts: Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> = [
@@ -225,14 +219,13 @@ function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder 
  * forward message's own identity, or edits will make it point to itself.
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
-    const { badges, vote } = params;
+    const { badges } = params;
 
     const container = new ContainerBuilder().setAccentColor(getBiomeColor(params.biome));
     if (badges?.simulated) {
         container.addTextDisplayComponents((td) => td.setContent(`### ${SIMULATED_EMOJI} SIMULATED FORWARD - TESTING ONLY`));
         container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
     }
-    if (vote) container.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
     if (params.roleId) container.addTextDisplayComponents((td) => td.setContent(`<@&${params.roleId}>`));
 
     const heading = headingLines(params).join("\n");

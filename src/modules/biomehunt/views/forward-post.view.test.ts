@@ -48,8 +48,8 @@ test("open vote: hides the tally, shows the count + closes-at, the vote id, and 
 
     const text = textOf(json);
     expect(text).toContain("3 votes");
-    expect(text).toContain("Is this biome real?** · voting closes <t:");
-    expect(text).toContain("Vote ID: `abc12345` • 3 votes");
+    expect(text).toContain("Is this biome real?** · 3 votes · voting closes <t:");
+    expect(text).toContain("-# Vote `abc12345`");
     expect(text).not.toContain("Admins:");
     expect(text).not.toContain("`✅ "); // the real/fake split never appears while open
 
@@ -98,12 +98,15 @@ test("admin_confirmed: shows who decided, no closes-at line, and the link row is
     expect(flatten(json).some((c) => c.url === BASE.jumpLink)).toBe(true);
 });
 
-test("the vote id line is the container's FIRST component (top of the card, like the profile's level line)", () => {
-    const json = buildForwardContainer({
-        ...BASE,
-        vote: { voteId: "abc12345", status: VoteStatus.OPEN, closesAt: new Date(Date.now() + 60_000), voteCount: 0 },
-    }).toJSON() as Json;
-    expect(json.components?.[0]?.content).toStartWith("-# Vote ID: `abc12345`");
+test("the byline opens the card: 'Found by' first, the vote id after it as secondary info", () => {
+    const text = textOf(
+        buildForwardContainer({
+            ...BASE,
+            finderDiscordId: "finder-1",
+            vote: { voteId: "abc12345", status: VoteStatus.OPEN, closesAt: new Date(Date.now() + 60_000), voteCount: 0 },
+        }).toJSON(),
+    );
+    expect(text).toStartWith("-# Found by <@finder-1> · Vote `abc12345`\n");
 });
 
 test("no badges: no badge emojis, no simulated banner, no '?' button", () => {
@@ -156,20 +159,21 @@ test("forward info id round-trips, rejects malformed parts, and the explanation 
 
 const STATS = { finderDiscordId: "finder-1", findCount: 3, serverFindCount: 41, lastSeenInServerAt: new Date(1_700_000_000_000) };
 
-test("non-rare biome: plain biome-name title, the finder leads the counts line, plus 'Last one here'", () => {
+test("non-rare biome: byline, plain biome-name title, both counts, then 'Last one'", () => {
     const text = textOf(buildForwardContainer({ ...BASE, biome: "HELL", ...STATS }).toJSON());
     expect(text).not.toContain("🎉");
-    expect(text).toContain("<@finder-1> · Personal find **#3** · Server find **#41**");
-    expect(text).toContain("-# Last one here <t:1700000000:R>");
+    expect(text).toContain("-# Found by <@finder-1>\n# He");
+    expect(text).toContain("\nPersonal find **#3** · Server find **#41**\n-# Last one <t:1700000000:R>");
 });
 
-test("rare biome: the 🎉 announcement headline names the finder, the counts line doesn't repeat them", () => {
+test("rare biome: '🎉 X found!' title - the finder stays in the byline, never on the title or counts line", () => {
     const text = textOf(buildForwardContainer({ ...BASE, ...STATS }).toJSON());
-    expect(text).toContain("🎉 <@finder-1> found a ");
-    expect(text).toContain("\nPersonal find **#3** · Server find **#41**");
+    expect(text).toMatch(/## 🎉 .* found!/);
+    expect(text).not.toMatch(/## .*<@finder-1>/);
+    expect(text).not.toMatch(/<@finder-1>.*Personal find/);
 });
 
-test("a count of 1 reads as 'First', and with no earlier find there's no 'Last one here'", () => {
+test("a count of 1 reads as 'First', and with no earlier find there's no 'Last one'", () => {
     const text = textOf(
         buildForwardContainer({
             ...BASE,
@@ -180,7 +184,7 @@ test("a count of 1 reads as 'First', and with no earlier find there's no 'Last o
         }).toJSON(),
     );
     expect(text).toContain("**First** personal find · **First** in this server!");
-    expect(text).not.toContain("Last one here");
+    expect(text).not.toContain("Last one");
 });
 
 test("the card never uses pronouns about the finder", () => {
