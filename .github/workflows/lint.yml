@@ -3,7 +3,7 @@ name: Lint
 on:
     pull_request:
     push:
-        branches: [main, prod/fence]
+        branches: [main, dev]
 
 jobs:
     biome:
