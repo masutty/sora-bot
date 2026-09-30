@@ -1,4 +1,4 @@
-import type { Message, User } from "discord.js";
+import type { Guild, Message, User } from "discord.js";
 import { ContainerBuilder, MessageFlags, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import { type CommandContext, defineCommand, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
@@ -16,7 +16,7 @@ import {
 import { getUserByDiscordId } from "../repository/users.repository";
 import { loadQuotaDayReport } from "../services/quota-report.service";
 import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/bh-stats.view";
-import { buildQuotaDayContainer, quotaStatsView } from "../views/quota-report.view";
+import { quotaStatsView } from "../views/quota-report.view";
 import { buildGuildStatsContainer, getUserListPage } from "../views/stats-builders";
 
 const ANSI_RESET = "\u001b[0m";
@@ -214,13 +214,22 @@ async function runUsersStats(ctx: CommandContext, guildId: string): Promise<void
     await ctx.open(usersStatsView, { overview, usersByStatus: { active, idle, inactive } });
 }
 
-async function runQuotasStats(ctx: CommandContext, guildId: string): Promise<void> {
+/**
+ * Members who left the Discord server keep their BiomeHunt profile, but shouldn't pad the "not yet"
+ * list - so the report only counts members the guild still has (needs the GuildMembers intent).
+ */
+async function runQuotasStats(ctx: CommandContext, guild: Guild): Promise<void> {
+    const members = await guild.members.fetch();
+    const isInGuild = (discordUserId: string) => members.has(discordUserId);
     const now = new Date();
-    const [today, yesterday] = await Promise.all([loadQuotaDayReport(guildId, 0, now), loadQuotaDayReport(guildId, 1, now)]);
-    await ctx.open(quotaStatsView, {
-        today: buildQuotaDayContainer(today, "Today"),
-        yesterday: buildQuotaDayContainer(yesterday, "Yesterday"),
-    });
+    const [today, yesterday] = await Promise.all([
+        loadQuotaDayReport(guild.id, 0, isInGuild, now),
+        loadQuotaDayReport(guild.id, 1, isInGuild, now),
+    ]);
+    const roleNames = Object.fromEntries(
+        today.roles.map((r) => [r.role_id, guild.roles.cache.get(r.role_id)?.name ?? `Role ${r.role_id}`]),
+    );
+    await ctx.open(quotaStatsView, { reports: { today, yesterday }, roleNames });
 }
 
 // ─── Command ────────────────────────────────────────────────────────────────
@@ -267,7 +276,7 @@ export default defineCommand({
             return;
         }
         if (sub === "quotas") {
-            await runQuotasStats(ctx, guildId);
+            await runQuotasStats(ctx, ctx.guild);
             return;
         }
         await runUsersStats(ctx, guildId);

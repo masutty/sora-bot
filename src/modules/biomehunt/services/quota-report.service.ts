@@ -21,45 +21,46 @@ export interface QuotaMember {
     activeSeconds: number;
 }
 
-export interface QuotaRoleResult {
-    role: QuotaRoleRow;
-    /** Most active first. */
-    hit: QuotaMember[];
-    /** Most active first. */
-    missed: QuotaMember[];
-}
-
 export interface QuotaDayReport {
     start: Date;
     end: Date;
     /** `true` for today's quota day - it hasn't ended, so "missed" still means "not yet". */
     inProgress: boolean;
-    roles: QuotaRoleResult[];
+    roles: QuotaRoleRow[];
+    /** Every counted member, most active first - one list for all roles; each role splits it at its own target. */
+    members: QuotaMember[];
+}
+
+/** How many of `members` (sorted, most active first) hit `targetSeconds` - they're the first `n`. */
+export function hitCount(members: QuotaMember[], targetSeconds: number): number {
+    const firstMiss = members.findIndex((m) => m.activeSeconds < targetSeconds);
+    return firstMiss === -1 ? members.length : firstMiss;
 }
 
 /**
- * Who hit each quota role's target within one quota day. Every non-paused member counts, including
- * ones with no activity (they land in `missed`). The target is compared against the activity inside
- * the quota day itself - for a role whose own window isn't 24h this is an approximation, which the
- * view points out.
+ * Who hit each quota role's target within one quota day. Counts every non-paused member still in
+ * the server (`isInGuild`), including ones with no activity (0, so they miss). The target is compared
+ * against the activity inside the quota day itself - for a role whose own window isn't 24h this is
+ * an approximation, which the view points out.
  */
-export async function loadQuotaDayReport(guildId: string, daysBack: number, now = new Date()): Promise<QuotaDayReport> {
+export async function loadQuotaDayReport(
+    guildId: string,
+    daysBack: number,
+    isInGuild: (discordUserId: string) => boolean,
+    now = new Date(),
+): Promise<QuotaDayReport> {
     const config = await getOrCreateGuildConfig(guildId);
     const { start, end } = quotaDayWindow(config.quota_eval_hour_utc, now, daysBack);
     const [roles, members] = await Promise.all([getQuotaRolesForGuild(guildId), getGuildActiveSecondsBetween(guildId, start, end)]);
-
-    const sorted = members
-        .map((m) => ({ discordUserId: m.discordUserId, activeSeconds: m.activeSeconds }))
-        .sort((a, b) => b.activeSeconds - a.activeSeconds);
 
     return {
         start,
         end,
         inProgress: now < end,
-        roles: roles.map((role) => ({
-            role,
-            hit: sorted.filter((m) => m.activeSeconds >= role.quota_target_seconds),
-            missed: sorted.filter((m) => m.activeSeconds < role.quota_target_seconds),
-        })),
+        roles,
+        members: members
+            .filter((m) => isInGuild(m.discordUserId))
+            .map((m) => ({ discordUserId: m.discordUserId, activeSeconds: m.activeSeconds }))
+            .sort((a, b) => b.activeSeconds - a.activeSeconds),
     };
 }
