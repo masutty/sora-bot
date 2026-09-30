@@ -24,11 +24,9 @@ function fakeManager<T>(items: Record<string, T>) {
     };
 }
 
-export function fakeGuild(opts: {
-    members?: Record<string, GuildMember>;
-    channels?: Record<string, GuildBasedChannel>;
-    roles?: Record<string, Role>;
-} = {}): Guild {
+export function fakeGuild(
+    opts: { members?: Record<string, GuildMember>; channels?: Record<string, GuildBasedChannel>; roles?: Record<string, Role> } = {},
+): Guild {
     return {
         id: "guild1",
         members: fakeManager(opts.members ?? {}),
@@ -42,12 +40,18 @@ export function fakeClient(users: Record<string, User> = {}): BotClient {
 }
 
 /** `values` holds what Discord would have resolved per option name (a User object for user options, etc). */
-export function fakeInteractionOptions(opts: { sub?: string | null; group?: string | null; values?: Record<string, unknown>; types?: Record<string, number> }) {
+export function fakeInteractionOptions(opts: {
+    sub?: string | null;
+    group?: string | null;
+    values?: Record<string, unknown>;
+    types?: Record<string, number>;
+}) {
     const values = opts.values ?? {};
     const types = opts.types ?? {};
     // Mirrors discord.js: a typed getter on an option of another type throws a TypeError.
     const strict = (name: string, expected: number) => {
-        if (types[name] !== undefined && types[name] !== expected) throw new TypeError(`Option "${name}" is of type ${types[name]}, expected ${expected}`);
+        if (types[name] !== undefined && types[name] !== expected)
+            throw new TypeError(`Option "${name}" is of type ${types[name]}, expected ${expected}`);
     };
     const get = <T>(name: string): T | null => (name in values ? (values[name] as T) : null);
     return {
@@ -59,8 +63,14 @@ export function fakeInteractionOptions(opts: { sub?: string | null; group?: stri
             : Object.entries(values).map(([name, value]) => ({ name, value })),
         get: (name: string) => (name in values ? { name, type: types[name], value: values[name] } : null),
         getString: (name: string) => get<string>(name),
-        getInteger: (name: string) => { strict(name, 4); return get<number>(name); },
-        getNumber: (name: string) => { strict(name, 10); return get<number>(name); },
+        getInteger: (name: string) => {
+            strict(name, 4);
+            return get<number>(name);
+        },
+        getNumber: (name: string) => {
+            strict(name, 10);
+            return get<number>(name);
+        },
         getBoolean: (name: string) => get<boolean>(name),
         getUser: (name: string) => get<User>(name),
         getChannel: (name: string) => get<{ id: string }>(name),

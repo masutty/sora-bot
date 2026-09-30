@@ -52,10 +52,7 @@ export interface CommandDefinitionBase {
      * Full SlashCommandBuilder — used for slash registration.
      * For prefix commands, arg names are derived from this builder's options.
      */
-    options?:
-    | SlashCommandBuilder
-    | SlashCommandOptionsOnlyBuilder
-    | SlashCommandSubcommandsOnlyBuilder;
+    options?: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandsOnlyBuilder;
 
     /** Whether this command appears in !help */
     showOnHelp?: boolean;
@@ -72,20 +69,13 @@ export interface CommandDefinitionBase {
      * Slash command handler.
      * Receives the raw discord.js interaction — full type safety, no wrapper.
      */
-    executeAsSlash?: (
-        interaction: ChatInputCommandInteraction,
-        client: BotClient,
-    ) => Promise<void>;
+    executeAsSlash?: (interaction: ChatInputCommandInteraction, client: BotClient) => Promise<void>;
 
     /**
      * Prefix command handler.
      * Receives the raw Message plus a PrefixArgs helper derived from the builder schema.
      */
-    executeAsPrefix?: (
-        message: Message,
-        args: PrefixArgs,
-        client: BotClient,
-    ) => Promise<void>;
+    executeAsPrefix?: (message: Message, args: PrefixArgs, client: BotClient) => Promise<void>;
 
     /** Where the command exists at all. Default "both". "prefix" = never registered as a slash command. */
     modes?: CommandModes;
@@ -110,20 +100,18 @@ export interface CommandDefinitionBase {
      * can't be fixed via `.addChoices()` at registration time). Without a handler, that option
      * never suggests anything.
      */
-    executeAutocomplete?: (
-        interaction: AutocompleteInteraction,
-        client: BotClient,
-    ) => Promise<void>;
+    executeAutocomplete?: (interaction: AutocompleteInteraction, client: BotClient) => Promise<void>;
 }
 
 /**
  * `guildOnly: true` -> registered for guilds only (hidden in DMs), a DM call is refused, and `run`
  * gets a `GuildCommandContext` (non-null `guild`/`member`).
  */
-export type CommandDefinition = CommandDefinitionBase & (
-    | { guildOnly: true; run?: (ctx: GuildCommandContext) => Promise<void> }
-    | { guildOnly?: false; run?: (ctx: CommandContext) => Promise<void> }
-);
+export type CommandDefinition = CommandDefinitionBase &
+    (
+        | { guildOnly: true; run?: (ctx: GuildCommandContext) => Promise<void> }
+        | { guildOnly?: false; run?: (ctx: CommandContext) => Promise<void> }
+    );
 
 // ─── Cog (replaces ModuleDefinition) ─────────────────────────────────────────
 
@@ -142,10 +130,7 @@ export interface Cog {
     authors: CogAuthor[];
     commands?: CommandDefinition[];
     events?: {
-        [K in keyof ClientEvents]?: (
-            client: BotClient,
-            ...args: ClientEvents[K]
-        ) => void | Promise<void>;
+        [K in keyof ClientEvents]?: (client: BotClient, ...args: ClientEvents[K]) => void | Promise<void>;
     };
     /** SQL migration strings to run on load */
     migrations?: string[];

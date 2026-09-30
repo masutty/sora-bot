@@ -10,21 +10,21 @@ const logger = new Logger("biomehunt.macro-parsers");
  * name - bounded so it can't run on into unrelated trailing text (e.g. a "Join Server" link
  * on the same line).
  */
-const DEFAULT_BIOME_REGEX =
-    /Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*(?<words>[A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)?)/i;
+const DEFAULT_BIOME_REGEX = /Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*(?<words>[A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)?)/i;
 
-const DEFAULT_THUMBNAIL_REGEX =
-    /\/([A-Z_]+)\.png$/i;
+const DEFAULT_THUMBNAIL_REGEX = /\/([A-Z_]+)\.png$/i;
 
-const DEFAULT_ROBLOX_LINK_REGEX =
-    /https?:\/\/(?:www\.)?roblox\.com\/[^\s)\]"'<>]+/i;
+const DEFAULT_ROBLOX_LINK_REGEX = /https?:\/\/(?:www\.)?roblox\.com\/[^\s)\]"'<>]+/i;
 
 /** Single source of truth for recognized biomes lives in `BIOME_META` (constants/biomes.constants.ts). */
 const VALID_BIOMES = new Set(Object.keys(BIOME_META));
 
 /** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token before matching against VALID_BIOMES. */
 function normalizeBiomeName(raw: string): string {
-    return raw.trim().toUpperCase().replace(/[\s_]+/g, "");
+    return raw
+        .trim()
+        .toUpperCase()
+        .replace(/[\s_]+/g, "");
 }
 
 function stripMarkdown(text: string): string {
@@ -69,11 +69,7 @@ export class DefaultMacroParser extends MacroParser {
     }
 
     extractBiome(embed: EmbedLike): BiomeExtraction {
-        const candidates = [
-            embed.title,
-            embed.description,
-            ...(embed.fields?.map((f) => f.value) ?? []),
-        ];
+        const candidates = [embed.title, embed.description, ...(embed.fields?.map((f) => f.value) ?? [])];
 
         logger.verbose(`Parsing embed (${candidates.length} candidate(s))`);
 

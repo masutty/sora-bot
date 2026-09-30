@@ -22,10 +22,7 @@ export async function insertReward(client: PoolClient, params: InsertRewardParam
 /** Ledger rows for a set of event ids (e.g. the ones an admin is about to delete) - empty array if none of them were ever rewarded. */
 export async function getRewardsByEventIds(eventIds: number[]): Promise<BiomeRewardRow[]> {
     if (eventIds.length === 0) return [];
-    const result = await query<BiomeRewardRow>(
-        `SELECT * FROM bh_biome_rewards WHERE event_id = ANY($1)`,
-        [eventIds],
-    );
+    const result = await query<BiomeRewardRow>(`SELECT * FROM bh_biome_rewards WHERE event_id = ANY($1)`, [eventIds]);
     return result.rows;
 }
 
@@ -73,8 +70,6 @@ const ADJUST_BALANCE_SQL = `UPDATE bh_users SET seeds = GREATEST(0, seeds + $2),
 /** Applies a Seeds/XP delta (either sign), floored at 0. Runs inside `client`'s transaction when given one (grant/revert paths), or standalone (the admin manual-adjustment command). */
 export async function adjustUserBalance(client: PoolClient | null, userId: number, seedsDelta: number, xpDelta: number): Promise<UserRow> {
     const params = [userId, seedsDelta, xpDelta];
-    const result = client
-        ? await client.query<UserRow>(ADJUST_BALANCE_SQL, params)
-        : await query<UserRow>(ADJUST_BALANCE_SQL, params);
+    const result = client ? await client.query<UserRow>(ADJUST_BALANCE_SQL, params) : await query<UserRow>(ADJUST_BALANCE_SQL, params);
     return result.rows[0];
 }

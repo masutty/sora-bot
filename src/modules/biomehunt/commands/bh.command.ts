@@ -20,16 +20,20 @@ export default defineCommand({
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
         .addSubcommand((sub) =>
-            sub.setName("profile").setDescription("View your hunt profile, or someone else's.")
+            sub
+                .setName("profile")
+                .setDescription("View your hunt profile, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose profile to view (defaults to yourself)")),
         )
         .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds."))
         .addSubcommand((sub) =>
-            sub.setName("balance").setDescription("View your Seeds and level, or someone else's.")
+            sub
+                .setName("balance")
+                .setDescription("View your Seeds and level, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),
         ),
-        // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
-        // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
+    // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
+    // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
@@ -71,4 +75,3 @@ async function runSubcommand(sub: string, guild: Guild, member: GuildMember): Pr
             throw new BiomeHuntError(`Unknown subcommand: ${sub}`);
     }
 }
-

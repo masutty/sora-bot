@@ -26,7 +26,10 @@ type Fn = (...args: unknown[]) => Promise<unknown>;
 
 function click(overrides: Record<string, Fn> = {}) {
     const calls: string[] = [];
-    const rec = (name: string): Fn => async () => void calls.push(name);
+    const rec =
+        (name: string): Fn =>
+        async () =>
+            void calls.push(name);
     const raw = {
         user: { id: "u1" },
         update: rec("update"),

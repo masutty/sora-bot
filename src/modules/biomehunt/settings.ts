@@ -14,6 +14,10 @@ export const settings = {
         /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it. */
         windowMs: 60_000,
     },
+    delayedForward: {
+        /** The only delays `/bh-admin delayed-forward` offers - past 60s a delayed ping loses its point. */
+        delayChoicesS: [5, 10, 15, 20, 25, 30, 45, 60],
+    },
     ui: {
         rerollIdleMs: 20_000,
         quotaReplyTimeoutMs: 60_000,

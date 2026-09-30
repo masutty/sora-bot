@@ -5,6 +5,7 @@ import _bhAdmin from "./commands/bh-admin.command";
 import _bhOwner from "./commands/bh-owner.command";
 import _bhStats from "./commands/bh-stats.command";
 import { biomeVoteComponent } from "./components/biome-vote.component";
+import { forwardInfoComponent } from "./components/forward-info.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity-ingest.service";
@@ -26,7 +27,7 @@ export default defineCog({
 
     workers: [statusWorker, roleWorker, counterWorker, voteCloseWorker],
 
-    components: [biomeVoteComponent()],
+    components: [biomeVoteComponent(), forwardInfoComponent()],
 
     events: {
         async messageCreate(_client, message) {

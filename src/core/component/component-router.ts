@@ -79,10 +79,7 @@ export function matchComponent(
  * not re-thrown - routing keeps working for the next interaction. An id nothing owns is silently
  * ignored (no log, no throw). Returns whether something handled it (informational only).
  */
-export async function dispatchComponent(
-    client: BotClient,
-    interaction: MessageComponentInteraction,
-): Promise<boolean> {
+export async function dispatchComponent(client: BotClient, interaction: MessageComponentInteraction): Promise<boolean> {
     for (const cog of client.cogs.values()) {
         const found = matchComponent(cog.components ?? [], interaction.customId);
         if (!found) continue;
@@ -105,9 +102,7 @@ export async function dispatchComponent(
                     // (e.g. it deferred/replied before throwing) - a reply() on an already-answered
                     // interaction would itself throw, on top of the original failure.
                     if (!interaction.replied && !interaction.deferred) {
-                        await interaction
-                            .reply({ content: "Something went wrong.", flags: MessageFlags.Ephemeral })
-                            .catch(() => {});
+                        await interaction.reply({ content: "Something went wrong.", flags: MessageFlags.Ephemeral }).catch(() => {});
                     }
                 }
             },

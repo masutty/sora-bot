@@ -96,7 +96,10 @@ export function tabs<T extends { tab: string }, I = void>(opts: TabsOptions<T, I
         timeoutMs: opts.timeoutMs,
         render: (state, kit) => {
             const { payload, extraRows = [] } = opts.renderTab(state, kit);
-            return { ...payload, components: [...(payload.components ?? []), ...tabRows(opts.tabs, state.tab, kit, disableActive), ...extraRows] };
+            return {
+                ...payload,
+                components: [...(payload.components ?? []), ...tabRows(opts.tabs, state.tab, kit, disableActive), ...extraRows],
+            };
         },
         on,
     });

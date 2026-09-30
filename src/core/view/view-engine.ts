@@ -501,7 +501,19 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
         const finished = new Promise<void>((r) => {
             markFinished = r;
         });
-        return { event, user, start, pending, running: true, done: null, skipRedraw: false, cancelModal: null, parked: 0, finished, markFinished };
+        return {
+            event,
+            user,
+            start,
+            pending,
+            running: true,
+            done: null,
+            skipRedraw: false,
+            cancelModal: null,
+            parked: 0,
+            finished,
+            markFinished,
+        };
     }
 
     function makeContext(inst: Instance, run: HandlerRun): HandlerContext<unknown, unknown> {
@@ -553,7 +565,9 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
             async modal(spec) {
                 if (ended) return null;
                 if (run.start) {
-                    throw new Error(`View "${name}": c.modal() can't be used in start() - there's no interaction to show it on. Show it from a button handler.`);
+                    throw new Error(
+                        `View "${name}": c.modal() can't be used in start() - there's no interaction to show it on. Show it from a button handler.`,
+                    );
                 }
                 const clicked = run.pending;
                 if (!clicked || clicked.answered || clicked.fromModalSubmit) {
@@ -831,7 +845,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
                 if (!ended) end(ViewCloseReason.Failed);
                 throw err;
             }
-            if (!sent) throw (firstSendError?.err ?? new Error(`View "${inst.def.name}": its start() ended without anything being sent`));
+            if (!sent) throw firstSendError?.err ?? new Error(`View "${inst.def.name}": its start() ended without anything being sent`);
             return result as Promise<R | undefined>;
         },
     };

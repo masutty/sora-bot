@@ -50,10 +50,7 @@ export async function ensureUser(guildId: string, discordUserId: string): Promis
 }
 
 export async function getUserByDiscordId(guildId: string, discordUserId: string): Promise<UserRow | null> {
-    const result = await query<UserRow>(
-        `SELECT * FROM bh_users WHERE guild_id = $1 AND discord_user_id = $2`,
-        [guildId, discordUserId],
-    );
+    const result = await query<UserRow>(`SELECT * FROM bh_users WHERE guild_id = $1 AND discord_user_id = $2`, [guildId, discordUserId]);
     return result.rows[0] ?? null;
 }
 
@@ -89,18 +86,18 @@ export async function resetActivityState(userId: number): Promise<void> {
 }
 
 export async function pauseUser(guildId: string, discordUserId: string): Promise<boolean> {
-    const result = await query(
-        `UPDATE bh_users SET paused_at = NOW() WHERE guild_id = $1 AND discord_user_id = $2`,
-        [guildId, discordUserId],
-    );
+    const result = await query(`UPDATE bh_users SET paused_at = NOW() WHERE guild_id = $1 AND discord_user_id = $2`, [
+        guildId,
+        discordUserId,
+    ]);
     return (result.rowCount ?? 0) > 0;
 }
 
 export async function unpauseUser(guildId: string, discordUserId: string): Promise<boolean> {
-    const result = await query(
-        `UPDATE bh_users SET paused_at = NULL WHERE guild_id = $1 AND discord_user_id = $2`,
-        [guildId, discordUserId],
-    );
+    const result = await query(`UPDATE bh_users SET paused_at = NULL WHERE guild_id = $1 AND discord_user_id = $2`, [
+        guildId,
+        discordUserId,
+    ]);
     return (result.rowCount ?? 0) > 0;
 }
 
@@ -180,9 +177,6 @@ export async function getMacroChannelByUserId(userId: number): Promise<UserMacro
 /** Reroll: swaps the user's Flower in place. Never touches the webhook's id/token/URL - callers
  * only edit the already-existing Discord webhook's name/avatar to match. */
 export async function setUserFlower(userId: number, flower: string): Promise<UserRow | null> {
-    const result = await query<UserRow>(
-        `UPDATE bh_users SET flower = $2 WHERE id = $1 RETURNING *`,
-        [userId, flower],
-    );
+    const result = await query<UserRow>(`UPDATE bh_users SET flower = $2 WHERE id = $1 RETURNING *`, [userId, flower]);
     return result.rows[0] ?? null;
 }

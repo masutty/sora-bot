@@ -20,7 +20,9 @@ function buildListPayload(): TestPayload {
 
     if (cases.size === 0) {
         addDivider(container);
-        container.addTextDisplayComponents((td) => td.setContent("No test cases registered yet - add one under `src/modules/tests/tests/`."));
+        container.addTextDisplayComponents((td) =>
+            td.setContent("No test cases registered yet - add one under `src/modules/tests/tests/`."),
+        );
         return { flags: MessageFlags.IsComponentsV2, components: [container] };
     }
 
@@ -39,7 +41,9 @@ function buildListPayload(): TestPayload {
     }
 
     addDivider(container);
-    container.addTextDisplayComponents((td) => td.setContent("-# Run `!test <keyword>` directly, or just `!test` for an interactive picker."));
+    container.addTextDisplayComponents((td) =>
+        td.setContent("-# Run `!test <keyword>` directly, or just `!test` for an interactive picker."),
+    );
 
     return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
@@ -57,7 +61,15 @@ async function openTestPages(ctx: CommandContext, pages: TestPayload[]): Promise
 async function runTestCase(ctx: CommandContext, key: string, client: BotClient): Promise<void> {
     const testCase = loadTestCases().get(key);
     if (!testCase) {
-        await ctx.reply(EmbedFormatter.error(`No test case \`${key}\`. Run \`!test\` for a picker, or \`!test list\` to see all.`), REPLY_OPTS);
+        await ctx.reply(
+            EmbedFormatter.error(`No test case \`${key}\`. Run \`!test\` for a picker, or \`!test list\` to see all.`),
+            REPLY_OPTS,
+        );
+        return;
+    }
+
+    if (testCase.view) {
+        await ctx.open(testCase.view(client), undefined, REPLY_OPTS);
         return;
     }
 
@@ -85,9 +97,7 @@ export interface PickerOption {
     description?: string;
 }
 
-type PickerState =
-    | { screen: "pick"; options: PickerOption[] }
-    | { screen: "shown"; payload: TestPayload };
+type PickerState = { screen: "pick"; options: PickerOption[] } | { screen: "shown"; payload: TestPayload };
 
 /** `!test` with no keyword: a select menu instead of a wall of text - pick one, it runs right
  * there (a single page replaces the picker in place; several pages open as a child `paginate`
@@ -105,9 +115,7 @@ export function pickerView(client: BotClient): ViewDefinition<PickerState, void,
             const select = kit.stringSelect("pick", (s) =>
                 s
                     .setPlaceholder(`Choose a test to preview (${state.options.length} available)...`)
-                    .addOptions(
-                        state.options.slice(0, 25).map((o) => ({ label: o.key, value: o.key, description: o.description })),
-                    ),
+                    .addOptions(state.options.slice(0, 25).map((o) => ({ label: o.key, value: o.key, description: o.description }))),
             );
             return { flags: MessageFlags.IsComponentsV2, components: [container, kit.row(select)] };
         },
@@ -116,12 +124,20 @@ export function pickerView(client: BotClient): ViewDefinition<PickerState, void,
                 const key = c.values[0];
                 const testCase = loadTestCases().get(key);
                 if (!testCase) return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` isn't registered anymore.`) };
+                if (testCase.view) {
+                    c.state = { screen: "shown", payload: EmbedFormatter.info(`Opened \`${key}\`.`) };
+                    await c.open(testCase.view(client), undefined);
+                    return;
+                }
 
                 let pages: TestPayload[];
                 try {
                     pages = await resolveTestPages(testCase, client);
                 } catch (err) {
-                    return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` threw: ${err instanceof Error ? err.message : String(err)}`) };
+                    return {
+                        screen: "shown",
+                        payload: EmbedFormatter.error(`Test \`${key}\` threw: ${err instanceof Error ? err.message : String(err)}`),
+                    };
                 }
                 if (pages.length === 0) return { screen: "shown", payload: EmbedFormatter.error(`Test \`${key}\` returned no pages.`) };
                 if (pages.length === 1) return { screen: "shown", payload: pages[0] };
@@ -162,10 +178,9 @@ export default defineCommand({
     showOnHelp: false,
     botOwnerOnly: true,
 
-    options: new SlashCommandBuilder()
-        .addStringOption((o) =>
-            o.setName("keyword").setDescription("Test case to preview, or \"list\" to see all (e.g. embed/session-end)").setRequired(false),
-        ),
+    options: new SlashCommandBuilder().addStringOption((o) =>
+        o.setName("keyword").setDescription('Test case to preview, or "list" to see all (e.g. embed/session-end)').setRequired(false),
+    ),
 
     async run(ctx) {
         await ctx.defer({ ephemeral: true });

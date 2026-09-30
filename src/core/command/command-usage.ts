@@ -17,10 +17,15 @@ const ARG_TYPES = [3, 4, 5, 6, 7, 8, 10];
 function formatArgList(options: RawOption[] | undefined, useFlagStyle: boolean): string {
     const args = (options ?? []).filter((o) => ARG_TYPES.includes(o.type));
     if (!args.length) return "";
-    return " " + args.map((a) => {
-        if (a.required) return `<${a.name}>`;
-        return useFlagStyle ? `[--${a.name}]` : `[${a.name}]`;
-    }).join(" ");
+    return (
+        " " +
+        args
+            .map((a) => {
+                if (a.required) return `<${a.name}>`;
+                return useFlagStyle ? `[--${a.name}]` : `[${a.name}]`;
+            })
+            .join(" ")
+    );
 }
 
 function formatSubcommandLine(invokeName: string, cmdName: string, path: string[], sub: RawOption, useFlagStyle: boolean): string {
@@ -90,7 +95,13 @@ function buildGroupContainer(invokeName: string, cmd: CommandDefinition, group: 
 }
 
 /** Leaf view (`/help <command> [group] <subcommand>`) — a single subcommand's arguments. */
-function buildLeafContainer(invokeName: string, cmd: CommandDefinition, path: string[], leaf: RawOption, useFlagStyle: boolean): ContainerBuilder {
+function buildLeafContainer(
+    invokeName: string,
+    cmd: CommandDefinition,
+    path: string[],
+    leaf: RawOption,
+    useFlagStyle: boolean,
+): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(ACCENT);
     const label = `${invokeName}${[cmd.name, ...path, leaf.name].join(" ")}`;
     container.addTextDisplayComponents((td) =>
@@ -111,14 +122,19 @@ function buildLeafContainer(invokeName: string, cmd: CommandDefinition, path: st
     return container;
 }
 
-
 /**
  * Resolves `help <command> [...path]` into the right container, for `mode`.
  * `path` is empty for the top-level summary, `[group]` or `[subcommand]` for
  * one level down, and `[group, subcommand]` for a leaf under a group.
  * Returns `null` if `path` doesn't resolve to anything (in that mode).
  */
-export function buildHelpContainer(invokeName: string, cmd: CommandDefinition, path: string[], useFlagStyle: boolean, mode: CommandMode): ContainerBuilder | null {
+export function buildHelpContainer(
+    invokeName: string,
+    cmd: CommandDefinition,
+    path: string[],
+    useFlagStyle: boolean,
+    mode: CommandMode,
+): ContainerBuilder | null {
     const json = cmd.options?.toJSON() as { options?: RawOption[] } | undefined;
     const topLevel = optionsForMode(cmd, json?.options ?? [], mode);
 
@@ -144,8 +160,15 @@ export function buildHelpContainer(invokeName: string, cmd: CommandDefinition, p
  * back to the top-level summary when that resolves to nothing (e.g. every sub in the group is
  * unavailable in this mode), so a usage request never ends in silence.
  */
-export function buildUsagePayload(cmd: CommandDefinition, invokePrefix: string, group: string | null, mode: CommandMode, useFlagStyle: boolean) {
-    const container = (group && buildHelpContainer(invokePrefix, cmd, [group], useFlagStyle, mode))
-        || buildHelpContainer(invokePrefix, cmd, [], useFlagStyle, mode);
+export function buildUsagePayload(
+    cmd: CommandDefinition,
+    invokePrefix: string,
+    group: string | null,
+    mode: CommandMode,
+    useFlagStyle: boolean,
+) {
+    const container =
+        (group && buildHelpContainer(invokePrefix, cmd, [group], useFlagStyle, mode)) ||
+        buildHelpContainer(invokePrefix, cmd, [], useFlagStyle, mode);
     return container ? { components: [container], flags: MessageFlags.IsComponentsV2 as const } : null;
 }

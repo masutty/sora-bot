@@ -61,7 +61,13 @@ test("defineWorker returns the definition unchanged", () => {
 test("startWorker ticks once per intervalMs", async () => {
     const clock = createManualClock();
     let calls = 0;
-    const worker = defineWorker({ name: "sweep", intervalMs: 100, run: async () => { calls++; } });
+    const worker = defineWorker({
+        name: "sweep",
+        intervalMs: 100,
+        run: async () => {
+            calls++;
+        },
+    });
     const handle = startWorker("mycog", worker, client, clock);
 
     expect(calls).toBe(0);
@@ -78,7 +84,14 @@ test("startWorker ticks once per intervalMs", async () => {
 test("startWorker with runOnStart runs immediately, then keeps the interval", async () => {
     const clock = createManualClock();
     let calls = 0;
-    const worker = defineWorker({ name: "sweep", intervalMs: 100, runOnStart: true, run: async () => { calls++; } });
+    const worker = defineWorker({
+        name: "sweep",
+        intervalMs: 100,
+        runOnStart: true,
+        run: async () => {
+            calls++;
+        },
+    });
     const handle = startWorker("mycog", worker, client, clock);
     await settle();
 
@@ -96,7 +109,11 @@ test("a tick still running when the next is due is skipped, not queued", async (
     const worker = defineWorker({
         name: "sweep",
         intervalMs: 100,
-        run: () => new Promise<void>((resolve) => { calls++; pending.push(resolve); }),
+        run: () =>
+            new Promise<void>((resolve) => {
+                calls++;
+                pending.push(resolve);
+            }),
     });
     const handle = startWorker("mycog", worker, client, clock);
 
@@ -141,7 +158,13 @@ test("a run that throws is logged, and the loop keeps going", async () => {
 
 test("a run that rejects is logged the same way (non-Error rejection)", async () => {
     const clock = createManualClock();
-    const worker = defineWorker({ name: "sweep", intervalMs: 100, run: async () => { throw "nope"; } });
+    const worker = defineWorker({
+        name: "sweep",
+        intervalMs: 100,
+        run: async () => {
+            throw "nope";
+        },
+    });
     const handle = startWorker("mycog", worker, client, clock);
 
     await clock.advance(100);
@@ -155,7 +178,9 @@ test("a tick that runs past intervalMs warns", async () => {
     const worker = defineWorker({
         name: "sweep",
         intervalMs: 1,
-        run: async () => { await new Promise((r) => setTimeout(r, 20)); },
+        run: async () => {
+            await new Promise((r) => setTimeout(r, 20));
+        },
     });
     const handle = startWorker("mycog", worker, client, clock);
 
@@ -164,7 +189,7 @@ test("a tick that runs past intervalMs warns", async () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(logWarn).toHaveBeenCalledTimes(1);
-    expect((logWarn.mock.calls[0]?.[0] as string)).toContain("mycog.sweep");
+    expect(logWarn.mock.calls[0]?.[0] as string).toContain("mycog.sweep");
 
     handle.stop();
 });
@@ -172,7 +197,13 @@ test("a tick that runs past intervalMs warns", async () => {
 test("stop() halts the loop - no further ticks even after more time passes", async () => {
     const clock = createManualClock();
     let calls = 0;
-    const worker = defineWorker({ name: "sweep", intervalMs: 100, run: async () => { calls++; } });
+    const worker = defineWorker({
+        name: "sweep",
+        intervalMs: 100,
+        run: async () => {
+            calls++;
+        },
+    });
     const handle = startWorker("mycog", worker, client, clock);
 
     await clock.advance(100);
@@ -189,7 +220,9 @@ test("each run happens inside a trace named worker:<cog>.<name>", async () => {
     const worker = defineWorker({
         name: "sweep",
         intervalMs: 100,
-        run: async () => { seen.push(currentTrace()); },
+        run: async () => {
+            seen.push(currentTrace());
+        },
     });
     const handle = startWorker("mycog", worker, client, clock);
 

@@ -11,8 +11,12 @@ export type QuotaRoleMode = "F" | "RW";
 export type Badge = "GLITCHED" | "CYBERSPACE" | "DREAMSPACE" | "DELETED";
 
 export type FlagName =
-    | "REPORT_SESSION_ON_END" | "PING_ON_QUOTA_MET" | "CLEAR_PROFILE_ON_AUTODELETE" | "AUTO_DELETE_ENABLED"
-    | "EXPERIMENT_WEBHOOK_FLOWERS" | "EXPERIMENT_BIOME_ECONOMY";
+    | "REPORT_SESSION_ON_END"
+    | "PING_ON_QUOTA_MET"
+    | "CLEAR_PROFILE_ON_AUTODELETE"
+    | "AUTO_DELETE_ENABLED"
+    | "EXPERIMENT_WEBHOOK_FLOWERS"
+    | "EXPERIMENT_BIOME_ECONOMY";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
@@ -140,6 +144,11 @@ export interface BiomeForwardRow {
     role_id: string | null;
 }
 
+/** `bh_biome_delayed_forwards` - a `BiomeForwardRow` sent `delay_s` seconds after the find. */
+export interface BiomeDelayedForwardRow extends BiomeForwardRow {
+    delay_s: number;
+}
+
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later
@@ -180,6 +189,10 @@ export interface BiomeVoteRow {
     server_link: string | null;
     jump_link: string;
     find_count: number | null;
+    /** The rest of the forward card's render inputs - `null` on votes opened before the card redesign. */
+    finder_discord_id: string | null;
+    server_find_count: number | null;
+    last_seen_in_server_at: Date | null;
     status: VoteStatus;
     /** Discord id of the deciding admin - set only for admin_confirmed/admin_denied. */
     decided_by: string | null;

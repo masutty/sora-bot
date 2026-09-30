@@ -1,5 +1,13 @@
 import { readFileSync } from "node:fs";
-import { type ActionRowBuilder, AttachmentBuilder, type ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
+import {
+    type ActionRowBuilder,
+    AttachmentBuilder,
+    type ButtonBuilder,
+    ButtonStyle,
+    ContainerBuilder,
+    MessageFlags,
+    SeparatorSpacingSize,
+} from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { type AnySelect, type CommandContext, defineView, type RenderKit, type ViewDefinition, type ViewPayload } from "@/define";
 import { EmbedFormatter } from "@/utils/format";
@@ -144,11 +152,19 @@ function render(state: RerollState, kit: RenderKit): ViewPayload {
     if (state.phase === "done") return state.payload as ViewPayload;
     if (state.phase === "confirming") {
         return buildRerollPayload(
-            `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`, state.flower, state.seeds, state.rollCount, confirmingButtons(kit),
+            `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`,
+            state.flower,
+            state.seeds,
+            state.rollCount,
+            confirmingButtons(kit),
         );
     }
     return buildRerollPayload(
-        "🎲 New Flower!", state.flower, state.seeds, state.rollCount, rollingButtons(kit, state.seeds >= REROLL_COST),
+        "🎲 New Flower!",
+        state.flower,
+        state.seeds,
+        state.rollCount,
+        rollingButtons(kit, state.seeds >= REROLL_COST),
         `If you don't pick one within ${settings.ui.rerollIdleMs / 1000}s, this Flower is applied automatically.`,
     );
 }

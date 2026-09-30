@@ -54,7 +54,9 @@ function text(payload: ViewPayload): string {
         const obj = json as { content?: string; components?: unknown; accessory?: unknown };
         return [obj.content ?? "", ...flatten(obj.components), ...flatten(obj.accessory)].filter(Boolean);
     };
-    return [(payload as { content?: string }).content ?? "", ...flatten((payload as { components?: unknown }).components)].filter(Boolean).join("\n");
+    return [(payload as { content?: string }).content ?? "", ...flatten((payload as { components?: unknown }).components)]
+        .filter(Boolean)
+        .join("\n");
 }
 
 test("biomehunt.quota-delete: invalid typed number retries, then a valid one removes the right role", async () => {
@@ -78,7 +80,7 @@ test("biomehunt.quota-delete: invalid typed number retries, then a valid one rem
     await resultP;
 });
 
-test("biomehunt.quota-delete: idling past the timeout shows \"Timed out, nothing removed.\"", async () => {
+test('biomehunt.quota-delete: idling past the timeout shows "Timed out, nothing removed."', async () => {
     const { deps, removeCalls } = fakeDeps([ROLE_1]);
     const fake = createFakeViewTransport();
     const resultP = fake.run(quotaDeleteView(deps), { guildId: GUILD_ID }, OWNER);

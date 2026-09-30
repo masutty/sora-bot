@@ -23,8 +23,10 @@ export async function resetActivityThresholds(guildId: string): Promise<string> 
 export async function setAutoDeleteThreshold(guildId: string, hoursAfterInactive: number): Promise<string> {
     if (hoursAfterInactive <= 0) throw new BiomeHuntError("Hours must be greater than zero.");
     await setAutoDeleteHours(guildId, Math.round(hoursAfterInactive * 3600));
-    return `Auto-delete threshold set: a user's macro channel is removed ${hoursAfterInactive}h after they go inactive. ` +
-        "Remember this only takes effect while the AUTO_DELETE_ENABLED flag is on (`flag set flag:AUTO_DELETE_ENABLED enabled:true`).";
+    return (
+        `Auto-delete threshold set: a user's macro channel is removed ${hoursAfterInactive}h after they go inactive. ` +
+        "Remember this only takes effect while the AUTO_DELETE_ENABLED flag is on (`flag set flag:AUTO_DELETE_ENABLED enabled:true`)."
+    );
 }
 
 /** `roleId` of `null` unsets that status's role instead of setting one. */

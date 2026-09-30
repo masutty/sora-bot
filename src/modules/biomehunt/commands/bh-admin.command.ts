@@ -1,5 +1,5 @@
 import type { Guild, GuildMember } from "discord.js";
-import { ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
+import { ChannelType, type ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { type CommandArgs, type CommandContext, defineCommand, paginate, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
@@ -8,36 +8,44 @@ import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.co
 import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
-import { runForwardConfigFlow } from "../flows/forward-config.flow";
-import {
-    resetActivityThresholds, setActivityRole, setActivityThresholds,
-    setAutoDeleteThreshold,
-} from "../services/activity.service";
+import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
+import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
+import { resetActivityThresholds, setActivityRole, setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
+import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
 import { listFlags, setFlag } from "../services/flag.service";
 import { listForwards, setForward } from "../services/forward.service";
 import {
     addCategory,
-    disableCounter, forceCounterUpdate,
-    removeCategory, resetConfig, setAutoCreateCategories, setCounterChannel, showConfig, testConfig,
+    disableCounter,
+    forceCounterUpdate,
+    removeCategory,
+    resetConfig,
+    setAutoCreateCategories,
+    setCounterChannel,
+    showConfig,
+    testConfig,
 } from "../services/guild-config.service";
 import {
     type AdoptParams,
-    clearMemberBiomes, decrementMemberBiome, forceSetupMember, hardDeleteMember, pauseMember,
-    resetMemberChannel, softDeleteMember, unpauseMember,
+    clearMemberBiomes,
+    decrementMemberBiome,
+    forceSetupMember,
+    hardDeleteMember,
+    pauseMember,
+    resetMemberChannel,
+    softDeleteMember,
+    unpauseMember,
 } from "../services/member.service";
-import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
-import {
-    createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour,
-} from "../services/quota.service";
+import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
+import { settings } from "../settings";
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
-
 
 const FLAG_CHOICES = ALL_FLAGS.map((name) => ({ name: FLAG_DEFINITIONS[name].label, value: name }));
 /** All 4 badges - valid targets for manual award/take. Value is the badge's slug (easy to type in prefix mode), resolved back via `resolveBadgeSlug`. */
@@ -70,193 +78,414 @@ export default defineCommand({
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommand((s) =>
-            s.setName("profile").setDescription("View a user's BiomeHunt profile.")
+            s
+                .setName("profile")
+                .setDescription("View a user's BiomeHunt profile.")
                 .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
         )
         .addSubcommand((s) =>
-            s.setName("review-voting").setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
+            s
+                .setName("review-voting")
+                .setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
                 .addStringOption((o) => o.setName("id").setDescription("Vote id (shown on the forward message)").setRequired(true)),
         )
         .addSubcommandGroup((g) =>
-            g.setName("config").setDescription("Overall BiomeHunt configuration.")
+            g
+                .setName("config")
+                .setDescription("Overall BiomeHunt configuration.")
                 .addSubcommand((s) => s.setName("show").setDescription("Show the current BiomeHunt configuration."))
                 .addSubcommand((s) => s.setName("test").setDescription("Check whether required configuration is complete."))
                 .addSubcommand((s) => s.setName("reset").setDescription("Reset all BiomeHunt configuration for this server.")),
         )
         .addSubcommandGroup((g) =>
-            g.setName("activity").setDescription("Activity thresholds, auto-delete, and status roles.")
+            g
+                .setName("activity")
+                .setDescription("Activity thresholds, auto-delete, and status roles.")
                 .addSubcommand((s) =>
-                    s.setName("set").setDescription("Set activity thresholds.")
-                        .addIntegerOption((o) => o.setName("session_gap_minutes").setDescription("Session gap, in minutes").setRequired(true).setMinValue(1))
-                        .addIntegerOption((o) => o.setName("idle_minutes").setDescription("Idle threshold, in minutes").setRequired(true).setMinValue(1))
-                        .addIntegerOption((o) => o.setName("inactive_hours").setDescription("Inactive threshold, in hours").setRequired(true).setMinValue(1)),
+                    s
+                        .setName("set")
+                        .setDescription("Set activity thresholds.")
+                        .addIntegerOption((o) =>
+                            o.setName("session_gap_minutes").setDescription("Session gap, in minutes").setRequired(true).setMinValue(1),
+                        )
+                        .addIntegerOption((o) =>
+                            o.setName("idle_minutes").setDescription("Idle threshold, in minutes").setRequired(true).setMinValue(1),
+                        )
+                        .addIntegerOption((o) =>
+                            o.setName("inactive_hours").setDescription("Inactive threshold, in hours").setRequired(true).setMinValue(1),
+                        ),
                 )
                 .addSubcommand((s) => s.setName("reset").setDescription("Reset thresholds to defaults."))
                 .addSubcommand((s) =>
-                    s.setName("delete").setDescription("Set the auto-delete hours-after-inactive threshold. Requires the AUTO_DELETE_ENABLED flag to be on.")
-                        .addNumberOption((o) => o.setName("hours").setDescription("Hours after going inactive").setRequired(true).setMinValue(0.1)),
+                    s
+                        .setName("delete")
+                        .setDescription(
+                            "Set the auto-delete hours-after-inactive threshold. Requires the AUTO_DELETE_ENABLED flag to be on.",
+                        )
+                        .addNumberOption((o) =>
+                            o.setName("hours").setDescription("Hours after going inactive").setRequired(true).setMinValue(0.1),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("set-role").setDescription("Set (or unset) one status role at a time.")
-                        .addStringOption((o) => o.setName("type").setDescription("Status").setRequired(true).addChoices(...STATUS_CHOICES))
+                    s
+                        .setName("set-role")
+                        .setDescription("Set (or unset) one status role at a time.")
+                        .addStringOption((o) =>
+                            o
+                                .setName("type")
+                                .setDescription("Status")
+                                .setRequired(true)
+                                .addChoices(...STATUS_CHOICES),
+                        )
                         .addRoleOption((o) => o.setName("role").setDescription("Role (leave empty to unset)")),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("categories").setDescription("Macro channel categories.")
+            g
+                .setName("categories")
+                .setDescription("Macro channel categories.")
                 .addSubcommand((s) =>
-                    s.setName("add").setDescription("Allow a category for macro channels.")
-                        .addChannelOption((o) => o.setName("category").setDescription("Category channel").setRequired(true).addChannelTypes(ChannelType.GuildCategory)),
+                    s
+                        .setName("add")
+                        .setDescription("Allow a category for macro channels.")
+                        .addChannelOption((o) =>
+                            o
+                                .setName("category")
+                                .setDescription("Category channel")
+                                .setRequired(true)
+                                .addChannelTypes(ChannelType.GuildCategory),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("remove").setDescription("Disallow a category for macro channels.")
-                        .addChannelOption((o) => o.setName("category").setDescription("Category channel").setRequired(true).addChannelTypes(ChannelType.GuildCategory)),
+                    s
+                        .setName("remove")
+                        .setDescription("Disallow a category for macro channels.")
+                        .addChannelOption((o) =>
+                            o
+                                .setName("category")
+                                .setDescription("Category channel")
+                                .setRequired(true)
+                                .addChannelTypes(ChannelType.GuildCategory),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("auto-create").setDescription("Toggle automatic category creation.")
+                    s
+                        .setName("auto-create")
+                        .setDescription("Toggle automatic category creation.")
                         .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("badges").setDescription("Manage badges (biome-discovery and bot-triggered).")
+            g
+                .setName("badges")
+                .setDescription("Manage badges (biome-discovery and bot-triggered).")
                 .addSubcommand((s) =>
-                    s.setName("award").setDescription("Manually grant a badge to a user.")
+                    s
+                        .setName("award")
+                        .setDescription("Manually grant a badge to a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) => o.setName("badge").setDescription("Badge").setRequired(true).addChoices(...BADGE_CHOICES)),
+                        .addStringOption((o) =>
+                            o
+                                .setName("badge")
+                                .setDescription("Badge")
+                                .setRequired(true)
+                                .addChoices(...BADGE_CHOICES),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("take").setDescription("Manually revoke a badge from a user.")
+                    s
+                        .setName("take")
+                        .setDescription("Manually revoke a badge from a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) => o.setName("badge").setDescription("Badge").setRequired(true).addChoices(...BADGE_CHOICES)),
+                        .addStringOption((o) =>
+                            o
+                                .setName("badge")
+                                .setDescription("Badge")
+                                .setRequired(true)
+                                .addChoices(...BADGE_CHOICES),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("set").setDescription("Configure the role a badge grants. Leave role empty to unconfigure it.")
-                        .addStringOption((o) => o.setName("badge").setDescription("Badge").setRequired(true).addChoices(...CONFIGURABLE_BADGE_CHOICES))
+                    s
+                        .setName("set")
+                        .setDescription("Configure the role a badge grants. Leave role empty to unconfigure it.")
+                        .addStringOption((o) =>
+                            o
+                                .setName("badge")
+                                .setDescription("Badge")
+                                .setRequired(true)
+                                .addChoices(...CONFIGURABLE_BADGE_CHOICES),
+                        )
                         .addRoleOption((o) => o.setName("role").setDescription("Role to grant (leave empty to unconfigure)")),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all badges and their current role configuration.")),
         )
         .addSubcommandGroup((g) =>
-            g.setName("flag").setDescription("Toggle optional BiomeHunt behaviors.")
+            g
+                .setName("flag")
+                .setDescription("Toggle optional BiomeHunt behaviors.")
                 .addSubcommand((s) =>
-                    s.setName("set").setDescription("Enable or disable a flag.")
-                        .addStringOption((o) => o.setName("flag").setDescription("Flag").setRequired(true).addChoices(...FLAG_CHOICES))
+                    s
+                        .setName("set")
+                        .setDescription("Enable or disable a flag.")
+                        .addStringOption((o) =>
+                            o
+                                .setName("flag")
+                                .setDescription("Flag")
+                                .setRequired(true)
+                                .addChoices(...FLAG_CHOICES),
+                        )
                         .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all flags, their description, default, and current value.")),
         )
         .addSubcommandGroup((g) =>
-            g.setName("economy").setDescription("Manual Seeds/XP balance adjustments.")
+            g
+                .setName("economy")
+                .setDescription("Manual Seeds/XP balance adjustments.")
                 .addSubcommand((s) =>
-                    s.setName("grant").setDescription("Grant (or take, with a negative number) Seeds/XP.")
+                    s
+                        .setName("grant")
+                        .setDescription("Grant (or take, with a negative number) Seeds/XP.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
                         .addIntegerOption((o) => o.setName("seeds").setDescription("Seeds delta (negative to take away)"))
                         .addIntegerOption((o) => o.setName("xp").setDescription("XP delta (negative to take away)")),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("counter").setDescription("Live activity counter.")
+            g
+                .setName("counter")
+                .setDescription("Live activity counter.")
                 .addSubcommand((s) =>
-                    s.setName("set").setDescription("Set the live counter channel.")
-                        .addChannelOption((o) => o.setName("channel").setDescription("Text channel").setRequired(true).addChannelTypes(ChannelType.GuildText)),
+                    s
+                        .setName("set")
+                        .setDescription("Set the live counter channel.")
+                        .addChannelOption((o) =>
+                            o.setName("channel").setDescription("Text channel").setRequired(true).addChannelTypes(ChannelType.GuildText),
+                        ),
                 )
                 .addSubcommand((s) => s.setName("disable").setDescription("Disable the live counter."))
                 .addSubcommand((s) => s.setName("force-update").setDescription("Immediately refresh the live activity counter.")),
         )
         .addSubcommandGroup((g) =>
-            g.setName("quotas").setDescription("Quota reward roles.")
+            g
+                .setName("quotas")
+                .setDescription("Quota reward roles.")
                 .addSubcommand((s) =>
-                    s.setName("create").setDescription("Create (or update) a quota reward role.")
+                    s
+                        .setName("create")
+                        .setDescription("Create (or update) a quota reward role.")
                         .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true))
                         .addStringOption((o) =>
-                            o.setName("mode").setDescription("Evaluation mode").setRequired(true)
-                                .addChoices({ name: "Fixed (daily check, timed access)", value: "F" }, { name: "Rolling Window (continuous)", value: "RW" }),
+                            o
+                                .setName("mode")
+                                .setDescription("Evaluation mode")
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: "Fixed (daily check, timed access)", value: "F" },
+                                    { name: "Rolling Window (continuous)", value: "RW" },
+                                ),
                         )
-                        .addNumberOption((o) => o.setName("quota_hours").setDescription("Required active hours within the window").setRequired(true).setMinValue(0.1))
-                        .addIntegerOption((o) => o.setName("quota_window_hours").setDescription("Rolling window size, in hours").setRequired(true).setMinValue(1))
-                        .addIntegerOption((o) => o.setName("access_duration_days").setDescription("Access duration in days (Fixed mode only)").setMinValue(1)),
+                        .addNumberOption((o) =>
+                            o
+                                .setName("quota_hours")
+                                .setDescription("Required active hours within the window")
+                                .setRequired(true)
+                                .setMinValue(0.1),
+                        )
+                        .addIntegerOption((o) =>
+                            o
+                                .setName("quota_window_hours")
+                                .setDescription("Rolling window size, in hours")
+                                .setRequired(true)
+                                .setMinValue(1),
+                        )
+                        .addIntegerOption((o) =>
+                            o.setName("access_duration_days").setDescription("Access duration in days (Fixed mode only)").setMinValue(1),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("delete").setDescription("Delete a quota reward role. Omit role to pick from a numbered list.")
+                    s
+                        .setName("delete")
+                        .setDescription("Delete a quota reward role. Omit role to pick from a numbered list.")
                         .addRoleOption((o) => o.setName("role").setDescription("Reward role")),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all configured quota reward roles."))
-                .addSubcommand((s) => s.setName("force-eval").setDescription("Immediately run the Fixed-mode quota reward evaluation for this server."))
                 .addSubcommand((s) =>
-                    s.setName("set-eval-hour").setDescription("Set the UTC hour Fixed-mode rewards are evaluated at.")
-                        .addIntegerOption((o) => o.setName("hour").setDescription("UTC hour (0-23)").setRequired(true).setMinValue(0).setMaxValue(23)),
+                    s.setName("force-eval").setDescription("Immediately run the Fixed-mode quota reward evaluation for this server."),
+                )
+                .addSubcommand((s) =>
+                    s
+                        .setName("set-eval-hour")
+                        .setDescription("Set the UTC hour Fixed-mode rewards are evaluated at.")
+                        .addIntegerOption((o) =>
+                            o.setName("hour").setDescription("UTC hour (0-23)").setRequired(true).setMinValue(0).setMaxValue(23),
+                        ),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("session").setDescription("Manage a user's session history.")
+            g
+                .setName("session")
+                .setDescription("Manage a user's session history.")
                 .addSubcommand((s) =>
-                    s.setName("view").setDescription("View a user's recent activity sessions.")
+                    s
+                        .setName("view")
+                        .setDescription("View a user's recent activity sessions.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("delete").setDescription("Delete one specific session (see the #id in `session view`).")
+                    s
+                        .setName("delete")
+                        .setDescription("Delete one specific session (see the #id in `session view`).")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
                         .addIntegerOption((o) => o.setName("session_id").setDescription("Session #id").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("clear").setDescription("Clear all session history for a user.")
+                    s
+                        .setName("clear")
+                        .setDescription("Clear all session history for a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("member").setDescription("Manage a specific member's BiomeHunt data.")
+            g
+                .setName("member")
+                .setDescription("Manage a specific member's BiomeHunt data.")
                 .addSubcommand((s) =>
-                    s.setName("force-setup").setDescription("Force-run setup on behalf of a user - resets any existing channel/webhook first.")
+                    s
+                        .setName("force-setup")
+                        .setDescription("Force-run setup on behalf of a user - resets any existing channel/webhook first.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addBooleanOption((o) => o.setName("dm_user").setDescription("DM them the webhook URL? Default false. Ignored when adopting an existing channel."))
+                        .addBooleanOption((o) =>
+                            o
+                                .setName("dm_user")
+                                .setDescription("DM them the webhook URL? Default false. Ignored when adopting an existing channel."),
+                        )
                         .addChannelOption((o) =>
-                            o.setName("channel").setDescription("Adopt this EXISTING channel instead of creating a new one (requires webhook_url too)")
+                            o
+                                .setName("channel")
+                                .setDescription("Adopt this EXISTING channel instead of creating a new one (requires webhook_url too)")
                                 .addChannelTypes(ChannelType.GuildText),
                         )
-                        .addStringOption((o) => o.setName("webhook_url").setDescription("The existing channel's webhook URL (required if channel is given)")),
+                        .addStringOption((o) =>
+                            o.setName("webhook_url").setDescription("The existing channel's webhook URL (required if channel is given)"),
+                        ),
                 )
                 .addSubcommand((s) =>
-                    s.setName("hard-delete").setDescription("Wipe ALL of a user's data (channel, sessions, badges, quota status).")
+                    s
+                        .setName("hard-delete")
+                        .setDescription("Wipe ALL of a user's data (channel, sessions, badges, quota status).")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("soft-delete").setDescription("Remove a user's channel and sessions, but keep badges and quota status.")
+                    s
+                        .setName("soft-delete")
+                        .setDescription("Remove a user's channel and sessions, but keep badges and quota status.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("reset-channel").setDescription("Remove only a user's macro channel - all other data stays.")
+                    s
+                        .setName("reset-channel")
+                        .setDescription("Remove only a user's macro channel - all other data stays.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("pause").setDescription("Exempt a user from inactivity auto-delete.")
+                    s
+                        .setName("pause")
+                        .setDescription("Exempt a user from inactivity auto-delete.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("unpause").setDescription("Re-expose a user to inactivity auto-delete.")
+                    s
+                        .setName("unpause")
+                        .setDescription("Re-expose a user to inactivity auto-delete.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("decrement-biome").setDescription("Remove the N most recent finds of a biome for a user.")
+                    s
+                        .setName("decrement-biome")
+                        .setDescription("Remove the N most recent finds of a biome for a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).addChoices(...BIOME_ONLY_CHOICES))
+                        .addStringOption((o) =>
+                            o
+                                .setName("biome")
+                                .setDescription("Biome")
+                                .setRequired(true)
+                                .addChoices(...BIOME_ONLY_CHOICES),
+                        )
                         .addIntegerOption((o) => o.setName("amount").setDescription("How many to remove (default 1)").setMinValue(1)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("clear-biomes").setDescription("Remove ALL recorded finds of a biome for a user.")
+                    s
+                        .setName("clear-biomes")
+                        .setDescription("Remove ALL recorded finds of a biome for a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).addChoices(...BIOME_ONLY_CHOICES)),
+                        .addStringOption((o) =>
+                            o
+                                .setName("biome")
+                                .setDescription("Biome")
+                                .setRequired(true)
+                                .addChoices(...BIOME_ONLY_CHOICES),
+                        ),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("forward").setDescription("Forward detected biomes to a channel.")
+            g
+                .setName("forward")
+                .setDescription("Forward detected biomes to a channel.")
                 .addSubcommand((s) =>
-                    s.setName("set").setDescription("Forward a biome to a channel, optionally pinging a role. Omit channel to remove the forward.")
-                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).addChoices(...BIOME_SELECTOR_CHOICES))
-                        .addChannelOption((o) => o.setName("channel").setDescription("Destination channel (omit to remove the forward)").addChannelTypes(ChannelType.GuildText))
+                    s
+                        .setName("set")
+                        .setDescription("Forward a biome to a channel, optionally pinging a role. Omit channel to remove the forward.")
+                        .addStringOption((o) =>
+                            o
+                                .setName("biome")
+                                .setDescription("Biome")
+                                .setRequired(true)
+                                .addChoices(...BIOME_SELECTOR_CHOICES),
+                        )
+                        .addChannelOption((o) =>
+                            o
+                                .setName("channel")
+                                .setDescription("Destination channel (omit to remove the forward)")
+                                .addChannelTypes(ChannelType.GuildText),
+                        )
                         .addRoleOption((o) => o.setName("role").setDescription("Role to ping (optional, requires channel)")),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all configured biome forwards."))
                 .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove biome forwards.")),
+        )
+        .addSubcommandGroup((g) =>
+            g
+                .setName("delayed-forward")
+                .setDescription("Forward detected biomes to a channel after a delay.")
+                .addSubcommand((s) =>
+                    s
+                        .setName("set")
+                        .setDescription("Delay-forward a biome to a channel, optionally pinging a role. Omit channel to remove it.")
+                        .addStringOption((o) =>
+                            o
+                                .setName("biome")
+                                .setDescription("Biome")
+                                .setRequired(true)
+                                .addChoices(...BIOME_SELECTOR_CHOICES),
+                        )
+                        .addChannelOption((o) =>
+                            o
+                                .setName("channel")
+                                .setDescription("Destination channel (omit to remove the delayed forward)")
+                                .addChannelTypes(ChannelType.GuildText),
+                        )
+                        .addIntegerOption((o) =>
+                            o
+                                .setName("delay")
+                                .setDescription("Seconds to wait after the find (required with channel)")
+                                .addChoices(...settings.delayedForward.delayChoicesS.map((d) => ({ name: `${d}s`, value: d }))),
+                        )
+                        .addRoleOption((o) => o.setName("role").setDescription("Role to ping (optional, requires channel)")),
+                )
+                .addSubcommand((s) => s.setName("list").setDescription("List all configured delayed biome forwards."))
+                .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove delayed biome forwards.")),
         ),
 
     async run(ctx) {
@@ -264,13 +493,17 @@ export default defineCommand({
         const sub = ctx.args.getSubcommand();
         const send = (payload: Exclude<ReplyPayload, string>) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
 
-        // onMissingSubcommand: "run" - a bare `!bh-admin forward` opens the forward menu; any other
+        // onMissingSubcommand: "run" - a bare `!bh-admin forward` / `delayed-forward` opens its menu; any other
         // missing/unknown subcommand gets the framework's usage.
         if (!sub) {
             // Only a truly bare `forward` opens the menu - `forward lst` (a typo) gets the usage.
             const nothingAfterGroup = ctx.raw.kind === "prefix" && ctx.raw.args.getRawArgs().length === 0;
             if (group === "forward" && nothingAfterGroup) {
                 await runForwardConfigFlow(ctx, ctx.guild.id);
+                return;
+            }
+            if (group === "delayed-forward" && nothingAfterGroup) {
+                await runDelayedForwardConfigFlow(ctx, ctx.guild.id);
                 return;
             }
             await ctx.replyUsage();
@@ -326,6 +559,12 @@ export default defineCommand({
         if (routeKey === "forward-menu") {
             await ctx.defer();
             await runForwardConfigFlow(ctx, ctx.guild.id);
+            return;
+        }
+
+        if (routeKey === "delayed-forward-menu") {
+            await ctx.defer();
+            await runDelayedForwardConfigFlow(ctx, ctx.guild.id);
             return;
         }
 
@@ -438,6 +677,15 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "forward-list":
             return listForwards(guildId);
+        case "delayed-forward-set": {
+            const biome = args.getString("biome");
+            const channelId = await idOf(args.getChannel("channel"));
+            const roleId = await idOf(args.getRole("role"));
+            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
+            return setDelayedForward(guildId, biome, channelId, roleId, args.getInteger("delay"));
+        }
+        case "delayed-forward-list":
+            return listDelayedForwards(guildId);
         case "counter-set": {
             const id = await idOf(args.getChannel("channel"));
             if (!id) throw new BiomeHuntError("Missing required argument: channel");
@@ -495,7 +743,8 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             let adopt: AdoptParams | null = null;
             if (channelId && webhookUrl) {
                 const channel = await guild.channels.fetch(channelId).catch(() => null);
-                if (!channel || channel.type !== ChannelType.GuildText) throw new BiomeHuntError("That channel isn't a valid text channel.");
+                if (!channel || channel.type !== ChannelType.GuildText)
+                    throw new BiomeHuntError("That channel isn't a valid text channel.");
                 adopt = { channel, webhookUrl };
             }
 

@@ -1,5 +1,5 @@
+import { join } from "node:path";
 import { ContainerBuilder, MessageFlags, OAuth2Scopes, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
-import { join } from "path";
 import { config } from "@/config";
 import type { BotClient } from "@/core/bot-client";
 import { hotReloadBot, loadCog, reloadCog, unloadCog } from "@/core/cog-loader";
@@ -28,30 +28,47 @@ export default defineCommand({
 
     options: new SlashCommandBuilder()
         .addSubcommandGroup((g) =>
-            g.setName("mod").setDescription("Cog management.")
+            g
+                .setName("mod")
+                .setDescription("Cog management.")
                 .addSubcommand((s) =>
-                    s.setName("load").setDescription("Load a cog.")
+                    s
+                        .setName("load")
+                        .setDescription("Load a cog.")
                         .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("unload").setDescription("Unload a cog.")
+                    s
+                        .setName("unload")
+                        .setDescription("Unload a cog.")
                         .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
                 )
                 .addSubcommand((s) =>
-                    s.setName("reload").setDescription("Restart a cog.")
+                    s
+                        .setName("reload")
+                        .setDescription("Restart a cog.")
                         .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
                 ),
         )
         .addSubcommandGroup((g) =>
-            g.setName("log").setDescription("Runtime log level control.")
+            g
+                .setName("log")
+                .setDescription("Runtime log level control.")
                 .addSubcommand((s) =>
-                    s.setName("set").setDescription("Change the console's or the log file's minimum level - no restart needed.")
+                    s
+                        .setName("set")
+                        .setDescription("Change the console's or the log file's minimum level - no restart needed.")
                         .addStringOption((o) =>
-                            o.setName("level").setDescription("Minimum level to show/capture").setRequired(true)
+                            o
+                                .setName("level")
+                                .setDescription("Minimum level to show/capture")
+                                .setRequired(true)
                                 .addChoices(...LOG_LEVELS.map((l) => ({ name: l, value: l }))),
                         )
                         .addStringOption((o) =>
-                            o.setName("target").setDescription("Where to apply it (default: console)")
+                            o
+                                .setName("target")
+                                .setDescription("Where to apply it (default: console)")
                                 .addChoices({ name: "Console", value: "console" }, { name: "File (logs/combined-*.log)", value: "file" }),
                         ),
                 )
@@ -60,15 +77,9 @@ export default defineCommand({
         .addSubcommand((sub) =>
             sub.setName("reload-all").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
         )
-        .addSubcommand((sub) =>
-            sub.setName("sync").setDescription("Sync slash commands with Discord."),
-        )
-        .addSubcommand((sub) =>
-            sub.setName("status").setDescription("Show bot status."),
-        )
-        .addSubcommand((sub) =>
-            sub.setName("shutdown").setDescription("Shut down the bot gracefully."),
-        )
+        .addSubcommand((sub) => sub.setName("sync").setDescription("Sync slash commands with Discord."))
+        .addSubcommand((sub) => sub.setName("status").setDescription("Show bot status."))
+        .addSubcommand((sub) => sub.setName("shutdown").setDescription("Shut down the bot gracefully."))
         .addSubcommand((sub) => sub.setName("uptime").setDescription("Shows how long the process has been running."))
         .addSubcommand((sub) => sub.setName("invite").setDescription("Generates the bot's invite link (with Administrator permission)."))
         .addSubcommand((sub) => sub.setName("commands").setDescription("Lists registered commands, grouped by cog."))
@@ -81,8 +92,14 @@ export default defineCommand({
     // Read-only diagnostics expose internals (pool target, memory, server list...) - never posted
     // publicly in a channel via prefix, only as an ephemeral slash reply.
     subcommandModes: {
-        db: "slash", "event-loop": "slash", uptime: "slash", invite: "slash",
-        commands: "slash", servers: "slash", ping: "slash", memory: "slash",
+        db: "slash",
+        "event-loop": "slash",
+        uptime: "slash",
+        invite: "slash",
+        commands: "slash",
+        servers: "slash",
+        ping: "slash",
+        memory: "slash",
     },
 
     async run(ctx) {
@@ -103,11 +120,15 @@ export default defineCommand({
 
         // Owner-only: the raw error message is shown on purpose (it's the operator reading it).
         try {
-            const result = await runSubcommand(routeKey, {
-                name: ctx.args.getString("name"),
-                level: ctx.args.getString("level"),
-                target: ctx.args.getString("target"),
-            }, ctx.client);
+            const result = await runSubcommand(
+                routeKey,
+                {
+                    name: ctx.args.getString("name"),
+                    level: ctx.args.getString("level"),
+                    target: ctx.args.getString("target"),
+                },
+                ctx.client,
+            );
             const formatted = READONLY_SUBCOMMANDS.has(routeKey) ? EmbedFormatter.plain(result) : EmbedFormatter.success(result);
             await ctx.reply(formatted);
         } catch (err) {
@@ -126,11 +147,7 @@ interface SubcommandArgs {
     target: string | null;
 }
 
-async function runSubcommand(
-    sub: string,
-    { name, level, target }: SubcommandArgs,
-    client: BotClient,
-): Promise<string> {
+async function runSubcommand(sub: string, { name, level, target }: SubcommandArgs, client: BotClient): Promise<string> {
     switch (sub) {
         case "mod-load":
             if (!name) throw new Error("Cog name required.");
@@ -175,9 +192,7 @@ async function runSubcommand(
         }
 
         case "sync": {
-            const guildId = process.env.NODE_ENV === "development"
-                ? process.env.DEV_GUILD_ID
-                : undefined;
+            const guildId = process.env.NODE_ENV === "development" ? process.env.DEV_GUILD_ID : undefined;
             await registerSlashCommands(client, guildId);
             return `Slash command tree synced (${client.commands.size} commands).`;
         }

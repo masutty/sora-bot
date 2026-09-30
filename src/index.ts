@@ -4,9 +4,9 @@ dotenv.config({
     path: process.env.NODE_ENV === "production" ? ".env" : ".env.local",
 });
 
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { Events } from "discord.js";
-import { rmSync } from "fs";
-import { join } from "path";
 import { config } from "./config";
 import { BotClient } from "./core/bot-client";
 import { getDclRuntimeDir, loadCogs } from "./core/cog-loader";
@@ -16,7 +16,7 @@ import { migrate } from "./database/migrate";
 import { Logger } from "./utils/logging";
 
 const logger = new Logger("core.bootstrap");
-let stopCogs: () => Promise<void> = async () => { };
+let stopCogs: () => Promise<void> = async () => {};
 
 async function bootstrap(): Promise<void> {
     logger.info("Starting...");
@@ -43,9 +43,7 @@ async function bootstrap(): Promise<void> {
     await client.login(config.discord.token);
 
     client.once(Events.ClientReady, async () => {
-        const guildId = config.bot.env === "development"
-            ? process.env.DEV_GUILD_ID
-            : undefined;
+        const guildId = config.bot.env === "development" ? process.env.DEV_GUILD_ID : undefined;
 
         await registerSlashCommands(client, guildId).catch((err) => {
             logger.error(err instanceof Error ? err : new Error(String(err)));

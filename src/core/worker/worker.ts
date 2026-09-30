@@ -60,12 +60,7 @@ export interface RunningWorker {
  * - A run that takes longer than `intervalMs` logs a warn (the bot may be falling behind).
  * - Every run happens inside `runWithTrace({ ref: newTraceRef(), command: "worker:<cog>.<name>" })`.
  */
-export function startWorker(
-    cogName: string,
-    worker: WorkerDefinition,
-    client: BotClient,
-    clock: WorkerClock = realClock,
-): RunningWorker {
+export function startWorker(cogName: string, worker: WorkerDefinition, client: BotClient, clock: WorkerClock = realClock): RunningWorker {
     const label = `${cogName}.${worker.name}`;
     let stopped = false;
     let running = false;

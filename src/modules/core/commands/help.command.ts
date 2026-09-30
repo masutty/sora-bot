@@ -42,7 +42,6 @@ function renderPage(page: number, all: CommandDefinition[], pages: number, prefi
     };
 }
 
-
 function getVisibleCommands(client: BotClient): CommandDefinition[] {
     return client.commands
         .getAll()
@@ -59,10 +58,7 @@ export default defineCommand({
     showOnHelp: false,
 
     options: new SlashCommandBuilder().addStringOption((opt) =>
-        opt
-            .setName("command")
-            .setDescription("Command name to check details")
-            .setRequired(false),
+        opt.setName("command").setDescription("Command name to check details").setRequired(false),
     ),
 
     async run(ctx) {
@@ -73,7 +69,7 @@ export default defineCommand({
         if (cmdName) {
             const [base, ...path] = cmdName.trim().toLowerCase().split(/\s+/);
             const cmd = ctx.client.commands.get(base);
-            if (!cmd || !cmd.showOnHelp) {
+            if (!cmd?.showOnHelp) {
                 if (!cmd?.showOnHelp) logger.warn(`User ${ctx.user.id} tried to view hidden command: ${cmdName}`);
                 throw new UserFacingError(`Command \`${cmdName}\` not found.`);
             }
