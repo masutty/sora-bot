@@ -4,7 +4,7 @@
  * (tsc can't see it) - this catches that before boot, no DB/Discord connection needed.
  */
 import { existsSync } from "node:fs";
-import { FLOWER_META, flowerAssetPath } from "@/modules/biomehunt/constants/flowers.constants";
+import { FLOWER_META, flowerAssetPath } from "@/usermodules/biomehunt/constants/flowers.constants";
 
 const missing = Object.keys(FLOWER_META).filter((flower) => !existsSync(flowerAssetPath(flower)));
 if (missing.length) {

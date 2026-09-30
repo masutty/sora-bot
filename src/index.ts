@@ -4,12 +4,10 @@ dotenv.config({
     path: process.env.NODE_ENV === "production" ? ".env" : ".env.local",
 });
 
-import { rmSync } from "node:fs";
-import { join } from "node:path";
 import { Events } from "discord.js";
 import { config } from "./config";
 import { BotClient } from "./core/bot-client";
-import { getDclRuntimeDir, loadCogs } from "./core/cog-loader";
+import { loadCogs } from "./core/cog-loader";
 import { registerCommandHandlers, registerSlashCommands } from "./core/command/command-handler";
 import { closePool } from "./database/connection";
 import { migrate } from "./database/migrate";
@@ -25,14 +23,7 @@ async function bootstrap(): Promise<void> {
 
     const client = new BotClient();
 
-    const cogsPath = join(__dirname, "modules");
-
-    // Cogs installed via `!dcl run` don't survive a restart on purpose - wipe the whole sandbox
-    // here, before even scanning `cogsPath`, to make sure that's true in practice (not just "boot
-    // never looks there").
-    rmSync(getDclRuntimeDir(cogsPath), { recursive: true, force: true });
-
-    const { stop, failures } = await loadCogs(client, cogsPath);
+    const { stop, failures } = await loadCogs(client);
     stopCogs = stop;
     if (failures.length) {
         logger.warn(`${failures.length} cog(s) failed to load: ${failures.map((f) => f.cog).join(", ")}`);

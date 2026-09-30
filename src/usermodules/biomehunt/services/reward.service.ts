@@ -54,11 +54,13 @@ export async function evaluateFixedRewardsForGuild(client: BotClient, guildId: s
 
     for (const user of users) {
         for (const role of roles) {
+            // Always set for mode F (quota.service rejects an F role without it) - narrows the type.
+            if (role.access_duration_days === null) continue;
             const activeSeconds = await getActiveSecondsInWindow(user.id, role.quota_window_hours);
             if (activeSeconds < role.quota_target_seconds) continue;
 
             const held = await getUserQuotaRole(user.id, role.id);
-            const expiresAt = new Date(Date.now() + role.access_duration_days! * 86_400_000);
+            const expiresAt = new Date(Date.now() + role.access_duration_days * 86_400_000);
 
             await grantQuotaRole(user.id, role.id, expiresAt);
             if (!held) {

@@ -1,7 +1,7 @@
 import { MessageFlags } from "discord.js";
-import { BIOME_META } from "@/modules/biomehunt/constants/biomes.constants";
-import type { ActivitySessionRow } from "@/modules/biomehunt/types";
-import { buildSessionEndContainer } from "@/modules/biomehunt/views/session-end.view";
+import { BIOME_META } from "@/usermodules/biomehunt/constants/biomes.constants";
+import type { ActivitySessionRow } from "@/usermodules/biomehunt/types";
+import { buildSessionEndContainer } from "@/usermodules/biomehunt/views/session-end.view";
 import type { TestCase, TestPayload } from "../../registry";
 
 // >24h on purpose - the previous design showed start/end as Discord `:t` (time-of-day only) tags,

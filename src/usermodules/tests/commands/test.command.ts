@@ -21,7 +21,7 @@ function buildListPayload(): TestPayload {
     if (cases.size === 0) {
         addDivider(container);
         container.addTextDisplayComponents((td) =>
-            td.setContent("No test cases registered yet - add one under `src/modules/tests/tests/`."),
+            td.setContent("No test cases registered yet - add one under `src/usermodules/tests/tests/`."),
         );
         return { flags: MessageFlags.IsComponentsV2, components: [container] };
     }
@@ -161,7 +161,7 @@ export function pickerView(client: BotClient): ViewDefinition<PickerState, void,
 async function runPicker(ctx: CommandContext, client: BotClient): Promise<void> {
     const cases = loadTestCases();
     if (cases.size === 0) {
-        await ctx.reply(EmbedFormatter.info("No test cases registered yet - add one under `src/modules/tests/tests/`."), REPLY_OPTS);
+        await ctx.reply(EmbedFormatter.info("No test cases registered yet - add one under `src/usermodules/tests/tests/`."), REPLY_OPTS);
         return;
     }
     const options: PickerOption[] = [...cases.keys()].sort().map((key) => ({

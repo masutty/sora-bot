@@ -60,8 +60,11 @@ async function tick(client: BotClient): Promise<void> {
         // (status transitions, quota checks, role job enqueuing) for a guild it can't act in.
         if (!client.guilds.cache.has(user.guild_id)) continue;
 
+        // Never null here (`getUsersForStatusSweep` filters it out) - narrows the type.
+        if (!user.last_activity_at) continue;
+
         const guildConfig = await getOrCreateGuildConfig(user.guild_id);
-        const inactiveSeconds = (now - user.last_activity_at!.getTime()) / 1000;
+        const inactiveSeconds = (now - user.last_activity_at.getTime()) / 1000;
         const newStatus = resolveStatus(inactiveSeconds, guildConfig.idle_threshold_s, guildConfig.inactive_threshold_s);
         const wasActive = user.current_status === "active";
 

@@ -1,7 +1,7 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { VoteStatus } from "@/modules/biomehunt/types";
-import { buildForwardContainer, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
+import { VoteStatus } from "@/usermodules/biomehunt/types";
+import { buildForwardContainer, type VoteRenderInfo } from "@/usermodules/biomehunt/views/forward-post.view";
 import type { TestCase, TestPayload } from "../../registry";
 
 // A fake vote id: the Real/Fake buttons on the "open" page are real customIds, so clicking them in

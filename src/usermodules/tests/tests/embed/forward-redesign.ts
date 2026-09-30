@@ -1,9 +1,9 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineView, type ViewPayload } from "@/define";
-import { BIOME_CATEGORY_LABELS, BIOME_META } from "@/modules/biomehunt/constants/biomes.constants";
-import { VoteStatus } from "@/modules/biomehunt/types";
-import { buildForwardContainer, type ForwardBadges, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
+import { BIOME_CATEGORY_LABELS, BIOME_META } from "@/usermodules/biomehunt/constants/biomes.constants";
+import { VoteStatus } from "@/usermodules/biomehunt/types";
+import { buildForwardContainer, type ForwardBadges, type VoteRenderInfo } from "@/usermodules/biomehunt/views/forward-post.view";
 import { NO_PINGS } from "@/utils/format";
 import type { TestCase } from "../../registry";
 

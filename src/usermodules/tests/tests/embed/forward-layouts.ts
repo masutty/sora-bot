@@ -16,7 +16,7 @@ import {
     getBiomeColor,
     getBiomeIconUrl,
     spoofBiomeName,
-} from "@/modules/biomehunt/constants/biomes.constants";
+} from "@/usermodules/biomehunt/constants/biomes.constants";
 import { NO_PINGS, unix } from "@/utils/format";
 import type { TestCase } from "../../registry";
 

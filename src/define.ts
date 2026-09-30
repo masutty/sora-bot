@@ -66,7 +66,7 @@ export function defineCommand(def: CommandDefinition): CommandDefinition {
     return { showOnHelp: false, ...def } as CommandDefinition;
 }
 
-// the name of the cog should be the same as module/<cog_name>
+// The folder name doesn't matter: a cog is identified only by `name` (unique across all cogs).
 export function defineCog(cog: Cog): Cog {
     return cog;
 }

@@ -30,8 +30,6 @@ pnpm-debug.log*
 .claude
 docs/superpowers/
 
-# !dcl run sandbox (src/core/cog-loader.ts) - runtime-only, wiped on every boot
-.dcl-runtime
 
 dev/
 
