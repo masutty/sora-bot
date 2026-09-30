@@ -160,7 +160,35 @@ export async function deleteEventById(eventId: number): Promise<void> {
     await query(`DELETE FROM bh_activity_events WHERE id = $1`, [eventId]);
 }
 
-/** Total confirmed "started" finds of one specific biome for a user - used to show "this is the #N <biome> they found!" on forwards. */
+/** False once the event is gone - e.g. deleted by a fake/denied vote (`applyOutcome` in biome-vote.service.ts). */
+export async function eventExists(eventId: number): Promise<boolean> {
+    const result = await query(`SELECT 1 FROM bh_activity_events WHERE id = $1`, [eventId]);
+    return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Server-wide stats for one biome, shown on its forward: how many "started" finds the guild has
+ * (the current find included, once inserted) and when the last one OTHER than `excludeEventId`
+ * happened (`null` if never) - "Server find #N" / "Last one here".
+ */
+export async function getGuildBiomeFindStats(
+    guildId: string,
+    biome: string,
+    excludeEventId: number | null,
+): Promise<{ count: number; lastFoundAt: Date | null }> {
+    const result = await query<{ count: string; last_found_at: Date | null }>(
+        `SELECT COUNT(*) AS count,
+                MAX(COALESCE(e.event_timestamp, e.received_at)) FILTER (WHERE e.id IS DISTINCT FROM $3) AS last_found_at
+         FROM bh_activity_events e
+         JOIN bh_users u ON u.id = e.user_id
+         WHERE u.guild_id = $1 AND e.biome = $2 AND e.event_type = 'started'`,
+        [guildId, biome, excludeEventId],
+    );
+    const row = result.rows[0];
+    return { count: Number(row?.count ?? 0), lastFoundAt: row?.last_found_at ?? null };
+}
+
+/** Total confirmed "started" finds of one specific biome for a user - "Personal find #N" on forwards. */
 export async function getBiomeCountForUser(userId: number, biome: string): Promise<number> {
     const result = await query<{ count: string }>(
         `SELECT COUNT(*) AS count FROM bh_activity_events WHERE user_id = $1 AND biome = $2 AND event_type = 'started'`,

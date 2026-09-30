@@ -13,13 +13,17 @@ export interface InsertVoteParams {
     serverLink: string | null;
     jumpLink: string;
     findCount: number | null;
+    finderDiscordId: string | null;
+    serverFindCount: number | null;
+    lastSeenInServerAt: Date | null;
     closesAt: Date;
 }
 
 export async function insertVote(params: InsertVoteParams): Promise<BiomeVoteRow> {
     const result = await query<BiomeVoteRow>(
-        `INSERT INTO bh_biome_votes (id, guild_id, event_id, finder_user_id, channel_id, message_id, biome, role_id, server_link, jump_link, find_count, closes_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO bh_biome_votes (id, guild_id, event_id, finder_user_id, channel_id, message_id, biome, role_id, server_link, jump_link, find_count,
+                                     finder_discord_id, server_find_count, last_seen_in_server_at, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING *`,
         [
             params.id,
@@ -33,6 +37,9 @@ export async function insertVote(params: InsertVoteParams): Promise<BiomeVoteRow
             params.serverLink,
             params.jumpLink,
             params.findCount,
+            params.finderDiscordId,
+            params.serverFindCount,
+            params.lastSeenInServerAt,
             params.closesAt,
         ],
     );

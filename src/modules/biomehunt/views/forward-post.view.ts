@@ -3,13 +3,14 @@ import {
     ButtonBuilder,
     ButtonStyle,
     ContainerBuilder,
+    type MessageMentionOptions,
     SectionBuilder,
     SeparatorBuilder,
     SeparatorSpacingSize,
     TextDisplayBuilder,
     ThumbnailBuilder,
 } from "discord.js";
-import { getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
+import { BIOME_META, formatBiomeName, getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
 
 export interface VoteRenderInfo {
@@ -17,7 +18,7 @@ export interface VoteRenderInfo {
     voteId: string;
     status: VoteStatus;
     closesAt: Date;
-    /** Ballots cast so far - shown while open ("Vote ID • N votes • closes <t:R>"). The Real/Fake split stays hidden until the vote closes. */
+    /** Ballots cast so far - shown while open ("Vote ID • N votes"). The Real/Fake split stays hidden until the vote closes. */
     voteCount: number;
     /** Real/Fake split - only rendered once `status` is no longer `open`. */
     tally?: { real: number; fake: number };
@@ -30,9 +31,87 @@ export interface ForwardContainerParams {
     roleId: string | null;
     serverLink: string | null;
     jumpLink: string;
-    /** How many times (including this one) the finder has found this specific biome - shown as "this is the #N <biome> they found!". Omit to not show the line. */
-    findCount?: number;
+    /** The finder's Discord id - named in the card, never pinged (senders must only allow the role mention). Omit to not name them. */
+    finderDiscordId?: string | null;
+    /** How many times (including this one) the finder has found this biome - "Personal find #N". */
+    findCount?: number | null;
+    /** How many times (including this one) this biome was found in the server - "Server find #N". */
+    serverFindCount?: number | null;
+    /** When this biome was last found in the server before this find - "Last one here <t:R>". `null` = never. */
+    lastSeenInServerAt?: Date | null;
     vote?: VoteRenderInfo;
+    badges?: ForwardBadges;
+}
+
+/** The finder/count inputs of a forward card, computed once per find and reused by the live forward, its vote, and the delayed forward. */
+export type ForwardFindStats = Pick<ForwardContainerParams, "finderDiscordId" | "findCount" | "serverFindCount" | "lastSeenInServerAt">;
+
+/**
+ * A forward's `allowedMentions`: only its role may ping - the finder (and a deciding admin) are
+ * named in the card but never pinged. A dry run pings nobody at all.
+ */
+export function forwardMentions(roleId: string | null, dryRun: boolean): MessageMentionOptions {
+    return { parse: [], roles: roleId && !dryRun ? [roleId] : [] };
+}
+
+/**
+ * What sets a forward apart from a plain live one - shown as a profile-style badges block, and any
+ * badge adds a "?" button whose ephemeral reply briefly explains them (see `forward-info.component.ts`).
+ */
+export interface ForwardBadges {
+    delayed?: boolean;
+    /** A `/bh-owner simulate-biome` dry run - also gets a "simulated" banner on top. */
+    simulated?: boolean;
+}
+
+const DELAYED_EMOJI = "⏳";
+const SIMULATED_EMOJI = "🧪";
+
+export const FORWARD_INFO_PREFIX = "biomehunt:forward-info";
+
+/** `biomehunt:forward-info:<0|1 delayed>:<0|1 simulated>` - the "?" reply needs nothing else, no DB lookup. */
+export function forwardInfoCustomId(badges: ForwardBadges): string {
+    return `${FORWARD_INFO_PREFIX}:${badges.delayed ? "1" : "0"}:${badges.simulated ? "1" : "0"}`;
+}
+
+/** Inverse of `forwardInfoCustomId` (the parts after the prefix) - `null` if malformed. */
+export function parseForwardInfoParts(parts: string[]): ForwardBadges | null {
+    const [delayed, simulated] = parts;
+    const isFlag = (v: string | undefined) => v === "0" || v === "1";
+    if (!isFlag(delayed) || !isFlag(simulated)) return null;
+    return { delayed: delayed === "1", simulated: simulated === "1" };
+}
+
+/** Each forward type the "?" explains - deliberately vague: never how long the delay is, or that other channels were pinged first. */
+const FORWARD_TYPE_INFO: Array<{ key: keyof ForwardBadges; emoji: string; name: string; description: string }> = [
+    { key: "delayed", emoji: DELAYED_EMOJI, name: "Delayed", description: "This forward was sent with a delay." },
+    {
+        key: "simulated",
+        emoji: SIMULATED_EMOJI,
+        name: "Simulated",
+        description: "Not real, a bot developer is probably testing something!",
+    },
+];
+
+/** The "?" button's ephemeral reply - a title, a divider, then each type as "- `emoji name`" with its explanation quoted under it. */
+export function buildForwardInfoContainer(badges: ForwardBadges): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    container.addTextDisplayComponents((td) => td.setContent("## Extra information"));
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+    const types = FORWARD_TYPE_INFO.filter((t) => badges[t.key]).map((t) => `- \`${t.emoji} ${t.name}\`\n> ${t.description}`);
+    container.addTextDisplayComponents((td) => td.setContent(types.join("\n")));
+
+    return container;
+}
+
+function hasBadges(badges: ForwardBadges | undefined): badges is ForwardBadges {
+    return Boolean(badges?.delayed || badges?.simulated);
+}
+
+/** Just the emojis, like the profile's badges - the "?" button explains them. */
+function badgeEmojis(badges: ForwardBadges): string {
+    return [badges.delayed ? DELAYED_EMOJI : null, badges.simulated ? SIMULATED_EMOJI : null].filter(Boolean).join(" ");
 }
 
 function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
@@ -42,33 +121,38 @@ function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
     );
 }
 
-function buildLinkButtonsRow(jumpLink: string, serverLink: string | null): ActionRowBuilder<ButtonBuilder> {
+function buildLinkButtonsRow(
+    jumpLink: string,
+    serverLink: string | null,
+    badges: ForwardBadges | undefined,
+): ActionRowBuilder<ButtonBuilder> {
     const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(jumpLink).setLabel("Jump to Message")];
     if (serverLink)
         buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(serverLink).setLabel("Join Private Server").setEmoji("🔗"));
+    if (hasBadges(badges))
+        buttons.push(new ButtonBuilder().setCustomId(forwardInfoCustomId(badges)).setLabel("?").setStyle(ButtonStyle.Secondary));
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
-/** Main line of the vote block - one per `VoteStatus`. English, per the vote model's "Final states". */
+/** Main line of the vote block - one per `VoteStatus`. Community outcomes show the ballots as `✅ n` `❌ n` chips. */
 function voteStatusLine(vote: VoteRenderInfo): string {
-    const real = vote.tally?.real ?? 0;
-    const fake = vote.tally?.fake ?? 0;
+    const tally = ` \`✅ ${vote.tally?.real ?? 0}\` \`❌ ${vote.tally?.fake ?? 0}\``;
 
     switch (vote.status) {
         case VoteStatus.OPEN:
-            return "**Is this biome real?**\n-# Administrators can immediately decide this vote";
+            return `**Is this biome real?** · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
         case VoteStatus.NO_VOTES:
             return "*Vote expired with no votes*";
         case VoteStatus.TIE:
-            return `Tied vote (${real}/${fake})`;
+            return `⚖️ Tied vote${tally}`;
         case VoteStatus.COMMUNITY_REAL:
-            return `✅ Ruled real via voting (${real}/${fake})`;
+            return `✅ Marked as real by community voting${tally}`;
         case VoteStatus.COMMUNITY_FAKE:
-            return `❌ Ruled fake via voting (${real}/${fake})`;
+            return `❌ Marked as fake by community voting${tally}`;
         case VoteStatus.ADMIN_CONFIRMED:
-            return `✅ Ruled real by <@${vote.decidedByUserId}>`;
+            return `✅ Marked as real by <@${vote.decidedByUserId}>`;
         case VoteStatus.ADMIN_DENIED:
-            return `❌ Ruled fake by <@${vote.decidedByUserId}>`;
+            return `❌ Marked as fake by <@${vote.decidedByUserId}>`;
         default: {
             const exhaustive: never = vote.status;
             throw new Error(`Unhandled vote status: ${exhaustive}`);
@@ -76,12 +160,47 @@ function voteStatusLine(vote: VoteRenderInfo): string {
     }
 }
 
-/** Top line of a voted forward (where the profile shows the level): the id, plus "• N votes • closes <t:R>" while the vote is open. */
+/** Top line of a voted forward: the id, plus "• N votes" while the vote is open (when it closes is on the vote block itself). */
 function voteIdLine(vote: VoteRenderInfo): string {
     const id = `-# Vote ID: \`${vote.voteId}\``;
     if (vote.status !== VoteStatus.OPEN) return id;
-    const epoch = Math.floor(vote.closesAt.getTime() / 1000);
-    return `${id} • ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} • closes <t:${epoch}:R>`;
+    return `${id} • ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"}`;
+}
+
+function epochOf(date: Date): number {
+    return Math.floor(date.getTime() / 1000);
+}
+
+/** "Personal find #3 · Server find #41" - no pronouns about the finder; a count of 1 reads as "First". Empty if neither count is known. */
+function findCountsLine(findCount: number | null | undefined, serverFindCount: number | null | undefined): string {
+    const parts: string[] = [];
+    if (findCount) parts.push(findCount === 1 ? "**First** personal find" : `Personal find **#${findCount}**`);
+    if (serverFindCount) parts.push(serverFindCount === 1 ? "**First** in this server!" : `Server find **#${serverFindCount}**`);
+    return parts.join(" · ");
+}
+
+/**
+ * The card's heading. Rare biomes get the big "🎉 @finder found a X!" announcement; everything
+ * else keeps a plain biome-name title, with the finder leading the counts line instead.
+ */
+function headingLines(params: ForwardContainerParams): string[] {
+    const name = spoofBiomeName(params.biome);
+    const title = params.serverLink ? `[${name}](${params.serverLink})` : name;
+    const finder = params.finderDiscordId ? `<@${params.finderDiscordId}>` : null;
+    const counts = findCountsLine(params.findCount, params.serverFindCount);
+    const isRare = BIOME_META[params.biome]?.category === "rare";
+
+    const lines: string[] = [];
+    if (isRare && finder) {
+        lines.push(`## 🎉 ${finder} found ${/^[AEIOU]/i.test(formatBiomeName(params.biome)) ? "an" : "a"} ${title}!`);
+        if (counts) lines.push(counts);
+    } else {
+        lines.push(`# ${title}`);
+        const byLine = [finder, counts].filter(Boolean).join(" · ");
+        if (byLine) lines.push(byLine);
+    }
+    if (params.lastSeenInServerAt) lines.push(`-# Last one here <t:${epochOf(params.lastSeenInServerAt)}:R>`);
+    return lines;
 }
 
 /**
@@ -106,27 +225,26 @@ function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder 
  * forward message's own identity, or edits will make it point to itself.
  */
 export function buildForwardContainer(params: ForwardContainerParams): ContainerBuilder {
-    const headingLines = [`# [${spoofBiomeName(params.biome)}](${params.serverLink})`];
-    if (params.roleId) headingLines.push(`<@&${params.roleId}>`);
-    if (params.findCount) headingLines.push(`This is the #${params.findCount} ${spoofBiomeName(params.biome)} they found!`);
-    if (params.jumpLink) headingLines.push(`- Sent from: ${params.jumpLink}`);
+    const { badges, vote } = params;
 
     const container = new ContainerBuilder().setAccentColor(getBiomeColor(params.biome));
-    const { vote } = params;
-    if (vote) {
-        container.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
-        container.addSeparatorComponents((sep) => sep.setDivider(false).setSpacing(SeparatorSpacingSize.Small));
+    if (badges?.simulated) {
+        container.addTextDisplayComponents((td) => td.setContent(`### ${SIMULATED_EMOJI} SIMULATED FORWARD - TESTING ONLY`));
+        container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
     }
+    if (vote) container.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
+    if (params.roleId) container.addTextDisplayComponents((td) => td.setContent(`<@&${params.roleId}>`));
 
+    const heading = headingLines(params).join("\n");
     const iconUrl = getBiomeIconUrl(params.biome);
     if (iconUrl) {
         container.addSectionComponents(
             new SectionBuilder()
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(headingLines.join("\n")))
+                .addTextDisplayComponents(new TextDisplayBuilder().setContent(heading))
                 .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: iconUrl } })),
         );
     } else {
-        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headingLines.join("\n")));
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(heading));
     }
 
     if (params.vote) {
@@ -134,7 +252,9 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     }
 
     container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
-    container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink));
+    // Badges sit right on top of the buttons (no separator in between), so the "?" reads as theirs.
+    if (hasBadges(badges)) container.addTextDisplayComponents((td) => td.setContent(badgeEmojis(badges)));
+    container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink, badges));
 
     return container;
 }

@@ -56,6 +56,9 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
                 server_link: params.serverLink,
                 jump_link: params.jumpLink,
                 find_count: params.findCount,
+                finder_discord_id: params.finderDiscordId,
+                server_find_count: params.serverFindCount,
+                last_seen_in_server_at: params.lastSeenInServerAt,
                 status: VoteStatus.OPEN,
                 decided_by: null,
                 closes_at: params.closesAt,
@@ -310,8 +313,8 @@ test("castBallot re-reads the vote right before rendering - a vote that closed b
     expect(result).toEqual({ kind: "ok" });
     expect(editCalls).toHaveLength(1);
     const rendered = textOfEdit(editCalls[0]);
-    expect(rendered).toContain("Ruled fake by <@admin-1>");
-    expect(rendered).not.toContain("closes <t:");
+    expect(rendered).toContain("Marked as fake by <@admin-1>");
+    expect(rendered).not.toContain("voting closes <t:");
 });
 
 // ─── adminDecide ────────────────────────────────────────────────────────────────────────────────
@@ -506,7 +509,7 @@ test("closeDueVotes renders the tally from a ballot read taken AFTER the close c
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
 
-    expect(textOfEdit(editCalls[0])).toContain("(2/0)");
+    expect(textOfEdit(editCalls[0])).toContain("`✅ 2` `❌ 0`");
 });
 
 test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-review hint, and the vote stays closed", async () => {
