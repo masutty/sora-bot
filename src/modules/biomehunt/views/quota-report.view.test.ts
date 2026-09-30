@@ -3,7 +3,7 @@ import { createFakeViewTransport, type ViewPayload } from "@/define";
 import type { QuotaDayReport, QuotaMember } from "../services/quota-report.service";
 import { hitCount } from "../services/quota-report.service";
 import type { QuotaRoleRow } from "../types";
-import { buildQuotaDayContainer, QUOTA_MEMBERS_PER_PAGE, quotaPageCount, quotaStatsView } from "./quota-report.view";
+import { buildQuotaDayContainer, quotaPageCount, quotaStatsView } from "./quota-report.view";
 
 type Json = { content?: string; custom_id?: string; disabled?: boolean; components?: Json[] };
 const textOf = (json: Json): string => [json.content ?? "", ...(json.components ?? []).map(textOf)].filter(Boolean).join("\n");
@@ -40,45 +40,45 @@ test("hitCount: the members at or over the target, which are the first ones of t
     expect(hitCount(members(5, 0), 3 * H)).toBe(5);
 });
 
-test("the card says which window it covers, then the role, its target and the hit / missed totals", () => {
+test("the card says which window it covers, then the role and its target - no hit / missed totals up top", () => {
     const text = card(report());
     expect(text).toContain("## Quotas · Yesterday");
     expect(text).toContain(`from <t:${START.getTime() / 1000}:f> to <t:${END.getTime() / 1000 - 60}:f>`);
-    expect(text).toContain("### <@&role-1>\n-# Target: `3h` per day · ✅ 1 hit · ❌ 2 missed");
+    expect(text).toContain("### <@&role-1>\n-# Target: `3h` per day\n");
+    expect(text).not.toContain(" hit ·");
 });
 
-test("today says 'not yet' instead of 'missed'", () => {
-    expect(card(report({ inProgress: true }), 0, "Today")).toContain("✅ 1 hit · ⏳ 2 not yet");
-});
-
-test("one list, most active first, with the target line where it's crossed - no '/ target' on each member", () => {
+test("labelled groups, one member per line, the fixed-width time first", () => {
     const text = card(report());
-    expect(text).toContain("> <@hit0> `10h`\n-# ── target `3h` ──\n> <@miss0> `2h` · <@miss1> `1h 59m`");
+    expect(text).toContain("- `✅ Hit · 1`\n> `10h 00m` <@hit0>");
+    expect(text).toContain("- `❌ Missed · 2`\n> ` 2h 00m` <@miss0>\n> ` 1h 59m` <@miss1>");
 });
 
-test("no target line when everybody or nobody hit", () => {
-    expect(card(report({ members: members(3, 0) }))).not.toContain("── target");
-    expect(card(report({ members: members(0, 3) }))).not.toContain("── target");
+test("today labels the second group 'Not yet' instead of 'Missed'", () => {
+    const text = card(report({ inProgress: true }), 0, "Today");
+    expect(text).toContain("- `⏳ Not yet · 2`");
+    expect(text).not.toContain("Missed");
 });
 
-test("pages hold 20 members; the target line shows only on the page where the cut falls", () => {
+test("a group only shows when it has members on the page", () => {
+    expect(card(report({ members: members(3, 0) }))).not.toContain("Missed");
+    expect(card(report({ members: members(0, 3) }))).not.toContain("✅ Hit");
+});
+
+test("pages hold 20 members; a group's label shows on every page it spans, with its full count", () => {
     const r = report({ members: members(25, 10) });
     expect(quotaPageCount(r)).toBe(2);
-    expect(card(r, 0)).not.toContain("── target");
+    expect(card(r, 0)).toContain("- `✅ Hit · 25`");
     expect(card(r, 0)).toContain("<@hit19>");
     expect(card(r, 0)).not.toContain("<@hit20>");
-    expect(card(r, 1)).toContain("<@hit24> `9h 36m`\n-# ── target");
-});
-
-test("a cut right on a page boundary puts the target line at the top of the next page", () => {
-    const r = report({ members: members(QUOTA_MEMBERS_PER_PAGE, 5) });
-    expect(card(r, 0)).not.toContain("── target");
-    expect(card(r, 1)).toContain("-# ── target `3h` ──\n> <@miss0>");
+    expect(card(r, 0)).not.toContain("Missed");
+    expect(card(r, 1)).toContain("- `✅ Hit · 25`\n> ` 9h 40m` <@hit20>");
+    expect(card(r, 1)).toContain("- `❌ Missed · 10`");
 });
 
 test("a role whose own window isn't 24h gets a warning; no members or no roles have their own text", () => {
     expect(card(report({ roles: [{ ...ROLE, quota_window_hours: 48 }] }))).toContain("really counts the last 48h");
-    expect(card(report({ members: [] }))).toContain("> -# Nobody");
+    expect(card(report({ members: [] }))).toContain("-# Nobody");
     expect(card(report({ roles: [] }))).toContain("No quota roles configured");
 });
 
