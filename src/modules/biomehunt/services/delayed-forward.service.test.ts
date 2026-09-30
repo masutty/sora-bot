@@ -19,7 +19,7 @@ function job(client: Client, overrides: Partial<DelayedForwardJob> = {}): Delaye
         biome: "GLITCHED",
         serverLink: null,
         jumpLink: "https://discord.com/channels/g1/c/m",
-        findCount: 1,
+        stats: { finderDiscordId: "finder-1", findCount: 1, serverFindCount: 1, lastSeenInServerAt: null },
         eventId: 10,
         voteId: "vote0001",
         dryRun: false,

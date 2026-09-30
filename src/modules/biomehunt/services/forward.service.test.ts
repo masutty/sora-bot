@@ -15,6 +15,8 @@ function createFakeDeps(
         getForwardConfig: async () => forward,
         getDelayedForwardConfig: async () => delayed,
         getBiomeCountForUser: async () => 3,
+        getGuildBiomeFindStats: async () => ({ count: 41, lastFoundAt: new Date(1_700_000_000_000) }),
+        getUserById: async () => ({ discord_user_id: "finder-1" }) as never,
         newVoteId: () => "vote0001",
         openVote: async (params) => {
             openVoteCalls.push(params);
@@ -129,7 +131,13 @@ test("forwardBiome schedules the delayed forward alongside the live one, carryin
 
     expect(openVoteCalls).toHaveLength(1);
     expect(scheduled).toHaveLength(1);
-    expect(scheduled[0]).toMatchObject({ config: DELAYED, biome: "GLITCHED", eventId: 10, voteId: "vote0001", findCount: 3 });
+    expect(scheduled[0]).toMatchObject({
+        config: DELAYED,
+        biome: "GLITCHED",
+        eventId: 10,
+        voteId: "vote0001",
+        stats: { finderDiscordId: "finder-1", findCount: 3, serverFindCount: 41, lastSeenInServerAt: new Date(1_700_000_000_000) },
+    });
 });
 
 test("forwardBiome schedules a delayed forward on its own when the biome has no live forward - no vote is opened", async () => {
@@ -158,16 +166,18 @@ test("forwardBiome dry run (null event id): pings nobody, opens no vote, and the
 
     expect(openVoteCalls).toHaveLength(0);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ allowedMentions: { parse: [] } });
+    expect(sent[0]).toMatchObject({ allowedMentions: { parse: [], roles: [] } });
     expect(JSON.stringify(sent[0])).not.toContain("biomehunt:vote:");
-    expect(scheduled[0]).toMatchObject({ dryRun: true, voteId: null });
+    // No event was inserted, so both counts are bumped to read like the real find would.
+    expect(scheduled[0]).toMatchObject({ dryRun: true, voteId: null, stats: { findCount: 4, serverFindCount: 42 } });
 });
 
-test("forwardBiome real find: the live forward is sent with default mentions (the role does get pinged)", async () => {
-    const { deps } = createFakeDeps();
+test("forwardBiome real find: only the forward's role may ping - the finder is named in the card but never pinged", async () => {
+    const { deps } = createFakeDeps({ guild_id: "g1", biome: "GLITCHED", channel_id: "forward-channel", role_id: "role-1" });
     const sent: unknown[] = [];
 
     await forwardBiome(fakeClient(sent), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
 
-    expect(sent[0]).not.toHaveProperty("allowedMentions");
+    expect(sent[0]).toMatchObject({ allowedMentions: { parse: [], roles: ["role-1"] } });
+    expect(JSON.stringify(sent[0])).toContain("<@finder-1>");
 });

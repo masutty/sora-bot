@@ -189,6 +189,10 @@ export interface BiomeVoteRow {
     server_link: string | null;
     jump_link: string;
     find_count: number | null;
+    /** The rest of the forward card's render inputs - `null` on votes opened before the card redesign. */
+    finder_discord_id: string | null;
+    server_find_count: number | null;
+    last_seen_in_server_at: Date | null;
     status: VoteStatus;
     /** Discord id of the deciding admin - set only for admin_confirmed/admin_denied. */
     decided_by: string | null;

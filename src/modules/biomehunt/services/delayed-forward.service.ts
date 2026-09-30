@@ -1,6 +1,5 @@
 import type { Client } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
-import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { eventExists } from "../repository/activity.repository";
@@ -9,7 +8,7 @@ import { getVoteById } from "../repository/votes.repository";
 import { settings } from "../settings";
 import { type BiomeDelayedForwardRow, BiomeHuntError, VoteStatus } from "../types";
 import { formatForwardLine } from "../views/forward-list.view";
-import { buildForwardContainer } from "../views/forward-post.view";
+import { buildForwardContainer, type ForwardFindStats, forwardMentions } from "../views/forward-post.view";
 
 const logger = new Logger("biomehunt.services.delayed-forward");
 
@@ -38,7 +37,7 @@ export interface DelayedForwardJob {
     biome: string;
     serverLink: string | null;
     jumpLink: string;
-    findCount: number;
+    stats: ForwardFindStats;
     /** `null` for a dry-run simulation - there's no event that could get deleted. */
     eventId: number | null;
     /** The live forward's vote, if it opened one - a fake/denied outcome cancels the delayed send. */
@@ -78,13 +77,13 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             roleId: job.config.role_id,
             serverLink: job.serverLink,
             jumpLink: job.jumpLink,
-            findCount: job.findCount,
+            ...job.stats,
             badges: { delayed: true, simulated: job.dryRun },
         });
         await channel.send({
             components: [container],
             flags: MessageFlags.IsComponentsV2,
-            ...(job.dryRun ? { allowedMentions: NO_PINGS } : {}),
+            allowedMentions: forwardMentions(job.config.role_id, job.dryRun),
         });
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId: job.guildId, biome: job.biome });

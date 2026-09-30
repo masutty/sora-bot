@@ -1,16 +1,16 @@
 import type { Client, Message } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
-import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
-import { getBiomeCountForUser } from "../repository/activity.repository";
+import { getBiomeCountForUser, getGuildBiomeFindStats } from "../repository/activity.repository";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
+import { getUserById } from "../repository/users.repository";
 import { newVoteId, openVote } from "../services/biome-vote.service";
 import { scheduleDelayedForward } from "../services/delayed-forward.service";
 import { settings } from "../settings";
 import { type BiomeForwardRow, BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
-import { buildForwardContainer } from "../views/forward-post.view";
+import { buildForwardContainer, type ForwardFindStats, forwardMentions } from "../views/forward-post.view";
 
 const logger = new Logger("biomehunt.services.forward");
 
@@ -23,13 +23,24 @@ export interface ForwardServiceDeps {
     getForwardConfig: typeof getForwardConfig;
     getDelayedForwardConfig: typeof getDelayedForwardConfig;
     getBiomeCountForUser: typeof getBiomeCountForUser;
+    getGuildBiomeFindStats: typeof getGuildBiomeFindStats;
+    getUserById: typeof getUserById;
     newVoteId: typeof newVoteId;
     openVote: typeof openVote;
     scheduleDelayedForward: typeof scheduleDelayedForward;
 }
 
 export function defaultForwardServiceDeps(): ForwardServiceDeps {
-    return { getForwardConfig, getDelayedForwardConfig, getBiomeCountForUser, newVoteId, openVote, scheduleDelayedForward };
+    return {
+        getForwardConfig,
+        getDelayedForwardConfig,
+        getBiomeCountForUser,
+        getGuildBiomeFindStats,
+        getUserById,
+        newVoteId,
+        openVote,
+        scheduleDelayedForward,
+    };
 }
 
 /**
@@ -76,11 +87,11 @@ export async function forwardBiome(
     const [forward, delayed] = await Promise.all([deps.getForwardConfig(guildId, biome), deps.getDelayedForwardConfig(guildId, biome)]);
     if (!forward && !delayed) return;
 
-    const findCount = await deps.getBiomeCountForUser(userId, biome);
     const now = new Date();
     const dryRun = eventId === null;
+    const stats = await loadFindStats(guildId, userId, biome, eventId, deps);
     const voteId = forward
-        ? await sendLiveForward(client, guildId, userId, parsed, biome, eventId, jumpLink, forward, findCount, now, deps)
+        ? await sendLiveForward(client, guildId, userId, parsed, biome, eventId, jumpLink, forward, stats, now, deps)
         : null;
 
     if (delayed) {
@@ -91,12 +102,37 @@ export async function forwardBiome(
             biome,
             serverLink: parsed.serverLink,
             jumpLink,
-            findCount,
+            stats,
             eventId,
             voteId,
             dryRun,
         });
     }
+}
+
+/**
+ * The card's finder/count lines. A dry run inserted no event, so its counts are bumped by one to
+ * read like the real find would; a real find is already in both counts.
+ */
+async function loadFindStats(
+    guildId: string,
+    userId: number,
+    biome: string,
+    eventId: number | null,
+    deps: ForwardServiceDeps,
+): Promise<ForwardFindStats> {
+    const [finder, personal, server] = await Promise.all([
+        deps.getUserById(userId),
+        deps.getBiomeCountForUser(userId, biome),
+        deps.getGuildBiomeFindStats(guildId, biome, eventId),
+    ]);
+    const bump = eventId === null ? 1 : 0;
+    return {
+        finderDiscordId: finder?.discord_user_id ?? null,
+        findCount: personal + bump,
+        serverFindCount: server.count + bump,
+        lastSeenInServerAt: server.lastFoundAt,
+    };
 }
 
 /**
@@ -114,7 +150,7 @@ async function sendLiveForward(
     eventId: number | null,
     jumpLink: string,
     forward: BiomeForwardRow,
-    findCount: number,
+    stats: ForwardFindStats,
     now: Date,
     deps: ForwardServiceDeps,
 ): Promise<string | null> {
@@ -131,7 +167,7 @@ async function sendLiveForward(
         roleId: forward.role_id,
         serverLink: parsed.serverLink,
         jumpLink,
-        findCount,
+        ...stats,
         vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
         badges: dryRun ? { simulated: true } : undefined,
     });
@@ -140,7 +176,7 @@ async function sendLiveForward(
         const sent = await channel.send({
             components: [container],
             flags: MessageFlags.IsComponentsV2,
-            ...(dryRun ? { allowedMentions: NO_PINGS } : {}),
+            allowedMentions: forwardMentions(forward.role_id, dryRun),
         });
         if (!voteId) return null;
         await deps.openVote({
@@ -154,7 +190,7 @@ async function sendLiveForward(
             roleId: forward.role_id,
             serverLink: parsed.serverLink,
             jumpLink,
-            findCount,
+            ...stats,
             now,
         });
         return voteId;

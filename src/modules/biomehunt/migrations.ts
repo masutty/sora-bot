@@ -244,6 +244,10 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_link TEXT;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS jump_link TEXT;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
+/* Same idea for the redesigned forward card's finder / "Server find #N" / "Last one here" - NULL on votes opened before it. */
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS finder_discord_id VARCHAR(20);
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_find_count INTEGER;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS last_seen_in_server_at TIMESTAMPTZ;
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying

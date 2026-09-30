@@ -6,6 +6,7 @@ import {
     buildForwardInfoContainer,
     FORWARD_INFO_PREFIX,
     forwardInfoCustomId,
+    forwardMentions,
     parseForwardInfoParts,
 } from "./forward-post.view";
 
@@ -47,10 +48,10 @@ test("open vote: hides the tally, shows the count + closes-at, the vote id, and 
 
     const text = textOf(json);
     expect(text).toContain("3 votes");
-    expect(text).toContain("closes <t:");
-    expect(text).toMatch(/Vote ID: `abc12345` • 3 votes • closes <t:\d+:R>/);
+    expect(text).toContain("Is this biome real?** · voting closes <t:");
+    expect(text).toContain("Vote ID: `abc12345` • 3 votes");
     expect(text).not.toContain("Admins:");
-    expect(text).not.toMatch(/\(\d+\/\d+\)/); // the real/fake split never appears while open
+    expect(text).not.toContain("`✅ "); // the real/fake split never appears while open
 
     const customIds = customIdsOf(json);
     expect(customIds).toContain("biomehunt:vote:abc12345:real");
@@ -70,7 +71,7 @@ test("a closed vote hides the buttons and shows the real/fake split", () => {
     }).toJSON();
 
     const text = textOf(json);
-    expect(text).toContain("Ruled real via voting (3/2)");
+    expect(text).toContain("✅ Marked as real by community voting `✅ 3` `❌ 2`");
     expect(customIdsOf(json).some((id) => id.startsWith("biomehunt:vote:"))).toBe(false);
 });
 
@@ -92,8 +93,8 @@ test("admin_confirmed: shows who decided, no closes-at line, and the link row is
     }).toJSON();
 
     const text = textOf(json);
-    expect(text).toContain("Ruled real by <@admin-1>");
-    expect(text).not.toContain("closes <t:");
+    expect(text).toContain("✅ Marked as real by <@admin-1>");
+    expect(text).not.toContain("voting closes");
     expect(flatten(json).some((c) => c.url === BASE.jumpLink)).toBe(true);
 });
 
@@ -151,4 +152,51 @@ test("forward info id round-trips, rejects malformed parts, and the explanation 
     expect(text).toContain("- `🧪 Simulated`\n> Not real");
     expect(text).not.toMatch(/\d+s\b|<t:/);
     expect(textOf(buildForwardInfoContainer({ delayed: true }).toJSON() as Json)).not.toContain("Simulated");
+});
+
+const STATS = { finderDiscordId: "finder-1", findCount: 3, serverFindCount: 41, lastSeenInServerAt: new Date(1_700_000_000_000) };
+
+test("non-rare biome: plain biome-name title, the finder leads the counts line, plus 'Last one here'", () => {
+    const text = textOf(buildForwardContainer({ ...BASE, biome: "HELL", ...STATS }).toJSON());
+    expect(text).not.toContain("🎉");
+    expect(text).toContain("<@finder-1> · Personal find **#3** · Server find **#41**");
+    expect(text).toContain("-# Last one here <t:1700000000:R>");
+});
+
+test("rare biome: the 🎉 announcement headline names the finder, the counts line doesn't repeat them", () => {
+    const text = textOf(buildForwardContainer({ ...BASE, ...STATS }).toJSON());
+    expect(text).toContain("🎉 <@finder-1> found a ");
+    expect(text).toContain("\nPersonal find **#3** · Server find **#41**");
+});
+
+test("a count of 1 reads as 'First', and with no earlier find there's no 'Last one here'", () => {
+    const text = textOf(
+        buildForwardContainer({
+            ...BASE,
+            finderDiscordId: "finder-1",
+            findCount: 1,
+            serverFindCount: 1,
+            lastSeenInServerAt: null,
+        }).toJSON(),
+    );
+    expect(text).toContain("**First** personal find · **First** in this server!");
+    expect(text).not.toContain("Last one here");
+});
+
+test("the card never uses pronouns about the finder", () => {
+    // Not HELL: its spoofed name ("He200bll") trips the "he" check.
+    for (const biome of ["WINDY", "GLITCHED"]) {
+        // Skip the title line: the spoofed biome name ("He​ll") would false-match "he".
+        const text = textOf(buildForwardContainer({ ...BASE, biome, ...STATS }).toJSON())
+            .split("\n")
+            .slice(1)
+            .join("\n");
+        expect(text).not.toMatch(/\b(their|they|his|her|he|she)\b/i);
+    }
+});
+
+test("forwardMentions: only the role may ping; a dry run pings nobody", () => {
+    expect(forwardMentions("role-1", false)).toEqual({ parse: [], roles: ["role-1"] });
+    expect(forwardMentions("role-1", true)).toEqual({ parse: [], roles: [] });
+    expect(forwardMentions(null, false)).toEqual({ parse: [], roles: [] });
 });

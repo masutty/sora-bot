@@ -1,38 +1,16 @@
-import {
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    ContainerBuilder,
-    MessageFlags,
-    SectionBuilder,
-    SeparatorSpacingSize,
-    TextDisplayBuilder,
-    ThumbnailBuilder,
-} from "discord.js";
+import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineView, type ViewPayload } from "@/define";
-import {
-    BIOME_CATEGORY_LABELS,
-    BIOME_META,
-    formatBiomeName,
-    getBiomeColor,
-    getBiomeIconUrl,
-} from "@/modules/biomehunt/constants/biomes.constants";
+import { BIOME_CATEGORY_LABELS, BIOME_META } from "@/modules/biomehunt/constants/biomes.constants";
 import { VoteStatus } from "@/modules/biomehunt/types";
-import { type ForwardBadges, forwardInfoCustomId, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
-import { NO_PINGS, unix } from "@/utils/format";
+import { buildForwardContainer, type ForwardBadges, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
+import { NO_PINGS } from "@/utils/format";
 import type { TestCase } from "../../registry";
 
 /**
- * The "Announcement" forward redesign (design 5 of the first round), previewed interactively: pick
- * any biome and any scenario (vote states, delayed, simulated, first find, no server link) from the
- * two selects. Fake data only. Rare biomes get the big "🎉 @finder found a X!" headline; everything
- * else keeps a simple biome-name title. What the new lines need at forward time:
- * - finder: `bh_users.discord_user_id`; personal count: `getBiomeCountForUser` (both already loaded)
- * - server count / last one in this server: one COUNT / one MAX(started_at) over `bh_activity_events` (new queries)
- * No user is ever pinged - not the finder, not the deciding admin: the real send must use
- * `allowedMentions: { roles: [roleId] }` (only the forward's role pings), and vote-close edits
- * `allowedMentions: { parse: [] }`. This preview pings nobody at all.
+ * The real biome forward card (`buildForwardContainer`), previewed interactively: pick any biome and
+ * any scenario (vote states, delayed, simulated, first find, no server link) from the two selects.
+ * Fake data only, and this preview pings nobody.
  */
 const FAKE_ROLE_ID = "1";
 const FAKE_VOTE_ID = "preview0";
@@ -91,120 +69,26 @@ const SCENARIOS: Record<string, Scenario> = {
     "no-link": { label: "No private server link", description: "Macro didn't send a server link", noServerLink: true },
 };
 
-function ordinal(n: number): string {
-    const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : (({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th");
-    return `${n}${suffix}`;
-}
-
-function linkRow(serverLink: string | null, badges: ForwardBadges | undefined): ActionRowBuilder<ButtonBuilder> {
-    const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(FAKE_JUMP_LINK).setLabel("Jump to Message")];
-    if (serverLink)
-        buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(serverLink).setLabel("Join Private Server").setEmoji("🔗"));
-    if (badges) buttons.push(new ButtonBuilder().setCustomId(forwardInfoCustomId(badges)).setLabel("?").setStyle(ButtonStyle.Secondary));
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-}
-
-function voteRow(): ActionRowBuilder<ButtonBuilder> {
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`biomehunt:vote:${FAKE_VOTE_ID}:real`)
-            .setLabel("Real")
-            .setEmoji("✅")
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId(`biomehunt:vote:${FAKE_VOTE_ID}:fake`)
-            .setLabel("Fake")
-            .setEmoji("❌")
-            .setStyle(ButtonStyle.Secondary),
-    );
-}
-
-/** Top line of a voted forward: the id, plus the ballot count while it's still open. */
-function voteIdLine(vote: VoteRenderInfo): string {
-    const id = `-# Vote ID: \`${vote.voteId}\``;
-    if (vote.status !== VoteStatus.OPEN) return id;
-    return `${id} • ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"}`;
-}
-
-/** The vote block's text - "Is this biome real?" while open, then "Marked as real/fake by ..." once decided. */
-function voteStatusLine(vote: VoteRenderInfo): string {
-    const tally = vote.tally ? ` \`✅ ${vote.tally.real}\` \`❌ ${vote.tally.fake}\`` : "";
-    switch (vote.status) {
-        case VoteStatus.OPEN:
-            return `**Is this biome real?** · voting closes <t:${unix(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
-        case VoteStatus.NO_VOTES:
-            return "*Vote expired with no votes*";
-        case VoteStatus.TIE:
-            return `⚖️ Tied vote${tally}`;
-        case VoteStatus.COMMUNITY_REAL:
-            return `✅ Marked as real by community voting${tally}`;
-        case VoteStatus.COMMUNITY_FAKE:
-            return `❌ Marked as fake by community voting${tally}`;
-        case VoteStatus.ADMIN_CONFIRMED:
-            return `✅ Marked as real by <@${vote.decidedByUserId}>`;
-        case VoteStatus.ADMIN_DENIED:
-            return `❌ Marked as fake by <@${vote.decidedByUserId}>`;
-    }
-}
-
-/** The Announcement card itself - what `buildForwardContainer` would become. */
-function buildAnnouncement(biome: string, scenario: Scenario, finderId: string): ContainerBuilder {
+function buildPreview(biome: string, scenario: Scenario, finderId: string) {
     const now = Date.now();
-    const name = formatBiomeName(biome);
-    const isRare = BIOME_META[biome].category === "rare";
-    const serverLink = scenario.noServerLink ? null : FAKE_SERVER_LINK;
-    const title = serverLink ? `[${name}](${serverLink})` : name;
-    const lastOneHere = unix(new Date(now - 2 * 86_400_000 - 5 * 3_600_000));
     const vote: VoteRenderInfo | undefined = scenario.vote && {
         ...scenario.vote,
         voteId: FAKE_VOTE_ID,
         closesAt: new Date(now + 52_000),
         decidedByUserId: finderId,
     };
-
-    const c = new ContainerBuilder().setAccentColor(getBiomeColor(biome));
-    if (scenario.badges?.simulated) {
-        c.addTextDisplayComponents((td) => td.setContent("### 🧪 SIMULATED FORWARD - TESTING ONLY"));
-        c.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
-    }
-    if (vote) c.addTextDisplayComponents((td) => td.setContent(voteIdLine(vote)));
-    c.addTextDisplayComponents((td) => td.setContent(`<@&${FAKE_ROLE_ID}>`));
-
-    // Rare: the big "🎉 @finder found a X!" headline. Everything else: just the biome name, finder in the count line.
-    const counts = scenario.firstFind
-        ? isRare
-            ? `That's their **first** ${name} ever, and the **first** one in this server!`
-            : `<@${finderId}>'s **first** ${name} ever, and the **first** one in this server!`
-        : isRare
-          ? `That's their **3rd** ${name}, and the **${ordinal(41)}** in this server.`
-          : `<@${finderId}>'s **3rd** ${name}, and the **${ordinal(41)}** in this server.`;
-    const lines = [
-        isRare ? `## 🎉 <@${finderId}> found ${/^[AEIOU]/i.test(name) ? "an" : "a"} ${title}!` : `# ${title}`,
-        counts,
-        ...(scenario.firstFind ? [] : [`-# Last one here <t:${lastOneHere}:R>`]),
-    ].join("\n");
-    const iconUrl = getBiomeIconUrl(biome);
-    if (iconUrl) {
-        c.addSectionComponents(
-            new SectionBuilder()
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(lines))
-                .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: iconUrl } })),
-        );
-    } else {
-        c.addTextDisplayComponents((td) => td.setContent(lines));
-    }
-
-    if (vote) {
-        c.addSeparatorComponents((s) => s.setSpacing(SeparatorSpacingSize.Large));
-        c.addTextDisplayComponents((td) => td.setContent(voteStatusLine(vote)));
-        if (vote.status === VoteStatus.OPEN) c.addActionRowComponents(voteRow());
-    }
-
-    c.addSeparatorComponents((s) => s.setSpacing(SeparatorSpacingSize.Large));
-    const emojis = [scenario.badges?.delayed ? "⏳" : null, scenario.badges?.simulated ? "🧪" : null].filter(Boolean).join(" ");
-    if (emojis) c.addTextDisplayComponents((td) => td.setContent(emojis));
-    c.addActionRowComponents(linkRow(serverLink, scenario.badges));
-    return c;
+    return buildForwardContainer({
+        biome,
+        roleId: FAKE_ROLE_ID,
+        serverLink: scenario.noServerLink ? null : FAKE_SERVER_LINK,
+        jumpLink: FAKE_JUMP_LINK,
+        finderDiscordId: finderId,
+        findCount: scenario.firstFind ? 1 : 3,
+        serverFindCount: scenario.firstFind ? 1 : 41,
+        lastSeenInServerAt: scenario.firstFind ? null : new Date(now - 2 * 86_400_000 - 5 * 3_600_000),
+        vote,
+        badges: scenario.badges,
+    });
 }
 
 interface PreviewState {
@@ -213,8 +97,7 @@ interface PreviewState {
 }
 
 export default {
-    description:
-        'The "Announcement" biome forward redesign - pick any biome and scenario (vote states, delayed, simulated...) from selects.',
+    description: "The biome forward card - pick any biome and scenario (vote states, delayed, simulated...) from selects.",
     view(client: BotClient) {
         const finderId = client.user?.id ?? "0";
         return defineView<PreviewState, void, void>({
@@ -244,7 +127,7 @@ export default {
                 return {
                     flags: MessageFlags.IsComponentsV2,
                     components: [
-                        buildAnnouncement(state.biome, SCENARIOS[state.scenario], finderId),
+                        buildPreview(state.biome, SCENARIOS[state.scenario], finderId),
                         kit.row(biomeSelect),
                         kit.row(scenarioSelect),
                     ],
