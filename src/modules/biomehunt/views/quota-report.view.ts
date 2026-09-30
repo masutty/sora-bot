@@ -12,7 +12,7 @@ function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 }
 
-/** "3h 12m" / "45m" / "0m" - minutes precision is enough for a quota. */
+/** "3h 12m" / "45m" / "0m" - for the target, where a compact form reads best. */
 function formatHm(seconds: number): string {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -20,31 +20,43 @@ function formatHm(seconds: number): string {
     return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/**
+ * A member's time at a fixed width - "7h 12m", "0h 05m", padded left to fit double-digit hours - so
+ * the times line up as a column at the start of every line.
+ */
+function formatHmFixed(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${String(m).padStart(2, "0")}m`.padStart(7, " ");
+}
+
 export function quotaPageCount(report: QuotaDayReport): number {
     return Math.max(1, Math.ceil(report.members.length / QUOTA_MEMBERS_PER_PAGE));
 }
 
-/** One quoted line of members. */
-function quoted(members: QuotaMember[]): string {
-    return `> ${members.map((m) => `<@${m.discordUserId}> \`${formatHm(m.activeSeconds)}\``).join(" · ")}`;
-}
+const memberLine = (m: QuotaMember) => `> \`${formatHmFixed(m.activeSeconds)}\` <@${m.discordUserId}>`;
 
 /**
- * One page of the member list (most active first). The `── target ──` line sits right before the
- * first member under the target - so it shows on whichever page that member lands on (at its top
- * when the cut falls between two pages), and nowhere when everyone or nobody hit.
+ * One page of the member list (most active first), split into labelled groups - "- `✅ Hit · N`" then
+ * "- `⏳ Not yet · N`" (or "❌ Missed" once the day is over), members quoted under each, one per line.
+ * A group's label shows on every page that has some of its members, always with the group's full count.
+ * One text block per group, so Discord puts a gap between them.
  */
-function memberPage(members: QuotaMember[], hits: number, target: number, page: number): string {
-    if (members.length === 0) return "> -# Nobody";
+function memberPage(members: QuotaMember[], target: number, page: number, inProgress: boolean): string[] {
+    if (members.length === 0) return ["-# Nobody"];
+    const hits = hitCount(members, target);
     const from = page * QUOTA_MEMBERS_PER_PAGE;
     const slice = members.slice(from, from + QUOTA_MEMBERS_PER_PAGE);
-    const cut = hits - from; // index of the first miss within this page
-    const cutLine = `-# ── target \`${formatHm(target)}\` ──`;
-    if (hits === 0 || hits === members.length || cut < 0 || cut >= slice.length) return quoted(slice);
+    const pageHits = slice.filter((m) => m.activeSeconds >= target);
+    const pageMisses = slice.filter((m) => m.activeSeconds < target);
 
-    const above = slice.slice(0, cut);
-    const below = slice.slice(cut);
-    return [...(above.length > 0 ? [quoted(above)] : []), cutLine, quoted(below)].join("\n");
+    const blocks: string[] = [];
+    if (pageHits.length > 0) blocks.push(`- \`✅ Hit · ${hits}\`\n${pageHits.map(memberLine).join("\n")}`);
+    if (pageMisses.length > 0) {
+        const label = inProgress ? "⏳ Not yet" : "❌ Missed";
+        blocks.push(`- \`${label} · ${members.length - hits}\`\n${pageMisses.map(memberLine).join("\n")}`);
+    }
+    return blocks;
 }
 
 /** One quota day's card, for one quota role and one page of its members. */
@@ -66,15 +78,14 @@ export function buildQuotaDayContainer(report: QuotaDayReport, label: string, ro
     }
 
     const target = role.quota_target_seconds;
-    const hits = hitCount(report.members, target);
-    const misses = report.members.length - hits;
-    const missLabel = report.inProgress ? `⏳ ${misses} not yet` : `❌ ${misses} missed`;
-    const lines = [`### <@&${role.role_id}>`, `-# Target: \`${formatHm(target)}\` per day · ✅ ${hits} hit · ${missLabel}`];
+    const lines = [`### <@&${role.role_id}>`, `-# Target: \`${formatHm(target)}\` per day`];
     if (role.quota_window_hours !== 24) {
         lines.push(`-# ⚠️ This role really counts the last ${role.quota_window_hours}h - this view only looks at the quota day.`);
     }
-    lines.push(memberPage(report.members, hits, target, page));
     container.addTextDisplayComponents((td) => td.setContent(lines.join("\n")));
+    for (const block of memberPage(report.members, target, page, report.inProgress)) {
+        container.addTextDisplayComponents((td) => td.setContent(block));
+    }
     return container;
 }
 
