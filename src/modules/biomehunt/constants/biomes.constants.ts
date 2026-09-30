@@ -34,23 +34,95 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     WINDY: { label: "Windy", category: "weather", color: 0xa9dfff, iconUrl: "https://i.imgur.com/GD9ppHZ.png", ansiColor: "\u001b[36m" },
     SNOWY: { label: "Snowy", category: "weather", color: 0xdfffff, iconUrl: "https://i.imgur.com/8rXSIQ0.png", ansiColor: "\u001b[37m" },
     RAINY: { label: "Rainy", category: "weather", color: 0x3a6ea5, iconUrl: "https://i.imgur.com/KYblZp4.png", ansiColor: "\u001b[34m" },
-    SANDSTORM: { label: "Sand Storm", category: "biome", color: 0xe0c068, iconUrl: "https://i.imgur.com/gBJQViw.png", ansiColor: "\u001b[33m" },
+    SANDSTORM: {
+        label: "Sand Storm",
+        category: "biome",
+        color: 0xe0c068,
+        iconUrl: "https://i.imgur.com/gBJQViw.png",
+        ansiColor: "\u001b[33m",
+    },
     HELL: { label: "Hell", category: "biome", color: 0xd7263d, iconUrl: "https://i.imgur.com/qf4ih2k.png", ansiColor: "\u001b[31m" },
-    STARFALL: { label: "Starfall", category: "biome", color: 0x6c5ce7, iconUrl: "https://i.imgur.com/KDlFLf3.png", ansiColor: "\u001b[34m" },
+    STARFALL: {
+        label: "Starfall",
+        category: "biome",
+        color: 0x6c5ce7,
+        iconUrl: "https://i.imgur.com/KDlFLf3.png",
+        ansiColor: "\u001b[34m",
+    },
     HEAVEN: { label: "Heaven", category: "biome", color: 0xffd700, iconUrl: "https://i.imgur.com/y6OXzVv.png", ansiColor: "\u001b[33m" },
-    CORRUPTION: { label: "Corruption", category: "biome", color: 0x4b0082, iconUrl: "https://i.imgur.com/lzlsuC6.png", ansiColor: "\u001b[35m" },
+    CORRUPTION: {
+        label: "Corruption",
+        category: "biome",
+        color: 0x4b0082,
+        iconUrl: "https://i.imgur.com/lzlsuC6.png",
+        ansiColor: "\u001b[35m",
+    },
     NULL: { label: "Null", category: "biome", color: 0x2c2f33, iconUrl: "https://i.imgur.com/krutokU.png", ansiColor: "\u001b[30m" },
-    GLITCHED: { label: "Glitched", category: "rare", color: 0xff00ff, iconUrl: "https://i.imgur.com/xTd6Ku4.png", ansiColor: "\u001b[1;32;40m" },
-    CYBERSPACE: { label: "Cyberspace", category: "rare", color: 0x00e5ff, iconUrl: "https://i.imgur.com/FxFEobX.png", ansiColor: "\u001b[1;34;40m" },
-    DREAMSPACE: { label: "Dreamspace", category: "rare", color: 0xffb6d9, iconUrl: "https://i.imgur.com/JCoQDvY.png", ansiColor: "\u001b[1;37;45m" },
-    SINGULARITY: { label: "Singularity", category: "rare", color: 0x0a0a0a, iconUrl: "https://i.imgur.com/rBoV7lJ.png", ansiColor: "\u001b[1;31;40m" },
-    PUMPKINMOON: { label: "Pumpkin Moon", category: "event", color: 0xff8c00, iconUrl: "https://i.imgur.com/wEdcqqI.png", ansiColor: "\u001b[1;33m" },
-    GRAVEYARD: { label: "Graveyard", category: "event", color: 0x556b2f, iconUrl: "https://i.imgur.com/MrKZqUx.png", ansiColor: "\u001b[1;33m" },
-    BLAZINGSUN: { label: "Blazing Sun", category: "event", color: 0xff4500, iconUrl: "https://i.imgur.com/BMKWWJ3.png", ansiColor: "\u001b[1;33m" },
+    GLITCHED: {
+        label: "Glitched",
+        category: "rare",
+        color: 0xff00ff,
+        iconUrl: "https://i.imgur.com/xTd6Ku4.png",
+        ansiColor: "\u001b[1;32;40m",
+    },
+    CYBERSPACE: {
+        label: "Cyberspace",
+        category: "rare",
+        color: 0x00e5ff,
+        iconUrl: "https://i.imgur.com/FxFEobX.png",
+        ansiColor: "\u001b[1;34;40m",
+    },
+    DREAMSPACE: {
+        label: "Dreamspace",
+        category: "rare",
+        color: 0xffb6d9,
+        iconUrl: "https://i.imgur.com/JCoQDvY.png",
+        ansiColor: "\u001b[1;37;45m",
+    },
+    SINGULARITY: {
+        label: "Singularity",
+        category: "rare",
+        color: 0x0a0a0a,
+        iconUrl: "https://i.imgur.com/rBoV7lJ.png",
+        ansiColor: "\u001b[1;31;40m",
+    },
+    PUMPKINMOON: {
+        label: "Pumpkin Moon",
+        category: "event",
+        color: 0xff8c00,
+        iconUrl: "https://i.imgur.com/wEdcqqI.png",
+        ansiColor: "\u001b[1;33m",
+    },
+    GRAVEYARD: {
+        label: "Graveyard",
+        category: "event",
+        color: 0x556b2f,
+        iconUrl: "https://i.imgur.com/MrKZqUx.png",
+        ansiColor: "\u001b[1;33m",
+    },
+    BLAZINGSUN: {
+        label: "Blazing Sun",
+        category: "event",
+        color: 0xff4500,
+        iconUrl: "https://i.imgur.com/BMKWWJ3.png",
+        ansiColor: "\u001b[1;33m",
+    },
     INCINERATOR: { label: "Incinerator", category: "event", color: 0xff4500, iconUrl: "", ansiColor: "\u001b[1;33m" },
-    BLOODRAIN: { label: "Blood Rain", category: "event", color: 0x8b0000, iconUrl: "https://i.imgur.com/w8oVQ8e.png", ansiColor: "\u001b[1;33m" },
+    BLOODRAIN: {
+        label: "Blood Rain",
+        category: "event",
+        color: 0x8b0000,
+        iconUrl: "https://i.imgur.com/w8oVQ8e.png",
+        ansiColor: "\u001b[1;33m",
+    },
     AURORA: { label: "Aurora", category: "event", color: 0x00fa9a, iconUrl: "https://i.imgur.com/nS7GTo1.png", ansiColor: "\u001b[1;33m" },
-    EGGLAND: { label: "Eggland", category: "event", color: 0xf5deb3, iconUrl: "https://i.imgur.com/vkQwGrz.png", ansiColor: "\u001b[1;33m" },
+    EGGLAND: {
+        label: "Eggland",
+        category: "event",
+        color: 0xf5deb3,
+        iconUrl: "https://i.imgur.com/vkQwGrz.png",
+        ansiColor: "\u001b[1;33m",
+    },
 };
 
 export function getBiomeIconUrl(biome: string): string | undefined {
@@ -81,7 +153,9 @@ export function spoofBiomeName(biome: string): string {
 }
 
 export function getBiomesByCategory(category: BiomeCategory): string[] {
-    return Object.entries(BIOME_META).filter(([, meta]) => meta.category === category).map(([biome]) => biome);
+    return Object.entries(BIOME_META)
+        .filter(([, meta]) => meta.category === category)
+        .map(([biome]) => biome);
 }
 
 /**
@@ -104,7 +178,10 @@ export const BIOME_SELECTOR_CHOICES: Array<{ name: string; value: string }> = [
 ];
 
 /** Individual biomes only (no ALL/category shortcuts) - used where a single concrete biome is required, e.g. correcting one user's find count. */
-export const BIOME_ONLY_CHOICES: Array<{ name: string; value: string }> = Object.entries(BIOME_META).map(([value, meta]) => ({ name: meta.label, value }));
+export const BIOME_ONLY_CHOICES: Array<{ name: string; value: string }> = Object.entries(BIOME_META).map(([value, meta]) => ({
+    name: meta.label,
+    value,
+}));
 
 const DEFAULT_BIOME_COLOR = 0x5865f2;
 

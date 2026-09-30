@@ -1,7 +1,7 @@
 import { MessageFlags } from "discord.js";
 import { BIOME_META } from "@/modules/biomehunt/constants/biomes.constants";
-import { buildSessionEndContainer } from "@/modules/biomehunt/views/session-end.view";
 import type { ActivitySessionRow } from "@/modules/biomehunt/types";
+import { buildSessionEndContainer } from "@/modules/biomehunt/views/session-end.view";
 import type { TestCase, TestPayload } from "../../registry";
 
 // >24h on purpose - the previous design showed start/end as Discord `:t` (time-of-day only) tags,
@@ -25,7 +25,7 @@ const FAKE_BIOMES = Object.keys(BIOME_META).map((biome, i) => ({
 }));
 
 export default {
-    description: "BiomeHunt's \"Session Ended\" macro-channel report, with fake session/biome data.",
+    description: 'BiomeHunt\'s "Session Ended" macro-channel report, with fake session/biome data.',
     run(): TestPayload {
         const container = buildSessionEndContainer(FAKE_SESSION, FAKE_BIOMES);
         return { flags: MessageFlags.IsComponentsV2, components: [container] };

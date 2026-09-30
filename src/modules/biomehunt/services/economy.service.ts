@@ -12,12 +12,7 @@ export async function getBalance(guildId: string, discordUserId: string): Promis
     return user ? { seeds: user.seeds, xp: user.xp } : null;
 }
 
-export async function grantEconomy(
-    guildId: string,
-    discordUserId: string,
-    seeds: number | null,
-    xp: number | null,
-): Promise<string> {
+export async function grantEconomy(guildId: string, discordUserId: string, seeds: number | null, xp: number | null): Promise<string> {
     if (!(await isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"))) {
         throw new BiomeHuntError("The economy isn't enabled for this server. Enable `EXPERIMENT_BIOME_ECONOMY` first (`flag set`).");
     }

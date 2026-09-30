@@ -1,7 +1,7 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { buildForwardContainer, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
 import { VoteStatus } from "@/modules/biomehunt/types";
+import { buildForwardContainer, type VoteRenderInfo } from "@/modules/biomehunt/views/forward-post.view";
 import type { TestCase, TestPayload } from "../../registry";
 
 // A fake vote id: the Real/Fake buttons on the "open" page are real customIds, so clicking them in
@@ -24,7 +24,8 @@ function voteStates(adminId: string): Array<Omit<VoteRenderInfo, "voteId" | "clo
 }
 
 export default {
-    description: "BiomeHunt's rare-biome forward in every community-vote state (open, no votes, tie, community real/fake, admin confirmed/denied).",
+    description:
+        "BiomeHunt's rare-biome forward in every community-vote state (open, no votes, tie, community real/fake, admin confirmed/denied).",
     pages(client: BotClient): TestPayload[] {
         const adminId = client.user?.id ?? "0";
         return voteStates(adminId).map((vote) => {

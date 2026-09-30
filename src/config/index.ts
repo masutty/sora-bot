@@ -31,7 +31,7 @@ export const config = {
         defaultPrefix: process.env.DEFAULT_PREFIX ?? "!",
         defaultCommandCategory: "General",
 
-        deferredPrefixCommandMessage:process.env.DEFERRED_PREFIX_COMMAND_MESSAGE ?? "Processing...",
+        deferredPrefixCommandMessage: process.env.DEFERRED_PREFIX_COMMAND_MESSAGE ?? "Processing...",
 
         env: process.env.NODE_ENV ?? "development",
 

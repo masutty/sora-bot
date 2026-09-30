@@ -40,10 +40,7 @@ const OPTION_TYPE_MAP: Record<number, ArgType | undefined> = {
 const SUB_COMMAND = 1;
 const SUB_COMMAND_GROUP = 2;
 
-type AnyBuilder =
-    | SlashCommandBuilder
-    | SlashCommandOptionsOnlyBuilder
-    | SlashCommandSubcommandsOnlyBuilder;
+type AnyBuilder = SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandsOnlyBuilder;
 
 type RawOption = {
     name: string;
@@ -295,7 +292,7 @@ export class PrefixArgs {
         const raw = this.getRaw(name);
         if (raw === null) return null;
         const n = Number(raw);
-        return isNaN(n) ? null : n;
+        return Number.isNaN(n) ? null : n;
     }
 
     getBoolean(name: string): boolean | null {
@@ -311,7 +308,7 @@ export class PrefixArgs {
         if (!raw) return null;
         const id = extractId(raw, /^<@!?(\d+)>$/);
         if (!id) return null;
-        return this.client.users.cache.get(id) ?? await this.client.users.fetch(id).catch(() => null);
+        return this.client.users.cache.get(id) ?? (await this.client.users.fetch(id).catch(() => null));
     }
 
     async getMember(name: string): Promise<GuildMember | null> {
@@ -319,7 +316,7 @@ export class PrefixArgs {
         if (!raw || !this.guild) return null;
         const id = extractId(raw, /^<@!?(\d+)>$/);
         if (!id) return null;
-        return this.guild.members.cache.get(id) ?? await this.guild.members.fetch(id).catch(() => null);
+        return this.guild.members.cache.get(id) ?? (await this.guild.members.fetch(id).catch(() => null));
     }
 
     async getChannel(name: string): Promise<GuildBasedChannel | null> {
@@ -327,7 +324,7 @@ export class PrefixArgs {
         if (!raw || !this.guild) return null;
         const id = extractId(raw, /^<#(\d+)>$/);
         if (!id) return null;
-        return this.guild.channels.cache.get(id) ?? await this.guild.channels.fetch(id).catch(() => null);
+        return this.guild.channels.cache.get(id) ?? (await this.guild.channels.fetch(id).catch(() => null));
     }
 
     async getRole(name: string): Promise<Role | null> {
@@ -335,6 +332,6 @@ export class PrefixArgs {
         if (!raw || !this.guild) return null;
         const id = extractId(raw, /^<@&(\d+)>$/);
         if (!id) return null;
-        return this.guild.roles.cache.get(id) ?? await this.guild.roles.fetch(id).catch(() => null);
+        return this.guild.roles.cache.get(id) ?? (await this.guild.roles.fetch(id).catch(() => null));
     }
 }

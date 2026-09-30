@@ -44,7 +44,7 @@ function addDivider(container: ContainerBuilder): void {
  * `buildSessionsTabContainer` in biomehunt/views/stats-builders.ts - keep the two in sync if this changes.
  */
 export default {
-    description: "BiomeHunt's real Session History layout (ended-only digest + \"currently macroing\" banner), with fake data.",
+    description: 'BiomeHunt\'s real Session History layout (ended-only digest + "currently macroing" banner), with fake data.',
     run(): TestPayload {
         const sessions = buildFakeSessions();
         const ongoingStartedAt = new Date(Date.now() - 12 * 60_000);

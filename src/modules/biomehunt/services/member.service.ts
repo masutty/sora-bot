@@ -3,10 +3,7 @@ import type { BotClient } from "@/core/bot-client";
 import { BADGE_META } from "../constants/badges.constants";
 import { formatBiomeName } from "../constants/biomes.constants";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
-import {
-    deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId,
-    pauseUser, unpauseUser,
-} from "../repository/users.repository";
+import { deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId, pauseUser, unpauseUser } from "../repository/users.repository";
 import { type Badge, BiomeHuntError } from "../types";
 import { revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
 import { adoptMacroChannel, provisionMacroChannel } from "./macro-channel.service";

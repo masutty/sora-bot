@@ -1,6 +1,11 @@
 import {
-    type BaseMessageOptions, type ChatInputCommandInteraction, type Guild, type GuildMember, type Message,
-    MessageFlags, type User,
+    type BaseMessageOptions,
+    type ChatInputCommandInteraction,
+    type Guild,
+    type GuildMember,
+    type Message,
+    MessageFlags,
+    type User,
 } from "discord.js";
 import { config } from "../../config";
 import type { BotClient } from "../bot-client";
@@ -61,9 +66,7 @@ export interface CommandContext {
     readonly invokePrefix: string;
     /** When the invocation was created (for latency math like `ping`). */
     readonly createdTimestamp: number;
-    readonly raw:
-        | { kind: "slash"; interaction: ChatInputCommandInteraction }
-        | { kind: "prefix"; message: Message; args: PrefixArgs };
+    readonly raw: { kind: "slash"; interaction: ChatInputCommandInteraction } | { kind: "prefix"; message: Message; args: PrefixArgs };
     /** Slash: deferReply. Prefix: typing indicator. `ephemeral` here becomes the default for every later reply. */
     defer(opts?: ReplyOptions): Promise<void>;
     reply(payload: ReplyPayload, opts?: ReplyOptions): Promise<Message>;

@@ -68,11 +68,17 @@ export default {
         container.addTextDisplayComponents((td) => td.setContent("## 🎨 ANSI Color Reference"));
         container.addTextDisplayComponents((td) => td.setContent(`**Normal**\n${formatCodeblock(swatchLines(""), "ansi")}`));
         container.addTextDisplayComponents((td) => td.setContent(`**Bold**\n${formatCodeblock(swatchLines("1;"), "ansi")}`));
-        container.addTextDisplayComponents((td) => td.setContent(`**Background** (fg 30, various bg)\n${formatCodeblock(backgroundLines(), "ansi")}`));
         container.addTextDisplayComponents((td) =>
-            td.setContent(`**Combined (fg + bg, bold)** - rows are backgrounds 40-47, columns are foregrounds 30-37\n${formatCodeblock(combinedGrid(), "ansi")}`),
+            td.setContent(`**Background** (fg 30, various bg)\n${formatCodeblock(backgroundLines(), "ansi")}`),
         );
-        container.addTextDisplayComponents((td) => td.setContent(`**Combined, with text**\n${formatCodeblock(labeledComboLines(), "ansi")}`));
+        container.addTextDisplayComponents((td) =>
+            td.setContent(
+                `**Combined (fg + bg, bold)** - rows are backgrounds 40-47, columns are foregrounds 30-37\n${formatCodeblock(combinedGrid(), "ansi")}`,
+            ),
+        );
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`**Combined, with text**\n${formatCodeblock(labeledComboLines(), "ansi")}`),
+        );
 
         return { flags: MessageFlags.IsComponentsV2, components: [container] };
     },

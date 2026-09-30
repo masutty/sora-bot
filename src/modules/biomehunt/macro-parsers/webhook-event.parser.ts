@@ -78,7 +78,7 @@ export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
     const embed = message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
     if (!embed) return null;
 
-    logger.verbose("Detecting macro type...")
+    logger.verbose("Detecting macro type...");
     const parser = detectMacroParser(embed.footer?.text);
     logger.verbose(`Detected macro type: ${parser.id ?? "undefined?"}`);
 
@@ -93,9 +93,7 @@ export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
         biome,
         macroType: parser.id,
         eventType,
-        eventTimestamp: embed.timestamp
-            ? new Date(embed.timestamp)
-            : (message.createdAt ?? null),
+        eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
         serverLink: parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined),
     };
 }

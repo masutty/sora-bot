@@ -98,9 +98,7 @@ export function buildSlashJson(def: CommandDefinition): RESTPostAPIChatInputAppl
     assertSubcommandModeKeys(def);
     if (effectiveMode(def, null) === "prefix") return null;
 
-    const base = def.options
-        ? def.options.toJSON()
-        : new SlashCommandBuilder().setName(def.name).setDescription(def.description).toJSON();
+    const base = def.options ? def.options.toJSON() : new SlashCommandBuilder().setName(def.name).setDescription(def.description).toJSON();
 
     const json: RESTPostAPIChatInputApplicationCommandsJSONBody = { ...base };
     if (base.options) {

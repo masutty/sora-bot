@@ -1,5 +1,5 @@
+import { readFileSync } from "node:fs";
 import { ChannelType } from "discord.js";
-import { readFileSync } from "fs";
 import type { BotClient } from "@/core/bot-client";
 import type { Logger } from "@/utils/logging";
 import { FLOWER_META, FLOWERS_BY_RARITY, FlowerRarity, flowerAssetPath, RARITY_CHANCE } from "../constants/flowers.constants";

@@ -20,12 +20,7 @@ export async function enqueueRoleJob(
  * this (guild, user, role) instead of stacking a duplicate — used by the
  * quota reward system to renew F-mode access without an early double-removal.
  */
-export async function scheduleRoleRemoval(
-    guildId: string,
-    userId: number,
-    roleId: string,
-    executeAfter: Date,
-): Promise<void> {
+export async function scheduleRoleRemoval(guildId: string, userId: number, roleId: string, executeAfter: Date): Promise<void> {
     const result = await query(
         `UPDATE bh_role_jobs SET execute_after = $4, retry_count = 0
          WHERE guild_id = $1 AND user_id = $2 AND role_id = $3 AND action = 'remove' AND processed = FALSE
@@ -53,9 +48,5 @@ export async function markJobProcessed(jobId: number): Promise<void> {
 }
 
 export async function rescheduleJob(jobId: number, nextRetryCount: number, executeAfter: Date): Promise<void> {
-    await query(`UPDATE bh_role_jobs SET retry_count = $2, execute_after = $3 WHERE id = $1`, [
-        jobId,
-        nextRetryCount,
-        executeAfter,
-    ]);
+    await query(`UPDATE bh_role_jobs SET retry_count = $2, execute_after = $3 WHERE id = $1`, [jobId, nextRetryCount, executeAfter]);
 }

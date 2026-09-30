@@ -11,8 +11,12 @@ export type QuotaRoleMode = "F" | "RW";
 export type Badge = "GLITCHED" | "CYBERSPACE" | "DREAMSPACE" | "DELETED";
 
 export type FlagName =
-    | "REPORT_SESSION_ON_END" | "PING_ON_QUOTA_MET" | "CLEAR_PROFILE_ON_AUTODELETE" | "AUTO_DELETE_ENABLED"
-    | "EXPERIMENT_WEBHOOK_FLOWERS" | "EXPERIMENT_BIOME_ECONOMY";
+    | "REPORT_SESSION_ON_END"
+    | "PING_ON_QUOTA_MET"
+    | "CLEAR_PROFILE_ON_AUTODELETE"
+    | "AUTO_DELETE_ENABLED"
+    | "EXPERIMENT_WEBHOOK_FLOWERS"
+    | "EXPERIMENT_BIOME_ECONOMY";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).

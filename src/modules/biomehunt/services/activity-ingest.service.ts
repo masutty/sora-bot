@@ -46,9 +46,7 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     await checkAndForward(message, entry.guildId, entry.userId, parsed, eventId);
 
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
-    const deltaSeconds = user.last_activity_at
-        ? (now.getTime() - user.last_activity_at.getTime()) / 1000
-        : Number.POSITIVE_INFINITY;
+    const deltaSeconds = user.last_activity_at ? (now.getTime() - user.last_activity_at.getTime()) / 1000 : Number.POSITIVE_INFINITY;
 
     await transaction(async (client) => {
         if (deltaSeconds > guildConfig.session_gap_threshold_s) {

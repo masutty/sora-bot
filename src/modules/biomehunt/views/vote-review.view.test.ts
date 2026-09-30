@@ -34,7 +34,11 @@ function makeBallot(userId: string, choice: VoteChoice): BiomeVoteBallotRow {
     return { vote_id: VOTE_ID, user_id: userId, choice, created_at: new Date() };
 }
 
-function fakeDeps(overrides: Partial<VoteReviewDeps> = {}, vote: BiomeVoteRow | null = makeVote(), ballots: BiomeVoteBallotRow[] = []): VoteReviewDeps {
+function fakeDeps(
+    overrides: Partial<VoteReviewDeps> = {},
+    vote: BiomeVoteRow | null = makeVote(),
+    ballots: BiomeVoteBallotRow[] = [],
+): VoteReviewDeps {
     return {
         getVote: async () => vote,
         getBallots: async () => ballots,
@@ -52,10 +56,12 @@ function text(payload: ViewPayload): string {
         const obj = json as { content?: string; components?: unknown; accessory?: unknown };
         return [obj.content ?? "", ...flatten(obj.components), ...flatten(obj.accessory)].filter(Boolean);
     };
-    return [(payload as { content?: string }).content ?? "", ...flatten((payload as { components?: unknown }).components)].filter(Boolean).join("\n");
+    return [(payload as { content?: string }).content ?? "", ...flatten((payload as { components?: unknown }).components)]
+        .filter(Boolean)
+        .join("\n");
 }
 
-test("biomehunt.vote-review: unknown id throws \"No vote with that id.\"", async () => {
+test('biomehunt.vote-review: unknown id throws "No vote with that id."', async () => {
     const fake = createFakeViewTransport();
     const deps = fakeDeps({}, null);
 
@@ -84,7 +90,7 @@ test("biomehunt.vote-review: shows the finder, biome, state and Real/Fake voter 
     expect(rendered).toContain(":x: : <@fake-voter>");
 });
 
-test("biomehunt.vote-review: no ballots shows \"*none*\" on both sides", async () => {
+test('biomehunt.vote-review: no ballots shows "*none*" on both sides', async () => {
     const deps = fakeDeps({}, makeVote(), []);
     const fake = createFakeViewTransport();
 
@@ -132,7 +138,7 @@ test("biomehunt.vote-review: Deny calls adminDecide(FAKE) and redraws as admin-d
     expect(text(fake.lastPayload())).toContain(`Ruled fake by <@${ADMIN}>`);
 });
 
-test("biomehunt.vote-review: a CAS miss notifies \"This vote was already decided.\" without changing the screen", async () => {
+test('biomehunt.vote-review: a CAS miss notifies "This vote was already decided." without changing the screen', async () => {
     const deps = fakeDeps({ adminDecide: async () => ({ kind: "already_decided" }) });
     const fake = createFakeViewTransport();
     void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
@@ -145,7 +151,7 @@ test("biomehunt.vote-review: a CAS miss notifies \"This vote was already decided
     expect(text(fake.lastPayload())).not.toContain("(admin)");
 });
 
-test("biomehunt.vote-review: a vote deleted out from under the review notifies \"This vote is no longer available.\"", async () => {
+test('biomehunt.vote-review: a vote deleted out from under the review notifies "This vote is no longer available."', async () => {
     const deps = fakeDeps({ adminDecide: async () => ({ kind: "not_found" }) });
     const fake = createFakeViewTransport();
     void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
@@ -156,4 +162,3 @@ test("biomehunt.vote-review: a vote deleted out from under the review notifies \
     expect(fake.notifies).toHaveLength(1);
     expect(fake.notifies[0].content).toBe("This vote is no longer available.");
 });
-

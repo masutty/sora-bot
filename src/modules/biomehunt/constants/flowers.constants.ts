@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join } from "node:path";
 
 export enum FlowerRarity {
     COMMON = "common",
@@ -42,14 +42,14 @@ export const FLOWER_META: Record<string, FlowerMeta> = {
 
     BLUE_ORCHID: { label: "Blue Orchid", rarity: FlowerRarity.RARE, file: "Blue_Orchid.png" },
     LILY_OF_THE_VALLEY: { label: "Lily of the Valley", rarity: FlowerRarity.RARE, file: "Lily_of_the_Valley.png" },
-    
+
     TORCHFLOWER: { label: "Torchflower", rarity: FlowerRarity.EPIC, file: "Torchflower.png" },
     EYEBLOSSOM: { label: "Eyeblossom", rarity: FlowerRarity.EPIC, file: "Eyeblossom.png" },
     RED_MUSHROOM: { label: "Red Mushrooms", rarity: FlowerRarity.EPIC, file: "Red_Mushroom.png" }, // weird looking flower
-    
+
     WITHER_ROSE: { label: "Wither Rose", rarity: FlowerRarity.LEGENDARY, file: "Wither_Rose.png" },
     OAK_SAPLING: { label: "Oak Sapling", rarity: FlowerRarity.LEGENDARY, file: "Oak_Sapling.png" }, // weird looking flower
-    
+
     ALLIUM: { label: "Allium", rarity: FlowerRarity.MYTHICAL, file: "Allium.png" },
     LILY_PAD: { label: "Lily Pad", rarity: FlowerRarity.MYTHICAL, file: "Lily_Pad.png" }, // weird looking flower
 
@@ -73,7 +73,10 @@ export const RARITY_CHANCE: Array<{ rarity: Exclude<FlowerRarity, FlowerRarity.C
 ];
 
 /** Every Flower key grouped by rarity - keyed off FlowerRarity's own values, so adding/renaming a rarity there never needs a matching edit here. */
-export const FLOWERS_BY_RARITY = Object.fromEntries(Object.values(FlowerRarity).map((r) => [r, [] as string[]])) as Record<FlowerRarity, string[]>;
+export const FLOWERS_BY_RARITY = Object.fromEntries(Object.values(FlowerRarity).map((r) => [r, [] as string[]])) as Record<
+    FlowerRarity,
+    string[]
+>;
 for (const [key, meta] of Object.entries(FLOWER_META)) {
     FLOWERS_BY_RARITY[meta.rarity].push(key);
 }

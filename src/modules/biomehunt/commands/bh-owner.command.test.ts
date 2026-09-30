@@ -5,8 +5,17 @@ import { resolveSimulateBiomeTarget, type SimulateBiomeDeps } from "./bh-owner.c
 
 function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
     return {
-        id: 7, guild_id: "g1", discord_user_id: "target-1", current_status: "active", last_activity_at: null,
-        paused_at: null, created_at: new Date(), seeds: 0, xp: 0, flower: null, ...overrides,
+        id: 7,
+        guild_id: "g1",
+        discord_user_id: "target-1",
+        current_status: "active",
+        last_activity_at: null,
+        paused_at: null,
+        created_at: new Date(),
+        seeds: 0,
+        xp: 0,
+        flower: null,
+        ...overrides,
     };
 }
 
@@ -25,8 +34,14 @@ function createFakeDeps(user: UserRow | null, forward: BiomeForwardRow | null): 
 test("resolveSimulateBiomeTarget rejects an unknown biome before touching any dep", async () => {
     let called = false;
     const deps: SimulateBiomeDeps = {
-        getUserByDiscordId: async () => { called = true; return fakeUser(); },
-        getForwardConfig: async () => { called = true; return fakeForward(); },
+        getUserByDiscordId: async () => {
+            called = true;
+            return fakeUser();
+        },
+        getForwardConfig: async () => {
+            called = true;
+            return fakeForward();
+        },
     };
 
     await expect(resolveSimulateBiomeTarget("g1", "target-1", "NOT_A_BIOME", deps)).rejects.toThrow(BiomeHuntError);

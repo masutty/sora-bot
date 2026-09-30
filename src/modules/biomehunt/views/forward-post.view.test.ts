@@ -13,11 +13,16 @@ function flatten(json: Json): Json[] {
 }
 
 function textOf(json: Json): string {
-    return flatten(json).map((c) => c.content ?? "").filter(Boolean).join("\n");
+    return flatten(json)
+        .map((c) => c.content ?? "")
+        .filter(Boolean)
+        .join("\n");
 }
 
 function customIdsOf(json: Json): string[] {
-    return flatten(json).map((c) => c.custom_id).filter((id): id is string => Boolean(id));
+    return flatten(json)
+        .map((c) => c.custom_id)
+        .filter((id): id is string => Boolean(id));
 }
 
 const BASE = { biome: "GLITCHED", roleId: null, serverLink: null, jumpLink: "https://discord.com/channels/g/c/m" };
@@ -50,7 +55,10 @@ test("a closed vote hides the buttons and shows the real/fake split", () => {
     const json = buildForwardContainer({
         ...BASE,
         vote: {
-            voteId: "abc12345", status: VoteStatus.COMMUNITY_REAL, closesAt: new Date(), voteCount: 5,
+            voteId: "abc12345",
+            status: VoteStatus.COMMUNITY_REAL,
+            closesAt: new Date(),
+            voteCount: 5,
             tally: { real: 3, fake: 2 },
         },
     }).toJSON();

@@ -13,7 +13,12 @@ export const BADGE_META: Record<Badge, BadgeMeta> = {
     GLITCHED: { slug: "glitched", emoji: "🔥", display: "Glitched", description: "Found the Glitched biome!" },
     CYBERSPACE: { slug: "cyberspace", emoji: "🌐", display: "Cyberspace", description: "Found the Cyberspace biome!" },
     DREAMSPACE: { slug: "dreamspace", emoji: "🌸", display: "Dreamspace", description: "Found the Dreamspace biome!" },
-    DELETED: { slug: "deleted", emoji: "💀", display: "Deleted?!", description: "Got auto-deleted for inactivity... and lived to tell the tale." },
+    DELETED: {
+        slug: "deleted",
+        emoji: "💀",
+        display: "Deleted?!",
+        description: "Got auto-deleted for inactivity... and lived to tell the tale.",
+    },
 };
 
 /** Role-configurable biome badges only. `DELETED` is bot-triggered and display-only - no role can be attached to it. */

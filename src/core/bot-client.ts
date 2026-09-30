@@ -36,7 +36,9 @@ export class BotClient extends Client {
         this.on(Events.ShardResume, (id, n) => this.logger.info(`Shard ${id} resumed (${n} events replayed)`));
         this.on(Events.ShardError, (err, id) => this.logger.error(`Shard ${id} error: ${err.message}`));
         this.on(Events.Invalidated, () => this.logger.error("Session invalidated - token may be revoked"));
-        this.rest.on("rateLimited", (info) => this.logger.warn(`Rate limited on ${info.method} ${info.url} - retry in ${info.timeToReset}ms`));
+        this.rest.on("rateLimited", (info) =>
+            this.logger.warn(`Rate limited on ${info.method} ${info.url} - retry in ${info.timeToReset}ms`),
+        );
         this.on(Events.Error, (err) => this.logger.error(err));
         this.on(Events.Warn, (warn) => this.logger.warn(warn));
         this.on(Events.Debug, (msg) => this.logger.debug(msg));

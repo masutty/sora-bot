@@ -33,7 +33,10 @@ function start<S, R, I>(view: ViewDefinition<S, R, I>, input: I, invokerId = OWN
 const counter = defineView<{ n: number }, number, number>({
     name: "test.counter",
     initial: (n) => ({ n }),
-    render: (s, kit) => ({ content: `n=${s.n}`, components: [kit.row(kit.button("inc", label), kit.button("set", label), kit.button("finish", label))] }),
+    render: (s, kit) => ({
+        content: `n=${s.n}`,
+        components: [kit.row(kit.button("inc", label), kit.button("set", label), kit.button("finish", label))],
+    }),
     timeoutMs: TIMEOUT,
     on: {
         inc: (c) => {
@@ -106,7 +109,7 @@ test("4. someone else's click gets \"This isn't yours!\", the handler doesn't ru
     expect(fake.closed).toBe(1);
 });
 
-test("5. access: \"anyone\" lets someone else's click run the handler", async () => {
+test('5. access: "anyone" lets someone else\'s click run the handler', async () => {
     void start(defineView({ ...counter, access: "anyone" }), 5);
     await fake.flush();
 
@@ -340,7 +343,7 @@ test("13. a handler error is logged, the owner is notified (message for UserFaci
     expect(fake.closed).toBe(0);
 });
 
-test("onExpire \"disable\" keeps the components but disables them; \"strip\" reaches rows nested in a ComponentsV2 container", async () => {
+test('onExpire "disable" keeps the components but disables them; "strip" reaches rows nested in a ComponentsV2 container', async () => {
     const v2 = defineView<null, void>({
         name: "test.v2",
         initial: () => null,
@@ -405,7 +408,10 @@ function parentThen(after: (c: HandlerContext<{ n: number }, void>) => Promise<u
 }
 
 test("child done, then the parent's modal is dismissed: the parent is redrawn (not stuck on the child's screen)", async () => {
-    void start(parentThen((c) => c.modal({ title: "t", fields: [{ key: "a", label: "a" }] })), undefined);
+    void start(
+        parentThen((c) => c.modal({ title: "t", fields: [{ key: "a", label: "a" }] })),
+        undefined,
+    );
     await fake.flush();
     const parentId = fake.id("choose");
 
@@ -917,7 +923,9 @@ test("M1. strip / disable / done keep Link buttons (they have no customId and st
             flags: MessageFlags.IsComponentsV2,
             components: [
                 new ContainerBuilder()
-                    .addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent("s")).setButtonAccessory(link()))
+                    .addSectionComponents(
+                        new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent("s")).setButtonAccessory(link()),
+                    )
                     .addActionRowComponents(kit.row(kit.button("a", label), link())),
             ],
         }),

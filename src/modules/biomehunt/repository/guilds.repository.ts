@@ -30,12 +30,7 @@ export function invalidateGuildConfigCache(guildId: string): void {
     invalidate(guildId);
 }
 
-export async function updateThresholds(
-    guildId: string,
-    sessionGapS: number,
-    idleS: number,
-    inactiveS: number,
-): Promise<void> {
+export async function updateThresholds(guildId: string, sessionGapS: number, idleS: number, inactiveS: number): Promise<void> {
     await query(
         `UPDATE bh_guilds
          SET session_gap_threshold_s = $2, idle_threshold_s = $3, inactive_threshold_s = $4, updated_at = NOW()
@@ -50,19 +45,13 @@ export async function resetThresholds(guildId: string): Promise<void> {
 }
 
 export async function updateQuotaEvalHour(guildId: string, hourUtc: number): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET quota_eval_hour_utc = $2, updated_at = NOW() WHERE guild_id = $1`,
-        [guildId, hourUtc],
-    );
+    await query(`UPDATE bh_guilds SET quota_eval_hour_utc = $2, updated_at = NOW() WHERE guild_id = $1`, [guildId, hourUtc]);
     invalidate(guildId);
 }
 
 /** Marks a guild's F-mode quota rewards as evaluated for today (UTC), so the daily sweep doesn't re-run today. */
 export async function markQuotaEvaluated(guildId: string): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET quota_last_evaluated_date = (NOW() AT TIME ZONE 'UTC')::date WHERE guild_id = $1`,
-        [guildId],
-    );
+    await query(`UPDATE bh_guilds SET quota_last_evaluated_date = (NOW() AT TIME ZONE 'UTC')::date WHERE guild_id = $1`, [guildId]);
     invalidate(guildId);
 }
 
@@ -84,34 +73,27 @@ export async function getGuildsDueForFixedRewardEval(): Promise<GuildConfigRow[]
 
 /** Sets how many hours after going inactive a user's macro channel is deleted. Whether that actually happens is gated by the AUTO_DELETE_ENABLED flag, not this value. */
 export async function setAutoDeleteHours(guildId: string, seconds: number): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET delete_inactive_after_s = $2, updated_at = NOW() WHERE guild_id = $1`,
-        [guildId, seconds],
-    );
+    await query(`UPDATE bh_guilds SET delete_inactive_after_s = $2, updated_at = NOW() WHERE guild_id = $1`, [guildId, seconds]);
     invalidate(guildId);
 }
 
 export async function updateAutoCreateCategories(guildId: string, enabled: boolean): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET auto_create_categories = $2, updated_at = NOW() WHERE guild_id = $1`,
-        [guildId, enabled],
-    );
+    await query(`UPDATE bh_guilds SET auto_create_categories = $2, updated_at = NOW() WHERE guild_id = $1`, [guildId, enabled]);
     invalidate(guildId);
 }
 
 export async function updateCounterChannel(guildId: string, channelId: string): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET counter_channel_id = $2, counter_message_id = NULL, updated_at = NOW() WHERE guild_id = $1`,
-        [guildId, channelId],
-    );
+    await query(`UPDATE bh_guilds SET counter_channel_id = $2, counter_message_id = NULL, updated_at = NOW() WHERE guild_id = $1`, [
+        guildId,
+        channelId,
+    ]);
     invalidate(guildId);
 }
 
 export async function clearCounterChannel(guildId: string): Promise<void> {
-    await query(
-        `UPDATE bh_guilds SET counter_channel_id = NULL, counter_message_id = NULL, updated_at = NOW() WHERE guild_id = $1`,
-        [guildId],
-    );
+    await query(`UPDATE bh_guilds SET counter_channel_id = NULL, counter_message_id = NULL, updated_at = NOW() WHERE guild_id = $1`, [
+        guildId,
+    ]);
     invalidate(guildId);
 }
 
@@ -135,18 +117,12 @@ export async function insertCategory(guildId: string, categoryId: string): Promi
 }
 
 export async function deleteCategory(guildId: string, categoryId: string): Promise<boolean> {
-    const result = await query(
-        `DELETE FROM bh_guild_categories WHERE guild_id = $1 AND discord_category_id = $2`,
-        [guildId, categoryId],
-    );
+    const result = await query(`DELETE FROM bh_guild_categories WHERE guild_id = $1 AND discord_category_id = $2`, [guildId, categoryId]);
     return (result.rowCount ?? 0) > 0;
 }
 
 export async function getEnabledCategories(guildId: string): Promise<GuildCategoryRow[]> {
-    const result = await query<GuildCategoryRow>(
-        `SELECT * FROM bh_guild_categories WHERE guild_id = $1 AND is_enabled = TRUE`,
-        [guildId],
-    );
+    const result = await query<GuildCategoryRow>(`SELECT * FROM bh_guild_categories WHERE guild_id = $1 AND is_enabled = TRUE`, [guildId]);
     return result.rows;
 }
 
@@ -178,10 +154,9 @@ export async function setGuildRoles(guildId: string, active: string, idle: strin
 }
 
 export async function clearGuildRoles(guildId: string): Promise<void> {
-    await query(
-        `UPDATE bh_guild_roles SET active_role_id = NULL, idle_role_id = NULL, inactive_role_id = NULL WHERE guild_id = $1`,
-        [guildId],
-    );
+    await query(`UPDATE bh_guild_roles SET active_role_id = NULL, idle_role_id = NULL, inactive_role_id = NULL WHERE guild_id = $1`, [
+        guildId,
+    ]);
     invalidate(guildId);
 }
 
@@ -199,9 +174,7 @@ export async function setGuildRoleForStatus(guildId: string, status: ActivitySta
     invalidate(guildId);
 }
 
-export async function isGuildReady(
-    guildId: string,
-): Promise<{ ready: boolean; hasCategory: boolean; hasRoles: boolean }> {
+export async function isGuildReady(guildId: string): Promise<{ ready: boolean; hasCategory: boolean; hasRoles: boolean }> {
     await getOrCreateGuildConfig(guildId);
     const categories = await getEnabledCategories(guildId);
     const roles = await getGuildRoles(guildId);

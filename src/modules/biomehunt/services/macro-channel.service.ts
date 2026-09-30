@@ -1,12 +1,17 @@
-import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel } from "discord.js";
+import type { CategoryChannel, Guild, GuildMember, OverwriteResolvable, TextChannel, Webhook } from "discord.js";
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import { encrypt } from "@/utils/crypto";
 import { Logger } from "@/utils/logging";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getEnabledCategories, getOrCreateGuildConfig, insertCategory, isGuildReady } from "../repository/guilds.repository";
 import {
-    createMacroChannel, deleteUserCascade, ensureUser, getMacroChannelByUserId,
-    lookupChannel, registerChannel, setUserFlower,
+    createMacroChannel,
+    deleteUserCascade,
+    ensureUser,
+    getMacroChannelByUserId,
+    lookupChannel,
+    registerChannel,
+    setUserFlower,
 } from "../repository/users.repository";
 import type { GuildConfigRow } from "../types";
 import { BiomeHuntError } from "../types";
@@ -21,21 +26,32 @@ export interface MacroChannelResult {
 
 /** The bot's macro channel naming convention - shared by fresh setup and admin-adopted existing channels. */
 export function macroChannelName(username: string): string {
-    return `・${username.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 80)}`;
+    return `・${username
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .slice(0, 80)}`;
 }
 
-export async function provisionMacroChannel(guild: Guild, member: GuildMember, opts: { dmUser?: boolean } = {}): Promise<MacroChannelResult> {
+export async function provisionMacroChannel(
+    guild: Guild,
+    member: GuildMember,
+    opts: { dmUser?: boolean } = {},
+): Promise<MacroChannelResult> {
     const dmUser = opts.dmUser ?? true;
 
     const { ready } = await isGuildReady(guild.id);
     if (!ready) {
-        throw new BiomeHuntError("It seems that this server is not fully configured yet! Please contact an administrator for more information.");
+        throw new BiomeHuntError(
+            "It seems that this server is not fully configured yet! Please contact an administrator for more information.",
+        );
     }
 
     const user = await ensureUser(guild.id, member.id);
     const existingChannel = await getMacroChannelByUserId(user.id);
     if (existingChannel) {
-        throw new BiomeHuntError("It seems that you already have a macro channel set up. Ask an administrator to reset it if you need to regenerate it.");
+        throw new BiomeHuntError(
+            "It seems that you already have a macro channel set up. Ask an administrator to reset it if you need to regenerate it.",
+        );
     }
 
     const guildConfig = await getOrCreateGuildConfig(guild.id);
@@ -48,7 +64,7 @@ export async function provisionMacroChannel(guild: Guild, member: GuildMember, o
         permissionOverwrites: buildMacroChannelOverwrites(category, member),
     });
 
-    let webhook;
+    let webhook: Webhook;
     try {
         webhook = await channel.createWebhook({ name: "BiomeHunt Tracker" });
     } catch (err) {
@@ -73,15 +89,17 @@ export async function provisionMacroChannel(guild: Guild, member: GuildMember, o
         try {
             await member.send(
                 `Here is your webhook for <#${channel.id}>:` +
-                `\n${webhook.url}\n\n` +
-                "-# Do not share this URL with anyone, nor use it for anything other than your macro.\n" +
-                "-# You can be punished for webhook misuse. If you believe that your webhook url has leaked, please contact an administrator as soon as possible.\n",
+                    `\n${webhook.url}\n\n` +
+                    "-# Do not share this URL with anyone, nor use it for anything other than your macro.\n" +
+                    "-# You can be punished for webhook misuse. If you believe that your webhook url has leaked, please contact an administrator as soon as possible.\n",
             );
         } catch {
             await deleteUserCascade(user.id);
             await webhook.delete().catch(() => {});
             await channel.delete().catch(() => {});
-            throw new BiomeHuntError("I couldn't send you a DM. Please enable direct messages from server members and try `/bh setup` again.");
+            throw new BiomeHuntError(
+                "I couldn't send you a DM. Please enable direct messages from server members and try `/bh setup` again.",
+            );
         }
     }
 
@@ -162,7 +180,10 @@ function buildMacroChannelOverwrites(category: CategoryChannel, member: GuildMem
 
     return [
         ...cloned,
-        { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages] },
+        {
+            id: member.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages],
+        },
     ];
 }
 

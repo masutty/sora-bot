@@ -91,9 +91,7 @@ export function buildProfileTabContainer(member: GuildMember, data: ProfileData)
 
     const channelLine = channelId ? `<#${channelId}>` : "*not created*";
     const statusLabel = user.current_status.charAt(0).toUpperCase() + user.current_status.slice(1);
-    const flowerLine = flower && FLOWER_META[flower]
-        ? `\`${FLOWER_META[flower].label}\` *(${FLOWER_META[flower].rarity})*`
-        : "*none yet*";
+    const flowerLine = flower && FLOWER_META[flower] ? `\`${FLOWER_META[flower].label}\` *(${FLOWER_META[flower].rarity})*` : "*none yet*";
 
     const totals = totalBiomesFoundByCategory(biomes);
     const totalLine = BIOME_TOTAL_ORDER.map((c) => `\`${totals[c]}\``).join("/");
@@ -101,7 +99,9 @@ export function buildProfileTabContainer(member: GuildMember, data: ProfileData)
     const { level, currentLevelXp, nextLevelXp } = getLevelForXp(user.xp);
 
     if (data.economyEnabled) {
-        container.addTextDisplayComponents((td) => td.setContent(`-# Level ${level} (${user.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`));
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`-# Level ${level} (${user.xp - currentLevelXp}/${nextLevelXp - currentLevelXp} XP)`),
+        );
         addSpacer(container);
     }
 
@@ -124,10 +124,7 @@ export function buildProfileTabContainer(member: GuildMember, data: ProfileData)
     }
 
     addDivider(container);
-    const footerParts = [
-        ...(data.economyEnabled ? [`🌱 Seeds: ${user.seeds}`] : []),
-        `member since <t:${unix(user.created_at)}:D>`,
-    ];
+    const footerParts = [...(data.economyEnabled ? [`🌱 Seeds: ${user.seeds}`] : []), `member since <t:${unix(user.created_at)}:D>`];
     container.addTextDisplayComponents((td) => td.setContent(`-# ${footerParts.join(" · ")}`));
 
     return container;
@@ -195,7 +192,9 @@ export function buildBiomesTabContainer(member: GuildMember, data: ProfileData):
         const uncategorizedTotal = uncategorized.reduce((sum, b) => sum + b.count, 0);
         addDivider(container);
         container.addTextDisplayComponents((td) =>
-            td.setContent(`**Other (${uncategorizedTotal})**\n${formatCodeblock(uncategorized.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n"))}`),
+            td.setContent(
+                `**Other (${uncategorizedTotal})**\n${formatCodeblock(uncategorized.map((b) => `${formatBiomeName(b.biome)}: ${b.count}`).join("\n"))}`,
+            ),
         );
     }
 
@@ -277,8 +276,9 @@ export function buildHistoryContainer(sessions: ActivitySessionRow[], member: Gu
     const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
     const oldestFirst = [...slice].reverse();
 
-    const lines = oldestFirst.map((session) =>
-        `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
+    const lines = oldestFirst.map(
+        (session) =>
+            `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
     );
 
     const container = baseContainer(0x5865f2);

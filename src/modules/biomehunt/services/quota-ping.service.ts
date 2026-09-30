@@ -17,7 +17,10 @@ export async function pingQuotaMet(client: BotClient, userId: number, roleId: st
     if (!channel || channel.isDMBased() || !channel.isTextBased()) return;
 
     try {
-        await channel.send({ content: `🎉 <@${user.discord_user_id}> just met the quota for <@&${roleId}>!`, allowedMentions: { ...NO_PINGS, users: [user.discord_user_id] } });
+        await channel.send({
+            content: `🎉 <@${user.discord_user_id}> just met the quota for <@&${roleId}>!`,
+            allowedMentions: { ...NO_PINGS, users: [user.discord_user_id] },
+        });
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { userId, roleId });
     }

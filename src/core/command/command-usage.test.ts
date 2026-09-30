@@ -35,9 +35,16 @@ test("usage for a group with nothing available in the mode falls back to the sum
         name: "g",
         description: "G",
         subcommandModes: { cfg: "slash" },
-        options: new SlashCommandBuilder().setName("g").setDescription("G")
+        options: new SlashCommandBuilder()
+            .setName("g")
+            .setDescription("G")
             .addSubcommand((s) => s.setName("show").setDescription("Show"))
-            .addSubcommandGroup((gr) => gr.setName("cfg").setDescription("Cfg").addSubcommand((s) => s.setName("set").setDescription("Set"))),
+            .addSubcommandGroup((gr) =>
+                gr
+                    .setName("cfg")
+                    .setDescription("Cfg")
+                    .addSubcommand((s) => s.setName("set").setDescription("Set")),
+            ),
     } as CommandDefinition;
     const payload = buildUsagePayload(grouped, "!", "cfg", "prefix", false);
     expect(JSON.stringify(payload)).toContain("!g show");

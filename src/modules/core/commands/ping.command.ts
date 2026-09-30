@@ -22,8 +22,5 @@ function buildEmbed(roundtrip: number, ws: number): EmbedBuilder {
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setTitle("🏓 Pong!")
-        .addFields(
-            { name: "Roundtrip", value: `${roundtrip}ms`, inline: true },
-            { name: "WebSocket", value: `${ws}ms`, inline: true },
-        );
+        .addFields({ name: "Roundtrip", value: `${roundtrip}ms`, inline: true }, { name: "WebSocket", value: `${ws}ms`, inline: true });
 }

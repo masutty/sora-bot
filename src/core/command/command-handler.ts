@@ -1,15 +1,10 @@
-import {
-    type ChatInputCommandInteraction,
-    Events,
-    type Message,
-    REST,
-    Routes,
-} from "discord.js";
+import { type ChatInputCommandInteraction, Events, type Message, REST, Routes } from "discord.js";
 import { config } from "@/config";
 import { getGuildPrefix } from "@/database/guild.repository";
 import type { CommandDefinition } from "@/types";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
+import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
 import { checkGuards } from "../guards";
 import { type CommandContext, type CommandMode, createPrefixContext, createSlashContext, type ReplyPayload } from "./command-context";
@@ -17,7 +12,6 @@ import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler
 import { buildUsagePayload } from "./command-usage";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 import { describeCommandError, errorReply } from "./user-facing-error";
-import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 
 const logger = new Logger("core.commandhandlers");
 const slashLogger = new Logger("core.slashcommands");
@@ -32,13 +26,19 @@ function parseArgs(input: string): string[] {
     let inQuotes = false;
 
     for (const char of input) {
-        if (char === '"') { inQuotes = !inQuotes; continue; }
+        if (char === '"') {
+            inQuotes = !inQuotes;
+            continue;
+        }
         // Any whitespace splits a token, not just a literal space - otherwise a command followed
         // by a newline (e.g. "!request\n```json\n...") glues everything up to the first real
         // space, which can land in the middle of the payload (JSON indentation) instead of right
         // after the command name. The command is never found, and it fails silently.
         if (/\s/.test(char) && !inQuotes) {
-            if (current.length) { args.push(current); current = ""; }
+            if (current.length) {
+                args.push(current);
+                current = "";
+            }
             continue;
         }
         current += char;
@@ -53,11 +53,15 @@ function parseArgs(input: string): string[] {
 const GUILD_ONLY = "This command only works in a server.";
 
 /** Everything after "the command was found" - identical for both modes, driven by command-dispatch's pure rules. */
-async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
-    guardFailure: (guardError: string) => ReplyPayload;
-    override: () => Promise<void>;
-    noHandler: () => Promise<void>;
-}): Promise<void> {
+async function dispatch(
+    def: CommandDefinition,
+    ctx: CommandContext,
+    invoke: {
+        guardFailure: (guardError: string) => ReplyPayload;
+        override: () => Promise<void>;
+        noHandler: () => Promise<void>;
+    },
+): Promise<void> {
     const { mode } = ctx;
 
     if (def.guildOnly && (!ctx.guild || !ctx.member)) {
@@ -81,9 +85,10 @@ async function dispatch(def: CommandDefinition, ctx: CommandContext, invoke: {
     const key = subcommandKey(group, sub);
     if (!isAllowed(def, mode, key)) {
         const path = [def.name, group, sub].filter(Boolean).join(" ");
-        const where = mode === "prefix"
-            ? `a slash command: \`/${path}\``
-            : `a prefix command: \`${ctx.guild ? await getGuildPrefix(ctx.guild.id) : config.bot.defaultPrefix}${path}\``;
+        const where =
+            mode === "prefix"
+                ? `a slash command: \`/${path}\``
+                : `a prefix command: \`${ctx.guild ? await getGuildPrefix(ctx.guild.id) : config.bot.defaultPrefix}${path}\``;
         await ctx.reply(errorReply(`This command is only available as ${where}.`), { ephemeral: true });
         return;
     }
@@ -118,11 +123,11 @@ async function reportFailure(
     if (view.kind === "user") {
         // Show what was parsed: a user error is often a misparse (e.g. `biome:X` typed on prefix,
         // which is positional), and seeing the args makes that obvious at a glance.
-        await reply(errorReply(argsText ? `${view.message}\n-# args: ${argsText}` : view.message)).catch(() => { });
+        await reply(errorReply(argsText ? `${view.message}\n-# args: ${argsText}` : view.message)).catch(() => {});
         return `user-error: ${view.message}${argsText ? ` (args: ${argsText})` : ""}`;
     }
     logger.error(err instanceof Error ? err : new Error(String(err)));
-    await reply(errorReply(`${getFailureQuip()}\n-# ref: \`${ref}\``)).catch(() => { });
+    await reply(errorReply(`${getFailureQuip()}\n-# ref: \`${ref}\``)).catch(() => {});
     return "error";
 }
 
@@ -180,7 +185,6 @@ async function runInvocation(
 // ─── Command Handlers ─────────────────────────────────────────────────────────
 
 export function registerCommandHandlers(client: BotClient): void {
-
     // ── Prefix ────────────────────────────────────────────────────────────────
     client.on(Events.MessageCreate, async (message: Message) => {
         if (message.author.bot || !message.guild) return;
@@ -210,11 +214,12 @@ export function registerCommandHandlers(client: BotClient): void {
             invocationTrace(command, ctx),
             started,
             ctx,
-            () => dispatch(command, ctx, {
-                guardFailure: (guardError) => errorReply(`Error! ${getFailureQuip()}\n${guardError}`),
-                override: () => (command.executeAsPrefix as NonNullable<typeof command.executeAsPrefix>)(message, args, client),
-                noHandler: async () => { },
-            }),
+            () =>
+                dispatch(command, ctx, {
+                    guardFailure: (guardError) => errorReply(`Error! ${getFailureQuip()}\n${guardError}`),
+                    override: () => (command.executeAsPrefix as NonNullable<typeof command.executeAsPrefix>)(message, args, client),
+                    noHandler: async () => {},
+                }),
             (payload) => ctx.reply(payload, { ephemeral: true }),
         );
     });
@@ -231,7 +236,7 @@ export function registerCommandHandlers(client: BotClient): void {
             await handler(interaction, client);
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { command: interaction.commandName });
-            await interaction.respond([]).catch(() => { });
+            await interaction.respond([]).catch(() => {});
         }
     });
 
@@ -256,22 +261,27 @@ export function registerCommandHandlers(client: BotClient): void {
         // An override replies on the raw interaction, so ctx doesn't know its state - pick the call from the interaction itself.
         const reply = overrode
             ? (payload: ReplyPayload) => {
-                const body = { ...(typeof payload === "string" ? { content: payload } : payload), ephemeral: true };
-                return interaction.replied || interaction.deferred ? interaction.followUp(body) : interaction.reply(body);
-            }
+                  const body = { ...(typeof payload === "string" ? { content: payload } : payload), ephemeral: true };
+                  return interaction.replied || interaction.deferred ? interaction.followUp(body) : interaction.reply(body);
+              }
             : (payload: ReplyPayload) => ctx.reply(payload, { ephemeral: true });
 
         await runInvocation(
             invocationTrace(command, ctx),
             started,
             ctx,
-            () => dispatch(command, ctx, {
-                guardFailure: (guardError) => errorReply(`${getFailureQuip()}\n${guardError}`),
-                override: () => (command.executeAsSlash as NonNullable<typeof command.executeAsSlash>)(interaction as ChatInputCommandInteraction, client),
-                noHandler: async () => {
-                    await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });
-                },
-            }),
+            () =>
+                dispatch(command, ctx, {
+                    guardFailure: (guardError) => errorReply(`${getFailureQuip()}\n${guardError}`),
+                    override: () =>
+                        (command.executeAsSlash as NonNullable<typeof command.executeAsSlash>)(
+                            interaction as ChatInputCommandInteraction,
+                            client,
+                        ),
+                    noHandler: async () => {
+                        await interaction.reply({ content: "This command is not available as a slash command.", ephemeral: true });
+                    },
+                }),
             reply,
         );
     });
@@ -279,10 +289,7 @@ export function registerCommandHandlers(client: BotClient): void {
 
 // ─── Slash Registration ───────────────────────────────────────────────────────
 
-export async function registerSlashCommands(
-    client: BotClient,
-    guildId?: string,
-): Promise<void> {
+export async function registerSlashCommands(client: BotClient, guildId?: string): Promise<void> {
     const rest = new REST().setToken(config.discord.token);
 
     const builders = client.commands.getAll().flatMap((cmd) => {

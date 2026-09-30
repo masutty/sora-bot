@@ -5,7 +5,11 @@ import { getLevelForXp, REWARD_BY_CATEGORY } from "../constants/levels.constants
 import { getGuildBadgeRole, grantUserBadge, revokeUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import {
-    adjustUserBalance, countRewardsWithBadge, getRewardsByEventIds, getUnrewardedEventsForUser, insertReward,
+    adjustUserBalance,
+    countRewardsWithBadge,
+    getRewardsByEventIds,
+    getUnrewardedEventsForUser,
+    insertReward,
 } from "../repository/rewards.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import { getUserById } from "../repository/users.repository";
