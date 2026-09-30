@@ -5,8 +5,13 @@ import { CommandCategory } from "@/types";
 import { EmbedFormatter, formatCodeblock, formatTime, NO_PINGS, unix } from "@/utils/format";
 import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
 import {
-    getBiomeCounts, getBiomeTopContributors, getGuildBiomeCounts, getGuildSessionOverview,
-    getLongestSessions, getRecentSessions, getUserLongestSessionRank,
+    getBiomeCounts,
+    getBiomeTopContributors,
+    getGuildBiomeCounts,
+    getGuildSessionOverview,
+    getLongestSessions,
+    getRecentSessions,
+    getUserLongestSessionRank,
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/bh-stats.view";
@@ -27,7 +32,10 @@ function baseContainer(): ContainerBuilder {
 
 // ─── Biomes ─────────────────────────────────────────────────────────────────
 
-function biomeLinesByCategory(counts: Array<{ biome: string; count: number }>, lineFor: (c: { biome: string; count: number }) => string): string[] {
+function biomeLinesByCategory(
+    counts: Array<{ biome: string; count: number }>,
+    lineFor: (c: { biome: string; count: number }) => string,
+): string[] {
     const blocks: string[] = [];
     for (const category of ALL_BIOME_CATEGORIES) {
         const inCategory = counts.filter((c) => BIOME_META[c.biome]?.category === category);
@@ -49,7 +57,8 @@ async function buildBiomesOverviewContainer(guildId: string): Promise<ContainerB
         return container;
     }
 
-    const line = (c: { biome: string; count: number }) => `${getBiomeAnsiColor(c.biome)}${formatBiomeName(c.biome)}${ANSI_RESET}: ${c.count}`;
+    const line = (c: { biome: string; count: number }) =>
+        `${getBiomeAnsiColor(c.biome)}${formatBiomeName(c.biome)}${ANSI_RESET}: ${c.count}`;
     for (const block of biomeLinesByCategory(counts, line)) {
         container.addTextDisplayComponents((td) => td.setContent(block));
         addDivider(container);
@@ -89,7 +98,8 @@ async function buildUserBiomesContainer(discordUserId: string, userRowId: number
         return container;
     }
 
-    const line = (c: { biome: string; count: number }) => `${getBiomeAnsiColor(c.biome)}${formatBiomeName(c.biome)}${ANSI_RESET}: ${c.count}`;
+    const line = (c: { biome: string; count: number }) =>
+        `${getBiomeAnsiColor(c.biome)}${formatBiomeName(c.biome)}${ANSI_RESET}: ${c.count}`;
     for (const block of biomeLinesByCategory(counts, line)) {
         container.addTextDisplayComponents((td) => td.setContent(block));
         addDivider(container);
@@ -143,7 +153,9 @@ async function buildLongestSessionsContainer(guildId: string): Promise<Container
         return container;
     }
 
-    const lines = rows.map((r, i) => `**${i + 1}.** <@${r.discordUserId}> — \`${formatTime(r.duration_seconds)}\` · <t:${unix(r.started_at)}:D>`);
+    const lines = rows.map(
+        (r, i) => `**${i + 1}.** <@${r.discordUserId}> — \`${formatTime(r.duration_seconds)}\` · <t:${unix(r.started_at)}:D>`,
+    );
     container.addTextDisplayComponents((td) => td.setContent(lines.join("\n")));
     return container;
 }
@@ -165,7 +177,9 @@ async function buildUserSessionsContainer(guildId: string, discordUserId: string
     if (rank) {
         addDivider(container);
         container.addTextDisplayComponents((td) =>
-            td.setContent(`🏆 Longest session: \`${formatTime(rank.longestSeconds)}\` — **#${rank.rank}** of ${rank.totalSessions} in the guild`),
+            td.setContent(
+                `🏆 Longest session: \`${formatTime(rank.longestSeconds)}\` — **#${rank.rank}** of ${rank.totalSessions} in the guild`,
+            ),
         );
     }
     return container;
@@ -211,11 +225,15 @@ export default defineCommand({
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand((s) =>
-            s.setName("biomes").setDescription("Guild-wide biome stats, or one user's if given.")
+            s
+                .setName("biomes")
+                .setDescription("Guild-wide biome stats, or one user's if given.")
                 .addUserOption((o) => o.setName("user").setDescription("Scope to one user instead of the whole guild")),
         )
         .addSubcommand((s) =>
-            s.setName("sessions").setDescription("Guild-wide session stats, or one user's if given.")
+            s
+                .setName("sessions")
+                .setDescription("Guild-wide session stats, or one user's if given.")
                 .addUserOption((o) => o.setName("user").setDescription("Scope to one user instead of the whole guild")),
         )
         .addSubcommand((s) => s.setName("users").setDescription("Browse guild members by activity status.")),

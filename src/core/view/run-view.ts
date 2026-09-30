@@ -1,9 +1,9 @@
 import type { Message, User } from "discord.js";
+import { Logger } from "@/utils/logging";
+import { currentTrace, runWithTrace } from "@/utils/trace";
 import { createDiscordTransport, type DiscordTransportOptions } from "./discord-transport";
 import type { ViewDefinition, ViewPayload } from "./view";
 import { type ComponentEvent, createViewSession, type TextEvent, type ViewTransport } from "./view-engine";
-import { Logger } from "@/utils/logging";
-import { currentTrace, runWithTrace } from "@/utils/trace";
 
 const logger = new Logger("core.view.run");
 

@@ -1,19 +1,22 @@
+import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Events } from "discord.js";
-import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
-import { join } from "path";
 import { config } from "@/config";
 import { runModuleMigrations } from "@/database/migrate";
 import type { Cog } from "@/types";
 import { Logger } from "@/utils/logging";
 import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 import type { BotClient } from "./bot-client";
+import { describeConflicts, findConflictsWithLoaded, partitionByConflicts } from "./command/command-conflicts";
 import { dispatchComponent, validateComponentPrefix } from "./component/component-router";
 import { type RunningWorker, startWorker } from "./worker/worker";
 
 const logger = new Logger("core.cogloader");
 
 // Tracks event listeners per cog so they can be removed on unload
-const cogListeners = new Map<string, Array<{ event: string; handler: Function }>>();
+type EventHandler = (...args: unknown[]) => unknown;
+
+const cogListeners = new Map<string, Array<{ event: string; handler: EventHandler }>>();
 
 // Tracks running workers per cog so they can be stopped on unload/hot reload
 const cogWorkers = new Map<string, RunningWorker[]>();
@@ -43,15 +46,20 @@ export interface LoadCogsResult {
 /**
  * Loads all cogs found in `cogsPath` (one directory = one cog).
  */
-export async function loadCogs(
-    client: BotClient,
-    cogsPath: string,
-): Promise<LoadCogsResult> {
+export async function loadCogs(client: BotClient, cogsPath: string): Promise<LoadCogsResult> {
     ensureComponentRouter(client);
 
     const entries = readdirSync(cogsPath);
     const failures: CogLoadFailure[] = [];
+    const recordFailure = (entry: string, err: unknown) => {
+        const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+        logger.warn(`Failed to load cog "${entry}": ${msg}`);
+        logger.error(err instanceof Error ? err : new Error(String(err)));
+        failures.push({ cog: entry, error: msg });
+    };
 
+    // Pass 1: require every cog WITHOUT side effects, so command conflicts are known up front.
+    const candidates: Array<{ entry: string; cog: Cog }> = [];
     for (const entry of entries) {
         const fullPath = join(cogsPath, entry);
         if (!statSync(fullPath).isDirectory()) continue;
@@ -61,19 +69,34 @@ export async function loadCogs(
             continue;
         }
 
-        await loadCog(client, cogsPath, entry).catch((err) => {
-            const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
-            logger.warn(`Failed to load cog "${entry}": ${msg}`);
-            logger.error(err);
-            failures.push({ cog: entry, error: msg });
-        });
+        try {
+            candidates.push({ entry, cog: requireCog(cogsPath, entry) });
+        } catch (err) {
+            recordFailure(entry, err);
+        }
+    }
+
+    // Every cog in a conflict is disabled - not just the "second" one - so no module silently
+    // wins a command it has to share. `check:commands` catches the same thing at build time.
+    const { rejected } = partitionByConflicts(candidates.map((c) => c.cog));
+    const rejectedNames = new Set(rejected.map((r) => r.cog));
+    for (const { cog, conflicts } of rejected) {
+        const msg = `disabled - ${describeConflicts(conflicts)}`;
+        logger.error(`Cog "${cog}" ${msg}`);
+        failures.push({ cog, error: msg });
+    }
+
+    // Pass 2: register the rest.
+    for (const { entry, cog } of candidates) {
+        if (rejectedNames.has(cog.name)) continue;
+        await activateCog(client, cogsPath, cog).catch((err) => recordFailure(entry, err));
     }
 
     return {
         failures,
         stop: async () => {
             for (const [name, cog] of client.cogs) {
-                await cog.stop?.(client)?.catch(() => { });
+                await cog.stop?.(client)?.catch(() => {});
                 logger.info(`Stopped cog: ${name}`);
             }
         },
@@ -83,22 +106,8 @@ export async function loadCogs(
 /**
  * Loads a single cog by name from `cogsPath/<cogName>/index`.
  */
-export async function loadCog(
-    client: BotClient,
-    cogsPath: string,
-    cogName: string,
-): Promise<Cog> {
-    const fullPath = join(cogsPath, cogName, "index");
-
-    clearRequireCache(fullPath);
-
-    const imported = require(fullPath);
-    const cog: Cog = imported.default ?? imported;
-
-    cogOrigin.set(cog.name, cogsPath);
-    await registerCog(client, cog);
-    logger.info(`Loaded cog: ${cog.name}`);
-    return cog;
+export async function loadCog(client: BotClient, cogsPath: string, cogName: string): Promise<Cog> {
+    return activateCog(client, cogsPath, requireCog(cogsPath, cogName));
 }
 
 /** Which base directory a cog was loaded from - `undefined` if never loaded this session. */
@@ -109,14 +118,11 @@ export function getCogOrigin(cogName: string): string | undefined {
 /**
  * Unloads a cog: stops it, removes its commands and event listeners.
  */
-export async function unloadCog(
-    client: BotClient,
-    cogName: string,
-): Promise<void> {
+export async function unloadCog(client: BotClient, cogName: string): Promise<void> {
     const cog = client.cogs.get(cogName);
     if (!cog) throw new Error(`Cog "${cogName}" is not loaded.`);
 
-    await cog.stop?.(client)?.catch(() => { });
+    await cog.stop?.(client)?.catch(() => {});
 
     for (const cmd of cog.commands ?? []) {
         client.commands.delete(cmd.name);
@@ -138,16 +144,16 @@ export async function unloadCog(
 /**
  * Reloads a cog (unload + load from disk).
  */
-export async function reloadCog(
-    client: BotClient,
-    cogsPath: string,
-    cogName: string,
-): Promise<void> {
+export async function reloadCog(client: BotClient, cogsPath: string, cogName: string): Promise<void> {
     if (!client.cogs.has(cogName)) throw new Error(`Cog "${cogName}" is not loaded.`);
 
     const basePath = cogOrigin.get(cogName) ?? cogsPath;
+    // Required and checked BEFORE unloading, so a new version that now conflicts leaves the old one running.
+    const next = requireCog(basePath, cogName);
+    assertNoConflictsWithLoaded(client, next);
+
     await unloadCog(client, cogName);
-    await loadCog(client, basePath, cogName);
+    await activateCog(client, basePath, next);
     logger.info(`Reloaded cog: ${cogName}`);
 }
 
@@ -187,11 +193,7 @@ export function getDclRuntimeDir(cogsPath: string): string {
  * process goes back to loading that real cog from disk normally; the version installed via DCL is
  * forgotten (the whole sandbox is wiped on boot, see `src/index.ts`).
  */
-export async function installCogFromSource(
-    client: BotClient,
-    cogsPath: string,
-    source: string,
-): Promise<InstallCogResult> {
+export async function installCogFromSource(client: BotClient, cogsPath: string, source: string): Promise<InstallCogResult> {
     const runtimeDir = getDclRuntimeDir(cogsPath);
     const stagingDir = join(runtimeDir, ".staging");
     const stagingIndex = join(stagingDir, "index");
@@ -213,6 +215,14 @@ export async function installCogFromSource(
     if (!cog || typeof cog.name !== "string" || !cog.name) {
         rmSync(stagingDir, { recursive: true, force: true });
         throw new Error('The file did not export a valid Cog - it needs `export default defineCog({ name: "...", ... })`.');
+    }
+
+    // Checked here too (activateCog re-checks) so a refused cog never unloads the version it replaces.
+    try {
+        assertNoConflictsWithLoaded(client, cog);
+    } catch (err) {
+        rmSync(stagingDir, { recursive: true, force: true });
+        throw err;
     }
 
     // Memory only - the real cog in `cogsPath` (if the name collides with one) is left untouched.
@@ -269,10 +279,7 @@ const HOT_RELOAD_KEEP_ALIVE = [
  * instance that will do the next load (and the next unload, on the following reload) to avoid
  * leaking a listener.
  */
-export async function hotReloadBot(
-    client: BotClient,
-    cogsPath: string,
-): Promise<CogLoadFailure[]> {
+export async function hotReloadBot(client: BotClient, cogsPath: string): Promise<CogLoadFailure[]> {
     for (const name of [...client.cogs.keys()]) {
         await unloadCog(client, name).catch((err) => {
             logger.warn(`Failed to unload cog "${name}" before full reload: ${err instanceof Error ? err.message : String(err)}`);
@@ -304,11 +311,14 @@ export async function hotReloadBot(
  * anything else (a shard event, `ClientReady`, ...) contributes nothing, harmlessly.
  */
 export function eventTraceSubject(args: unknown[]): Pick<TraceContext, "userId" | "userTag" | "guildId"> {
-    const first = args[0] as {
-        user?: { id?: string; username?: string } | null;
-        author?: { id?: string; username?: string } | null;
-        guildId?: string | null;
-    } | null | undefined;
+    const first = args[0] as
+        | {
+              user?: { id?: string; username?: string } | null;
+              author?: { id?: string; username?: string } | null;
+              guildId?: string | null;
+          }
+        | null
+        | undefined;
     if (!first || typeof first !== "object") return {};
 
     const person = first.user ?? first.author ?? undefined;
@@ -350,14 +360,13 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
         client.commands.set(cmd.name, cmd);
     }
 
-    const listeners: Array<{ event: string; handler: Function }> = [];
+    const listeners: Array<{ event: string; handler: EventHandler }> = [];
 
     for (const [event, handler] of Object.entries(cog.events ?? {})) {
         if (!handler) continue;
         const wrapped = (...args: unknown[]) =>
-            runWithTrace(
-                { ref: newTraceRef(), command: `event:${cog.name}.${event}`, ...eventTraceSubject(args) },
-                () => (handler as Function)(client, ...args),
+            runWithTrace({ ref: newTraceRef(), command: `event:${cog.name}.${event}`, ...eventTraceSubject(args) }, () =>
+                (handler as EventHandler)(client, ...args),
             );
         client.on(event, wrapped as never);
         listeners.push({ event, handler: wrapped });
@@ -395,6 +404,33 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
     }
 
     await cog.start?.(client);
+}
+
+/** Fresh `require` of `cogsPath/<cogName>/index` - no side effects on the client. */
+function requireCog(cogsPath: string, cogName: string): Cog {
+    const fullPath = join(cogsPath, cogName, "index");
+    clearRequireCache(fullPath);
+    const imported = require(fullPath);
+    return imported.default ?? imported;
+}
+
+function assertNoConflictsWithLoaded(client: BotClient, cog: Cog): void {
+    const conflicts = findConflictsWithLoaded(cog, client.cogs.values());
+    if (conflicts.length) throw new Error(`Cog "${cog.name}" refused - ${describeConflicts(conflicts)}`);
+}
+
+/**
+ * Registers an already-required cog. Refuses it - before ANY side effect (migrations, commands,
+ * listeners) - if one of its commands is owned by another loaded cog: the running one can't be
+ * torn down from here (`!dcl run`, `reloadCog`), so the incoming one is the one that stays out.
+ */
+async function activateCog(client: BotClient, cogsPath: string, cog: Cog): Promise<Cog> {
+    assertNoConflictsWithLoaded(client, cog);
+
+    cogOrigin.set(cog.name, cogsPath);
+    await registerCog(client, cog);
+    logger.info(`Loaded cog: ${cog.name}`);
+    return cog;
 }
 
 function clearRequireCache(fullPath: string): void {

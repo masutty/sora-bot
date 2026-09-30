@@ -6,4 +6,4 @@ export default defineCog({
     description: "Bot internals",
     authors: [{ name: "masutty", id: 188851299255713792n }],
     commands: [_botAdminStuff],
-})
+});

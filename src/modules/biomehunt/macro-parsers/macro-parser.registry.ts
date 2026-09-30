@@ -31,7 +31,7 @@ export function detectMacroParser(footer?: string | null): MacroParser {
             const id = parser.id;
             const hasId = f.includes(id);
             logger.verbose(`Looking for ${id} in ${f} -> ${hasId}`);
-            return hasId
+            return hasId;
         });
         if (found) return found;
     }

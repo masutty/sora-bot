@@ -68,7 +68,9 @@ export function paginationHandlers<S extends { page: number }, R = void>(
             const pages = count(c.state);
             const values = await c.modal({
                 title: "Jump to page",
-                fields: [{ key: "page", label: `Page (1-${pages})`, placeholder: `1-${pages}`, required: true, maxLength: String(pages).length }],
+                fields: [
+                    { key: "page", label: `Page (1-${pages})`, placeholder: `1-${pages}`, required: true, maxLength: String(pages).length },
+                ],
             });
             if (!values) return;
             const target = Number(values.page);

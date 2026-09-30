@@ -1,6 +1,13 @@
 import { ContainerBuilder } from "discord.js";
 import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
-import { getGuildBadgeRole, getGuildBadgeRoles, grantUserBadge, removeGuildBadgeRole, revokeUserBadge, setGuildBadgeRole } from "../repository/badges.repository";
+import {
+    getGuildBadgeRole,
+    getGuildBadgeRoles,
+    grantUserBadge,
+    removeGuildBadgeRole,
+    revokeUserBadge,
+    setGuildBadgeRole,
+} from "../repository/badges.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { type Badge, BiomeHuntError } from "../types";

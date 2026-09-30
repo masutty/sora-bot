@@ -15,7 +15,12 @@ function def(extra: Partial<CommandDefinition> = {}): CommandDefinition {
             .addSubcommand((s) => s.setName("status").setDescription("s"))
             .addSubcommand((s) => s.setName("db").setDescription("d"))
             .addSubcommand((s) => s.setName("run").setDescription("r"))
-            .addSubcommandGroup((g) => g.setName("cog").setDescription("c").addSubcommand((s) => s.setName("reload").setDescription("r"))),
+            .addSubcommandGroup((g) =>
+                g
+                    .setName("cog")
+                    .setDescription("c")
+                    .addSubcommand((s) => s.setName("reload").setDescription("r")),
+            ),
         ...extra,
     } as CommandDefinition;
 }
@@ -89,7 +94,8 @@ describe("review fixes", () => {
     });
 
     test("stripping every subcommand is a registration error, not an empty command", () => {
-        expect(() => buildSlashJson(def({ subcommandModes: { status: "prefix", db: "prefix", run: "prefix", cog: "prefix" } })))
-            .toThrow("no subcommands left");
+        expect(() => buildSlashJson(def({ subcommandModes: { status: "prefix", db: "prefix", run: "prefix", cog: "prefix" } }))).toThrow(
+            "no subcommands left",
+        );
     });
 });

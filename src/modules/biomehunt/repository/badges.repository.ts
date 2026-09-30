@@ -20,10 +20,10 @@ export async function getGuildBadgeRoles(guildId: string): Promise<GuildBadgeRol
 }
 
 export async function getGuildBadgeRole(guildId: string, badge: Badge): Promise<string | null> {
-    const result = await query<GuildBadgeRoleRow>(
-        `SELECT * FROM bh_guild_badge_roles WHERE guild_id = $1 AND badge = $2`,
-        [guildId, badge],
-    );
+    const result = await query<GuildBadgeRoleRow>(`SELECT * FROM bh_guild_badge_roles WHERE guild_id = $1 AND badge = $2`, [
+        guildId,
+        badge,
+    ]);
     return result.rows[0]?.role_id ?? null;
 }
 
@@ -34,10 +34,10 @@ export async function hasUserBadge(userId: number, badge: Badge): Promise<boolea
 
 /** Grants a badge if the user doesn't already have it. Returns true iff it was newly granted. */
 export async function grantUserBadge(userId: number, badge: Badge): Promise<boolean> {
-    const result = await query(
-        `INSERT INTO bh_user_badges (user_id, badge) VALUES ($1, $2) ON CONFLICT (user_id, badge) DO NOTHING`,
-        [userId, badge],
-    );
+    const result = await query(`INSERT INTO bh_user_badges (user_id, badge) VALUES ($1, $2) ON CONFLICT (user_id, badge) DO NOTHING`, [
+        userId,
+        badge,
+    ]);
     return (result.rowCount ?? 0) > 0;
 }
 
@@ -48,9 +48,6 @@ export async function revokeUserBadge(userId: number, badge: Badge): Promise<boo
 }
 
 export async function getUserBadges(userId: number): Promise<UserBadgeRow[]> {
-    const result = await query<UserBadgeRow>(
-        `SELECT * FROM bh_user_badges WHERE user_id = $1 ORDER BY awarded_at`,
-        [userId],
-    );
+    const result = await query<UserBadgeRow>(`SELECT * FROM bh_user_badges WHERE user_id = $1 ORDER BY awarded_at`, [userId]);
     return result.rows;
 }

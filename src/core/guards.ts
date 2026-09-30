@@ -1,5 +1,5 @@
-import { PermissionFlagsBits } from "discord.js";
 import type { GuildMember, User } from "discord.js";
+import { PermissionFlagsBits } from "discord.js";
 import { config } from "../config";
 import type { CommandDefinition } from "../types";
 
@@ -8,10 +8,7 @@ interface GuardContext {
     member: GuildMember | null;
 }
 
-export async function checkGuards(
-    ctx: GuardContext,
-    cmd: CommandDefinition,
-): Promise<string | null> {
+export async function checkGuards(ctx: GuardContext, cmd: CommandDefinition): Promise<string | null> {
     if (cmd.botOwnerOnly && !config.bot.ownerIds.includes(ctx.user.id)) {
         return "This command is restricted to my developers!";
     }

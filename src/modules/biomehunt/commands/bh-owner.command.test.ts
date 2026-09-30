@@ -1,12 +1,21 @@
 import { expect, test } from "bun:test";
-import type { BiomeForwardRow, UserRow } from "../types";
+import type { BiomeDelayedForwardRow, BiomeForwardRow, UserRow } from "../types";
 import { BiomeHuntError } from "../types";
 import { resolveSimulateBiomeTarget, type SimulateBiomeDeps } from "./bh-owner.command";
 
 function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
     return {
-        id: 7, guild_id: "g1", discord_user_id: "target-1", current_status: "active", last_activity_at: null,
-        paused_at: null, created_at: new Date(), seeds: 0, xp: 0, flower: null, ...overrides,
+        id: 7,
+        guild_id: "g1",
+        discord_user_id: "target-1",
+        current_status: "active",
+        last_activity_at: null,
+        paused_at: null,
+        created_at: new Date(),
+        seeds: 0,
+        xp: 0,
+        flower: null,
+        ...overrides,
     };
 }
 
@@ -15,18 +24,33 @@ function fakeForward(overrides: Partial<BiomeForwardRow> = {}): BiomeForwardRow 
 }
 
 /** An in-memory `SimulateBiomeDeps` - never touches the DB. */
-function createFakeDeps(user: UserRow | null, forward: BiomeForwardRow | null): SimulateBiomeDeps {
+function createFakeDeps(
+    user: UserRow | null,
+    forward: BiomeForwardRow | null,
+    delayed: BiomeDelayedForwardRow | null = null,
+): SimulateBiomeDeps {
     return {
         getUserByDiscordId: async () => user,
         getForwardConfig: async () => forward,
+        getDelayedForwardConfig: async () => delayed,
     };
 }
 
 test("resolveSimulateBiomeTarget rejects an unknown biome before touching any dep", async () => {
     let called = false;
     const deps: SimulateBiomeDeps = {
-        getUserByDiscordId: async () => { called = true; return fakeUser(); },
-        getForwardConfig: async () => { called = true; return fakeForward(); },
+        getUserByDiscordId: async () => {
+            called = true;
+            return fakeUser();
+        },
+        getForwardConfig: async () => {
+            called = true;
+            return fakeForward();
+        },
+        getDelayedForwardConfig: async () => {
+            called = true;
+            return null;
+        },
     };
 
     await expect(resolveSimulateBiomeTarget("g1", "target-1", "NOT_A_BIOME", deps)).rejects.toThrow(BiomeHuntError);
@@ -41,7 +65,7 @@ test("resolveSimulateBiomeTarget rejects a target with no profile in this guild"
     await expect(resolveSimulateBiomeTarget("g1", "target-1", "GLITCHED", deps)).rejects.toThrow(/has no profile in this server/);
 });
 
-test("resolveSimulateBiomeTarget rejects a biome with no forward configured", async () => {
+test("resolveSimulateBiomeTarget rejects a biome with neither a forward nor a delayed forward configured", async () => {
     const deps = createFakeDeps(fakeUser(), null);
 
     await expect(resolveSimulateBiomeTarget("g1", "target-1", "GLITCHED", deps)).rejects.toThrow(BiomeHuntError);
@@ -53,10 +77,26 @@ test("resolveSimulateBiomeTarget resolves the user id and forward channel when e
 
     const result = await resolveSimulateBiomeTarget("g1", "target-1", "GLITCHED", deps);
 
-    expect(result).toEqual({ userId: 99, forwardChannelId: "chan-99" });
+    expect(result).toEqual({ userId: 99, destinations: "forwarded to <#chan-99>" });
 });
 
 test("resolveSimulateBiomeTarget accepts a non-rare biome too", async () => {
     const deps = createFakeDeps(fakeUser(), fakeForward({ biome: "WINDY" }));
-    expect(await resolveSimulateBiomeTarget("g1", "target-1", "WINDY", deps)).toEqual({ userId: 7, forwardChannelId: "forward-channel" });
+    expect(await resolveSimulateBiomeTarget("g1", "target-1", "WINDY", deps)).toEqual({
+        userId: 7,
+        destinations: "forwarded to <#forward-channel>",
+    });
+});
+
+test("resolveSimulateBiomeTarget accepts a biome with only a delayed forward, and lists both when both exist", async () => {
+    const delayed: BiomeDelayedForwardRow = { ...fakeForward({ channel_id: "later" }), delay_s: 30 };
+
+    expect(await resolveSimulateBiomeTarget("g1", "target-1", "GLITCHED", createFakeDeps(fakeUser(), null, delayed))).toEqual({
+        userId: 7,
+        destinations: "delay-forwarded to <#later> in 30s",
+    });
+    expect(await resolveSimulateBiomeTarget("g1", "target-1", "GLITCHED", createFakeDeps(fakeUser(), fakeForward(), delayed))).toEqual({
+        userId: 7,
+        destinations: "forwarded to <#forward-channel>, delay-forwarded to <#later> in 30s",
+    });
 });

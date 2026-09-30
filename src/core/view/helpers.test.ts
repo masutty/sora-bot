@@ -25,7 +25,16 @@ afterEach(() => {
     logError.mockRestore();
 });
 
-type Json = { type?: number; custom_id?: string; label?: string; style?: number; disabled?: boolean; content?: string; components?: Json[]; accessory?: Json };
+type Json = {
+    type?: number;
+    custom_id?: string;
+    label?: string;
+    style?: number;
+    disabled?: boolean;
+    content?: string;
+    components?: Json[];
+    accessory?: Json;
+};
 
 /** The payload's components as plain JSON, depth-first. */
 function flatten(payload: ViewPayload): Json[] {
@@ -70,7 +79,11 @@ test("paginate: << < [n/N] > >> - > on the last page wraps to 0, < on 0 wraps to
 
     expect(fake.responded[0].content).toBe("page 0");
     expect(keys()).toEqual(["first", "prev", "jump", "next", "last"]);
-    expect(flatten(fake.lastPayload()).filter((c) => c.custom_id).map((c) => c.label)).toEqual(["<<", "<", "1 / 3", ">", ">>"]);
+    expect(
+        flatten(fake.lastPayload())
+            .filter((c) => c.custom_id)
+            .map((c) => c.label),
+    ).toEqual(["<<", "<", "1 / 3", ">", ">>"]);
     expect(comp("jump").style).toBe(ButtonStyle.Primary);
     expect(comp("first").disabled).toBe(true);
     expect(comp("last").disabled).toBeFalsy();
@@ -93,7 +106,7 @@ test("paginate: << < [n/N] > >> - > on the last page wraps to 0, < on 0 wraps to
     expect(fake.lastPayload().content).toBe("page 1");
 });
 
-test("paginate: the jump modal with \"3\" goes to page index 2; an invalid value notifies and stays", async () => {
+test('paginate: the jump modal with "3" goes to page index 2; an invalid value notifies and stays', async () => {
     void fake.run(threePages(), undefined);
     await fake.flush();
 
@@ -187,7 +200,10 @@ test("paginationHandlers: Back from the custom view dones with its own result", 
     const view = defineView<{ page: number; tag: string }, string, void>({
         name: "test.pv",
         initial: () => ({ page: 0, tag: "x" }),
-        render: (s, kit) => ({ content: `p${s.page}`, components: [paginationRow(kit, s.page, 2), kit.row(kit.button("back", (b) => b.setLabel("Back")))] }),
+        render: (s, kit) => ({
+            content: `p${s.page}`,
+            components: [paginationRow(kit, s.page, 2), kit.row(kit.button("back", (b) => b.setLabel("Back")))],
+        }),
         on: { ...paginationHandlers({ pages: 2 }), back: (c) => c.done(`back from ${c.state.page} ${c.state.tag}`) },
     });
     const result = fake.run(view, undefined);
@@ -200,7 +216,7 @@ test("paginationHandlers: Back from the custom view dones with its own result", 
 
 // ─── tabs ───────────────────────────────────────────────────────────────────
 
-test("tabs: clicking tab \"b\" renders tab b with its button disabled (and Primary); a tab's extra rows have their own handlers", async () => {
+test('tabs: clicking tab "b" renders tab b with its button disabled (and Primary); a tab\'s extra rows have their own handlers', async () => {
     const view = tabs({
         name: "test.tabs",
         initial: (n: number) => ({ tab: "a", n }),
@@ -246,7 +262,10 @@ test("tabs: onTabChange runs after the switch (mutate or return a state) - e.g. 
             { key: "b", label: "B" },
             { key: "c", label: "C" },
         ],
-        renderTab: (s, kit) => ({ payload: { content: `${s.tab} p${s.page}` }, extraRows: [kit.row(kit.button("more", (b) => b.setLabel(">")))] }),
+        renderTab: (s, kit) => ({
+            payload: { content: `${s.tab} p${s.page}` },
+            extraRows: [kit.row(kit.button("more", (b) => b.setLabel(">")))],
+        }),
         on: {
             more: (c) => {
                 c.state.page++;
@@ -320,7 +339,14 @@ function confirmView(onConfirm: () => Promise<ViewPayload>) {
 test("confirm: the summary container + [Confirm][Cancel]; files are attached", async () => {
     const file = new AttachmentBuilder(Buffer.from("x"), { name: "flower.png" });
     void fake.run(
-        confirm({ name: "test.confirm", title: "Go?", fields: [{ label: "A", value: "1" }], files: [file], thumbnailAttachment: "flower.png", onConfirm: async () => EmbedFormatter.success("ok") }),
+        confirm({
+            name: "test.confirm",
+            title: "Go?",
+            fields: [{ label: "A", value: "1" }],
+            files: [file],
+            thumbnailAttachment: "flower.png",
+            onConfirm: async () => EmbedFormatter.success("ok"),
+        }),
         undefined,
     );
     await fake.flush();
@@ -328,7 +354,9 @@ test("confirm: the summary container + [Confirm][Cancel]; files are attached", a
     const sent = fake.responded[0];
     expect(text(sent)).toBe("**Go?**\n- A: `1`");
     expect(sent.files).toEqual([file]);
-    expect(flatten(sent).some((c) => (c.accessory as { media?: { url?: string } } | undefined)?.media?.url === "attachment://flower.png")).toBe(true);
+    expect(
+        flatten(sent).some((c) => (c.accessory as { media?: { url?: string } } | undefined)?.media?.url === "attachment://flower.png"),
+    ).toBe(true);
     expect(comp("yes", sent)).toMatchObject({ label: "Confirm", style: ButtonStyle.Success });
     expect(comp("no", sent)).toMatchObject({ label: "Cancel", style: ButtonStyle.Danger });
 });
@@ -353,7 +381,7 @@ test("confirm: yes runs onConfirm, resolves true, and the final screen is onConf
     expect(fake.closed).toBe(1);
 });
 
-test("confirm: an onConfirm that throws shows \"Error running the action!\" (a UserFacingError shows its own message) and resolves false", async () => {
+test('confirm: an onConfirm that throws shows "Error running the action!" (a UserFacingError shows its own message) and resolves false', async () => {
     const result = fake.run(
         confirmView(async () => {
             throw new Error("db down");
@@ -379,7 +407,7 @@ test("confirm: an onConfirm that throws shows \"Error running the action!\" (a U
     expect(text()).toContain("Not today.");
 });
 
-test("confirm: no resolves false and shows \"Action cancelled.\" without running onConfirm", async () => {
+test('confirm: no resolves false and shows "Action cancelled." without running onConfirm', async () => {
     let runs = 0;
     const result = fake.run(
         confirmView(async () => {
@@ -397,8 +425,11 @@ test("confirm: no resolves false and shows \"Action cancelled.\" without running
     expect(customIds(fake.lastPayload())).toEqual([]);
 });
 
-test("confirm: expires after config.ui.confirmTimeoutMs idle -> undefined and \"Confirmation expired.\"", async () => {
-    const result = fake.run(confirmView(async () => EmbedFormatter.success("x")), undefined);
+test('confirm: expires after config.ui.confirmTimeoutMs idle -> undefined and "Confirmation expired."', async () => {
+    const result = fake.run(
+        confirmView(async () => EmbedFormatter.success("x")),
+        undefined,
+    );
     await fake.flush();
 
     await fake.clock.advance(config.ui.confirmTimeoutMs - 1);
@@ -444,7 +475,7 @@ function twoStepFlow(ctx: Ctx, extra: Partial<FlowOptions<Ctx>> = {}) {
     });
 }
 
-test("flow: step 1 is shown at once (no click); ok, ok -> onFinish is the final screen and it resolves \"finished\"", async () => {
+test('flow: step 1 is shown at once (no click); ok, ok -> onFinish is the final screen and it resolves "finished"', async () => {
     const ctx: Ctx = { log: [] };
     const result = fake.run(twoStepFlow(ctx), undefined);
     await fake.flush();
@@ -487,7 +518,7 @@ test("flow: back on step 2 returns to step 1; skip advances without running the 
     expect(text()).toContain("done: 1,2");
 });
 
-test("flow: cancel renders onCancel and resolves \"cancelled\" (default \"Cancelled.\")", async () => {
+test('flow: cancel renders onCancel and resolves "cancelled" (default "Cancelled.")', async () => {
     const result = fake.run(twoStepFlow({ log: [] }, { onCancel: EmbedFormatter.info("Setup cancelled.") }), undefined);
     await fake.flush();
     await fake.emit(fake.click("ok", OWNER));
@@ -524,7 +555,10 @@ test("flow: an idle timeout in any step finalizes the message (onTimeout, defaul
     expect(fake.closed).toBe(1);
 
     fake = createFakeTransport();
-    const result2 = fake.run(twoStepFlow({ log: [] }, { stepTimeoutMs: 500, onCancel: EmbedFormatter.info("Setup cancelled.") }), undefined);
+    const result2 = fake.run(
+        twoStepFlow({ log: [] }, { stepTimeoutMs: 500, onCancel: EmbedFormatter.info("Setup cancelled.") }),
+        undefined,
+    );
     await fake.flush();
     await fake.clock.advance(500);
     expect(await result2).toBeUndefined();
@@ -552,7 +586,14 @@ test("flow: a child opened inside a step inherits the flow's clock (its own time
         },
     });
     const result = fake.run(
-        flow<Ctx>({ name: "test.flow", context: { log: [] }, steps: [withSub], onFinish: async (c) => ({ content: `fin ${c.log}` }), stepTimeoutMs: 1_000, onTimeout: { content: "flow timed out" } }),
+        flow<Ctx>({
+            name: "test.flow",
+            context: { log: [] },
+            steps: [withSub],
+            onFinish: async (c) => ({ content: `fin ${c.log}` }),
+            stepTimeoutMs: 1_000,
+            onTimeout: { content: "flow timed out" },
+        }),
         undefined,
     );
     await fake.flush();
@@ -624,14 +665,22 @@ test("navRow: [Back][...extra][Skip][Cancel]; Back disabled when it can't go bac
             components: [
                 second
                     ? navRow(kit, { canBack: true, skipLabel: false })
-                    : navRow(kit, { canBack: false, extra: [kit.button("fill", (b) => b.setLabel("Fill Form").setStyle(ButtonStyle.Primary))] }),
+                    : navRow(kit, {
+                          canBack: false,
+                          extra: [kit.button("fill", (b) => b.setLabel("Fill Form").setStyle(ButtonStyle.Primary))],
+                      }),
             ],
         }),
     });
     const buttons = () =>
         flatten(fake.lastPayload())
             .filter((c) => c.custom_id)
-            .map((b) => ({ key: b.custom_id?.split(":").slice(2).join(":"), label: b.label, style: b.style, disabled: b.disabled ?? false }));
+            .map((b) => ({
+                key: b.custom_id?.split(":").slice(2).join(":"),
+                label: b.label,
+                style: b.style,
+                disabled: b.disabled ?? false,
+            }));
 
     void fake.run(view, false);
     await fake.flush();

@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import { currentTrace, formatTrace, type TraceContext } from "./trace";
@@ -12,8 +13,8 @@ const { combine, timestamp, printf, colorize, errors } = winston.format;
  * latter; bump to `verbose` to see everything.
  */
 const customLevels = {
-	levels: { error: 0, warn: 1, info: 2, debug: 3, verbose: 4 },
-	colors: { error: "red", warn: "yellow", info: "green", debug: "blue", verbose: "gray" },
+    levels: { error: 0, warn: 1, info: 2, debug: 3, verbose: 4 },
+    colors: { error: "red", warn: "yellow", info: "green", debug: "blue", verbose: "gray" },
 };
 
 winston.addColors(customLevels.colors);
@@ -21,24 +22,20 @@ winston.addColors(customLevels.colors);
 const LEVEL_WIDTH = 7; // longest used level: "verbose"
 
 function stringify(value: unknown): string {
-	return JSON.stringify(
-		value,
-		(_, v) => (typeof v === "bigint" ? v.toString() : v),
-		2,
-	);
+    return JSON.stringify(value, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2);
 }
 
 const logFormat = printf(({ level, message, timestamp, namespace, stack, trace: traceCtx, ...meta }) => {
-	// level is already colorized - strip ANSI to measure true display length
-	const displayLen = level.replace(/\x1B\[[0-9;]*m/g, "").length;
-	const padding = " ".repeat(Math.max(0, LEVEL_WIDTH - displayLen));
-	const traceText = formatTrace(traceCtx as TraceContext | undefined);
-	const ns = (namespace ? ` [${namespace}]` : "") + (traceText ? ` (${traceText})` : "");
-	const trace = stack ? `\n${stack}` : "";
-	const metadata = Object.keys(meta).length ? `\n${stringify(meta)}` : "";
+    // level is already colorized - strip ANSI to measure true display length
+    const displayLen = stripVTControlCharacters(level).length;
+    const padding = " ".repeat(Math.max(0, LEVEL_WIDTH - displayLen));
+    const traceText = formatTrace(traceCtx as TraceContext | undefined);
+    const ns = (namespace ? ` [${namespace}]` : "") + (traceText ? ` (${traceText})` : "");
+    const trace = stack ? `\n${stack}` : "";
+    const metadata = Object.keys(meta).length ? `\n${stringify(meta)}` : "";
     message = message + metadata;
 
-	return `${timestamp} ${level}${padding}${ns}: ${message}${trace}`;
+    return `${timestamp} ${level}${padding}${ns}: ${message}${trace}`;
 });
 
 // Shared, colorize-free base - safe to reuse across transports since it never adds ANSI codes.
@@ -59,8 +56,8 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 // handing off to transports, so a shared `colorize()` there bakes ANSI codes into `info.level`
 // for every transport, including file ones that never asked for color (this bit us once already).
 const consoleTransport = new winston.transports.Console({
-	level: process.env.CONSOLE_LOG_LEVEL ?? "info",
-	format: combine(commonFormat, colorize({ all: true }), logFormat),
+    level: process.env.CONSOLE_LOG_LEVEL ?? "info",
+    format: combine(commonFormat, colorize({ all: true }), logFormat),
 });
 
 // Rotation knobs, shared by both rotated files below.
@@ -72,49 +69,49 @@ const LOG_MAX_SIZE = process.env.LOG_MAX_SIZE;
 // Full detail (whatever `shared.level` allows), dated files - the place to look for verbose/debug
 // traces after the fact.
 const combinedFileTransport = new DailyRotateFile({
-	filename: "logs/combined-%DATE%.log",
-	datePattern: "YYYY-MM-DD",
-	maxFiles: `${LOG_RETENTION_DAYS}d`,
-	maxSize: LOG_MAX_SIZE,
-	format: plainFormat,
+    filename: "logs/combined-%DATE%.log",
+    datePattern: "YYYY-MM-DD",
+    maxFiles: `${LOG_RETENTION_DAYS}d`,
+    maxSize: LOG_MAX_SIZE,
+    format: plainFormat,
 });
 
 const shared = winston.createLogger({
-	levels: customLevels.levels,
-	// Governs what reaches `combinedFileTransport` (debug by default - full detail, but NOT the
-	// even-noisier `verbose` tier; bump to "verbose" to also capture macro/biome parsing traces).
-	// The console has its own, quieter level above.
-	level: process.env.LOG_LEVEL ?? "debug",
-	transports: [
-		// Console stays quiet by default - debug-level noise (macro/biome parsing traces) never
-		// shows up here, only in the rotated file below.
-		consoleTransport,
-		combinedFileTransport,
+    levels: customLevels.levels,
+    // Governs what reaches `combinedFileTransport` (debug by default - full detail, but NOT the
+    // even-noisier `verbose` tier; bump to "verbose" to also capture macro/biome parsing traces).
+    // The console has its own, quieter level above.
+    level: process.env.LOG_LEVEL ?? "debug",
+    transports: [
+        // Console stays quiet by default - debug-level noise (macro/biome parsing traces) never
+        // shows up here, only in the rotated file below.
+        consoleTransport,
+        combinedFileTransport,
 
-		// Errors only, same rotation - a quick "did anything critical happen" check without
-		// wading through debug noise. Deliberately not exposed to `setLogLevel` - this file's
-		// whole point is "errors only", always.
-		new DailyRotateFile({
-			filename: "logs/error-%DATE%.log",
-			datePattern: "YYYY-MM-DD",
-			maxFiles: `${LOG_RETENTION_DAYS}d`,
-			maxSize: LOG_MAX_SIZE,
-			level: "error",
-			format: plainFormat,
-		}),
-	],
+        // Errors only, same rotation - a quick "did anything critical happen" check without
+        // wading through debug noise. Deliberately not exposed to `setLogLevel` - this file's
+        // whole point is "errors only", always.
+        new DailyRotateFile({
+            filename: "logs/error-%DATE%.log",
+            datePattern: "YYYY-MM-DD",
+            maxFiles: `${LOG_RETENTION_DAYS}d`,
+            maxSize: LOG_MAX_SIZE,
+            level: "error",
+            format: plainFormat,
+        }),
+    ],
 });
 
 /**
  * Changes the console's or the combined file's minimum log level at runtime - no restart needed.
  */
 export function setLogLevel(target: "console" | "file", level: LogLevel): void {
-	if (target === "console") consoleTransport.level = level;
-	else shared.level = level;
+    if (target === "console") consoleTransport.level = level;
+    else shared.level = level;
 }
 
 export function getLogLevels(): { console: string; file: string } {
-	return { console: consoleTransport.level ?? "info", file: shared.level };
+    return { console: consoleTransport.level ?? "info", file: shared.level };
 }
 
 /**
@@ -126,80 +123,72 @@ export function getLogLevels(): { console: string; file: string } {
  * `.cause`, or be another `AggregateError`).
  */
 function formatErrorChain(err: Error, depth = 0): string {
-	if (depth >= 5) return "...";
+    if (depth >= 5) return "...";
 
-	const lines = [err.stack ?? err.message];
+    const lines = [err.stack ?? err.message];
 
-	const subErrors = (err as { errors?: unknown[] }).errors;
+    const subErrors = (err as { errors?: unknown[] }).errors;
 
-	if (Array.isArray(subErrors)) {
-		for (const sub of subErrors) {
-			lines.push(
-				sub instanceof Error
-					? `- ${formatErrorChain(sub, depth + 1)}`
-					: `- ${stringify(sub)}`,
-			);
-		}
-	}
+    if (Array.isArray(subErrors)) {
+        for (const sub of subErrors) {
+            lines.push(sub instanceof Error ? `- ${formatErrorChain(sub, depth + 1)}` : `- ${stringify(sub)}`);
+        }
+    }
 
-	const cause = (err as { cause?: unknown }).cause;
+    const cause = (err as { cause?: unknown }).cause;
 
-	if (cause !== undefined) {
-		lines.push(
-			cause instanceof Error
-				? `Caused by: ${formatErrorChain(cause, depth + 1)}`
-				: `Caused by: ${stringify(cause)}`,
-		);
-	}
+    if (cause !== undefined) {
+        lines.push(cause instanceof Error ? `Caused by: ${formatErrorChain(cause, depth + 1)}` : `Caused by: ${stringify(cause)}`);
+    }
 
-	return lines.join("\n");
+    return lines.join("\n");
 }
 
 /** Attaches the current trace (who/what/which invocation) to a log call - rendered by `logFormat`, never in the JSON metadata dump. */
 function withTrace(meta?: object): object | undefined {
-	const trace = currentTrace();
-	return trace ? { ...meta, trace } : meta;
+    const trace = currentTrace();
+    return trace ? { ...meta, trace } : meta;
 }
 
 export class Logger {
-	private readonly child: winston.Logger;
+    private readonly child: winston.Logger;
 
-	constructor(namespace: string) {
-		this.child = shared.child({ namespace });
-	}
+    constructor(namespace: string) {
+        this.child = shared.child({ namespace });
+    }
 
-	info(message: string, meta?: object): void {
-		this.child.info(message, withTrace(meta));
-	}
+    info(message: string, meta?: object): void {
+        this.child.info(message, withTrace(meta));
+    }
 
-	warn(message: string, meta?: object): void {
-		this.child.warn(message, withTrace(meta));
-	}
+    warn(message: string, meta?: object): void {
+        this.child.warn(message, withTrace(meta));
+    }
 
-	error(message: string | Error, meta?: object): void {
-		if (message instanceof Error) {
-			this.child.error(message.message, {
-				stack: formatErrorChain(message),
-				...withTrace(meta),
-			});
-		} else {
-			this.child.error(message, withTrace(meta));
-		}
-	}
+    error(message: string | Error, meta?: object): void {
+        if (message instanceof Error) {
+            this.child.error(message.message, {
+                stack: formatErrorChain(message),
+                ...withTrace(meta),
+            });
+        } else {
+            this.child.error(message, withTrace(meta));
+        }
+    }
 
-	debug(message: string, meta?: object): void {
-		this.child.debug(message, withTrace(meta));
-	}
+    debug(message: string, meta?: object): void {
+        this.child.debug(message, withTrace(meta));
+    }
 
-	/**
-	 * Below `debug` - for the noisy stuff (macro/biome parsing traces) you only want when actively
-	 * digging in.
-	 */
-	verbose(message: string, meta?: object): void {
-		this.child.log("verbose", message, withTrace(meta));
-	}
+    /**
+     * Below `debug` - for the noisy stuff (macro/biome parsing traces) you only want when actively
+     * digging in.
+     */
+    verbose(message: string, meta?: object): void {
+        this.child.log("verbose", message, withTrace(meta));
+    }
 
-	static stringify(value: unknown): string {
-		return stringify(value);
-	}
+    static stringify(value: unknown): string {
+        return stringify(value);
+    }
 }

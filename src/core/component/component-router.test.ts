@@ -3,9 +3,7 @@ import { MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { currentTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
-import {
-    type ComponentDefinition, defineComponent, dispatchComponent, matchComponent, validateComponentPrefix,
-} from "./component-router";
+import { type ComponentDefinition, defineComponent, dispatchComponent, matchComponent, validateComponentPrefix } from "./component-router";
 
 let logError: ReturnType<typeof spyOn>;
 
@@ -17,10 +15,7 @@ afterEach(() => {
     logError.mockRestore();
 });
 
-function fakeInteraction(
-    customId: string,
-    opts: { userId?: string; guildId?: string | null; replied?: boolean; deferred?: boolean } = {},
-) {
+function fakeInteraction(customId: string, opts: { userId?: string; guildId?: string | null; replied?: boolean; deferred?: boolean } = {}) {
     const replies: unknown[] = [];
     const interaction = {
         customId,
@@ -28,7 +23,9 @@ function fakeInteraction(
         guildId: opts.guildId ?? "g1",
         replied: opts.replied ?? false,
         deferred: opts.deferred ?? false,
-        reply: async (payload: unknown) => { replies.push(payload); },
+        reply: async (payload: unknown) => {
+            replies.push(payload);
+        },
     };
     return { interaction: interaction as unknown as Parameters<typeof dispatchComponent>[1], replies };
 }
@@ -43,7 +40,7 @@ test("defineComponent returns the definition unchanged", () => {
     expect(def).toEqual({ prefix: "mycog:vote", handle });
 });
 
-test("matchComponent routes a customId that starts with prefix + \":\", splitting the rest into parts", () => {
+test('matchComponent routes a customId that starts with prefix + ":", splitting the rest into parts', () => {
     const vote = defineComponent({ prefix: "mycog:vote", handle: async () => {} });
     const other = defineComponent({ prefix: "mycog:other", handle: async () => {} });
 
@@ -68,7 +65,7 @@ test("matchComponent's legacyIds is exact-match only, never a prefix - trailing 
     expect(matchComponent([vote], "bh-vote-confirm:extra")).toBeUndefined();
 });
 
-test("matchComponent ignores an id that starts with the bare prefix but not prefix + \":\"", () => {
+test('matchComponent ignores an id that starts with the bare prefix but not prefix + ":"', () => {
     const vote = defineComponent({ prefix: "mycog:vote", handle: async () => {} });
     expect(matchComponent([vote], "mycog:voteXYZ")).toBeUndefined();
 });
@@ -90,7 +87,9 @@ test("dispatchComponent runs handle inside a trace named component:<prefix>, wit
     const seen: Array<ReturnType<typeof currentTrace>> = [];
     const vote = defineComponent({
         prefix: "mycog:vote",
-        handle: async () => { seen.push(currentTrace()); },
+        handle: async () => {
+            seen.push(currentTrace());
+        },
     });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 
@@ -110,7 +109,9 @@ test("dispatchComponent passes parts and the client through to handle", async ()
     const calls: unknown[] = [];
     const vote = defineComponent({
         prefix: "mycog:vote",
-        handle: async (_interaction, parts, client) => { calls.push([parts, client]); },
+        handle: async (_interaction, parts, client) => {
+            calls.push([parts, client]);
+        },
     });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 
@@ -121,7 +122,9 @@ test("dispatchComponent passes parts and the client through to handle", async ()
 });
 
 test("dispatchComponent ignores an id no cog's component owns - returns false, calls nothing", async () => {
-    const handle = async () => { throw new Error("should not run"); };
+    const handle = async () => {
+        throw new Error("should not run");
+    };
     const client = fakeClient({ mycog: { name: "mycog", components: [defineComponent({ prefix: "mycog:vote", handle })] } });
 
     const { interaction } = fakeInteraction("unknown:thing:1");
@@ -132,7 +135,12 @@ test("dispatchComponent ignores an id no cog's component owns - returns false, c
 });
 
 test("dispatchComponent logs (not throws) when handle rejects, and best-effort replies a generic ephemeral failure", async () => {
-    const vote = defineComponent({ prefix: "mycog:vote", handle: async () => { throw new Error("boom"); } });
+    const vote = defineComponent({
+        prefix: "mycog:vote",
+        handle: async () => {
+            throw new Error("boom");
+        },
+    });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 
     const { interaction, replies } = fakeInteraction("mycog:vote:abc");
@@ -147,7 +155,9 @@ test("dispatchComponent logs (not throws) when handle rejects, and best-effort r
 test("dispatchComponent does NOT reply when handle throws after already answering the interaction itself", async () => {
     const vote = defineComponent({
         prefix: "mycog:vote",
-        handle: async () => { throw new Error("boom, but only after deferring"); },
+        handle: async () => {
+            throw new Error("boom, but only after deferring");
+        },
     });
     const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
 

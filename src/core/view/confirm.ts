@@ -47,7 +47,9 @@ function summaryContainer(opts: ConfirmOptions): ContainerBuilder {
     const thumbnail = opts.thumbnailAttachment;
     if (thumbnail) {
         container.addSectionComponents((section) =>
-            section.addTextDisplayComponents((td) => td.setContent(content)).setThumbnailAccessory((t) => t.setURL(`attachment://${thumbnail}`)),
+            section
+                .addTextDisplayComponents((td) => td.setContent(content))
+                .setThumbnailAccessory((t) => t.setURL(`attachment://${thumbnail}`)),
         );
     } else {
         container.addTextDisplayComponents((td) => td.setContent(content));
@@ -100,9 +102,13 @@ export function confirm(opts: ConfirmOptions): ViewDefinition<ConfirmState, bool
                     return { phase: "confirmed", payload };
                 } catch (err) {
                     const described = describeCommandError(err);
-                    if (described.kind === "internal") logger.error(err instanceof Error ? err : new Error(String(err)), { view: opts.name });
+                    if (described.kind === "internal")
+                        logger.error(err instanceof Error ? err : new Error(String(err)), { view: opts.name });
                     c.done(false);
-                    return { phase: "failed", payload: EmbedFormatter.error(described.kind === "user" ? described.message : "Error running the action!") };
+                    return {
+                        phase: "failed",
+                        payload: EmbedFormatter.error(described.kind === "user" ? described.message : "Error running the action!"),
+                    };
                 }
             },
             no: (c) => {

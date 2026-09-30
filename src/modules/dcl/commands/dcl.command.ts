@@ -1,15 +1,8 @@
+import { join } from "node:path";
 import { SlashCommandBuilder } from "discord.js";
-import { join } from "path";
 import { config } from "@/config";
 import type { BotClient } from "@/core/bot-client";
-import {
-    getCogOrigin,
-    getDclRuntimeDir,
-    installCogFromSource,
-    loadCog,
-    reloadCog,
-    unloadCog,
-} from "@/core/cog-loader";
+import { getCogOrigin, getDclRuntimeDir, installCogFromSource, loadCog, reloadCog, unloadCog } from "@/core/cog-loader";
 import { type CommandContext, defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, extractCodeBlock } from "@/utils/format";
@@ -57,9 +50,7 @@ export default defineCommand({
                 .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
         )
         .addSubcommand((s) => s.setName("list").setDescription("Lists active and disabled cogs."))
-        .addSubcommand((s) =>
-            s.setName("run").setDescription("Installs/updates a cog from code sent on the spot (prefix only)."),
-        ),
+        .addSubcommand((s) => s.setName("run").setDescription("Installs/updates a cog from code sent on the spot (prefix only).")),
 
     // `run` reads the invoking message's attachment / pasted code / replied-to message - there's
     // no slash equivalent, so it isn't even registered as a slash subcommand.

@@ -3,9 +3,7 @@ import { Logger } from "@/utils/logging";
 import { getActiveSecondsInWindow } from "../repository/activity.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getGuildsDueForFixedRewardEval, markQuotaEvaluated } from "../repository/guilds.repository";
-import {
-    getQuotaRolesByMode, getUserQuotaRole, grantQuotaRole, revokeQuotaRole,
-} from "../repository/quota-roles.repository";
+import { getQuotaRolesByMode, getUserQuotaRole, grantQuotaRole, revokeQuotaRole } from "../repository/quota-roles.repository";
 import { enqueueRoleJob, scheduleRoleRemoval } from "../repository/role-jobs.repository";
 import { getUsersForGuild } from "../repository/users.repository";
 import type { QuotaRoleRow, UserRow } from "../types";

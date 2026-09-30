@@ -9,10 +9,7 @@ export enum QuipTypes {
     FAILURE = "failure",
 }
 
-export const DEFAULT_FUNNY_LEVEL = Number.parseInt(
-    process.env.DEFAULT_QUIP_JOKE_LEVEL ?? "0",
-    10,
-);
+export const DEFAULT_FUNNY_LEVEL = Number.parseInt(process.env.DEFAULT_QUIP_JOKE_LEVEL ?? "0", 10);
 
 export const THINKING_QUIPS = [
     { text: "Processing...", funnyLevel: 0 },
@@ -98,17 +95,10 @@ const QUIPS: Record<QuipTypes, readonly Quip[]> = {
     [QuipTypes.FAILURE]: FAILURE_QUIPS,
 };
 
-export function getRandomQuip(
-    type: QuipTypes,
-    maxFunnyLevel = 0,
-): string {
-    const allowed = QUIPS[type].filter(
-        (q) => q.funnyLevel <= maxFunnyLevel,
-    );
+export function getRandomQuip(type: QuipTypes, maxFunnyLevel = 0): string {
+    const allowed = QUIPS[type].filter((q) => q.funnyLevel <= maxFunnyLevel);
 
-    const pool = allowed.length > 0
-        ? allowed
-        : QUIPS[type];
+    const pool = allowed.length > 0 ? allowed : QUIPS[type];
 
     return pool[Math.floor(Math.random() * pool.length)].text;
 }

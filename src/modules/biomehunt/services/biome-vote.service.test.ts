@@ -4,16 +4,23 @@ import { Logger } from "@/utils/logging";
 import type { InsertBallotResult } from "../repository/votes.repository";
 import type { BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
-import {
-    adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps,
-} from "./biome-vote.service";
+import { adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps } from "./biome-vote.service";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────────────────────────
 
 function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
     return {
-        id: 1, guild_id: "g1", discord_user_id: "finder", current_status: "active", last_activity_at: null,
-        paused_at: null, created_at: new Date(), seeds: 0, xp: 0, flower: null, ...overrides,
+        id: 1,
+        guild_id: "g1",
+        discord_user_id: "finder",
+        current_status: "active",
+        last_activity_at: null,
+        paused_at: null,
+        created_at: new Date(),
+        seeds: 0,
+        xp: 0,
+        flower: null,
+        ...overrides,
     };
 }
 
@@ -38,10 +45,25 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
     const deps: VoteServiceDeps = {
         insertVote: async (params) => {
             const row: BiomeVoteRow = {
-                id: params.id, guild_id: params.guildId, event_id: params.eventId, finder_user_id: params.finderUserId,
-                channel_id: params.channelId, message_id: params.messageId, biome: params.biome,
-                role_id: params.roleId, server_link: params.serverLink, jump_link: params.jumpLink, find_count: params.findCount,
-                status: VoteStatus.OPEN, decided_by: null, closes_at: params.closesAt, created_at: new Date(), decided_at: null,
+                id: params.id,
+                guild_id: params.guildId,
+                event_id: params.eventId,
+                finder_user_id: params.finderUserId,
+                channel_id: params.channelId,
+                message_id: params.messageId,
+                biome: params.biome,
+                role_id: params.roleId,
+                server_link: params.serverLink,
+                jump_link: params.jumpLink,
+                find_count: params.findCount,
+                finder_discord_id: params.finderDiscordId,
+                server_find_count: params.serverFindCount,
+                last_seen_in_server_at: params.lastSeenInServerAt,
+                status: VoteStatus.OPEN,
+                decided_by: null,
+                closes_at: params.closesAt,
+                created_at: new Date(),
+                decided_at: null,
             };
             votes.set(row.id, row);
             ballots.set(row.id, []);
@@ -130,9 +152,19 @@ function textOfEdit(edit: { components: unknown[] }): string {
 async function seedOpenVote(deps: VoteServiceDeps, overrides: Partial<Parameters<typeof openVote>[0]> = {}) {
     return openVote(
         {
-            voteId: "vote0001", guildId: "g1", eventId: 10, finderUserId: 1, channelId: "c1", messageId: "m1",
-            biome: "GLITCHED", roleId: null, serverLink: null, jumpLink: "https://discord.com/channels/g/c/m",
-            findCount: 3, now: new Date("2026-01-01T00:00:00Z"), ...overrides,
+            voteId: "vote0001",
+            guildId: "g1",
+            eventId: 10,
+            finderUserId: 1,
+            channelId: "c1",
+            messageId: "m1",
+            biome: "GLITCHED",
+            roleId: null,
+            serverLink: null,
+            jumpLink: "https://discord.com/channels/g/c/m",
+            findCount: 3,
+            now: new Date("2026-01-01T00:00:00Z"),
+            ...overrides,
         },
         deps,
     );
@@ -149,11 +181,15 @@ test("resolveVote: equal non-zero real/fake -> tie", () => {
 });
 
 test("resolveVote: more real than fake -> community_real", () => {
-    expect(resolveVote([{ choice: VoteChoice.REAL }, { choice: VoteChoice.REAL }, { choice: VoteChoice.FAKE }])).toBe(VoteStatus.COMMUNITY_REAL);
+    expect(resolveVote([{ choice: VoteChoice.REAL }, { choice: VoteChoice.REAL }, { choice: VoteChoice.FAKE }])).toBe(
+        VoteStatus.COMMUNITY_REAL,
+    );
 });
 
 test("resolveVote: more fake than real -> community_fake", () => {
-    expect(resolveVote([{ choice: VoteChoice.FAKE }, { choice: VoteChoice.FAKE }, { choice: VoteChoice.REAL }])).toBe(VoteStatus.COMMUNITY_FAKE);
+    expect(resolveVote([{ choice: VoteChoice.FAKE }, { choice: VoteChoice.FAKE }, { choice: VoteChoice.REAL }])).toBe(
+        VoteStatus.COMMUNITY_FAKE,
+    );
 });
 
 test("resolveVote: a single real vote -> community_real", () => {
@@ -172,9 +208,18 @@ test("openVote persists a row with status open, closes_at = now + windowMs, and 
 
     const row = await openVote(
         {
-            voteId: "abc12345", guildId: "g1", eventId: 10, finderUserId: 1, channelId: "c1", messageId: "m1",
-            biome: "GLITCHED", roleId: "role1", serverLink: "https://discord.gg/x", jumpLink: "https://discord.com/channels/g/c/orig",
-            findCount: 2, now,
+            voteId: "abc12345",
+            guildId: "g1",
+            eventId: 10,
+            finderUserId: 1,
+            channelId: "c1",
+            messageId: "m1",
+            biome: "GLITCHED",
+            roleId: "role1",
+            serverLink: "https://discord.gg/x",
+            jumpLink: "https://discord.com/channels/g/c/orig",
+            findCount: 2,
+            now,
         },
         deps,
     );
@@ -268,8 +313,8 @@ test("castBallot re-reads the vote right before rendering - a vote that closed b
     expect(result).toEqual({ kind: "ok" });
     expect(editCalls).toHaveLength(1);
     const rendered = textOfEdit(editCalls[0]);
-    expect(rendered).toContain("Ruled fake by <@admin-1>");
-    expect(rendered).not.toContain("closes <t:");
+    expect(rendered).toContain("Marked as fake by <@admin-1>");
+    expect(rendered).not.toContain("voting closes <t:");
 });
 
 // ─── adminDecide ────────────────────────────────────────────────────────────────────────────────
@@ -464,7 +509,7 @@ test("closeDueVotes renders the tally from a ballot read taken AFTER the close c
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
 
-    expect(textOfEdit(editCalls[0])).toContain("(2/0)");
+    expect(textOfEdit(editCalls[0])).toContain("`✅ 2` `❌ 0`");
 });
 
 test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-review hint, and the vote stays closed", async () => {
@@ -473,7 +518,9 @@ test("applyOutcome failing after the close already committed is logged with the 
         const { deps } = createFakeDeps();
         const vote = await seedOpenVote(deps);
         await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
-        deps.grantBiomeReward = async () => { throw new Error("db unreachable"); };
+        deps.grantBiomeReward = async () => {
+            throw new Error("db unreachable");
+        };
         const { client } = fakeClient();
 
         await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);

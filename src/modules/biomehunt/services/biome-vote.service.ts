@@ -1,13 +1,12 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
+import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
 import { deleteEventById } from "../repository/activity.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
-import {
-    closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote,
-} from "../repository/votes.repository";
+import { closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote } from "../repository/votes.repository";
 import { settings } from "../settings";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
@@ -121,6 +120,9 @@ export interface OpenVoteParams {
     serverLink: string | null;
     jumpLink: string;
     findCount?: number | null;
+    finderDiscordId?: string | null;
+    serverFindCount?: number | null;
+    lastSeenInServerAt?: Date | null;
     /** Injectable for tests - defaults to now. */
     now?: Date;
 }
@@ -140,6 +142,9 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
         serverLink: params.serverLink,
         jumpLink: params.jumpLink,
         findCount: params.findCount ?? null,
+        finderDiscordId: params.finderDiscordId ?? null,
+        serverFindCount: params.serverFindCount ?? null,
+        lastSeenInServerAt: params.lastSeenInServerAt ?? null,
         closesAt,
     });
 }
@@ -203,7 +208,7 @@ async function fetchVoteMessage(client: BotClient, vote: BiomeVoteRow) {
 
 /**
  * Rebuilds the forward message from `vote`'s OWN stored render inputs (role_id/server_link/
- * jump_link/find_count) - never from the message's own currently-rendered components, and never
+ * jump_link/find_count/finder_discord_id/server_find_count/last_seen_in_server_at) - never from the message's own currently-rendered components, and never
  * re-derived from `bh_biome_forwards`/the macro's parsed text/a live recount, none of which are
  * guaranteed to still match what the ORIGINAL message showed by the time this runs.
  */
@@ -216,18 +221,17 @@ async function refreshVoteMessage(client: BotClient, vote: BiomeVoteRow, render:
         roleId: vote.role_id,
         serverLink: vote.server_link,
         jumpLink: vote.jump_link,
-        findCount: vote.find_count ?? undefined,
+        finderDiscordId: vote.finder_discord_id,
+        findCount: vote.find_count,
+        serverFindCount: vote.server_find_count,
+        lastSeenInServerAt: vote.last_seen_in_server_at,
         vote: render,
     });
-    await message.edit({ components: [container], flags: MessageFlags.IsComponentsV2 }).catch(() => {});
+    // An edit never re-pings, but be explicit: the finder/deciding admin are only ever named, never pinged.
+    await message.edit({ components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: NO_PINGS }).catch(() => {});
 }
 
-export type CastBallotResult =
-    | { kind: "ok" }
-    | { kind: "not_found" }
-    | { kind: "closed" }
-    | { kind: "finder" }
-    | { kind: "already_voted" };
+export type CastBallotResult = { kind: "ok" } | { kind: "not_found" } | { kind: "closed" } | { kind: "finder" } | { kind: "already_voted" };
 
 /**
  * Casts one community ballot. Rejects the finder voting on their own find, a duplicate vote (no
@@ -314,7 +318,11 @@ export async function adminDecide(
  * already decided this vote between the scan (`getOpenVotesPastClose`) and this write, `closeVote`
  * returns `null` and the resolved outcome (reward grant, in particular) is never applied.
  */
-export async function closeDueVotes(client: BotClient, now: Date = new Date(), deps: VoteServiceDeps = defaultVoteServiceDeps()): Promise<void> {
+export async function closeDueVotes(
+    client: BotClient,
+    now: Date = new Date(),
+    deps: VoteServiceDeps = defaultVoteServiceDeps(),
+): Promise<void> {
     const due = await deps.getOpenVotesPastClose(now);
 
     for (const vote of due) {

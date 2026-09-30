@@ -16,17 +16,11 @@ export async function removeForwardConfig(guildId: string, biome: string): Promi
 }
 
 export async function getForwardConfig(guildId: string, biome: string): Promise<BiomeForwardRow | null> {
-    const result = await query<BiomeForwardRow>(
-        `SELECT * FROM bh_biome_forwards WHERE guild_id = $1 AND biome = $2`,
-        [guildId, biome],
-    );
+    const result = await query<BiomeForwardRow>(`SELECT * FROM bh_biome_forwards WHERE guild_id = $1 AND biome = $2`, [guildId, biome]);
     return result.rows[0] ?? null;
 }
 
 export async function getForwardConfigs(guildId: string): Promise<BiomeForwardRow[]> {
-    const result = await query<BiomeForwardRow>(
-        `SELECT * FROM bh_biome_forwards WHERE guild_id = $1 ORDER BY biome`,
-        [guildId],
-    );
+    const result = await query<BiomeForwardRow>(`SELECT * FROM bh_biome_forwards WHERE guild_id = $1 ORDER BY biome`, [guildId]);
     return result.rows;
 }

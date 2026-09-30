@@ -1,0 +1,15 @@
+name: Lint
+
+on:
+    pull_request:
+    push:
+        branches: [main, prod/fence]
+
+jobs:
+    biome:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install --frozen-lockfile
+            - run: bunx biome ci .

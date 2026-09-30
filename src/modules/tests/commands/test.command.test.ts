@@ -64,7 +64,7 @@ test("tests.picker: an unregistered key shows an error and the picker doesn't co
     expect(() => fake.id("pick")).toThrow();
 });
 
-test("tests.picker: an untouched picker expires with \"Picker timed out - nothing selected.\"", async () => {
+test('tests.picker: an untouched picker expires with "Picker timed out - nothing selected."', async () => {
     const fake = createFakeViewTransport();
     const result = fake.run(pickerView({} as BotClient), OPTIONS, OWNER);
     await fake.flush();

@@ -1,7 +1,7 @@
-import { readdirSync, statSync } from "fs";
-import { join, relative, sep } from "path";
+import { readdirSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import type { BotClient } from "@/core/bot-client";
-import type { ViewPayload } from "@/define";
+import type { ViewDefinition, ViewPayload } from "@/define";
 
 const TESTS_DIR = join(__dirname, "tests");
 
@@ -14,16 +14,20 @@ export type TestPayload = ViewPayload;
  * message/embed can be iterated on visually without triggering the real flow that normally
  * produces it (waiting for a session to end, an admin action, etc).
  *
- * Exactly one of `run`/`pages`:
+ * Exactly one of `run`/`pages`/`view`:
  * - `run` - a single-payload preview (the common case).
  * - `pages` - several payloads previewed as pagination pages, one design/variant per page - for
  *   comparing candidate layouts side by side before picking one (see `tests/embed/user-session.ts`).
+ * - `view` - a fully interactive preview (its own selects/buttons), for when the variants are too
+ *   many to page through (see `tests/embed/forward-redesign.ts`).
  */
 export interface TestCase {
     /** One-line description shown in the `!test` picker and `!test list`. */
     description: string;
     run?(client: BotClient): Promise<TestPayload> | TestPayload;
     pages?(client: BotClient): Promise<TestPayload[]> | TestPayload[];
+    // biome-ignore lint/suspicious/noExplicitAny: each test's view has its own state type - the registry only ever opens it.
+    view?(client: BotClient): ViewDefinition<any, unknown, void>;
 }
 
 /** Runs whichever of `run`/`pages` a test case defines, always as a page array - `run` just becomes a single-page result. */
@@ -58,7 +62,11 @@ export function loadTestCases(): Map<string, TestCase> {
         delete require.cache[require.resolve(modulePath)];
         const imported = require(modulePath);
         const testCase: TestCase = imported.default ?? imported;
-        if (!testCase || (typeof testCase.run !== "function" && typeof testCase.pages !== "function")) continue;
+        if (
+            !testCase ||
+            (typeof testCase.run !== "function" && typeof testCase.pages !== "function" && typeof testCase.view !== "function")
+        )
+            continue;
         cases.set(key, testCase);
     }
 

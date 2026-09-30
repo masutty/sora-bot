@@ -1,14 +1,11 @@
 import { config } from "@/config";
-import type {
-    CommandDefinition,
-    CommandRegistry as ICommandRegistry,
-} from "../../types";
+import type { CommandDefinition, CommandRegistry as ICommandRegistry } from "../../types";
 
 export class CommandRegistry implements ICommandRegistry {
     private readonly commands = new Map<string, CommandDefinition>();
 
     set(name: string, command: CommandDefinition): void {
-        if (this.commands.has(name)) {
+        if (this.commands.has(name.toLowerCase())) {
             throw new Error(`[CommandRegistry] Duplicate command name: "${name}"`);
         }
         this.commands.set(name.toLowerCase(), command);

@@ -9,13 +9,21 @@ const builder = new SlashCommandBuilder()
     .setName("x")
     .setDescription("x")
     .addSubcommand((s) =>
-        s.setName("profile").setDescription("p").addUserOption((o) => o.setName("user").setDescription("u")),
+        s
+            .setName("profile")
+            .setDescription("p")
+            .addUserOption((o) => o.setName("user").setDescription("u")),
     )
     .addSubcommand((s) =>
-        s.setName("set").setDescription("s").addIntegerOption((o) => o.setName("count").setDescription("c").setRequired(true)),
+        s
+            .setName("set")
+            .setDescription("s")
+            .addIntegerOption((o) => o.setName("count").setDescription("c").setRequired(true)),
     )
     .addSubcommandGroup((g) =>
-        g.setName("forward").setDescription("f")
+        g
+            .setName("forward")
+            .setDescription("f")
             .addSubcommand((s) => s.setName("list").setDescription("l")),
     );
 
@@ -45,8 +53,9 @@ describe("slash and prefix resolve the same logical input identically", () => {
     test("supplied user who isn't in the guild -> UserFacingError on both", async () => {
         const u2 = fakeUser("222222222222222222");
         await expect(slash("profile", { user: u2 }).getMember("user")).rejects.toBeInstanceOf(UserFacingError);
-        await expect(prefix(["profile", "<@222222222222222222>"], fakeGuild(), { "222222222222222222": u2 }).getMember("user"))
-            .rejects.toBeInstanceOf(UserFacingError);
+        await expect(
+            prefix(["profile", "<@222222222222222222>"], fakeGuild(), { "222222222222222222": u2 }).getMember("user"),
+        ).rejects.toBeInstanceOf(UserFacingError);
     });
 
     test("required integer missing -> 'Missing required argument' on both", () => {
@@ -113,7 +122,9 @@ describe("describe() - what was parsed, for user-error replies and logs", () => 
 });
 
 describe("prefix name:value args", () => {
-    const flat = new SlashCommandBuilder().setName("sim").setDescription("s")
+    const flat = new SlashCommandBuilder()
+        .setName("sim")
+        .setDescription("s")
         .addStringOption((o) => o.setName("biome").setDescription("b"))
         .addStringOption((o) => o.setName("note").setDescription("n"));
     const schema = deriveSchema(flat);
@@ -145,7 +156,9 @@ describe("prefix name:value args", () => {
 
     test("subcommand args accept name:value too", async () => {
         const u = fakeUser("111111111111111111");
-        expect((await prefix(["profile", "user:111111111111111111"], fakeGuild(), { "111111111111111111": u }).getUser("user"))?.id).toBe("111111111111111111");
+        expect((await prefix(["profile", "user:111111111111111111"], fakeGuild(), { "111111111111111111": u }).getUser("user"))?.id).toBe(
+            "111111111111111111",
+        );
         expect(prefix(["set", "count:5"]).getInteger("count")).toBe(5);
     });
 });
