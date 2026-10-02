@@ -2,6 +2,8 @@ import type { Client, MessageCreateOptions } from "discord.js";
 import { ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { getMemberNetworkGuilds } from "../repository/network.repository";
+import type { NetworkGuildRow } from "../types";
+import { serverNameLink } from "../views/network-mirror.view";
 
 const logger = new Logger("biomehunt.services.network-announce");
 
@@ -36,29 +38,58 @@ export function defaultAnnounceDeps(client: Client): AnnounceDeps {
 /**
  * The announcement card (also the preview the owner confirms): just the notice, in an informative
  * blue, with a small footer saying where it comes from. `roleId` is the receiving server's
- * announcements role, pinged above the notice.
+ * announcements role, pinged above the notice. `from` signs it - the maintainers by hand, or the
+ * Network's automated messages.
  */
-export function buildAnnouncementContainer(text: string, roleId: string | null = null): ContainerBuilder {
+export function buildAnnouncementContainer(text: string, roleId: string | null = null, from = "Network maintainers"): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(ANNOUNCE_COLOR);
     if (roleId) container.addTextDisplayComponents((td) => td.setContent(`<@&${roleId}>`));
     container.addTextDisplayComponents((td) => td.setContent(text));
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents((td) => td.setContent("-# 📢 Network announcement · from: Network maintainers"));
+    container.addTextDisplayComponents((td) => td.setContent(`-# 📢 Network announcement · from: ${from}`));
     return container;
+}
+
+/** The automatic "a server joined" card - same look as an announcement, signed as automated, never pings. */
+export function buildWelcomeContainer(name: string, inviteUrl: string | null): ContainerBuilder {
+    return buildAnnouncementContainer(
+        `🎉 ${serverNameLink(name, inviteUrl)} joined the Network! Their rare finds will start showing up here.`,
+        null,
+        "Network automated messages",
+    );
+}
+
+/** Sends one payload per Member Server with a Network channel - `build` makes each server's payload. */
+async function broadcast(
+    deps: AnnounceDeps,
+    build: (guild: NetworkGuildRow) => MessageCreateOptions,
+): Promise<{ sent: number; total: number }> {
+    const targets = (await deps.getMemberNetworkGuilds()).filter((g) => g.network_channel_id);
+    let sent = 0;
+    for (const guild of targets) {
+        if (await deps.send(guild.network_channel_id as string, build(guild))) sent++;
+    }
+    return { sent, total: targets.length };
 }
 
 /** Posts `text` to every Member Server's Network channel, pinging each one's announcements role (if set). */
 export async function sendNetworkAnnouncement(text: string, deps: AnnounceDeps): Promise<{ sent: number; total: number }> {
-    const targets = (await deps.getMemberNetworkGuilds()).filter((g) => g.network_channel_id);
-    let sent = 0;
-    for (const guild of targets) {
-        const roleId = guild.announce_role_id;
-        const ok = await deps.send(guild.network_channel_id as string, {
-            components: [buildAnnouncementContainer(text, roleId)],
-            flags: MessageFlags.IsComponentsV2,
-            allowedMentions: { parse: [], roles: roleId ? [roleId] : [] },
-        });
-        if (ok) sent++;
-    }
-    return { sent, total: targets.length };
+    return broadcast(deps, (guild) => ({
+        components: [buildAnnouncementContainer(text, guild.announce_role_id)],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [], roles: guild.announce_role_id ? [guild.announce_role_id] : [] },
+    }));
+}
+
+/** Tells every Member Server (the new one included) that `name` joined - no pings, it's not worth waking anyone. */
+export async function sendWelcomeAnnouncement(
+    name: string,
+    inviteUrl: string | null,
+    deps: AnnounceDeps,
+): Promise<{ sent: number; total: number }> {
+    return broadcast(deps, () => ({
+        components: [buildWelcomeContainer(name, inviteUrl)],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [], roles: [] },
+    }));
 }

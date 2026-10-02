@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import type { MessageCreateOptions } from "discord.js";
 import { type NetworkGuildRow, NetworkStatus } from "../types";
-import { type AnnounceDeps, buildAnnouncementContainer, sendNetworkAnnouncement } from "./network-announce.service";
+import {
+    type AnnounceDeps,
+    buildAnnouncementContainer,
+    buildWelcomeContainer,
+    sendNetworkAnnouncement,
+    sendWelcomeAnnouncement,
+} from "./network-announce.service";
 
 function guildRow(guildId: string, overrides: Partial<NetworkGuildRow> = {}): NetworkGuildRow {
     return {
@@ -56,4 +62,32 @@ test("buildAnnouncementContainer: just the notice - no title, an informative blu
 
     const pinged = buildAnnouncementContainer("Hi", "ann").toJSON() as { components: Array<{ content?: string }> };
     expect(pinged.components[0].content).toBe("<@&ann>");
+});
+
+test("sendWelcomeAnnouncement: every member's Network channel learns about the new server, linked, without pinging anyone", async () => {
+    const sent: Array<{ channelId: string; payload: MessageCreateOptions }> = [];
+    const deps: AnnounceDeps = {
+        getMemberNetworkGuilds: async () => [
+            guildRow("g1", { announce_role_id: "ann" }),
+            guildRow("g2"),
+            guildRow("g3", { network_channel_id: null }),
+        ],
+        send: async (channelId, payload) => {
+            sent.push({ channelId, payload });
+            return true;
+        },
+    };
+    expect(await sendWelcomeAnnouncement("Sol Hunters", "https://discord.gg/sol", deps)).toEqual({ sent: 2, total: 2 });
+    expect(sent.map((s) => s.channelId)).toEqual(["net-g1", "net-g2"]);
+    for (const { payload } of sent) {
+        expect(payload.allowedMentions).toEqual({ parse: [], roles: [] });
+        const body = JSON.stringify(payload.components);
+        expect(body).toContain("[Sol Hunters](https://discord.gg/sol) joined the Network");
+        expect(body).not.toContain("<@&");
+    }
+});
+
+test("buildWelcomeContainer: signed as an automated message, not by the maintainers", () => {
+    const card = buildWelcomeContainer("Sol Hunters", null).toJSON() as { components: Array<{ content?: string }> };
+    expect(card.components.at(-1)?.content).toBe("-# 📢 Network announcement · from: Network automated messages");
 });

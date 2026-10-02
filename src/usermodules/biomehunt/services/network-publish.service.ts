@@ -5,7 +5,6 @@ import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
 import { formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
-import { getForwardConfig } from "../repository/forwards.repository";
 import {
     getMemberNetworkGuilds,
     getNetworkGuild,
@@ -41,7 +40,6 @@ export interface NetworkPublishDeps {
     isNetworkBanned: typeof isNetworkBanned;
     isNetworkExcluded: typeof isNetworkExcluded;
     loadEligibility: (guildId: string) => Promise<EligibilityReport>;
-    getForwardConfig: typeof getForwardConfig;
     getDelayedForwardConfig: typeof getDelayedForwardConfig;
     getRecentNetworkPosts: typeof getRecentNetworkPosts;
     insertNetworkPost: typeof insertNetworkPost;
@@ -70,7 +68,6 @@ export function defaultNetworkPublishDeps(client: Client): NetworkPublishDeps {
         isNetworkBanned,
         isNetworkExcluded,
         loadEligibility: (guildId) => loadEligibility(guildId),
-        getForwardConfig,
         getDelayedForwardConfig,
         getRecentNetworkPosts,
         insertNetworkPost,
@@ -181,14 +178,17 @@ export async function scheduleNetworkPost(input: ScheduleInput, deps: NetworkPub
     return withDedupLock(input.biome, () => dedupAndInsert(input, link, deps));
 }
 
-/** When the post goes out (the origin's local post - live, or its delayed forward - plus the home advantage) and the origin's invite. */
+/**
+ * When the post goes out, and the origin's invite. The Network never beats the origin's own local
+ * posts: if the origin has a delayed forward for this biome, its delay is waited out first - even
+ * when it also has a live one - then the home advantage on top.
+ */
 async function postTiming(input: ScheduleInput, deps: NetworkPublishDeps): Promise<{ publishAt: Date; inviteUrl: string | null }> {
-    const [live, delayed, origin] = await Promise.all([
-        deps.getForwardConfig(input.originGuildId, input.biome),
+    const [delayed, origin] = await Promise.all([
         deps.getDelayedForwardConfig(input.originGuildId, input.biome),
         deps.getNetworkGuild(input.originGuildId),
     ]);
-    const localDelayS = live ? 0 : (delayed?.delay_s ?? 0);
+    const localDelayS = delayed?.delay_s ?? 0;
     const homeAdvantageS = settings.network.homeAdvantageS[input.biome] ?? 0;
     return { publishAt: new Date(input.now.getTime() + (localDelayS + homeAdvantageS) * 1000), inviteUrl: origin?.invite_url ?? null };
 }

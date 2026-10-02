@@ -156,3 +156,9 @@ export async function recordActivityCheck(guildId: string, checkedOn: string, lo
         lowChecks,
     ]);
 }
+
+/** Every guild that is a member or waiting for approval. */
+export async function getActiveNetworkGuilds(): Promise<NetworkGuildRow[]> {
+    const result = await query<NetworkGuildRow>(`SELECT * FROM bh_network_guilds WHERE status IN ('member', 'pending')`);
+    return result.rows;
+}
