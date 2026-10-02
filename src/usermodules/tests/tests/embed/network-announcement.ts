@@ -1,11 +1,12 @@
 import { MessageFlags } from "discord.js";
-import { buildAnnouncementContainer } from "@/usermodules/biomehunt/services/network-announce.service";
+import { buildAnnouncementContainer, buildWelcomeContainer } from "@/usermodules/biomehunt/services/network-announce.service";
 import { NO_PINGS } from "@/utils/format";
 import type { TestCase, TestPayload } from "../../registry";
 
 /**
  * The Network announcement card (`/bh-owner network announce`), as a Member Server sees it - page 1
- * with that server's announcements role pinged on top, page 2 without one. Fake data; pings nobody.
+ * with that server's announcements role pinged on top, page 2 without one, page 3 the automatic
+ * "a server joined" card. Fake data; pings nobody.
  */
 const FAKE_ROLE_ID = "1";
 const SAMPLE =
@@ -17,6 +18,14 @@ function page(roleId: string | null): TestPayload {
 }
 
 export default {
-    description: "The Network announcement card - with and without the server's announcements role ping.",
-    pages: () => [page(FAKE_ROLE_ID), page(null)],
+    description: "The Network announcement card (with/without role ping) and the automatic 'server joined' card.",
+    pages: () => [
+        page(FAKE_ROLE_ID),
+        page(null),
+        {
+            flags: MessageFlags.IsComponentsV2,
+            components: [buildWelcomeContainer("Sol Hunters", "https://discord.gg/discord-developers")],
+            allowedMentions: NO_PINGS,
+        },
+    ],
 } satisfies TestCase;

@@ -124,3 +124,78 @@ export function formatAlertLines(alerts: NetworkAlertRow[]): string {
         })
         .join("\n");
 }
+
+/** One server line in `/bh-owner network overview`. */
+export interface OverviewServer {
+    guildId: string;
+    name: string;
+    inviteUrl: string | null;
+    forced: boolean;
+    hasChannel: boolean;
+    botInGuild: boolean;
+}
+
+/** The Network-wide numbers in `/bh-owner network overview` - the `*7d` ones over the last 7 days. */
+export interface OverviewStats {
+    posts7d: number;
+    fakeVerdicts7d: number;
+    multiMacro7d: number;
+    /** Network Posts waiting to be sent (pending or mid fan-out). */
+    queuedPosts: number;
+    openVotes: number;
+    bannedGuilds: number;
+    bannedUsers: number;
+}
+
+const OVERVIEW_SERVERS_PER_PAGE = 15;
+
+const count = (n: number, word: string) => `**${n}** ${word}${n === 1 ? "" : "s"}`;
+
+/** Name (linked to the invite) and id, plus only what needs attention, as plain text. */
+function overviewLine(s: OverviewServer): string {
+    const flags = [
+        s.forced ? "forced" : null,
+        s.hasChannel ? null : "no Network channel",
+        s.botInGuild ? null : "bot not in server",
+    ].filter(Boolean);
+    return [`- ${serverNameLink(s.name, s.inviteUrl)}`, `\`${s.guildId}\``, ...flags].join(" · ");
+}
+
+function overviewPage(title: string, body: string): ContainerBuilder {
+    const container = new ContainerBuilder().setAccentColor(NETWORK_COLOR);
+    container.addTextDisplayComponents((td) => td.setContent(`## ${title}`));
+    container.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents((td) => td.setContent(body));
+    return container;
+}
+
+/** A sorted server list split into pages of `OVERVIEW_SERVERS_PER_PAGE`. */
+function listPages(title: string, servers: OverviewServer[]): ContainerBuilder[] {
+    const sorted = [...servers].sort((a, b) => a.name.localeCompare(b.name));
+    const pages: ContainerBuilder[] = [];
+    for (let i = 0; i < sorted.length; i += OVERVIEW_SERVERS_PER_PAGE) {
+        const lines = sorted.slice(i, i + OVERVIEW_SERVERS_PER_PAGE).map(overviewLine);
+        pages.push(overviewPage(`${title} (${sorted.length})`, lines.join("\n")));
+    }
+    return pages;
+}
+
+/**
+ * `/bh-owner network overview`, as pages: a summary first (how many servers, the Network's numbers),
+ * then the members, then the pending requests - each list sorted by name, 15 per page.
+ */
+export function buildNetworkOverviewPages(p: {
+    members: OverviewServer[];
+    pending: OverviewServer[];
+    stats: OverviewStats;
+}): ContainerBuilder[] {
+    const s = p.stats;
+    const summary = [
+        `Members: **${p.members.length}** · Pending requests: **${p.pending.length}**`,
+        "",
+        `Last 7 days: ${count(s.posts7d, "post")} · ${count(s.fakeVerdicts7d, "fake verdict")} · ${count(s.multiMacro7d, "multi macro case")}`,
+        `Right now: ${count(s.queuedPosts, "queued post")} · ${count(s.openVotes, "open vote")}`,
+        `Banned: ${count(s.bannedGuilds, "server")} · ${count(s.bannedUsers, "user")}`,
+    ].join("\n");
+    return [overviewPage("Network overview", summary), ...listPages("Members", p.members), ...listPages("Pending requests", p.pending)];
+}

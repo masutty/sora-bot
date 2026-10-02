@@ -3,7 +3,6 @@ import type { MessageCreateOptions } from "discord.js";
 import type { InsertNetworkAlertParams } from "../repository/network-posts.repository";
 import {
     type BiomeDelayedForwardRow,
-    type BiomeForwardRow,
     type NetworkBanKind,
     type NetworkGuildRow,
     type NetworkMirrorRow,
@@ -64,7 +63,6 @@ interface FakeOptions {
     banned?: Array<[NetworkBanKind, string]>;
     excluded?: string[];
     gaps?: EligibilityGap[];
-    live?: boolean;
     delayS?: number | null;
     priorMultiMacro?: boolean;
     failingChannels?: string[];
@@ -91,7 +89,6 @@ function createFakeDeps(opts: FakeOptions = {}) {
             gaps: opts.gaps ?? [],
             card: { activeMembers: 3, macroHours7d: 1, macroHours30d: 1 },
         }),
-        getForwardConfig: async () => (opts.live === false ? null : ({ channel_id: "local" } as BiomeForwardRow)),
         getDelayedForwardConfig: async () =>
             opts.delayS === undefined || opts.delayS === null
                 ? null
@@ -177,7 +174,7 @@ test("scheduleNetworkPost: a member's find is scheduled at the local post + the 
 });
 
 test("scheduleNetworkPost: with only a delayed local forward, the home advantage starts after it", async () => {
-    const { deps, posts } = createFakeDeps({ live: false, delayS: 15 });
+    const { deps, posts } = createFakeDeps({ delayS: 15 });
     await scheduleNetworkPost(input({ biome: "SINGULARITY" }), deps);
     expect(posts.get("p1")?.publish_at).toEqual(new Date(T0.getTime() + (15 + 30) * 1000));
 });
@@ -392,4 +389,10 @@ test("scheduleNetworkPost: the Multi Macro DM links both servers' names to their
     const dm = String(calls.ownerDms[0].content);
     expect(dm).toContain("[Guild A](https://discord.gg/a)");
     expect(dm).toContain("[Guild B](https://discord.gg/b)");
+});
+
+test("scheduleNetworkPost: with both a live and a delayed local forward, the Network still waits for the delayed one", async () => {
+    const { deps, posts } = createFakeDeps({ delayS: 45 });
+    await scheduleNetworkPost(input(), deps);
+    expect(posts.get("p1")?.publish_at).toEqual(new Date(T0.getTime() + (45 + 10) * 1000));
 });

@@ -6,13 +6,13 @@ import {
     type SlashCommandStringOption,
     type SlashCommandSubcommandGroupBuilder,
 } from "discord.js";
-import { type CommandContext, confirm } from "@/define";
+import { type CommandContext, confirm, paginate } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs } from "../repository/delayed-forwards.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
-import { getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
-import { getRecentNetworkAlerts } from "../repository/network-posts.repository";
+import { getActiveNetworkGuilds, getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
+import { getNetworkStats, getRecentNetworkAlerts } from "../repository/network-posts.repository";
 import { defaultAnnounceDeps, sendNetworkAnnouncement } from "../services/network-announce.service";
 import { loadEligibility, NETWORK_BIOMES } from "../services/network-eligibility.service";
 import {
@@ -26,8 +26,8 @@ import {
 } from "../services/network-membership.service";
 import { defaultNetworkPublishDeps, scheduleSimulatedNetworkPost } from "../services/network-publish.service";
 import { closeNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
-import { BiomeHuntError, type NetworkBanKind, NetworkStatus } from "../types";
-import { formatAlertLines } from "../views/network.view";
+import { BiomeHuntError, type NetworkBanKind, type NetworkGuildRow, NetworkStatus } from "../types";
+import { buildNetworkOverviewPages, formatAlertLines, type OverviewServer, v2 } from "../views/network.view";
 import { buildMirrorContainer, serverNameLink } from "../views/network-mirror.view";
 
 const BAN_KIND_CHOICES = [
@@ -111,6 +111,9 @@ function networkGroup(g: SlashCommandSubcommandGroupBuilder): SlashCommandSubcom
                 .setDescription("A server's Network card or a user's Network record, with recent alerts.")
                 .addStringOption(guildIdOption("Guild ID", false))
                 .addStringOption((o) => o.setName("user_id").setDescription("User ID")),
+        )
+        .addSubcommand((s) =>
+            s.setName("overview").setDescription("Every member and pending server, plus the Network's numbers (last 7 days, right now)."),
         );
 }
 
@@ -195,6 +198,8 @@ export async function runNetworkOwnerSubcommand(ctx: CommandContext): Promise<vo
             return runAnnounce(ctx);
         case "lookup":
             return runLookup(ctx);
+        case "overview":
+            return runOverview(ctx);
     }
 }
 
@@ -335,4 +340,36 @@ export async function relaySimulationToNetwork(
     const ignored =
         result.ignored.length > 0 ? `\nIgnored (not a Network member with a channel, or this server): ${idList(result.ignored)}` : "";
     return `\nNetwork relay \`${result.postId}\` scheduled to ${idList(result.targets)} - a TEST post (no ping, no vote) after the local post + home advantage.${ignored}`;
+}
+
+const WEEK_MS = 7 * 86_400_000;
+
+/** `/bh-owner network overview` - a summary page, then every member and pending server, paginated. */
+async function runOverview(ctx: CommandContext): Promise<void> {
+    const [guilds, stats] = await Promise.all([getActiveNetworkGuilds(), getNetworkStats(new Date(Date.now() - WEEK_MS))]);
+    const toServer = (row: NetworkGuildRow): OverviewServer => {
+        const cached = ctx.client.guilds.cache.get(row.guild_id);
+        return {
+            guildId: row.guild_id,
+            name: cached?.name ?? "unknown",
+            inviteUrl: row.invite_url,
+            forced: row.forced,
+            hasChannel: Boolean(row.network_channel_id),
+            botInGuild: Boolean(cached),
+        };
+    };
+    const pages = buildNetworkOverviewPages({
+        members: guilds.filter((g) => g.status === NetworkStatus.MEMBER).map(toServer),
+        pending: guilds.filter((g) => g.status === NetworkStatus.PENDING).map(toServer),
+        stats: {
+            posts7d: stats.posts,
+            fakeVerdicts7d: stats.fakes,
+            multiMacro7d: stats.multi,
+            queuedPosts: stats.queued,
+            openVotes: stats.open_votes,
+            bannedGuilds: stats.banned_guilds,
+            bannedUsers: stats.banned_users,
+        },
+    });
+    await ctx.open(paginate({ name: "biomehunt.net-overview", pages: pages.length, renderPage: (i) => v2(pages[i]) }), undefined);
 }

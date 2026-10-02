@@ -212,3 +212,38 @@ export async function getRecentNetworkAlerts(
     );
     return result.rows;
 }
+
+export interface NetworkStatsRow {
+    posts: number;
+    fakes: number;
+    multi: number;
+    queued: number;
+    open_votes: number;
+    banned_guilds: number;
+    banned_users: number;
+}
+
+/** The Network-wide numbers for `/bh-owner network overview` - posts/fakes/multi macro since `since`, the rest right now. Test relays don't count as posts. */
+export async function getNetworkStats(since: Date): Promise<NetworkStatsRow> {
+    const result = await query<Record<keyof NetworkStatsRow, string>>(
+        `SELECT
+             (SELECT COUNT(*) FROM bh_network_posts WHERE status = 'published' AND NOT simulated AND created_at >= $1) AS posts,
+             (SELECT COUNT(*) FROM bh_network_alerts WHERE kind = 'fake_verdict' AND created_at >= $1) AS fakes,
+             (SELECT COUNT(*) FROM bh_network_alerts WHERE kind = 'multi_macro' AND created_at >= $1) AS multi,
+             (SELECT COUNT(*) FROM bh_network_posts WHERE status IN ('pending', 'publishing')) AS queued,
+             (SELECT COUNT(*) FROM bh_network_posts WHERE status IN ('publishing', 'published') AND vote_status = 'open') AS open_votes,
+             (SELECT COUNT(*) FROM bh_network_bans WHERE kind = 'guild') AS banned_guilds,
+             (SELECT COUNT(*) FROM bh_network_bans WHERE kind = 'user') AS banned_users`,
+        [since],
+    );
+    const row = result.rows[0];
+    return {
+        posts: Number(row.posts),
+        fakes: Number(row.fakes),
+        multi: Number(row.multi),
+        queued: Number(row.queued),
+        open_votes: Number(row.open_votes),
+        banned_guilds: Number(row.banned_guilds),
+        banned_users: Number(row.banned_users),
+    };
+}

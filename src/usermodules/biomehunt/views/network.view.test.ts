@@ -1,7 +1,15 @@
 import { expect, test } from "bun:test";
 import type { ContainerBuilder } from "discord.js";
 import { type NetworkGuildRow, NetworkStatus } from "../types";
-import { buildEligibilityContainer, buildJoinRequestContainer, buildStatusContainer, formatAlertLines } from "./network.view";
+import {
+    buildEligibilityContainer,
+    buildJoinRequestContainer,
+    buildNetworkOverviewPages,
+    buildStatusContainer,
+    formatAlertLines,
+    type OverviewServer,
+    type OverviewStats,
+} from "./network.view";
 
 const json = (c: ContainerBuilder) => JSON.stringify(c.toJSON());
 const card = { activeMembers: 4, macroHours7d: 31.5, macroHours30d: 120 };
@@ -87,4 +95,73 @@ test("formatAlertLines: newest first as given, one line each with relative time 
 test("buildJoinRequestContainer: the server's name links to its invite when it has one", () => {
     const out = json(buildJoinRequestContainer({ guildId: "g1", guildName: "Sol Hunters", inviteUrl: "https://discord.gg/sol", card }));
     expect(out).toContain("[Sol Hunters](https://discord.gg/sol)");
+});
+
+const overviewServer = (overrides: Partial<OverviewServer> = {}): OverviewServer => ({
+    guildId: "111",
+    name: "Sol Hunters",
+    inviteUrl: "https://discord.gg/sol",
+    forced: false,
+    hasChannel: true,
+    botInGuild: true,
+    ...overrides,
+});
+
+const overviewStats: OverviewStats = {
+    posts7d: 12,
+    fakeVerdicts7d: 1,
+    multiMacro7d: 2,
+    queuedPosts: 0,
+    openVotes: 3,
+    bannedGuilds: 1,
+    bannedUsers: 4,
+};
+
+const pagesJson = (pages: ContainerBuilder[]) => pages.map((p) => json(p));
+
+test("buildNetworkOverviewPages: a summary page first, then members and pending requests on their own pages", () => {
+    const pages = pagesJson(
+        buildNetworkOverviewPages({
+            members: [
+                overviewServer({ name: "Zeta", guildId: "333", inviteUrl: null, forced: true }),
+                overviewServer({ hasChannel: false, botInGuild: false }),
+            ],
+            pending: [overviewServer({ name: "Newcomers", guildId: "222", inviteUrl: null })],
+            stats: overviewStats,
+        }),
+    );
+    expect(pages).toHaveLength(3);
+    expect(pages[0]).toContain("Members: **2**");
+    expect(pages[0]).toContain("Pending requests: **1**");
+    expect(pages[0]).toContain("**12** posts");
+    expect(pages[0]).toContain("**3** open votes");
+
+    expect(pages[1]).toContain("Members (2)");
+    expect(pages[1].indexOf("Sol Hunters")).toBeLessThan(pages[1].indexOf("Zeta"));
+    expect(pages[1]).toContain("[Sol Hunters](https://discord.gg/sol) · `111`");
+    expect(pages[1]).toContain("no Network channel");
+    expect(pages[1]).toContain("bot not in server");
+    expect(pages[1]).toContain("forced");
+    expect(pages[1]).not.toContain("active");
+
+    expect(pages[2]).toContain("Pending requests (1)");
+    expect(pages[2]).toContain("**Newcomers** · `222`");
+});
+
+test("buildNetworkOverviewPages: members are split 15 per page, and no emojis anywhere", () => {
+    const members = Array.from({ length: 16 }, (_, i) =>
+        overviewServer({ name: `Server ${String(i).padStart(2, "0")}`, guildId: String(i) }),
+    );
+    const pages = pagesJson(buildNetworkOverviewPages({ members, pending: [], stats: overviewStats }));
+    expect(pages).toHaveLength(3);
+    expect(pages[1]).toContain("Server 14");
+    expect(pages[1]).not.toContain("Server 15");
+    expect(pages[2]).toContain("Server 15");
+    expect(pages.join("")).not.toMatch(/\p{Extended_Pictographic}/u);
+});
+
+test("buildNetworkOverviewPages: an empty Network is just the summary page", () => {
+    const pages = pagesJson(buildNetworkOverviewPages({ members: [], pending: [], stats: overviewStats }));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toContain("Members: **0**");
 });

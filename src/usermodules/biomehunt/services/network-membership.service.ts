@@ -16,6 +16,7 @@ import {
 } from "../repository/network.repository";
 import { BiomeHuntError, type NetworkBanKind, type NetworkGuildRow, NetworkStatus } from "../types";
 import { buildJoinRequestContainer } from "../views/network.view";
+import { defaultAnnounceDeps, sendWelcomeAnnouncement } from "./network-announce.service";
 import { type EligibilityGap, type EligibilityReport, isConfigGap, loadEligibility } from "./network-eligibility.service";
 import { notifyOwners } from "./owner-dm.service";
 
@@ -40,6 +41,8 @@ export interface MembershipDeps {
     notifyOwners: (payload: MessageCreateOptions) => Promise<void>;
     /** Posts to the guild's staff channel. Must never throw. */
     notifyStaff: (row: NetworkGuildRow, content: string) => Promise<void>;
+    /** Tells every Member Server that this one just joined. Must never throw. */
+    welcomeNewMember: (row: NetworkGuildRow) => Promise<void>;
 }
 
 export function defaultMembershipDeps(client: Client): MembershipDeps {
@@ -59,6 +62,16 @@ export function defaultMembershipDeps(client: Client): MembershipDeps {
         hasGuild: (guildId) => client.guilds.cache.has(guildId),
         notifyOwners: (payload) => notifyOwners(client, payload),
         notifyStaff: (row, content) => notifyStaff(client, row, content),
+        welcomeNewMember: async (row) => {
+            try {
+                const name = client.guilds.cache.get(row.guild_id)?.name ?? row.guild_id;
+                await sendWelcomeAnnouncement(name, row.invite_url, defaultAnnounceDeps(client));
+            } catch (err) {
+                logger.warn(`Could not announce that guild ${row.guild_id} joined the Network`, {
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
+        },
     };
 }
 
@@ -149,6 +162,7 @@ export async function decideJoinRequest(guildId: string, ownerId: string, approv
         row,
         admit ? "Your server was approved and is now part of the Network." : "Your request to join the Network was rejected.",
     );
+    if (admit) await deps.welcomeNewMember(row);
     return banned ? "banned" : "ok";
 }
 

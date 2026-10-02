@@ -50,6 +50,7 @@ function createFakeDeps(opts: FakeOptions = {}) {
     const calls = {
         ownerDms: [] as MessageCreateOptions[],
         staff: [] as Array<{ guildId: string; content: string }>,
+        welcomes: [] as Array<{ guildId: string; inviteUrl: string | null }>,
     };
     const deps: MembershipDeps = {
         getOrCreateGuildConfig: async () => undefined,
@@ -101,6 +102,9 @@ function createFakeDeps(opts: FakeOptions = {}) {
         },
         notifyStaff: async (row, content) => {
             calls.staff.push({ guildId: row.guild_id, content });
+        },
+        welcomeNewMember: async (row) => {
+            calls.welcomes.push({ guildId: row.guild_id, inviteUrl: row.invite_url });
         },
     };
     return { deps, rows, calls };
@@ -219,4 +223,25 @@ test("requireSnowflake accepts Discord ids only", () => {
     expect(() => requireSnowflake("not-an-id")).toThrow(BiomeHuntError);
     expect(() => requireSnowflake("123")).toThrow(BiomeHuntError);
     expect(requireSnowflake(" 188851299255713792 ")).toBe("188851299255713792");
+});
+
+test("decideJoinRequest: only an approval that actually admits the server welcomes it to the Network", async () => {
+    const approved = createFakeDeps({ rows: [fakeRow({ status: NetworkStatus.PENDING, invite_url: "https://discord.gg/g1" })] });
+    await decideJoinRequest("g1", "o1", true, approved.deps);
+    await decideJoinRequest("g1", "o1", true, approved.deps);
+    expect(approved.calls.welcomes).toEqual([{ guildId: "g1", inviteUrl: "https://discord.gg/g1" }]);
+
+    const rejected = createFakeDeps({ rows: [fakeRow({ status: NetworkStatus.PENDING })] });
+    await decideJoinRequest("g1", "o1", false, rejected.deps);
+    expect(rejected.calls.welcomes).toHaveLength(0);
+
+    const banned = createFakeDeps({ rows: [fakeRow({ status: NetworkStatus.PENDING })], banned: [["guild", "g1"]] });
+    await decideJoinRequest("g1", "o1", true, banned.deps);
+    expect(banned.calls.welcomes).toHaveLength(0);
+});
+
+test("forceIntoNetwork never announces the server to the Network", async () => {
+    const { deps, calls } = createFakeDeps({ rows: [fakeRow({ status: NetworkStatus.PENDING })] });
+    await forceIntoNetwork("g1", "net", "o1", deps);
+    expect(calls.welcomes).toHaveLength(0);
 });
