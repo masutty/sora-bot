@@ -39,7 +39,7 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityGap[] {
     return gaps;
 }
 
-/** The gaps the Network config flow can fix - `/bh-network join` checks the OTHER ones before opening it. */
+/** The gaps the Network config flow can fix - `/network join` checks the OTHER ones before opening it. */
 export function isConfigGap(gap: EligibilityGap): boolean {
     return gap.kind === "network_channel" || gap.kind === "network_channel_conflict" || gap.kind === "staff";
 }
@@ -66,7 +66,7 @@ export function countActiveMembers(rows: ReadonlyArray<{ activeSeconds: number }
     return rows.filter((r) => r.activeSeconds >= settings.network.activeMemberMinSeconds).length;
 }
 
-/** The server card a bot owner sees on a join request (and admins on `/bh-network status`). */
+/** The server card a bot owner sees on a join request (and admins on `/network status`). */
 export interface ServerCard {
     activeMembers: number;
     macroHours7d: number;
