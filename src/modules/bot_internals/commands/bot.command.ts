@@ -1,8 +1,7 @@
-import { join } from "node:path";
 import { ContainerBuilder, MessageFlags, OAuth2Scopes, PermissionFlagsBits, SeparatorSpacingSize, SlashCommandBuilder } from "discord.js";
 import { config } from "@/config";
 import type { BotClient } from "@/core/bot-client";
-import { hotReloadBot, loadCog, reloadCog, unloadCog } from "@/core/cog-loader";
+import { hotReloadBot, unloadCog } from "@/core/cog-loader";
 import { registerSlashCommands } from "@/core/command/command-handler";
 import { getPoolStats, query } from "@/database/connection";
 import { defineCommand } from "@/define";
@@ -12,9 +11,8 @@ import { getLogLevels, LOG_LEVELS, Logger, type LogLevel, setLogLevel } from "@/
 import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
 
 const logger = new Logger("admin.commands.bot");
-const COGS_PATH = join(__dirname, "../../");
 
-// Pure-read subcommands (as opposed to reload-all/log-set/sync/shutdown, which change state) -
+// Pure-read subcommands (as opposed to reload/log-set/sync/shutdown, which change state) -
 // these get a neutral embed instead of a green success checkmark, since nothing was "done".
 const READONLY_SUBCOMMANDS = new Set(["commands", "servers", "ping", "memory", "db", "event-loop", "uptime", "invite"]);
 
@@ -33,20 +31,8 @@ export default defineCommand({
                 .setDescription("Cog management.")
                 .addSubcommand((s) =>
                     s
-                        .setName("load")
-                        .setDescription("Load a cog.")
-                        .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
-                )
-                .addSubcommand((s) =>
-                    s
                         .setName("unload")
                         .setDescription("Unload a cog.")
-                        .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
-                )
-                .addSubcommand((s) =>
-                    s
-                        .setName("reload")
-                        .setDescription("Restart a cog.")
                         .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
                 ),
         )
@@ -75,7 +61,7 @@ export default defineCommand({
                 .addSubcommand((s) => s.setName("show").setDescription("Show the current console/file log levels.")),
         )
         .addSubcommand((sub) =>
-            sub.setName("reload-all").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
+            sub.setName("reload").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
         )
         .addSubcommand((sub) => sub.setName("sync").setDescription("Sync slash commands with Discord."))
         .addSubcommand((sub) => sub.setName("status").setDescription("Show bot status."))
@@ -149,20 +135,10 @@ interface SubcommandArgs {
 
 async function runSubcommand(sub: string, { name, level, target }: SubcommandArgs, client: BotClient): Promise<string> {
     switch (sub) {
-        case "mod-load":
-            if (!name) throw new Error("Cog name required.");
-            await loadCog(client, COGS_PATH, name);
-            return `Cog \`${name}\` loaded.`;
-
         case "mod-unload":
             if (!name) throw new Error("Cog name required.");
             await unloadCog(client, name);
             return `Cog \`${name}\` unloaded.`;
-
-        case "mod-reload":
-            if (!name) throw new Error("Cog name required.");
-            await reloadCog(client, COGS_PATH, name);
-            return `Cog \`${name}\` restarted.`;
 
         case "log-set": {
             if (!level || !(LOG_LEVELS as readonly string[]).includes(level)) {
@@ -178,8 +154,8 @@ async function runSubcommand(sub: string, { name, level, target }: SubcommandArg
             return `**Console:** \`${levels.console}\`\n**File (logs/combined-*.log):** \`${levels.file}\``;
         }
 
-        case "reload-all": {
-            const failures = await hotReloadBot(client, COGS_PATH);
+        case "reload": {
+            const failures = await hotReloadBot(client);
             const summary = `Bot reloaded: ${client.cogs.size} cog(s), ${client.commands.size} command(s).`;
             // hotReloadBot doesn't abort the whole reload if ONE cog fails (same resilience as
             // boot) - but here, unlike boot, someone's waiting on a response: reporting success

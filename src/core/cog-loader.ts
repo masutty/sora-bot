@@ -1,5 +1,5 @@
-import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
 import { Events } from "discord.js";
 import { config } from "@/config";
 import { runModuleMigrations } from "@/database/migrate";
@@ -21,9 +21,8 @@ const cogListeners = new Map<string, Array<{ event: string; handler: EventHandle
 // Tracks running workers per cog so they can be stopped on unload/hot reload
 const cogWorkers = new Map<string, RunningWorker[]>();
 
-// Which base directory each loaded cog came from - `reloadCog` consults this instead of blindly
-// trusting the `cogsPath` it's handed.
-const cogOrigin = new Map<string, string>();
+/** Cog roots, native first: `src/modules` (framework: core, bot_internals) then `src/usermodules`. */
+export const COG_ROOTS = [join(__dirname, "../modules"), join(__dirname, "../usermodules")];
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -37,48 +36,53 @@ export interface LoadCogsResult {
     stop: () => Promise<void>;
     /**
      * Cogs that failed to load (already logged as warn/error here) - a broken cog does NOT bring
-     * down the rest of the boot, but whoever calls this interactively (`!bot reload-all`) needs to
+     * down the rest of the boot, but whoever calls this interactively (`!bot reload`) needs to
      * know that "reloaded" doesn't mean "reloaded everything successfully".
      */
     failures: CogLoadFailure[];
 }
 
 /**
- * Loads all cogs found in `cogsPath` (one directory = one cog).
+ * Loads every cog found in `roots` (one directory = one cog), in root order. The folder name is
+ * only used to find the `index` (and to match `DISABLED_COG_DIRS`) - a cog's identity is always
+ * `cog.name`, which must be unique across every root.
  */
-export async function loadCogs(client: BotClient, cogsPath: string): Promise<LoadCogsResult> {
+export async function loadCogs(client: BotClient, roots: string[] = COG_ROOTS): Promise<LoadCogsResult> {
     ensureComponentRouter(client);
 
-    const entries = readdirSync(cogsPath);
     const failures: CogLoadFailure[] = [];
-    const recordFailure = (entry: string, err: unknown) => {
+    const recordFailure = (label: string, err: unknown) => {
         const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
-        logger.warn(`Failed to load cog "${entry}": ${msg}`);
+        logger.warn(`Failed to load cog "${label}": ${msg}`);
         logger.error(err instanceof Error ? err : new Error(String(err)));
-        failures.push({ cog: entry, error: msg });
+        failures.push({ cog: label, error: msg });
     };
 
     // Pass 1: require every cog WITHOUT side effects, so command conflicts are known up front.
-    const candidates: Array<{ entry: string; cog: Cog }> = [];
-    for (const entry of entries) {
-        const fullPath = join(cogsPath, entry);
-        if (!statSync(fullPath).isDirectory()) continue;
+    const candidates: Cog[] = [];
+    for (const root of roots) {
+        if (!existsSync(root)) continue; // usermodules may not exist
 
-        if (config.bot.disabledCogs.includes(entry)) {
-            logger.info(`Cog "${entry}" skipped (DISABLED_COGS).`);
-            continue;
-        }
+        for (const entry of readdirSync(root)) {
+            const dir = join(root, entry);
+            if (!statSync(dir).isDirectory()) continue;
 
-        try {
-            candidates.push({ entry, cog: requireCog(cogsPath, entry) });
-        } catch (err) {
-            recordFailure(entry, err);
+            try {
+                const cog = requireCogFromDir(dir);
+                if (!cog) continue; // disabled
+                if (client.cogs.has(cog.name) || candidates.some((c) => c.name === cog.name)) {
+                    throw new Error(`A cog named "${cog.name}" is already loaded.`);
+                }
+                candidates.push(cog);
+            } catch (err) {
+                recordFailure(`${basename(root)}/${entry}`, err);
+            }
         }
     }
 
     // Every cog in a conflict is disabled - not just the "second" one - so no module silently
     // wins a command it has to share. `check:commands` catches the same thing at build time.
-    const { rejected } = partitionByConflicts(candidates.map((c) => c.cog));
+    const { rejected } = partitionByConflicts(candidates);
     const rejectedNames = new Set(rejected.map((r) => r.cog));
     for (const { cog, conflicts } of rejected) {
         const msg = `disabled - ${describeConflicts(conflicts)}`;
@@ -87,9 +91,9 @@ export async function loadCogs(client: BotClient, cogsPath: string): Promise<Loa
     }
 
     // Pass 2: register the rest.
-    for (const { entry, cog } of candidates) {
+    for (const cog of candidates) {
         if (rejectedNames.has(cog.name)) continue;
-        await activateCog(client, cogsPath, cog).catch((err) => recordFailure(entry, err));
+        await activateCog(client, cog).catch((err) => recordFailure(cog.name, err));
     }
 
     return {
@@ -101,18 +105,6 @@ export async function loadCogs(client: BotClient, cogsPath: string): Promise<Loa
             }
         },
     };
-}
-
-/**
- * Loads a single cog by name from `cogsPath/<cogName>/index`.
- */
-export async function loadCog(client: BotClient, cogsPath: string, cogName: string): Promise<Cog> {
-    return activateCog(client, cogsPath, requireCog(cogsPath, cogName));
-}
-
-/** Which base directory a cog was loaded from - `undefined` if never loaded this session. */
-export function getCogOrigin(cogName: string): string | undefined {
-    return cogOrigin.get(cogName);
 }
 
 /**
@@ -141,108 +133,6 @@ export async function unloadCog(client: BotClient, cogName: string): Promise<voi
     logger.info(`Unloaded cog: ${cogName}`);
 }
 
-/**
- * Reloads a cog (unload + load from disk).
- */
-export async function reloadCog(client: BotClient, cogsPath: string, cogName: string): Promise<void> {
-    if (!client.cogs.has(cogName)) throw new Error(`Cog "${cogName}" is not loaded.`);
-
-    const basePath = cogOrigin.get(cogName) ?? cogsPath;
-    // Required and checked BEFORE unloading, so a new version that now conflicts leaves the old one running.
-    const next = requireCog(basePath, cogName);
-    assertNoConflictsWithLoaded(client, next);
-
-    await unloadCog(client, cogName);
-    await activateCog(client, basePath, next);
-    logger.info(`Reloaded cog: ${cogName}`);
-}
-
-export interface InstallCogResult {
-    name: string;
-    commands: number;
-    /** true = a cog with this name was already loaded in memory and got replaced (not deleted). */
-    overwritten: boolean;
-}
-
-const DCL_RUNTIME_DIRNAME = ".dcl-runtime";
-
-/**
- * Sandbox directory for cogs installed via `!dcl run` - a SIBLING of `cogsPath` (`src/modules`),
- * not a child of it, on purpose: `readdirSync(cogsPath)` (used by `loadCogs`/`hotReloadBot` to
- * rescan everything) never lists what's in here. That's what guarantees a cog installed via DCL
- * never "sticks around" - it disappears completely on a full reload or a process restart, with no
- * exclusion list required.
- */
-export function getDclRuntimeDir(cogsPath: string): string {
-    return join(cogsPath, "..", DCL_RUNTIME_DIRNAME);
-}
-
-/**
- * Installs/updates a cog at RUNTIME from the source of a single `index.ts` (`!dcl run`) - ALWAYS
- * inside the `getDclRuntimeDir` sandbox, NEVER in the real `cogsPath` (`src/modules`).
- *
- * Writes to a staging directory (inside the sandbox itself) and REQUIRES (doesn't trust
- * regex/text) that `require()` + `defineCog()` actually produce a valid Cog before touching any
- * bot state - if the require fails (syntax error, no `export default`, whatever), nothing already
- * running is affected, the staging dir is deleted, and the error bubbles up to the caller.
- *
- * "Overwrite" (`cog.name` already loaded, even if it's a real cog from the repo) ONLY swaps what's
- * in MEMORY (`unloadCog` - removes commands/listeners, doesn't touch any file). The real
- * `index.ts` in `src/modules/<name>`, if it exists, is NEVER read, moved, or deleted by this
- * function - it stays exactly as it was. A full reload (`!bot reload-all`) or restarting the
- * process goes back to loading that real cog from disk normally; the version installed via DCL is
- * forgotten (the whole sandbox is wiped on boot, see `src/index.ts`).
- */
-export async function installCogFromSource(client: BotClient, cogsPath: string, source: string): Promise<InstallCogResult> {
-    const runtimeDir = getDclRuntimeDir(cogsPath);
-    const stagingDir = join(runtimeDir, ".staging");
-    const stagingIndex = join(stagingDir, "index");
-
-    rmSync(stagingDir, { recursive: true, force: true });
-    mkdirSync(stagingDir, { recursive: true });
-    writeFileSync(`${stagingIndex}.ts`, source, "utf8");
-
-    let cog: Cog;
-    try {
-        clearRequireCache(stagingIndex);
-        const imported = require(stagingIndex);
-        cog = imported.default ?? imported;
-    } catch (err) {
-        rmSync(stagingDir, { recursive: true, force: true });
-        throw err;
-    }
-
-    if (!cog || typeof cog.name !== "string" || !cog.name) {
-        rmSync(stagingDir, { recursive: true, force: true });
-        throw new Error('The file did not export a valid Cog - it needs `export default defineCog({ name: "...", ... })`.');
-    }
-
-    // Checked here too (activateCog re-checks) so a refused cog never unloads the version it replaces.
-    try {
-        assertNoConflictsWithLoaded(client, cog);
-    } catch (err) {
-        rmSync(stagingDir, { recursive: true, force: true });
-        throw err;
-    }
-
-    // Memory only - the real cog in `cogsPath` (if the name collides with one) is left untouched.
-    const overwritten = client.cogs.has(cog.name);
-    if (overwritten) await unloadCog(client, cog.name);
-
-    // Sandbox only - never in `cogsPath`.
-    const finalDir = join(runtimeDir, cog.name);
-    rmSync(finalDir, { recursive: true, force: true });
-    renameSync(stagingDir, finalDir);
-
-    const loaded = await loadCog(client, runtimeDir, cog.name);
-    logger.info(`Cog installed via DCL (runtime, ${runtimeDir}): ${loaded.name}${overwritten ? " (replaced the in-memory version)" : ""}`);
-    return {
-        name: loaded.name,
-        commands: loaded.commands?.length ?? 0,
-        overwritten,
-    };
-}
-
 // Files with live state that CANNOT be reinstantiated out from under whoever already holds a
 // reference to them: the open connection pool (database/connection), the log transports holding
 // open file handles and the running event-loop histogram (utils/logging, utils/metrics), and the
@@ -266,10 +156,9 @@ const HOT_RELOAD_KEEP_ALIVE = [
  * Hot reloads the whole bot: unloads every cog (stops them, still running the current code in
  * memory), clears the require cache for ALL of `src/` - except `HOT_RELOAD_KEEP_ALIVE` above -
  * then re-registers both the core listeners (`registerCommandHandlers` - command/guard/prefix
- * routing) and the cogs, all freshly re-read from disk. Unlike `reloadCog`, which only clears ONE
- * cog's `index.ts`: this picks up a change in any file in the bot (a `commands/*.ts`, cog-loader.ts
- * itself, guards, prefix-args.ts) and also detects a brand-new cog (a folder created after boot) -
- * without restarting the process.
+ * routing) and the cogs of every root, all freshly re-read from disk. Picks up a change in any file
+ * in the bot (a `commands/*.ts`, cog-loader.ts itself, guards, prefix-args.ts) and also detects a
+ * brand-new cog (a folder created after boot) - without restarting the process.
  *
  * After clearing the cache, `registerCommandHandlers`/`loadCogs` are fetched via a dynamic
  * `require()` (not this file's static imports) on purpose: the static imports still point at the
@@ -279,7 +168,7 @@ const HOT_RELOAD_KEEP_ALIVE = [
  * instance that will do the next load (and the next unload, on the following reload) to avoid
  * leaking a listener.
  */
-export async function hotReloadBot(client: BotClient, cogsPath: string): Promise<CogLoadFailure[]> {
+export async function hotReloadBot(client: BotClient, roots: string[] = COG_ROOTS): Promise<CogLoadFailure[]> {
     for (const name of [...client.cogs.keys()]) {
         await unloadCog(client, name).catch((err) => {
             logger.warn(`Failed to unload cog "${name}" before full reload: ${err instanceof Error ? err.message : String(err)}`);
@@ -299,7 +188,7 @@ export async function hotReloadBot(client: BotClient, cogsPath: string): Promise
     commandHandler.registerCommandHandlers(client);
 
     const cogLoader = require("@/core/cog-loader") as typeof import("./cog-loader");
-    const { failures } = await cogLoader.loadCogs(client, cogsPath);
+    const { failures } = await cogLoader.loadCogs(client, roots);
     return failures;
 }
 
@@ -406,31 +295,38 @@ async function registerCog(client: BotClient, cog: Cog): Promise<void> {
     await cog.start?.(client);
 }
 
-/** Fresh `require` of `cogsPath/<cogName>/index` - no side effects on the client. */
-function requireCog(cogsPath: string, cogName: string): Cog {
-    const fullPath = join(cogsPath, cogName, "index");
-    clearRequireCache(fullPath);
-    const imported = require(fullPath);
-    return imported.default ?? imported;
-}
+/**
+ * Fresh `require` of `<dir>/index` - no side effects on the client. Returns `null` for a folder
+ * listed in `DISABLED_COG_DIRS`, checked BEFORE the require so a disabled cog never runs any code:
+ * the only place the folder name matters, since it's the only name that exists before the require.
+ */
+function requireCogFromDir(dir: string): Cog | null {
+    if (config.bot.disabledCogDirs.includes(basename(dir))) {
+        logger.info(`Cog "${basename(dir)}" skipped (DISABLED_COG_DIRS).`);
+        return null;
+    }
 
-function assertNoConflictsWithLoaded(client: BotClient, cog: Cog): void {
-    const conflicts = findConflictsWithLoaded(cog, client.cogs.values());
-    if (conflicts.length) throw new Error(`Cog "${cog.name}" refused - ${describeConflicts(conflicts)}`);
+    const indexPath = join(dir, "index");
+    clearRequireCache(indexPath);
+    const imported = require(indexPath);
+    const cog: Cog = imported.default ?? imported;
+
+    if (!cog || typeof cog.name !== "string" || !cog.name) {
+        throw new Error('The index did not export a valid Cog - it needs `export default defineCog({ name: "...", ... })`.');
+    }
+    return cog;
 }
 
 /**
  * Registers an already-required cog. Refuses it - before ANY side effect (migrations, commands,
- * listeners) - if one of its commands is owned by another loaded cog: the running one can't be
- * torn down from here (`!dcl run`, `reloadCog`), so the incoming one is the one that stays out.
+ * listeners) - if one of its commands is owned by another loaded cog.
  */
-async function activateCog(client: BotClient, cogsPath: string, cog: Cog): Promise<Cog> {
-    assertNoConflictsWithLoaded(client, cog);
+async function activateCog(client: BotClient, cog: Cog): Promise<void> {
+    const conflicts = findConflictsWithLoaded(cog, client.cogs.values());
+    if (conflicts.length) throw new Error(`Cog "${cog.name}" refused - ${describeConflicts(conflicts)}`);
 
-    cogOrigin.set(cog.name, cogsPath);
     await registerCog(client, cog);
     logger.info(`Loaded cog: ${cog.name}`);
-    return cog;
 }
 
 function clearRequireCache(fullPath: string): void {

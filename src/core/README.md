@@ -1,7 +1,8 @@
 # `src/core` — the command/view framework
 
 `src/core/*` is the bot's framework: how commands are declared and dispatched, and how stateful
-Discord messages ("Views") are rendered and driven. Modules (`src/modules/<name>/*`) never import
+Discord messages ("Views") are rendered and driven. Modules (`src/modules/<name>/*` for the
+native ones, `src/usermodules/<name>/*` for the rest) never import
 from `src/core/*` directly — everything the framework exposes goes through `@/define`, the one
 public gate (`src/define.ts`). This keeps the framework's internal wiring (`view-engine.ts`,
 `discord-transport.ts`, `command-dispatch.ts`, ...) free to change without touching every module.
@@ -12,11 +13,13 @@ this is the guided tour.
 
 ## 1. The ideal module
 
-A module lives at `src/modules/<name>/`, named after the module (e.g. `biomehunt`). Reference
-example: `src/modules/biomehunt/`.
+A module lives at `src/usermodules/<dir>/` (or `src/modules/<dir>/` for the framework's native
+ones, loaded first). The folder name only locates the `index` and matches `DISABLED_COG_DIRS` - the
+module's identity is its `defineCog({ name })`, unique across both roots. Reference example:
+`src/usermodules/biomehunt/`.
 
 ```
-src/modules/<name>/
+src/usermodules/<dir>/
     index.ts            # defineCog(...) - the module's entry point (see below)
     types.ts             # domain types + the module's error class (extends UserFacingError)
     settings.ts          # module tunables - how the module *behaves* (optional; see §7)
@@ -243,7 +246,7 @@ and resolves with its result once it's `done`. Only the top instance receives ev
 own `timeoutMs`/`onExpire` are ignored — the whole session has one idle clock and one expiry
 screen, both the root's (see "Timeouts and expiry" below). This is how a picker is built once and
 reused wherever a "pick one of these" screen is needed — see `forwardRemoveView` in
-`src/modules/biomehunt/views/forward-remove.view.ts`:
+`src/usermodules/biomehunt/views/forward-remove.view.ts`:
 
 ```ts
 // A reusable picker: resolves the picked item, or `undefined` on Back/Cancel.
@@ -419,11 +422,11 @@ render: (_s, kit) => ({ ...body, components: [navRow(kit, { canBack: true, skipL
 on: { ...navHandlers() },
 ```
 
-**Two steps, one reused**: `src/modules/biomehunt/flows/ez-setup.flow.ts` is the canonical
+**Two steps, one reused**: `src/usermodules/biomehunt/flows/ez-setup.flow.ts` is the canonical
 example — most of its own steps (`welcomeStep`, `categoriesStep`, ...) live right there, but its
 *last* step is `forwardListView(deps.forwards, "step")` from
-`src/modules/biomehunt/views/forward-list.view.ts` — the exact same View also runs **standalone**
-(`forwardListView(deps, "close")`) from `src/modules/biomehunt/flows/forward-config.flow.ts`'s own
+`src/usermodules/biomehunt/views/forward-list.view.ts` — the exact same View also runs **standalone**
+(`forwardListView(deps, "close")`) from `src/usermodules/biomehunt/flows/forward-config.flow.ts`'s own
 `bh-admin forward menu`. One `defineView`, two call sites, its `exit: "close" | "step"` parameter
 picking the right exit row/result type for each:
 
@@ -545,7 +548,7 @@ Three different places tune behavior — pick the right one:
   place to tune how every command/View behaves unless a module overrides it (`viewTimeoutMs`,
   `confirmTimeoutMs`, `modalTimeoutMs`, `flowStepTimeoutMs`, `prefixEphemeralTtlMs`). Change this
   when the change should apply to every module.
-- **`settings.ts`** (module root, e.g. `src/modules/biomehunt/settings.ts`) — how *this module*
+- **`settings.ts`** (module root, e.g. `src/usermodules/biomehunt/settings.ts`) — how *this module*
   behaves: timing, limits, thresholds specific to it (`rerollIdleMs`, `quotaReplyTimeoutMs`,
   worker tick rates). Changing a value here must never change a game/domain rule.
 - **`constants/`** (module folder) — what the domain *is*: fixed game/domain data that doesn't
@@ -634,5 +637,5 @@ Useful pieces:
   fake.modalResult = async () => ({ values: { hours: "12" }, ack: fake.modalSubmit(OWNER.id) });
   ```
 
-See `src/modules/biomehunt/views/quota-delete.view.test.ts` for a full example covering a typed
+See `src/usermodules/biomehunt/views/quota-delete.view.test.ts` for a full example covering a typed
 retry loop, idle expiry, another user's input being ignored, and a `start`-driven immediate `done`.

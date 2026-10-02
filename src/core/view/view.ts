@@ -104,6 +104,7 @@ export interface HandlerContext<S, R> {
 }
 
 /** A handler's return: a new state (replaces), or nothing (whatever was mutated stands). */
+// biome-ignore lint/suspicious/noConfusingVoidType: `void` on purpose - a handler that only mutates the state has no return statement.
 export type HandlerResult<S> = S | void | Promise<S | void>;
 
 /**

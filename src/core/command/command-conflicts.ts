@@ -50,7 +50,7 @@ export function partitionByConflicts<T extends CogCommandNames>(cogs: ReadonlyAr
 
 /**
  * Conflicts an incoming cog would cause against what's already loaded. A loaded cog with the same
- * name is ignored - it's the one being replaced (reload / `!dcl run` overwrite).
+ * name is ignored - duplicate cog names are the loader's check, not a command conflict.
  */
 export function findConflictsWithLoaded(incoming: CogCommandNames, loaded: Iterable<CogCommandNames>): CommandConflict[] {
     const others = [...loaded].filter((c) => c.name !== incoming.name);

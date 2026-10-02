@@ -4,7 +4,9 @@ const ALGORITHM = "aes-256-ctr";
 const IV_LENGTH = 16;
 
 function getKey(): Buffer {
-    return crypto.createHash("sha256").update(process.env.ENCRYPTION_KEY!).digest();
+    const key = process.env.ENCRYPTION_KEY;
+    if (!key) throw new Error("Missing required env var: ENCRYPTION_KEY");
+    return crypto.createHash("sha256").update(key).digest();
 }
 
 export function encrypt(text: string): string {

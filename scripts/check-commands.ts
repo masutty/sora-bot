@@ -8,39 +8,45 @@
  * sub-second sanity check to run before deploying instead of finding out at bot boot.
  *
  * Also fails on command-name conflicts between modules (see src/core/command/command-conflicts.ts) -
- * across EVERY module on disk, ignoring DISABLED_COGS: the build doesn't know which .env will run,
- * so two modules that can't coexist in the repo are already an error.
+ * and on duplicate cog names - across EVERY module on disk (src/modules and src/usermodules),
+ * ignoring DISABLED_COG_DIRS: the build doesn't know which .env will run, so two modules that can't
+ * coexist in the repo are already an error.
  *
  * `--verbose` / `-v` also lists which top-level commands each module declares.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { findCommandConflicts } from "@/core/command/command-conflicts";
 import { buildSlashJson } from "@/core/command/command-dispatch";
 import type { Cog } from "@/types";
 
-const modulesPath = join(__dirname, "../src/modules");
+const roots = ["modules", "usermodules"].map((d) => join(__dirname, "../src", d));
 const verbose = process.argv.includes("--verbose") || process.argv.includes("-v");
 let ok = true;
 const cogs: Cog[] = [];
 
-for (const entry of readdirSync(modulesPath)) {
-    const fullPath = join(modulesPath, entry);
-    if (!statSync(fullPath).isDirectory()) continue;
+for (const modulesPath of roots) {
+    if (!existsSync(modulesPath)) continue;
 
-    try {
-        const imported = require(join(fullPath, "index"));
-        const cog: Cog = imported.default ?? imported;
-        cogs.push(cog);
+    for (const entry of readdirSync(modulesPath)) {
+        const fullPath = join(modulesPath, entry);
+        if (!statSync(fullPath).isDirectory()) continue;
 
-        for (const cmd of cog.commands ?? []) {
-            // The exact body registerSlashCommands sends - validates what really gets registered.
-            buildSlashJson(cmd);
+        try {
+            const imported = require(join(fullPath, "index"));
+            const cog: Cog = imported.default ?? imported;
+            if (cogs.some((c) => c.name === cog.name)) throw new Error(`duplicate cog name "${cog.name}"`);
+            cogs.push(cog);
+
+            for (const cmd of cog.commands ?? []) {
+                // The exact body registerSlashCommands sends - validates what really gets registered.
+                buildSlashJson(cmd);
+            }
+        } catch (err) {
+            ok = false;
+            console.error(`❌ ${fullPath}: ${err instanceof Error ? err.message : String(err)}`);
         }
-    } catch (err) {
-        ok = false;
-        console.error(`❌ ${entry}: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 

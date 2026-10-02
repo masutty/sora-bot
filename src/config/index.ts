@@ -40,10 +40,11 @@ export const config = {
                 .map((id) => id.trim())
                 .filter(Boolean) ?? [],
 
-        // Folder names under src/modules (e.g. "zabbix,autobloqueador") - these cogs are skipped
-        // at boot, never even imported. Lets you disable a module without touching its code/config.
-        disabledCogs:
-            process.env.DISABLED_COGS?.split(",")
+        // FOLDER names (not the cog's `name`) under src/modules or src/usermodules (e.g. "biomehunt") -
+        // these cogs are skipped at boot, never even imported. Lets you disable a module without
+        // touching its code/config.
+        disabledCogDirs:
+            process.env.DISABLED_COG_DIRS?.split(",")
                 .map((name) => name.trim())
                 .filter(Boolean) ?? [],
 
