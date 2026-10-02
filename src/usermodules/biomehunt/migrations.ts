@@ -336,4 +336,131 @@ ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET NOT NULL;
  */
 UPDATE bh_guild_flags SET enabled = FALSE WHERE flag_name = 'AUTO_DELETE_ENABLED';
 
+/* ───────────────────────────────────────────── */
+/* The Network                                  */
+/* ───────────────────────────────────────────── */
+
+/*
+ * One row per guild that ever touched the Network. status: none | pending | member. The row
+ * outlives a leave, removal or rejection (status back to 'none') so a rejoin starts with the old
+ * config pre-filled. forced = put in by the bot owner without the eligibility checklist.
+ */
+CREATE TABLE IF NOT EXISTS bh_network_guilds (
+    guild_id           VARCHAR(20) PRIMARY KEY REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    status             VARCHAR(10) NOT NULL DEFAULT 'none',
+    forced             BOOLEAN NOT NULL DEFAULT FALSE,
+    network_channel_id VARCHAR(20),
+    staff_channel_id   VARCHAR(20),
+    staff_role_id      VARCHAR(20),
+    announce_role_id   VARCHAR(20),
+    invite_url         TEXT,
+    requested_at       TIMESTAMPTZ,
+    approved_at        TIMESTAMPTZ,
+    decided_by         VARCHAR(20),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS bh_network_guilds_status ON bh_network_guilds(status);
+
+/* The role a Member Server pings for each Network biome on its Mirrors - no row = no ping. */
+CREATE TABLE IF NOT EXISTS bh_network_pings (
+    guild_id VARCHAR(20) NOT NULL REFERENCES bh_network_guilds(guild_id) ON DELETE CASCADE,
+    biome    VARCHAR(20) NOT NULL,
+    role_id  VARCHAR(20) NOT NULL,
+    PRIMARY KEY (guild_id, biome)
+);
+
+/* Network Ban - bot owner only, Network-wide. No FK: a banned guild may have no BiomeHunt data at all. */
+CREATE TABLE IF NOT EXISTS bh_network_bans (
+    kind       VARCHAR(5) NOT NULL,     /* guild | user */
+    target_id  VARCHAR(20) NOT NULL,
+    banned_by  VARCHAR(20) NOT NULL,
+    reason     TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (kind, target_id)
+);
+
+/* Network Exclusion - a Member Server admin stops one member's finds from being published. */
+CREATE TABLE IF NOT EXISTS bh_network_exclusions (
+    guild_id        VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    discord_user_id VARCHAR(20) NOT NULL,
+    excluded_by     VARCHAR(20) NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (guild_id, discord_user_id)
+);
+
+/*
+ * One row per Network Post. status: pending | publishing | published | discarded. origin_* and
+ * invite_url are a render snapshot taken at find time - every Mirror (and its single edit at vote
+ * close) is built from this row, never re-derived. No FK on origin_guild_id: the post outlives the
+ * guild's BiomeHunt data (the alert history points at it).
+ */
+CREATE TABLE IF NOT EXISTS bh_network_posts (
+    id                TEXT PRIMARY KEY,
+    origin_guild_id   VARCHAR(20) NOT NULL,
+    origin_name       TEXT NOT NULL,
+    origin_icon_url   TEXT,
+    invite_url        TEXT,
+    event_id          INTEGER REFERENCES bh_activity_events(id) ON DELETE SET NULL,
+    finder_discord_id VARCHAR(20) NOT NULL,
+    biome             VARCHAR(20) NOT NULL,
+    server_link       TEXT NOT NULL,
+    server_code       VARCHAR(128) NOT NULL,
+    status            VARCHAR(12) NOT NULL DEFAULT 'pending',
+    publish_at        TIMESTAMPTZ NOT NULL,
+    published_at      TIMESTAMPTZ,
+    vote_status       VARCHAR(12) NOT NULL DEFAULT 'open',   /* open | real | fake | inconclusive */
+    vote_closes_at    TIMESTAMPTZ,
+    vote_closed_by    VARCHAR(20),                           /* bot owner's id when closed by hand */
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS bh_network_posts_pending ON bh_network_posts(publish_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS bh_network_posts_open_votes ON bh_network_posts(vote_closes_at) WHERE status = 'published' AND vote_status = 'open';
+CREATE INDEX IF NOT EXISTS bh_network_posts_recent ON bh_network_posts(biome, created_at DESC);
+
+/* The message a Network Post created in one Member Server - needed for the single edit at vote close. */
+CREATE TABLE IF NOT EXISTS bh_network_mirrors (
+    post_id    TEXT NOT NULL REFERENCES bh_network_posts(id) ON DELETE CASCADE,
+    guild_id   VARCHAR(20) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    message_id VARCHAR(20) NOT NULL,
+    PRIMARY KEY (post_id, guild_id)
+);
+
+/* One ballot per person per Network Post (the PK) - guild_id is the server it was clicked in, which is the server it counts for. */
+CREATE TABLE IF NOT EXISTS bh_network_ballots (
+    post_id         TEXT NOT NULL REFERENCES bh_network_posts(id) ON DELETE CASCADE,
+    discord_user_id VARCHAR(20) NOT NULL,
+    guild_id        VARCHAR(20) NOT NULL,
+    choice          VARCHAR(10) NOT NULL,   /* real | fake */
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (post_id, discord_user_id)
+);
+
+/* Alerts for the bot owner (fake_verdict | multi_macro | low_activity) - the history /bh-owner network lookup reads. */
+CREATE TABLE IF NOT EXISTS bh_network_alerts (
+    id              BIGSERIAL PRIMARY KEY,
+    kind            VARCHAR(20) NOT NULL,
+    guild_id        VARCHAR(20),
+    discord_user_id VARCHAR(20),
+    post_id         TEXT,
+    details         TEXT NOT NULL,
+    notified        BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS bh_network_alerts_guild ON bh_network_alerts(guild_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS bh_network_alerts_user ON bh_network_alerts(discord_user_id, created_at DESC);
+
+/* A "/bh-owner simulate-biome network_relays:true" test post - shown as a test, no ping, no vote. */
+ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS simulated BOOLEAN NOT NULL DEFAULT FALSE;
+/* The only Member Servers a test post goes to (the ids given in network_relays) - NULL on real posts, which go to every member. */
+ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS relay_guild_ids TEXT[];
+
+/* The daily activity check's streak (Phase 4): consecutive daily checks below the minimum. */
+ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS low_activity_checks SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS last_activity_check DATE;
+
 `;

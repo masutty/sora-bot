@@ -24,7 +24,9 @@ import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.rep
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
 import { rerollFlower } from "../services/flower.service";
 import { forwardBiome } from "../services/forward.service";
+import { parseRelayGuildIds } from "../services/network-publish.service";
 import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
+import { addNetworkOwnerGroup, relaySimulationToNetwork, runNetworkOwnerSubcommand, runSimulateNetworkMirror } from "./bh-owner-network";
 
 const logger = new Logger("biomehunt.commands.bh-owner");
 
@@ -48,69 +50,89 @@ export default defineCommand({
     botOwnerOnly: true,
     showOnHelp: false,
 
-    options: new SlashCommandBuilder()
-        .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."))
-        .addSubcommand((s) =>
-            s
-                .setName("stale-cleanup")
-                .setDescription("Deletes a guild's BiomeHunt data - all stale guilds if none is given.")
-                .addStringOption((o) =>
-                    o.setName("guild_id").setDescription("Specific guild ID to clean up (omit for all stale guilds)").setRequired(false),
-                ),
-        )
-        .addSubcommand((s) =>
-            s
-                .setName("recalculate-user")
-                .setDescription("Backfills Seeds/XP for a user's confirmed biome finds that don't have a reward yet.")
-                .addStringOption((o) => o.setName("guild_id").setDescription("Guild ID the user's profile is in").setRequired(true))
-                .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
-                .addStringOption((o) => o.setName("after_date").setDescription("Only events on/after this date (YYYY-MM-DD)"))
-                .addStringOption((o) =>
-                    o
-                        .setName("biome")
-                        .setDescription("Only this specific biome")
-                        .addChoices(...BIOME_ONLY_CHOICES),
-                )
-                .addStringOption((o) =>
-                    o
-                        .setName("category")
-                        .setDescription("Only this biome category (ignored if biome is given)")
-                        .addChoices(...BIOME_CATEGORY_CHOICES),
-                ),
-        )
-        .addSubcommand((s) =>
-            s
-                .setName("reroll-flower")
-                .setDescription("Rerolls a user's Flower - the only admin-side way to change one once set.")
-                .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
-                .addStringOption((o) =>
-                    o
-                        .setName("guild_id")
-                        .setDescription("Guild ID - only needed if the user has a profile in more than one guild")
-                        .setRequired(false),
-                ),
-        )
-        // See `runSimulateBiome`'s TSDoc: a dry run (the default) pings nobody, opens no vote and never
-        // touches the user's stats; `dry_run:false` inserts a REAL event that counts and can grant real rewards.
-        .addSubcommand((s) =>
-            s
-                .setName("simulate-biome")
-                .setDescription("TESTING: fakes a biome find to test the forward (and, for rare biomes, the community vote).")
-                .addStringOption((o) =>
-                    o
-                        .setName("biome")
-                        .setDescription("Biome to simulate (default Glitched)")
-                        .addChoices(...BIOME_ONLY_CHOICES),
-                )
-                .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)"))
-                .addBooleanOption((o) =>
-                    o.setName("dry_run").setDescription("No pings, no vote, no event/seeds/XP/badges - nothing changes (default true)"),
-                ),
-        ),
+    options: addNetworkOwnerGroup(
+        new SlashCommandBuilder()
+            .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."))
+            .addSubcommand((s) =>
+                s
+                    .setName("stale-cleanup")
+                    .setDescription("Deletes a guild's BiomeHunt data - all stale guilds if none is given.")
+                    .addStringOption((o) =>
+                        o
+                            .setName("guild_id")
+                            .setDescription("Specific guild ID to clean up (omit for all stale guilds)")
+                            .setRequired(false),
+                    ),
+            )
+            .addSubcommand((s) =>
+                s
+                    .setName("recalculate-user")
+                    .setDescription("Backfills Seeds/XP for a user's confirmed biome finds that don't have a reward yet.")
+                    .addStringOption((o) => o.setName("guild_id").setDescription("Guild ID the user's profile is in").setRequired(true))
+                    .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
+                    .addStringOption((o) => o.setName("after_date").setDescription("Only events on/after this date (YYYY-MM-DD)"))
+                    .addStringOption((o) =>
+                        o
+                            .setName("biome")
+                            .setDescription("Only this specific biome")
+                            .addChoices(...BIOME_ONLY_CHOICES),
+                    )
+                    .addStringOption((o) =>
+                        o
+                            .setName("category")
+                            .setDescription("Only this biome category (ignored if biome is given)")
+                            .addChoices(...BIOME_CATEGORY_CHOICES),
+                    ),
+            )
+            .addSubcommand((s) =>
+                s
+                    .setName("reroll-flower")
+                    .setDescription("Rerolls a user's Flower - the only admin-side way to change one once set.")
+                    .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
+                    .addStringOption((o) =>
+                        o
+                            .setName("guild_id")
+                            .setDescription("Guild ID - only needed if the user has a profile in more than one guild")
+                            .setRequired(false),
+                    ),
+            )
+            // See `runSimulateBiome`'s TSDoc: a dry run (the default) pings nobody, opens no vote and never
+            // touches the user's stats; `dry_run:false` inserts a REAL event that counts and can grant real rewards.
+            .addSubcommand((s) =>
+                s
+                    .setName("simulate-biome")
+                    .setDescription("TESTING: fakes a biome find to test the forward (and, for rare biomes, the community vote).")
+                    .addStringOption((o) =>
+                        o
+                            .setName("biome")
+                            .setDescription("Biome to simulate (default Glitched)")
+                            .addChoices(...BIOME_ONLY_CHOICES),
+                    )
+                    .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)"))
+                    .addBooleanOption((o) =>
+                        o.setName("dry_run").setDescription("No pings, no vote, no event/seeds/XP/badges - nothing changes (default true)"),
+                    )
+                    .addBooleanOption((o) =>
+                        o
+                            .setName("network")
+                            .setDescription("Only send a simulated Network Mirror to this server's Network channel (no ping, no vote)"),
+                    )
+                    // See `scheduleSimulatedNetworkPost`: rare biome + this server in the Network → a real fan-out to ONLY these servers, as a test.
+                    .addStringOption((o) =>
+                        o
+                            .setName("network_relays")
+                            .setDescription("TEST: Network guild ids (comma-separated) that get this rare find - only those, no ping/vote"),
+                    ),
+            ),
+    ),
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
         await ctx.defer({ ephemeral: true });
+        if (ctx.args.getSubcommandGroup() === "network") {
+            await runNetworkOwnerSubcommand(ctx);
+            return;
+        }
         const reply = (payload: FormattedReply) => ctx.reply(payload);
 
         if (sub === "stale") {
@@ -343,6 +365,13 @@ async function runSimulateBiome(ctx: CommandContext): Promise<void> {
     const guild = ctx.guild;
 
     const biome = (ctx.args.getString("biome") ?? "GLITCHED").toUpperCase();
+    if (ctx.args.getBoolean("network")) {
+        await runSimulateNetworkMirror(ctx, guild, biome);
+        return;
+    }
+    // Parsed before anything runs, so a typo'd id fails the command instead of half-running it.
+    const rawRelays = ctx.args.getString("network_relays");
+    const relayGuildIds = rawRelays ? parseRelayGuildIds(rawRelays) : null;
     const targetUser = (await ctx.args.getUser("user")) ?? ctx.user;
     const dryRun = ctx.args.getBoolean("dry_run") ?? true;
 
@@ -365,12 +394,13 @@ async function runSimulateBiome(ctx: CommandContext): Promise<void> {
             : `https://discord.com/channels/${guild.id}/${ctx.raw.interaction.channelId}`;
 
     await forwardBiome(ctx.client, guild.id, userId, parsed, eventId, jumpLink);
+    const relayNote = relayGuildIds ? await relaySimulationToNetwork(ctx, guild, targetUser.id, biome, eventId, now, relayGuildIds) : "";
 
     logger.info(`Simulated ${biome} for user ${userId} (guild ${guild.id}), ${dryRun ? "dry run" : `event ${eventId}`}`);
     const mode = dryRun ? "Dry run, no event was inserted" : `Event ID: \`#${eventId}\`.`;
 
     await ctx.reply({
-        ...EmbedFormatter.success(`Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> - ${destinations}.\n${mode}`),
+        ...EmbedFormatter.success(`Simulated ${formatBiomeName(biome)} for <@${targetUser.id}> - ${destinations}.\n${mode}${relayNote}`),
         allowedMentions: NO_PINGS,
     });
 }

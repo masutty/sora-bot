@@ -4,7 +4,7 @@ import { NO_PINGS } from "@/utils/format";
 import { buildForwardInfoContainer, FORWARD_INFO_PREFIX, parseForwardInfoParts } from "../views/forward-post.view";
 
 /**
- * `biomehunt:forward-info:<0|1 delayed>:<0|1 simulated>` - the "?" button on a forward with a
+ * `biomehunt:forward-info:<0|1 delayed>:<0|1 simulated>[:1 network]` - the "?" button on a forward (or Network Mirror) with a
  * type (delayed and/or simulated). Both flags are encoded in the id, so it needs no DB and keeps
  * working on old messages.
  */

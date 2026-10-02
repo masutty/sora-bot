@@ -5,6 +5,7 @@ import {
     buildForwardContainer,
     buildForwardInfoContainer,
     FORWARD_INFO_PREFIX,
+    forwardBadgeEmojis,
     forwardInfoCustomId,
     forwardMentions,
     parseForwardInfoParts,
@@ -203,4 +204,16 @@ test("forwardMentions: only the role may ping; a dry run pings nobody", () => {
     expect(forwardMentions("role-1", false)).toEqual({ parse: [], roles: ["role-1"] });
     expect(forwardMentions("role-1", true)).toEqual({ parse: [], roles: [] });
     expect(forwardMentions(null, false)).toEqual({ parse: [], roles: [] });
+});
+
+test("the Network badge rides on a third flag - old two-flag ids still parse", () => {
+    expect(forwardInfoCustomId({ network: true })).toBe(`${FORWARD_INFO_PREFIX}:0:0:1`);
+    expect(forwardInfoCustomId({ delayed: true })).toBe(`${FORWARD_INFO_PREFIX}:1:0`);
+    expect(parseForwardInfoParts(["0", "1", "1"])).toEqual({ delayed: false, simulated: true, network: true });
+    expect(parseForwardInfoParts(["1", "0"])).toEqual({ delayed: true, simulated: false });
+    expect(parseForwardInfoParts(["0", "0", "x"])).toBeNull();
+    expect(forwardBadgeEmojis({ network: true, simulated: true })).toBe("🧪 🌐");
+
+    const text = textOf(buildForwardInfoContainer({ network: true }).toJSON() as Json);
+    expect(text).toContain("- `🌐 Network`\n> ");
 });

@@ -62,24 +62,32 @@ export interface ForwardBadges {
     delayed?: boolean;
     /** A `/bh-owner simulate-biome` dry run - also gets a "simulated" banner on top. */
     simulated?: boolean;
+    /** A Network Mirror - relayed from another server in the Network. */
+    network?: boolean;
 }
 
 const DELAYED_EMOJI = "⏳";
 const SIMULATED_EMOJI = "🧪";
+const NETWORK_EMOJI = "🌐";
 
 export const FORWARD_INFO_PREFIX = "biomehunt:forward-info";
 
-/** `biomehunt:forward-info:<0|1 delayed>:<0|1 simulated>` - the "?" reply needs nothing else, no DB lookup. */
+/**
+ * `biomehunt:forward-info:<0|1 delayed>:<0|1 simulated>[:1 network]` - the "?" reply needs nothing
+ * else, no DB lookup. The network flag is only appended when set, so every older id stays the same.
+ */
 export function forwardInfoCustomId(badges: ForwardBadges): string {
-    return `${FORWARD_INFO_PREFIX}:${badges.delayed ? "1" : "0"}:${badges.simulated ? "1" : "0"}`;
+    const base = `${FORWARD_INFO_PREFIX}:${badges.delayed ? "1" : "0"}:${badges.simulated ? "1" : "0"}`;
+    return badges.network ? `${base}:1` : base;
 }
 
 /** Inverse of `forwardInfoCustomId` (the parts after the prefix) - `null` if malformed. */
 export function parseForwardInfoParts(parts: string[]): ForwardBadges | null {
-    const [delayed, simulated] = parts;
+    const [delayed, simulated, network] = parts;
     const isFlag = (v: string | undefined) => v === "0" || v === "1";
-    if (!isFlag(delayed) || !isFlag(simulated)) return null;
-    return { delayed: delayed === "1", simulated: simulated === "1" };
+    if (!isFlag(delayed) || !isFlag(simulated) || (network !== undefined && !isFlag(network))) return null;
+    const badges: ForwardBadges = { delayed: delayed === "1", simulated: simulated === "1" };
+    return network === "1" ? { ...badges, network: true } : badges;
 }
 
 /** Each forward type the "?" explains - deliberately vague: never how long the delay is, or that other channels were pinged first. */
@@ -90,6 +98,12 @@ const FORWARD_TYPE_INFO: Array<{ key: keyof ForwardBadges; emoji: string; name: 
         emoji: SIMULATED_EMOJI,
         name: "Simulated",
         description: "Not real, a bot developer is probably testing something!",
+    },
+    {
+        key: "network",
+        emoji: NETWORK_EMOJI,
+        name: "Network",
+        description: "Found in another server of the Network and relayed here.",
     },
 ];
 
@@ -106,12 +120,19 @@ export function buildForwardInfoContainer(badges: ForwardBadges): ContainerBuild
 }
 
 function hasBadges(badges: ForwardBadges | undefined): badges is ForwardBadges {
-    return Boolean(badges?.delayed || badges?.simulated);
+    return Boolean(badges?.delayed || badges?.simulated || badges?.network);
 }
 
 /** Just the emojis, like the profile's badges - the "?" button explains them. */
-function badgeEmojis(badges: ForwardBadges): string {
-    return [badges.delayed ? DELAYED_EMOJI : null, badges.simulated ? SIMULATED_EMOJI : null].filter(Boolean).join(" ");
+export function forwardBadgeEmojis(badges: ForwardBadges): string {
+    return [badges.delayed ? DELAYED_EMOJI : null, badges.simulated ? SIMULATED_EMOJI : null, badges.network ? NETWORK_EMOJI : null]
+        .filter(Boolean)
+        .join(" ");
+}
+
+/** The "?" button that explains `badges` (routed by `forward-info.component.ts`). */
+export function forwardInfoButton(badges: ForwardBadges): ButtonBuilder {
+    return new ButtonBuilder().setCustomId(forwardInfoCustomId(badges)).setLabel("?").setStyle(ButtonStyle.Secondary);
 }
 
 function buildVoteButtonsRow(voteId: string): ActionRowBuilder<ButtonBuilder> {
@@ -129,8 +150,7 @@ function buildLinkButtonsRow(
     const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(jumpLink).setLabel("Jump to Message")];
     if (serverLink)
         buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(serverLink).setLabel("Join Private Server").setEmoji("🔗"));
-    if (hasBadges(badges))
-        buttons.push(new ButtonBuilder().setCustomId(forwardInfoCustomId(badges)).setLabel("?").setStyle(ButtonStyle.Secondary));
+    if (hasBadges(badges)) buttons.push(forwardInfoButton(badges));
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
@@ -246,7 +266,7 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
 
     container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
     // Badges sit right on top of the buttons (no separator in between), so the "?" reads as theirs.
-    if (hasBadges(badges)) container.addTextDisplayComponents((td) => td.setContent(badgeEmojis(badges)));
+    if (hasBadges(badges)) container.addTextDisplayComponents((td) => td.setContent(forwardBadgeEmojis(badges)));
     container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink, badges));
 
     return container;

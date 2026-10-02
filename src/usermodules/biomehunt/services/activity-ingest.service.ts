@@ -9,6 +9,7 @@ import { getUserById, lookupChannel, touchLastActivity } from "../repository/use
 import { transitionUser } from "../workers/status.worker";
 import { grantBiomeReward } from "./biome-reward.service";
 import { checkAndForward } from "./forward.service";
+import { scheduleNetworkPostSafely } from "./network-publish.service";
 
 const logger = new Logger("biomehunt.services.activity-ingest");
 
@@ -44,6 +45,18 @@ export async function processIncomingMessage(message: Message): Promise<void> {
 
     logger.verbose(`checkAndForward: ${entry.guildId} ${user.discord_user_id} :: Parsed -> ${JSON.stringify(parsed)}`);
     await checkAndForward(message, entry.guildId, entry.userId, parsed, eventId);
+    if (parsed.eventType === "started" && parsed.biome && message.guild) {
+        await scheduleNetworkPostSafely(message.client, {
+            originGuildId: entry.guildId,
+            originName: message.guild.name,
+            originIconUrl: message.guild.iconURL(),
+            finderDiscordId: user.discord_user_id,
+            eventId,
+            biome: parsed.biome,
+            serverLink: parsed.serverLink,
+            now,
+        });
+    }
 
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
     const deltaSeconds = user.last_activity_at ? (now.getTime() - user.last_activity_at.getTime()) / 1000 : Number.POSITIVE_INFINITY;

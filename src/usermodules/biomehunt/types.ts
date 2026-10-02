@@ -228,3 +228,98 @@ export interface ParsedEvent {
     eventTimestamp: Date | null;
     serverLink: string | null;
 }
+
+/**
+ * A guild's place in the Network (`bh_network_guilds.status`). The row outlives a leave, removal
+ * or rejection (back to `none`) so a rejoin starts with the old config pre-filled.
+ */
+export enum NetworkStatus {
+    NONE = "none",
+    PENDING = "pending",
+    MEMBER = "member",
+}
+
+export interface NetworkGuildRow {
+    guild_id: string;
+    status: NetworkStatus;
+    /** Put in by the bot owner without the checklist - always receives, exempt from the activity alert, publishes only if eligible. */
+    forced: boolean;
+    network_channel_id: string | null;
+    staff_channel_id: string | null;
+    staff_role_id: string | null;
+    announce_role_id: string | null;
+    invite_url: string | null;
+    requested_at: Date | null;
+    approved_at: Date | null;
+    /** Discord id of the bot owner who last approved, rejected, removed or forced it. */
+    decided_by: string | null;
+    /** Consecutive daily activity checks below the minimum (Phase 4) - the owner is alerted when it reaches 2. */
+    low_activity_checks: number;
+    last_activity_check: Date | null;
+    created_at: Date;
+    updated_at: Date;
+}
+
+export type NetworkBanKind = "guild" | "user";
+
+export interface NetworkPingRow {
+    guild_id: string;
+    biome: string;
+    role_id: string;
+}
+
+export type NetworkPostStatus = "pending" | "publishing" | "published" | "discarded";
+export type NetworkVoteStatus = "open" | "real" | "fake" | "inconclusive";
+
+/** A Network Post (`bh_network_posts`) - see the migration for the render-snapshot rule. */
+export interface NetworkPostRow {
+    id: string;
+    origin_guild_id: string;
+    origin_name: string;
+    origin_icon_url: string | null;
+    invite_url: string | null;
+    event_id: number | null;
+    finder_discord_id: string;
+    biome: string;
+    server_link: string;
+    server_code: string;
+    /** An owner's test relay (`simulate-biome network_relays:true`) - marked as a test, never pings, never votes. */
+    simulated: boolean;
+    /** A test post's only destinations (`network_relays`) - `null` on real posts, which go to every member. */
+    relay_guild_ids: string[] | null;
+    status: NetworkPostStatus;
+    publish_at: Date;
+    published_at: Date | null;
+    vote_status: NetworkVoteStatus;
+    vote_closes_at: Date | null;
+    vote_closed_by: string | null;
+    created_at: Date;
+}
+
+export interface NetworkMirrorRow {
+    post_id: string;
+    guild_id: string;
+    channel_id: string;
+    message_id: string;
+}
+
+export interface NetworkBallotRow {
+    post_id: string;
+    discord_user_id: string;
+    guild_id: string;
+    choice: VoteChoice;
+    created_at: Date;
+}
+
+export type NetworkAlertKind = "fake_verdict" | "multi_macro" | "low_activity";
+
+export interface NetworkAlertRow {
+    id: number;
+    kind: NetworkAlertKind;
+    guild_id: string | null;
+    discord_user_id: string | null;
+    post_id: string | null;
+    details: string;
+    notified: boolean;
+    created_at: Date;
+}
