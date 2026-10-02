@@ -52,7 +52,7 @@ test("buildAnnouncementContainer: just the notice - no title, an informative blu
     expect(card.accent_color).toBe(0x0ea5e9);
     expect(card.components[0].content).toBe("Maintenance tonight at 22h.");
     expect(JSON.stringify(card)).not.toContain("BiomeHunt Network announcement");
-    expect(card.components.at(-1)?.content).toContain("-# 📢");
+    expect(card.components.at(-1)?.content).toBe("-# 📢 Network announcement · from: Network maintainers");
 
     const pinged = buildAnnouncementContainer("Hi", "ann").toJSON() as { components: Array<{ content?: string }> };
     expect(pinged.components[0].content).toBe("<@&ann>");

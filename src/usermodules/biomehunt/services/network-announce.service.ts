@@ -43,7 +43,7 @@ export function buildAnnouncementContainer(text: string, roleId: string | null =
     if (roleId) container.addTextDisplayComponents((td) => td.setContent(`<@&${roleId}>`));
     container.addTextDisplayComponents((td) => td.setContent(text));
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents((td) => td.setContent("-# 📢 Network announcement · from the bot owner"));
+    container.addTextDisplayComponents((td) => td.setContent("-# 📢 Network announcement · from: Network maintainers"));
     return container;
 }
 
