@@ -286,7 +286,7 @@ const SIMULATED_SERVER_LINK = "https://www.roblox.com/share?code=SIMULATED&type=
 export async function runSimulateNetworkMirror(ctx: CommandContext, guild: Guild, biome: string): Promise<void> {
     if (!NETWORK_BIOMES.includes(biome)) throw new BiomeHuntError(`${formatBiomeName(biome)} is not a Network biome.`);
     const row = await getNetworkGuild(guild.id);
-    if (!row?.network_channel_id) throw new BiomeHuntError("This server has no Network channel - set one with `/bh-network config`.");
+    if (!row?.network_channel_id) throw new BiomeHuntError("This server has no Network channel - set one with `/network config`.");
     const channel = await ctx.client.channels.fetch(row.network_channel_id).catch(() => null);
     if (!channel || channel.isDMBased() || !channel.isTextBased())
         throw new BiomeHuntError("I can't post in this server's Network channel.");

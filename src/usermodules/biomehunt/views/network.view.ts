@@ -88,7 +88,7 @@ export interface StatusParams {
     pings: NetworkPingRow[];
 }
 
-/** `/bh-network status`: where the guild stands, what it still lacks, its config and its card. */
+/** `/network status`: where the guild stands, what it still lacks, its config and its card. */
 export function buildStatusContainer(p: StatusParams): ContainerBuilder {
     const status = p.row ? STATUS_LABEL[p.row.status] : STATUS_LABEL[NetworkStatus.NONE];
     const forced = p.row?.forced && p.row.status === NetworkStatus.MEMBER ? " (forced by the bot owner)" : "";

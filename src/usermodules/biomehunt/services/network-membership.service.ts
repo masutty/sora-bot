@@ -107,14 +107,14 @@ export async function ensureNetworkRow(guildId: string, deps: MembershipDeps): P
 }
 
 /**
- * `/bh-network join`, before the config flow: refuses a banned guild or one already in (or
+ * `/network join`, before the config flow: refuses a banned guild or one already in (or
  * waiting), then returns the gaps the config flow can't fix (forwards, activity). Empty = open the flow.
  */
 export async function precheckJoin(guildId: string, deps: MembershipDeps): Promise<EligibilityGap[]> {
     await requireNotBanned(guildId, deps);
     const row = await ensureNetworkRow(guildId, deps);
     if (row.status === NetworkStatus.MEMBER) {
-        throw new BiomeHuntError("This server is already in the Network. Use `/bh-network config` to change its settings.");
+        throw new BiomeHuntError("This server is already in the Network. Use `/network config` to change its settings.");
     }
     if (row.status === NetworkStatus.PENDING) throw new BiomeHuntError("This server's join request is already waiting for approval.");
     const report = await deps.loadEligibility(guildId);
@@ -166,7 +166,7 @@ export async function decideJoinRequest(guildId: string, ownerId: string, approv
     return banned ? "banned" : "ok";
 }
 
-/** `/bh-network leave` - immediate. `false` if it wasn't in (or waiting). */
+/** `/network leave` - immediate. `false` if it wasn't in (or waiting). */
 export async function leaveNetwork(guildId: string, deps: MembershipDeps): Promise<boolean> {
     const row = await deps.transitionNetworkStatus(guildId, [NetworkStatus.PENDING, NetworkStatus.MEMBER], NetworkStatus.NONE, {
         forced: false,

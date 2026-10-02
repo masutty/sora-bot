@@ -18,7 +18,7 @@ import { BiomeHuntError, NetworkStatus } from "../types";
 import { buildEligibilityContainer, buildStatusContainer, v2 } from "../views/network.view";
 
 export default defineCommand({
-    name: "bh-network",
+    name: "network",
     description: "Join and manage this server's place in the Network.",
     category: CommandCategory.ADMIN,
     showOnHelp: true,

@@ -47,7 +47,7 @@ const currentRole = (id: string | null | undefined): string[] => (id ? [id] : []
 
 function stepContainer(title: string, description: string): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x8b5cf6);
-    container.addTextDisplayComponents((td) => td.setContent(`## bh-network: ${title}`));
+    container.addTextDisplayComponents((td) => td.setContent(`## Network setup: ${title}`));
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     container.addTextDisplayComponents((td) => td.setContent(description));
     return container;
@@ -248,7 +248,7 @@ function inviteStep(deps: NetworkConfigDeps) {
 
 /**
  * The Network config, step by step: Network channel → Staff → Pings → Announcements → Invite. Used
- * by `/bh-network join` (whose `onFinish` submits the join request) and `/bh-network config`. The
+ * by `/network join` (whose `onFinish` submits the join request) and `/network config`. The
  * guild's Network row must already exist (`ensureNetworkRow`) - every pick is written right away.
  */
 export function networkConfigFlow(deps: NetworkConfigDeps, guildId: string, onFinish: (guildId: string) => Promise<ViewPayload>) {
