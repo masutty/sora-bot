@@ -242,3 +242,13 @@ test("closeNetworkVote: each Mirror keeps the ping role it was sent with, and th
     expect(JSON.stringify(byMessage.get("m2")?.components)).not.toContain("<@&");
     expect(byMessage.get("m1")?.allowedMentions).toEqual({ parse: [] });
 });
+
+test("closeNetworkVote: the origin's own Mirror keeps its Home badge after the close", async () => {
+    const fake = createFakeDeps();
+    const mirrors = await fake.deps.getNetworkMirrors("p1");
+    mirrors.push({ post_id: "p1", guild_id: "gA", channel_id: "net-gA", message_id: "m3", role_id: null });
+    await closeNetworkVote("p1", "owner", fake.deps);
+    const byMessage = new Map(fake.calls.edits.map((e) => [e.mirror.message_id, JSON.stringify(e.payload.components)]));
+    expect(byMessage.get("m3")).toContain("biomehunt:forward-info:0:0:1:1");
+    expect(byMessage.get("m1")).toContain('biomehunt:forward-info:0:0:1"');
+});

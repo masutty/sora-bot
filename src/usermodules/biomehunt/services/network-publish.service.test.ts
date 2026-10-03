@@ -234,15 +234,15 @@ test("scheduleNetworkPost: outside the window the same user is a new find", asyn
     expect((await scheduleNetworkPost(other, deps)).kind).toBe("scheduled");
 });
 
-test("publishDuePosts: sends a Mirror to every other member (not the origin), with each server's ping, and opens the vote", async () => {
+test("publishDuePosts: sends a Mirror to every member (the origin too), with each server's ping, and opens the vote", async () => {
     const { deps, posts, calls, setClock } = createFakeDeps();
     await scheduleNetworkPost(input(), deps);
     setClock(new Date(T0.getTime() + 11_000));
     await publishDuePosts(deps);
 
-    expect(calls.sent.map((s) => s.channelId)).toEqual(["net-gC", "net-gB"]);
+    expect(calls.sent.map((s) => s.channelId)).toEqual(["net-gC", "net-gB", "net-gA"]);
     expect(calls.sent[1].payload.allowedMentions).toEqual({ parse: [], roles: ["ping-B"] });
-    expect(calls.mirrors.map((m) => m.guild_id).sort()).toEqual(["gB", "gC"]);
+    expect(calls.mirrors.map((m) => m.guild_id).sort()).toEqual(["gA", "gB", "gC"]);
     const post = posts.get("p1");
     expect(post?.status).toBe("published");
     expect(post?.vote_closes_at).toEqual(new Date(T0.getTime() + 11_000 + 60_000));
@@ -253,7 +253,26 @@ test("publishDuePosts: a destination that fails is skipped and the others still 
     await scheduleNetworkPost(input(), deps);
     setClock(new Date(T0.getTime() + 11_000));
     await publishDuePosts(deps);
-    expect(calls.mirrors.map((m) => m.guild_id)).toEqual(["gB"]);
+    expect(calls.mirrors.map((m) => m.guild_id).sort()).toEqual(["gA", "gB"]);
+});
+
+test("publishDuePosts: the origin's own Mirror is a Home one - 🏠 badge and never a ping, even with a ping role set", async () => {
+    const { deps, calls, setClock } = createFakeDeps();
+    deps.getNetworkPingRolesForBiome = async () =>
+        new Map([
+            ["gA", "ping-A"],
+            ["gB", "ping-B"],
+        ]);
+    await scheduleNetworkPost(input(), deps);
+    setClock(new Date(T0.getTime() + 11_000));
+    await publishDuePosts(deps);
+
+    const home = calls.sent.find((s) => s.channelId === "net-gA");
+    expect(home?.payload.allowedMentions).toEqual({ parse: [], roles: [] });
+    const body = JSON.stringify(home?.payload.components);
+    expect(body).toContain("biomehunt:forward-info:0:0:1:1");
+    expect(body).not.toContain("<@&ping-A>");
+    expect(calls.mirrors.find((m) => m.guild_id === "gA")?.role_id).toBeNull();
 });
 
 test("publishDuePosts: a post more than 2 minutes late is discarded, not sent", async () => {

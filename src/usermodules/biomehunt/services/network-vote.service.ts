@@ -182,6 +182,7 @@ export async function closeNetworkVote(
             buildMirrorContainer({
                 post: closed,
                 roleId: mirror.role_id,
+                home: mirror.guild_id === closed.origin_guild_id,
                 vote: { status, scoreboard: final.scoreboard },
                 flavorText: BIOME_META[closed.biome]?.flavorText,
             }),
