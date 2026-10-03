@@ -8,7 +8,7 @@ import {
 } from "discord.js";
 import { type CommandContext, confirm, paginate } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
-import { formatBiomeName } from "../constants/biomes.constants";
+import { BIOME_META, formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs } from "../repository/delayed-forwards.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
 import { getActiveNetworkGuilds, getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
@@ -300,7 +300,7 @@ export async function runSimulateNetworkMirror(ctx: CommandContext, guild: Guild
         server_link: SIMULATED_SERVER_LINK,
     };
     await channel.send({
-        components: [buildMirrorContainer({ post, roleId: null, simulated: true })],
+        components: [buildMirrorContainer({ post, roleId: null, simulated: true, flavorText: BIOME_META[biome]?.flavorText })],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
     });

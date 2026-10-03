@@ -7,6 +7,7 @@ import { getFailureQuip } from "@/utils/quips";
 import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
 import { checkGuards } from "../guards";
+import { botBanReply } from "../moderation/bot-ban";
 import { type CommandContext, type CommandMode, createPrefixContext, createSlashContext, type ReplyPayload } from "./command-context";
 import { buildSlashJson, effectiveMode, hasSubcommands, isAllowed, selectHandler, subcommandKey } from "./command-dispatch";
 import { buildUsagePayload } from "./command-usage";
@@ -63,6 +64,13 @@ async function dispatch(
     },
 ): Promise<void> {
     const { mode } = ctx;
+
+    // A bot-wide ban (/bot ban) wins over everything - the user only ever gets the ban message.
+    const banned = await botBanReply(ctx.user.id);
+    if (banned) {
+        await ctx.reply(banned, { ephemeral: true });
+        return;
+    }
 
     if (def.guildOnly && (!ctx.guild || !ctx.member)) {
         await ctx.reply(errorReply(GUILD_ONLY), { ephemeral: true });

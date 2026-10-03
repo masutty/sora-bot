@@ -227,3 +227,9 @@ test("closeNetworkVote: the Fake verdict DM links the origin's name to its invit
     await closeNetworkVote("p1", null, fake.deps);
     expect(String(fake.calls.ownerDms[0].content)).toContain("[Guild A](https://discord.gg/guilda)");
 });
+
+test("closeNetworkVote: the closing edit keeps the biome's flavor text", async () => {
+    const fake = createFakeDeps();
+    await closeNetworkVote("p1", "owner", fake.deps);
+    expect(JSON.stringify(fake.calls.edits[0].payload.components)).toContain("Unexpected error occurred. [Code 404]");
+});

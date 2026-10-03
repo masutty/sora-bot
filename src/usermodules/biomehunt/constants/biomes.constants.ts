@@ -13,6 +13,8 @@ interface BiomeMeta {
     label: string;
     category: BiomeCategory;
     color: number;
+    /** Optional in-game style line shown under the biome's title on its forward card. Unset = no line. */
+    flavorText?: string;
     /** Optional icon shown next to the biome name on its forward notification. Unset = no image. */
     iconUrl?: string;
     /** Raw ANSI escape prefix (e.g. `"\u001b[1;33m"`) used to color this biome's name in the
@@ -31,35 +33,81 @@ interface BiomeMeta {
  * Case display name, no category match, the default accent color, no icon, and no ANSI color.
  */
 export const BIOME_META: Record<string, BiomeMeta> = {
-    WINDY: { label: "Windy", category: "weather", color: 0xa9dfff, iconUrl: "https://i.imgur.com/GD9ppHZ.png", ansiColor: "\u001b[36m" },
-    SNOWY: { label: "Snowy", category: "weather", color: 0xdfffff, iconUrl: "https://i.imgur.com/8rXSIQ0.png", ansiColor: "\u001b[37m" },
-    RAINY: { label: "Rainy", category: "weather", color: 0x3a6ea5, iconUrl: "https://i.imgur.com/KYblZp4.png", ansiColor: "\u001b[34m" },
+    WINDY: {
+        label: "Windy",
+        flavorText: "A refreshing and cool wind passes through the world...",
+        category: "weather",
+        color: 0xa9dfff,
+        iconUrl: "https://i.imgur.com/GD9ppHZ.png",
+        ansiColor: "\u001b[36m",
+    },
+    SNOWY: {
+        label: "Snowy",
+        flavorText: "White snow and cold begin to cover the surroundings...",
+        category: "weather",
+        color: 0xdfffff,
+        iconUrl: "https://i.imgur.com/8rXSIQ0.png",
+        ansiColor: "\u001b[37m",
+    },
+    RAINY: {
+        label: "Rainy",
+        flavorText: "Strong winds and showers sweep through the world...",
+        category: "weather",
+        color: 0x3a6ea5,
+        iconUrl: "https://i.imgur.com/KYblZp4.png",
+        ansiColor: "\u001b[34m",
+    },
     SANDSTORM: {
         label: "Sand Storm",
+        flavorText: "A harsh Sand Storm blocks your path...",
         category: "biome",
         color: 0xe0c068,
         iconUrl: "https://i.imgur.com/gBJQViw.png",
         ansiColor: "\u001b[33m",
     },
-    HELL: { label: "Hell", category: "biome", color: 0xd7263d, iconUrl: "https://i.imgur.com/qf4ih2k.png", ansiColor: "\u001b[31m" },
+    HELL: {
+        label: "Hell",
+        flavorText: "A strong and violent energy of chaos overtakes the world...",
+        category: "biome",
+        color: 0xd7263d,
+        iconUrl: "https://i.imgur.com/qf4ih2k.png",
+        ansiColor: "\u001b[31m",
+    },
     STARFALL: {
         label: "Starfall",
+        flavorText: "Beautiful and dreamy starlight pours into the world...",
         category: "biome",
         color: 0x6c5ce7,
         iconUrl: "https://i.imgur.com/KDlFLf3.png",
         ansiColor: "\u001b[34m",
     },
-    HEAVEN: { label: "Heaven", category: "biome", color: 0xffd700, iconUrl: "https://i.imgur.com/y6OXzVv.png", ansiColor: "\u001b[33m" },
+    HEAVEN: {
+        label: "Heaven",
+        flavorText: "A hand of angel leads you into divine place...",
+        category: "biome",
+        color: 0xffd700,
+        iconUrl: "https://i.imgur.com/y6OXzVv.png",
+        ansiColor: "\u001b[33m",
+    },
     CORRUPTION: {
         label: "Corruption",
+        flavorText: "Poisonous pollution spreads throughout the world...",
         category: "biome",
         color: 0x4b0082,
         iconUrl: "https://i.imgur.com/lzlsuC6.png",
         ansiColor: "\u001b[35m",
     },
-    NULL: { label: "Null", category: "biome", color: 0x2c2f33, iconUrl: "https://i.imgur.com/krutokU.png", ansiColor: "\u001b[30m" },
+    NULL: {
+        label: "Null",
+        flavorText: "It's too dark here...",
+        category: "biome",
+        color: 0x2c2f33,
+        iconUrl: "https://i.imgur.com/krutokU.png",
+        ansiColor: "\u001b[30m",
+    },
     GLITCHED: {
         label: "Glitched",
+        flavorText: "Unexpected error occurred. [Code 404]",
         category: "rare",
         color: 0xff00ff,
         iconUrl: "https://i.imgur.com/xTd6Ku4.png",
@@ -67,6 +115,7 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
     CYBERSPACE: {
         label: "Cyberspace",
+        flavorText: "Signal_Received | From: Island_SOL",
         category: "rare",
         color: 0x00e5ff,
         iconUrl: "https://i.imgur.com/FxFEobX.png",
@@ -74,6 +123,7 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
     DREAMSPACE: {
         label: "Dreamspace",
+        flavorText: "You begin to feel sleepy...",
         category: "rare",
         color: 0xffb6d9,
         iconUrl: "https://i.imgur.com/JCoQDvY.png",
@@ -81,6 +131,7 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
     SINGULARITY: {
         label: "Singularity",
+        flavorText: "The Singularity pulls in everything, including you...",
         category: "rare",
         color: 0x0a0a0a,
         iconUrl: "https://i.imgur.com/rBoV7lJ.png",
@@ -88,6 +139,7 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
     PUMPKINMOON: {
         label: "Pumpkin Moon",
+        flavorText: "An evil and eerie energy has taken over the world!",
         category: "event",
         color: 0xff8c00,
         iconUrl: "https://i.imgur.com/wEdcqqI.png",
@@ -95,6 +147,7 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
     GRAVEYARD: {
         label: "Graveyard",
+        flavorText: "Nameless ghosts past by you...",
         category: "event",
         color: 0x556b2f,
         iconUrl: "https://i.imgur.com/MrKZqUx.png",
@@ -102,20 +155,36 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
     BLAZINGSUN: {
         label: "Blazing Sun",
+        flavorText: "The hot sunlight begins to shine on you.",
         category: "event",
         color: 0xff4500,
         iconUrl: "https://i.imgur.com/BMKWWJ3.png",
         ansiColor: "\u001b[1;33m",
     },
-    INCINERATOR: { label: "Incinerator", category: "event", color: 0xff4500, iconUrl: "", ansiColor: "\u001b[1;33m" },
+    INCINERATOR: {
+        label: "Incinerator",
+        flavorText: "It's hotter than usual today! It's a heatwave!",
+        category: "event",
+        color: 0xff4500,
+        iconUrl: "",
+        ansiColor: "\u001b[1;33m",
+    },
     BLOODRAIN: {
         label: "Blood Rain",
+        flavorText: "Drops of blood begin to fall from the sky...",
         category: "event",
         color: 0x8b0000,
         iconUrl: "https://i.imgur.com/w8oVQ8e.png",
         ansiColor: "\u001b[1;33m",
     },
-    AURORA: { label: "Aurora", category: "event", color: 0x00fa9a, iconUrl: "https://i.imgur.com/nS7GTo1.png", ansiColor: "\u001b[1;33m" },
+    AURORA: {
+        label: "Aurora",
+        flavorText: "An aurora begins to appear in the sky...",
+        category: "event",
+        color: 0x00fa9a,
+        iconUrl: "https://i.imgur.com/nS7GTo1.png",
+        ansiColor: "\u001b[1;33m",
+    },
     EGGLAND: {
         label: "Eggland",
         category: "event",

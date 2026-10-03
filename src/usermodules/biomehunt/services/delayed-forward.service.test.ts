@@ -75,3 +75,9 @@ test("sendDelayedForward dry run: sent with no pings", async () => {
     expect(sent[0]).toMatchObject({ allowedMentions: { parse: [] } });
     expect(JSON.stringify(sent[0])).toContain("SIMULATED FORWARD - TESTING ONLY");
 });
+
+test("sendDelayedForward: the delayed card carries the biome's flavor text too", async () => {
+    const { client, sent } = fakeClient();
+    await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
+    expect(JSON.stringify(sent[0])).toContain("Unexpected error occurred. [Code 404]");
+});

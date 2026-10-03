@@ -10,7 +10,7 @@ import {
 } from "discord.js";
 import { getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
 import type { NetworkPostRow, NetworkVoteStatus } from "../types";
-import { type ForwardBadges, forwardBadgeEmojis, forwardInfoButton } from "./forward-post.view";
+import { type ForwardBadges, flavorLine, forwardBadgeEmojis, forwardInfoButton } from "./forward-post.view";
 
 /** Customid prefix of the Real/Fake buttons on a Mirror - routed by `network-vote.component.ts`. */
 export const NETWORK_VOTE_PREFIX = "biomehunt:net-vote";
@@ -38,10 +38,15 @@ export interface MirrorParams {
     vote?: MirrorVoteInfo;
     /** A test (`simulate-biome network` / `network_relays`) - marked, no vote. */
     simulated?: boolean;
+    /** The origin's own channel - Home badge, and never a ping (the local post already pinged). */
+    home?: boolean;
+    /** The biome's optional flavor text (`BIOME_META[biome].flavorText`), on its own small line under the title. */
+    flavorText?: string | null;
 }
 
 const plural = (n: number, word: string) => `**${n}** ${word}${n === 1 ? "" : "s"}`;
 
+/** The private scoreboard a voter gets after clicking (the Mirror itself is only edited at close). */
 export function formatScoreboard(s: Scoreboard): string {
     return `✅ Real ${plural(s.servers.real, "server")} (${s.people.real}) · ❌ Fake ${plural(s.servers.fake, "server")} (${s.people.fake})`;
 }
@@ -60,18 +65,19 @@ export function serverNameLink(name: string, inviteUrl: string | null): string {
     return `[${safe}](${inviteUrl})`;
 }
 
+const OUTCOME_LINE: Record<Exclude<NetworkVoteStatus, "open">, string> = {
+    real: "✅ Marked as real by the Network",
+    fake: "❌ Marked as fake by the Network",
+    inconclusive: "⚖️ Not enough servers decided",
+};
+
+/** The vote block's text, in the local forward card's style: the question while open, then the outcome with the server chips. */
 function voteLine(vote: MirrorVoteInfo): string {
-    const board = vote.scoreboard ? `\n${formatScoreboard(vote.scoreboard)}` : "";
-    switch (vote.status) {
-        case "open":
-            return "**Is this biome real?**";
-        case "real":
-            return `✅ The Network voted this real${board}`;
-        case "fake":
-            return `❌ The Network voted this fake${board}`;
-        case "inconclusive":
-            return `⚖️ Not enough servers decided${board}`;
-    }
+    if (vote.status === "open") return "**Is this biome real?**";
+    const board = vote.scoreboard ?? { servers: { real: 0, fake: 0 }, people: { real: 0, fake: 0 } };
+    const chips = ` \`✅ ${board.servers.real}\` \`❌ ${board.servers.fake}\``;
+    const people = board.people.real + board.people.fake;
+    return `${OUTCOME_LINE[vote.status]}${chips}\n-# Each server counts once · ${people} ${people === 1 ? "person" : "people"} voted`;
 }
 
 function section(text: string, thumbnailUrl: string | null | undefined): SectionBuilder | TextDisplayBuilder {
@@ -97,11 +103,25 @@ function voteButtonsRow(postId: string): ActionRowBuilder<ButtonBuilder> {
     );
 }
 
+/** "Join Private Server", then "Join <origin>" when the origin has an invite. */
+function linkButtons(post: MirrorPost): ButtonBuilder[] {
+    const buttons = [
+        new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(post.server_link).setLabel("Join Private Server").setEmoji("🔗"),
+    ];
+    if (post.invite_url) {
+        buttons.push(
+            new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(post.invite_url).setLabel(`Join ${post.origin_name}`.slice(0, 80)),
+        );
+    }
+    return buttons;
+}
+
 /**
  * A Network Post as it appears in one Member Server - the same shape as the local forward card: a
- * byline saying where it came from (the origin's name, linked to its invite), the biome title, the
- * Network vote while open, then the badges (🌐 Network, plus 🧪 for a test) right above the buttons
- * with their "?". Built only from parsed fields - no free text from the macro reaches another server.
+ * byline saying where it came from (the origin's name, linked to its invite) and the vote id, the
+ * biome title, the Network vote, then the badges (🌐 Network, 🏠 in the origin's own channel, 🧪 for
+ * a test) right above the buttons with their "?". Built only from parsed fields - no free text from
+ * the macro reaches another server.
  */
 export function buildMirrorContainer(p: MirrorParams): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(getBiomeColor(p.post.biome));
@@ -109,26 +129,29 @@ export function buildMirrorContainer(p: MirrorParams): ContainerBuilder {
         container.addTextDisplayComponents((td) => td.setContent("### 🧪 SIMULATED NETWORK POST - TESTING ONLY"));
         container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
     }
-    if (p.roleId) container.addTextDisplayComponents((td) => td.setContent(`<@&${p.roleId}>`));
+    if (p.roleId && !p.home) container.addTextDisplayComponents((td) => td.setContent(`<@&${p.roleId}>`));
 
+    const hasVote = Boolean(p.vote) && !p.simulated;
+    const byline = [`From ${serverNameLink(p.post.origin_name, p.post.invite_url)}`, hasVote ? `Vote \`${p.post.id}\`` : null].filter(
+        Boolean,
+    );
     const name = spoofBiomeName(p.post.biome);
-    const heading = `-# From ${serverNameLink(p.post.origin_name, p.post.invite_url)}\n## 🎉 [${name}](${p.post.server_link}) found!`;
+    const title = `## 🎉 [${name}](${p.post.server_link}) found!`;
+    const heading = [`-# ${byline.join(" · ")}`, title, p.flavorText ? flavorLine(p.flavorText) : null].filter(Boolean).join("\n");
     container.spliceComponents(container.components.length, 0, section(heading, getBiomeIconUrl(p.post.biome)));
 
-    if (p.vote && !p.simulated) {
+    if (p.vote && hasVote) {
+        const vote = p.vote;
         container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
-        container.addTextDisplayComponents((td) => td.setContent(voteLine(p.vote as MirrorVoteInfo)));
-        if (p.vote.status === "open") container.addActionRowComponents(voteButtonsRow(p.post.id));
+        container.addTextDisplayComponents((td) => td.setContent(voteLine(vote)));
+        if (vote.status === "open") container.addActionRowComponents(voteButtonsRow(p.post.id));
     }
 
-    const badges: ForwardBadges = { network: true, simulated: p.simulated };
+    const badges: ForwardBadges = { network: true, simulated: p.simulated, home: p.home };
     container.addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
     container.addTextDisplayComponents((td) => td.setContent(forwardBadgeEmojis(badges)));
     container.addActionRowComponents(
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(p.post.server_link).setLabel("Join Private Server").setEmoji("🔗"),
-            forwardInfoButton(badges),
-        ),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(...linkButtons(p.post), forwardInfoButton(badges)),
     );
     return container;
 }

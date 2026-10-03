@@ -32,8 +32,8 @@ test("buildMirrorContainer: an open vote shows the origin, both links and Real/F
 test("buildMirrorContainer: a closed vote drops the buttons and shows the result with the scoreboard", () => {
     const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "fake", scoreboard: board } }));
     expect(out).not.toContain("net-vote");
-    expect(out).toContain("The Network voted this fake");
-    expect(out).toContain("Fake **1** server (2)");
+    expect(out).toContain("❌ Marked as fake by the Network `✅ 2` `❌ 1`");
+    expect(out).toContain("-# Each server counts once · 7 people voted");
 });
 
 test("buildMirrorContainer: inconclusive says not enough servers decided", () => {
@@ -59,7 +59,7 @@ test("buildMirrorContainer: the origin's name links to its invite, and the Netwo
     expect(out).toContain("[Sol Hunters](https://discord.gg/solhunters)");
     expect(out).toContain("🌐");
     expect(out).toContain("biomehunt:forward-info:0:0:1");
-    expect(out).not.toContain("Join Sol Hunters");
+    expect(out).toContain("Join Sol Hunters");
 });
 
 test("buildMirrorContainer: a simulated Mirror carries both the test and the Network badges", () => {
@@ -73,4 +73,45 @@ test("buildMirrorContainer: the open vote is just the question, like the local f
     expect(out).toContain("**Is this biome real?**");
     expect(out).not.toContain("Vote below");
     expect(out).not.toContain("BiomeHunt");
+});
+
+test("buildMirrorContainer: the vote id rides on the byline, like the local forward card", () => {
+    const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "open" } }));
+    expect(out).toContain("-# From [Sol Hunters](https://discord.gg/solhunters) · Vote `p1`");
+});
+
+test("buildMirrorContainer: inconclusive shows the server chips too", () => {
+    const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "inconclusive", scoreboard: board } }));
+    expect(out).toContain("⚖️ Not enough servers decided `✅ 2` `❌ 1`");
+});
+
+test("buildMirrorContainer: a home Mirror (the origin's own find) carries the Home badge and never pings", () => {
+    const out = json(buildMirrorContainer({ post, roleId: "r1", home: true, vote: { status: "open" } }));
+    expect(out).toContain("🌐 🏠");
+    expect(out).toContain("biomehunt:forward-info:0:0:1:1");
+    expect(out).not.toContain("<@&r1>");
+});
+
+test("buildMirrorContainer: the Join button is only there when the origin has an invite", () => {
+    const out = json(buildMirrorContainer({ post: { ...post, invite_url: null }, roleId: null, vote: { status: "open" } }));
+    expect(out).not.toContain("Join Sol Hunters");
+});
+
+/** Every text display's content in the container, joined by newlines. */
+function textsOf(c: ContainerBuilder): string {
+    const out: string[] = [];
+    const walk = (node: { content?: string; components?: unknown[] }) => {
+        if (node.content) out.push(node.content);
+        for (const child of node.components ?? []) walk(child as { content?: string; components?: unknown[] });
+    };
+    walk(c.toJSON() as { components?: unknown[] });
+    return out.join("\n");
+}
+
+test("buildMirrorContainer: the biome's flavor text sits on its own -# line under the title, markdown escaped", () => {
+    const text = textsOf(
+        buildMirrorContainer({ post: { ...post, biome: "CYBERSPACE" }, roleId: null, flavorText: "Signal_Received | From: Island_SOL" }),
+    );
+    expect(text).toContain("found!\n-# Signal\\_Received \\| From: Island\\_SOL");
+    expect(textsOf(buildMirrorContainer({ post, roleId: null }))).not.toContain("Signal");
 });

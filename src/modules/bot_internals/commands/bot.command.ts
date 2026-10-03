@@ -9,6 +9,7 @@ import { CommandCategory } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
 import { getLogLevels, LOG_LEVELS, Logger, type LogLevel, setLogLevel } from "@/utils/logging";
 import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
+import { addUserSubcommands, runUserSubcommand, USER_SUBCOMMANDS } from "./bot-user";
 
 const logger = new Logger("admin.commands.bot");
 
@@ -24,56 +25,63 @@ export default defineCommand({
     botOwnerOnly: true,
     showOnHelp: false,
 
-    options: new SlashCommandBuilder()
-        .addSubcommandGroup((g) =>
-            g
-                .setName("mod")
-                .setDescription("Cog management.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("unload")
-                        .setDescription("Unload a cog.")
-                        .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
-                ),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("log")
-                .setDescription("Runtime log level control.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Change the console's or the log file's minimum level - no restart needed.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("level")
-                                .setDescription("Minimum level to show/capture")
-                                .setRequired(true)
-                                .addChoices(...LOG_LEVELS.map((l) => ({ name: l, value: l }))),
-                        )
-                        .addStringOption((o) =>
-                            o
-                                .setName("target")
-                                .setDescription("Where to apply it (default: console)")
-                                .addChoices({ name: "Console", value: "console" }, { name: "File (logs/combined-*.log)", value: "file" }),
-                        ),
-                )
-                .addSubcommand((s) => s.setName("show").setDescription("Show the current console/file log levels.")),
-        )
-        .addSubcommand((sub) =>
-            sub.setName("reload").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
-        )
-        .addSubcommand((sub) => sub.setName("sync").setDescription("Sync slash commands with Discord."))
-        .addSubcommand((sub) => sub.setName("status").setDescription("Show bot status."))
-        .addSubcommand((sub) => sub.setName("shutdown").setDescription("Shut down the bot gracefully."))
-        .addSubcommand((sub) => sub.setName("uptime").setDescription("Shows how long the process has been running."))
-        .addSubcommand((sub) => sub.setName("invite").setDescription("Generates the bot's invite link (with Administrator permission)."))
-        .addSubcommand((sub) => sub.setName("commands").setDescription("Lists registered commands, grouped by cog."))
-        .addSubcommand((sub) => sub.setName("servers").setDescription("Lists the servers the bot is in."))
-        .addSubcommand((sub) => sub.setName("ping").setDescription("WebSocket and database latency."))
-        .addSubcommand((sub) => sub.setName("memory").setDescription("Detailed process memory and CPU usage."))
-        .addSubcommand((sub) => sub.setName("db").setDescription("Connection pool detail."))
-        .addSubcommand((sub) => sub.setName("event-loop").setDescription("Event-loop lag detail (percentiles).")),
+    options: addUserSubcommands(
+        new SlashCommandBuilder()
+            .addSubcommandGroup((g) =>
+                g
+                    .setName("mod")
+                    .setDescription("Cog management.")
+                    .addSubcommand((s) =>
+                        s
+                            .setName("unload")
+                            .setDescription("Unload a cog.")
+                            .addStringOption((o) => o.setName("name").setDescription("Cog name").setRequired(true)),
+                    ),
+            )
+            .addSubcommandGroup((g) =>
+                g
+                    .setName("log")
+                    .setDescription("Runtime log level control.")
+                    .addSubcommand((s) =>
+                        s
+                            .setName("set")
+                            .setDescription("Change the console's or the log file's minimum level - no restart needed.")
+                            .addStringOption((o) =>
+                                o
+                                    .setName("level")
+                                    .setDescription("Minimum level to show/capture")
+                                    .setRequired(true)
+                                    .addChoices(...LOG_LEVELS.map((l) => ({ name: l, value: l }))),
+                            )
+                            .addStringOption((o) =>
+                                o
+                                    .setName("target")
+                                    .setDescription("Where to apply it (default: console)")
+                                    .addChoices(
+                                        { name: "Console", value: "console" },
+                                        { name: "File (logs/combined-*.log)", value: "file" },
+                                    ),
+                            ),
+                    )
+                    .addSubcommand((s) => s.setName("show").setDescription("Show the current console/file log levels.")),
+            )
+            .addSubcommand((sub) =>
+                sub.setName("reload").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
+            )
+            .addSubcommand((sub) => sub.setName("sync").setDescription("Sync slash commands with Discord."))
+            .addSubcommand((sub) => sub.setName("status").setDescription("Show bot status."))
+            .addSubcommand((sub) => sub.setName("shutdown").setDescription("Shut down the bot gracefully."))
+            .addSubcommand((sub) => sub.setName("uptime").setDescription("Shows how long the process has been running."))
+            .addSubcommand((sub) =>
+                sub.setName("invite").setDescription("Generates the bot's invite link (with Administrator permission)."),
+            )
+            .addSubcommand((sub) => sub.setName("commands").setDescription("Lists registered commands, grouped by cog."))
+            .addSubcommand((sub) => sub.setName("servers").setDescription("Lists the servers the bot is in."))
+            .addSubcommand((sub) => sub.setName("ping").setDescription("WebSocket and database latency."))
+            .addSubcommand((sub) => sub.setName("memory").setDescription("Detailed process memory and CPU usage."))
+            .addSubcommand((sub) => sub.setName("db").setDescription("Connection pool detail."))
+            .addSubcommand((sub) => sub.setName("event-loop").setDescription("Event-loop lag detail (percentiles).")),
+    ),
 
     // Read-only diagnostics expose internals (pool target, memory, server list...) - never posted
     // publicly in a channel via prefix, only as an ephemeral slash reply.
@@ -94,6 +102,12 @@ export default defineCommand({
         const routeKey = group ? `${group}-${sub}` : `${sub}`;
 
         if (ctx.mode === "prefix") logger.info(`Executing ${routeKey} command...`);
+
+        // Bot-wide user moderation (ban/unban/info/note/notes) - own replies, outside the string pipeline below.
+        if (!group && sub && USER_SUBCOMMANDS.has(sub)) {
+            await runUserSubcommand(ctx, sub);
+            return;
+        }
 
         // ComponentsV2 can't coexist with embed/content in the same message - own reply, outside
         // the generic string -> EmbedFormatter pipeline used by the rest of the subcommands.

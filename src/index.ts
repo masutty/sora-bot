@@ -9,6 +9,7 @@ import { config } from "./config";
 import { BotClient } from "./core/bot-client";
 import { loadCogs } from "./core/cog-loader";
 import { registerCommandHandlers, registerSlashCommands } from "./core/command/command-handler";
+import { loadBotBans } from "./core/moderation/bot-ban";
 import { closePool } from "./database/connection";
 import { migrate } from "./database/migrate";
 import { Logger } from "./utils/logging";
@@ -20,6 +21,7 @@ async function bootstrap(): Promise<void> {
     logger.info("Starting...");
 
     await migrate();
+    await loadBotBans();
 
     const client = new BotClient();
 

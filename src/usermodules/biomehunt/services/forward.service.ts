@@ -170,6 +170,7 @@ async function sendLiveForward(
         ...stats,
         vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
         badges: dryRun ? { simulated: true } : undefined,
+        flavorText: BIOME_META[biome]?.flavorText,
     });
 
     try {

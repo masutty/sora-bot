@@ -3,6 +3,7 @@ import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
+import { BIOME_META } from "../constants/biomes.constants";
 import { deleteEventById } from "../repository/activity.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
@@ -218,6 +219,7 @@ async function refreshVoteMessage(client: BotClient, vote: BiomeVoteRow, render:
 
     const container = buildForwardContainer({
         biome: vote.biome,
+        flavorText: BIOME_META[vote.biome]?.flavorText,
         roleId: vote.role_id,
         serverLink: vote.server_link,
         jumpLink: vote.jump_link,

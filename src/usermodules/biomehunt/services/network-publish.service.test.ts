@@ -396,3 +396,11 @@ test("scheduleNetworkPost: with both a live and a delayed local forward, the Net
     await scheduleNetworkPost(input(), deps);
     expect(posts.get("p1")?.publish_at).toEqual(new Date(T0.getTime() + (45 + 10) * 1000));
 });
+
+test("publishDuePosts: each Mirror carries the biome's flavor text", async () => {
+    const { deps, calls, setClock } = createFakeDeps();
+    await scheduleNetworkPost(input(), deps);
+    setClock(new Date(T0.getTime() + 11_000));
+    await publishDuePosts(deps);
+    expect(JSON.stringify(calls.sent[0].payload.components)).toContain("Unexpected error occurred. [Code 404]");
+});
