@@ -8,6 +8,7 @@ import { type MessageComponentInteraction, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { newTraceRef, runWithTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
+import { botBanReply } from "../moderation/bot-ban";
 
 const logger = new Logger("core.component");
 
@@ -85,6 +86,14 @@ export async function dispatchComponent(client: BotClient, interaction: MessageC
         if (!found) continue;
 
         const { component, parts } = found;
+
+        // A bot-wide ban (/bot ban) also covers buttons/selects - e.g. no Network or biome votes.
+        const banned = await botBanReply(interaction.user.id);
+        if (banned) {
+            await interaction.reply({ ...banned, flags: banned.flags | MessageFlags.Ephemeral }).catch(() => {});
+            return true;
+        }
+
         await runWithTrace(
             {
                 ref: newTraceRef(),

@@ -28,6 +28,35 @@ CREATE TABLE IF NOT EXISTS _migrations (
 
 -- Garante a coluna hash em bancos migrados antes dela existir
 ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
+
+-- Bot-wide ban (/bot ban): the user can't use any command or component of the bot.
+CREATE TABLE IF NOT EXISTS bot_bans (
+  discord_user_id VARCHAR(20)  PRIMARY KEY,
+  reason          TEXT,
+  banned_by       VARCHAR(20)  NOT NULL,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Every bot ban/unban, kept after an unban - the "Punishments" tab of /bot info.
+CREATE TABLE IF NOT EXISTS bot_punishments (
+  id              BIGSERIAL    PRIMARY KEY,
+  discord_user_id VARCHAR(20)  NOT NULL,
+  action          VARCHAR(10)  NOT NULL,   -- ban | unban
+  reason          TEXT,
+  by_user_id      VARCHAR(20)  NOT NULL,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bot_punishments_user ON bot_punishments(discord_user_id, created_at DESC);
+
+-- Private notes about a user (/bot note, /bot notes) - bot owners only.
+CREATE TABLE IF NOT EXISTS bot_user_notes (
+  id              BIGSERIAL    PRIMARY KEY,
+  discord_user_id VARCHAR(20)  NOT NULL,
+  note            TEXT         NOT NULL,
+  author_id       VARCHAR(20)  NOT NULL,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bot_user_notes_user ON bot_user_notes(discord_user_id, created_at DESC);
 `;
 
 function hashOf(sql: string): string {

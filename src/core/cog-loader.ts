@@ -150,6 +150,7 @@ const HOT_RELOAD_KEEP_ALIVE = [
     require.resolve("../utils/logging"),
     require.resolve("../utils/metrics"),
     require.resolve("./bot-client"),
+    require.resolve("./moderation/bot-ban-cache"),
 ];
 
 /**
