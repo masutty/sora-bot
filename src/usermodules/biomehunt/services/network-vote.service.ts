@@ -158,7 +158,7 @@ export async function castNetworkBallot(
 }
 
 /**
- * Closes one Network vote (the Worker when its minute is up, or `/bh-owner network close-vote`):
+ * Closes one Network vote (the Worker when its minute is up, or `/network-admin close-vote`):
  * resolves it, closes it with a compare-and-set (so the Worker and an owner never both apply it),
  * edits every Mirror once with the result, and on a Fake verdict warns the origin's staff and the owners.
  */

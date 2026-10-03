@@ -5,6 +5,7 @@ import _bhAdmin from "./commands/bh-admin.command";
 import _bhOwner from "./commands/bh-owner.command";
 import _bhStats from "./commands/bh-stats.command";
 import _network from "./commands/network.command";
+import _networkAdmin from "./commands/network-admin.command";
 import { biomeVoteComponent } from "./components/biome-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
@@ -27,7 +28,7 @@ export default defineCog({
     description: "Tracks macro-driven activity, enforces quotas, and automates roles.",
     authors: [{ name: "masutty", id: 188851299255713792n }],
 
-    commands: [_bh, _bhAdmin, _bhOwner, _bhStats, _network],
+    commands: [_bh, _bhAdmin, _bhOwner, _bhStats, _network, _networkAdmin],
 
     migrations: [BIOMEHUNT_SCHEMA],
 

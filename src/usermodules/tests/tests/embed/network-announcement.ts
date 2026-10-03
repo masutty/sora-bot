@@ -4,7 +4,7 @@ import { NO_PINGS } from "@/utils/format";
 import type { TestCase, TestPayload } from "../../registry";
 
 /**
- * The Network announcement card (`/bh-owner network announce`), as a Member Server sees it - page 1
+ * The Network announcement card (`/network-admin announce`), as a Member Server sees it - page 1
  * with that server's announcements role pinged on top, page 2 without one, page 3 the automatic
  * "a server joined" card. Fake data; pings nobody.
  */

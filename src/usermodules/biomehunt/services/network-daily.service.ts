@@ -67,7 +67,7 @@ export async function runActivityChecks(now: Date, deps: NetworkDailyDeps): Prom
 
             const details =
                 `${serverNameLink(deps.guildName(guild.guild_id), guild.invite_url)} (\`${guild.guild_id}\`) has had fewer than ${settings.network.minActiveMembers} active members ` +
-                `for ${low} daily checks in a row (now ${active}). Remove it with \`/bh-owner network remove guild_id:${guild.guild_id}\` if you want.`;
+                `for ${low} daily checks in a row (now ${active}). Remove it with \`/network-admin remove guild_id:${guild.guild_id}\` if you want.`;
             await deps.insertNetworkAlert({
                 kind: "low_activity",
                 guildId: guild.guild_id,
@@ -102,7 +102,7 @@ export async function sendMultiMacroDigest(now: Date, state: DigestState, deps: 
     for (const alert of alerts) {
         const line = `- ${alert.details}\n`;
         if (header.length + body.length + line.length > DIGEST_MAX_CHARS) {
-            body += "- ... more in `/bh-owner network lookup`\n";
+            body += "- ... more in `/network-admin lookup`\n";
             break;
         }
         body += line;

@@ -358,13 +358,18 @@ export type SimulatedScheduleResult =
  * Member Servers, through the real pipeline (local post + home advantage, Worker, fan-out), so the
  * owner can test it end to end between test servers without touching anyone else. Ids that can't
  * receive Network posts (not a member, no Network channel, the origin itself) are ignored and
- * reported. It is marked as a test on every Mirror, never pings, never opens a vote, and skips
- * deduplication (repeated tests aren't swallowed as Multi Macro); its private server is `SIM-<ref>`.
+ * reported. It skips deduplication (repeated tests aren't swallowed as Multi Macro); its private
+ * server is `SIM-<ref>`.
+ *
+ * `dryRun` (default true, like `simulate-biome`'s own) marks it as a test on every Mirror - no
+ * ping, no vote. With `dryRun: false` it goes out as a real Network Post (each server's ping, the
+ * Network vote and its close, a Fake verdict's alerts), just to the listed servers.
  */
 export async function scheduleSimulatedNetworkPost(
     input: ScheduleInput,
     relayGuildIds: string[],
     deps: NetworkPublishDeps,
+    opts: { dryRun?: boolean } = {},
 ): Promise<SimulatedScheduleResult> {
     if (!NETWORK_BIOMES.includes(input.biome)) return { kind: "skipped", reason: `${formatBiomeName(input.biome)} is not a Network biome` };
     const blocker = await simulatedBlocker(input.originGuildId, deps);
@@ -398,7 +403,7 @@ export async function scheduleSimulatedNetworkPost(
         serverLink: `https://www.roblox.com/share?code=${code}&type=Server`,
         serverCode: code,
         publishAt,
-        simulated: true,
+        simulated: opts.dryRun ?? true,
         relayGuildIds: targets,
     });
     return { kind: "scheduled", postId: id, targets, ignored };

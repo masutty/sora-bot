@@ -439,7 +439,7 @@ CREATE TABLE IF NOT EXISTS bh_network_ballots (
     PRIMARY KEY (post_id, discord_user_id)
 );
 
-/* Alerts for the bot owner (fake_verdict | multi_macro | low_activity) - the history /bh-owner network lookup reads. */
+/* Alerts for the bot owner (fake_verdict | multi_macro | low_activity) - the history /network-admin lookup reads. */
 CREATE TABLE IF NOT EXISTS bh_network_alerts (
     id              BIGSERIAL PRIMARY KEY,
     kind            VARCHAR(20) NOT NULL,

@@ -4,7 +4,7 @@ import { NO_PINGS } from "@/utils/format";
 import type { TestCase, TestPayload } from "../../registry";
 
 /**
- * `/bh-owner network overview` with fake data - the summary page, then 18 members (two pages: a
+ * `/network-admin overview` with fake data - the summary page, then 18 members (two pages: a
  * forced one, one with problems) and a pending request.
  */
 const server = (i: number, overrides: Partial<OverviewServer> = {}): OverviewServer => ({
@@ -18,7 +18,7 @@ const server = (i: number, overrides: Partial<OverviewServer> = {}): OverviewSer
 });
 
 export default {
-    description: "The Network overview pages (/bh-owner network overview) with fake servers and numbers.",
+    description: "The Network overview pages (/network-admin overview) with fake servers and numbers.",
     pages: (): TestPayload[] =>
         buildNetworkOverviewPages({
             members: [

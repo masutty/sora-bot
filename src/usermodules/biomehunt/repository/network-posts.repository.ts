@@ -223,7 +223,7 @@ export interface NetworkStatsRow {
     banned_users: number;
 }
 
-/** The Network-wide numbers for `/bh-owner network overview` - posts/fakes/multi macro since `since`, the rest right now. Test relays don't count as posts. */
+/** The Network-wide numbers for `/network-admin overview` - posts/fakes/multi macro since `since`, the rest right now. Test relays don't count as posts. */
 export async function getNetworkStats(since: Date): Promise<NetworkStatsRow> {
     const result = await query<Record<keyof NetworkStatsRow, string>>(
         `SELECT
