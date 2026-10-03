@@ -313,6 +313,7 @@ async function sendOneMirror(
             guild_id: guild.guild_id,
             channel_id: sent.channelId,
             message_id: sent.messageId,
+            role_id: roleId,
         });
     }
 }

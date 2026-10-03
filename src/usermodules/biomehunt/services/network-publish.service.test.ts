@@ -404,3 +404,13 @@ test("publishDuePosts: each Mirror carries the biome's flavor text", async () =>
     await publishDuePosts(deps);
     expect(JSON.stringify(calls.sent[0].payload.components)).toContain("Unexpected error occurred. [Code 404]");
 });
+
+test("publishDuePosts: each recorded Mirror remembers the ping role it was sent with", async () => {
+    const { deps, calls, setClock } = createFakeDeps();
+    await scheduleNetworkPost(input(), deps);
+    setClock(new Date(T0.getTime() + 11_000));
+    await publishDuePosts(deps);
+    const byGuild = new Map(calls.mirrors.map((m) => [m.guild_id, m.role_id]));
+    expect(byGuild.get("gB")).toBe("ping-B");
+    expect(byGuild.get("gC")).toBeNull();
+});

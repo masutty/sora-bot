@@ -459,6 +459,9 @@ ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS simulated BOOLEAN NOT NULL
 /* The only Member Servers a test post goes to (the ids given in network_relays) - NULL on real posts, which go to every member. */
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS relay_guild_ids TEXT[];
 
+/* The ping role each Mirror was sent with - its vote-close edit keeps showing it (an edit never pings). */
+ALTER TABLE bh_network_mirrors ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
+
 /* The daily activity check's streak (Phase 4): consecutive daily checks below the minimum. */
 ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS low_activity_checks SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS last_activity_check DATE;

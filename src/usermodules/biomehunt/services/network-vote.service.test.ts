@@ -97,8 +97,8 @@ function createFakeDeps(initial: NetworkPostRow = post(), opts: { bannedUsers?: 
     const ballots: NetworkBallotRow[] = [];
     const guilds = new Map((opts.guilds ?? [guildRow("gA"), guildRow("gB"), guildRow("gC")]).map((g) => [g.guild_id, g]));
     const mirrors: NetworkMirrorRow[] = [
-        { post_id: "p1", guild_id: "gB", channel_id: "net-gB", message_id: "m1" },
-        { post_id: "p1", guild_id: "gC", channel_id: "net-gC", message_id: "m2" },
+        { post_id: "p1", guild_id: "gB", channel_id: "net-gB", message_id: "m1", role_id: "ping-B" },
+        { post_id: "p1", guild_id: "gC", channel_id: "net-gC", message_id: "m2", role_id: null },
     ];
     let clock = T0;
     const calls = {
@@ -232,4 +232,13 @@ test("closeNetworkVote: the closing edit keeps the biome's flavor text", async (
     const fake = createFakeDeps();
     await closeNetworkVote("p1", "owner", fake.deps);
     expect(JSON.stringify(fake.calls.edits[0].payload.components)).toContain("Unexpected error occurred. [Code 404]");
+});
+
+test("closeNetworkVote: each Mirror keeps the ping role it was sent with, and the edit pings nobody", async () => {
+    const fake = createFakeDeps();
+    await closeNetworkVote("p1", "owner", fake.deps);
+    const byMessage = new Map(fake.calls.edits.map((e) => [e.mirror.message_id, e.payload]));
+    expect(JSON.stringify(byMessage.get("m1")?.components)).toContain("<@&ping-B>");
+    expect(JSON.stringify(byMessage.get("m2")?.components)).not.toContain("<@&");
+    expect(byMessage.get("m1")?.allowedMentions).toEqual({ parse: [] });
 });

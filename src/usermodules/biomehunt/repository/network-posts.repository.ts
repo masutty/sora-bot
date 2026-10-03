@@ -100,9 +100,9 @@ export async function markNetworkPostDiscarded(id: string): Promise<void> {
 
 export async function insertNetworkMirror(m: NetworkMirrorRow): Promise<void> {
     await query(
-        `INSERT INTO bh_network_mirrors (post_id, guild_id, channel_id, message_id) VALUES ($1, $2, $3, $4)
+        `INSERT INTO bh_network_mirrors (post_id, guild_id, channel_id, message_id, role_id) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (post_id, guild_id) DO NOTHING`,
-        [m.post_id, m.guild_id, m.channel_id, m.message_id],
+        [m.post_id, m.guild_id, m.channel_id, m.message_id, m.role_id],
     );
 }
 
