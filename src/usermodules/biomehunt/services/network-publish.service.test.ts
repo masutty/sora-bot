@@ -449,3 +449,15 @@ test("scheduleSimulatedNetworkPost with dryRun false: a real post (ping, vote, n
     expect(body).toContain("biomehunt:net-vote:p1:real");
     expect(body).not.toContain("SIMULATED");
 });
+
+test("publishDuePosts: a real test relay from a forced origin that fails the checklist still goes out - it's the owner testing", async () => {
+    const { deps, posts, calls, setClock } = createFakeDeps({
+        guilds: [guildRow("gA", { forced: true }), guildRow("gB")],
+        gaps: [{ kind: "activity", activeMembers: 0 }],
+    });
+    await scheduleSimulatedNetworkPost(input(), ["gB"], deps, { dryRun: false });
+    setClock(new Date(T0.getTime() + 11_000));
+    await publishDuePosts(deps);
+    expect(posts.get("p1")?.status).toBe("published");
+    expect(calls.sent.map((s) => s.channelId)).toEqual(["net-gB"]);
+});

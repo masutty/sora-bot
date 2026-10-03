@@ -263,8 +263,10 @@ async function publishOne(post: NetworkPostRow, deps: NetworkPublishDeps): Promi
     }
     if (!(await deps.claimNetworkPost(post.id))) return;
 
-    // A test relay only needs its origin to still be a member - bans/exclusions are about real finds.
-    const blocker = post.simulated
+    // A test relay (`network_relays`, dry or not) only needs its origin to still be a member - the
+    // checklist, bans and exclusions are about real finds, and this is the owner testing on purpose.
+    const isTestRelay = post.simulated || post.relay_guild_ids !== null;
+    const blocker = isTestRelay
         ? await simulatedBlocker(post.origin_guild_id, deps)
         : await publishBlocker(post.origin_guild_id, post.finder_discord_id, deps);
     if (blocker) {
