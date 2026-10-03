@@ -1,7 +1,7 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineView, type ViewPayload } from "@/define";
-import { formatBiomeName } from "@/usermodules/biomehunt/constants/biomes.constants";
+import { BIOME_META, formatBiomeName } from "@/usermodules/biomehunt/constants/biomes.constants";
 import { NETWORK_BIOMES } from "@/usermodules/biomehunt/services/network-eligibility.service";
 import { buildMirrorContainer, type MirrorPost, type MirrorVoteInfo } from "@/usermodules/biomehunt/views/network-mirror.view";
 import { NO_PINGS } from "@/utils/format";
@@ -25,6 +25,7 @@ interface Scenario {
     simulated?: boolean;
     noInvite?: boolean;
     withRole?: boolean;
+    home?: boolean;
 }
 
 const SCENARIOS: Record<string, Scenario> = {
@@ -46,6 +47,13 @@ const SCENARIOS: Record<string, Scenario> = {
         vote: { status: "inconclusive", scoreboard: { servers: { real: 1, fake: 0 }, people: { real: 2, fake: 0 } } },
     },
     "no-invite": { label: "Origin without invite", description: "Name shows as plain text", vote: { status: "open" }, noInvite: true },
+    home: {
+        label: "Home - the origin's own find",
+        description: "In the server that found it - 🏠 badge, never pings",
+        vote: { status: "open" },
+        withRole: true,
+        home: true,
+    },
     simulated: { label: "Test relay", description: "simulate-biome network / network_relays - 🧪 + 🌐, no vote", simulated: true },
 };
 
@@ -65,7 +73,14 @@ function buildPreview(state: PreviewState, originName: string): ViewPayload["com
         server_link: FAKE_SERVER_LINK,
     };
     return [
-        buildMirrorContainer({ post, roleId: scenario.withRole ? FAKE_ROLE_ID : null, vote: scenario.vote, simulated: scenario.simulated }),
+        buildMirrorContainer({
+            post,
+            roleId: scenario.withRole ? FAKE_ROLE_ID : null,
+            vote: scenario.vote,
+            simulated: scenario.simulated,
+            home: scenario.home,
+            flavorText: BIOME_META[state.biome]?.flavorText,
+        }),
     ];
 }
 

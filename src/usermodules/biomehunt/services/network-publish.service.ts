@@ -3,7 +3,7 @@ import { MessageFlags } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
-import { formatBiomeName } from "../constants/biomes.constants";
+import { BIOME_META, formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import {
     getMemberNetworkGuilds,
@@ -301,8 +301,8 @@ async function sendOneMirror(
     const sent = await deps.sendMirror(guild.network_channel_id as string, {
         components: [
             post.simulated
-                ? buildMirrorContainer({ post, roleId: null, simulated: true })
-                : buildMirrorContainer({ post, roleId, vote: { status: "open" } }),
+                ? buildMirrorContainer({ post, roleId: null, simulated: true, flavorText: BIOME_META[post.biome]?.flavorText })
+                : buildMirrorContainer({ post, roleId, vote: { status: "open" }, flavorText: BIOME_META[post.biome]?.flavorText }),
         ],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [], roles: roleId ? [roleId] : [] },

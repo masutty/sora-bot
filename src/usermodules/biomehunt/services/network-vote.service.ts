@@ -2,7 +2,7 @@ import type { Client, MessageCreateOptions, MessageEditOptions } from "discord.j
 import { MessageFlags } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { formatBiomeName } from "../constants/biomes.constants";
+import { BIOME_META, formatBiomeName } from "../constants/biomes.constants";
 import { getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
 import {
     closeNetworkVoteRow,
@@ -176,7 +176,14 @@ export async function closeNetworkVote(
     // Read after the close committed - a ballot racing it is either counted here or was rejected.
     const final = resolveNetworkVote(await deps.getNetworkBallots(postId));
     const payload: MessageEditOptions = {
-        components: [buildMirrorContainer({ post: closed, roleId: null, vote: { status, scoreboard: final.scoreboard } })],
+        components: [
+            buildMirrorContainer({
+                post: closed,
+                roleId: null,
+                vote: { status, scoreboard: final.scoreboard },
+                flavorText: BIOME_META[closed.biome]?.flavorText,
+            }),
+        ],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
     };

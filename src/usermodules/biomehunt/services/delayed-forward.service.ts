@@ -1,7 +1,7 @@
 import type { Client } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
-import { formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
+import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
 import { eventExists } from "../repository/activity.repository";
 import { getDelayedForwardConfigs, removeDelayedForwardConfig, setDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getVoteById } from "../repository/votes.repository";
@@ -79,6 +79,7 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             jumpLink: job.jumpLink,
             ...job.stats,
             badges: { delayed: true, simulated: job.dryRun },
+            flavorText: BIOME_META[job.biome]?.flavorText,
         });
         await channel.send({
             components: [container],

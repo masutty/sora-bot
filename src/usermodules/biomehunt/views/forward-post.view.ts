@@ -41,6 +41,16 @@ export interface ForwardContainerParams {
     lastSeenInServerAt?: Date | null;
     vote?: VoteRenderInfo;
     badges?: ForwardBadges;
+    /** The biome's optional in-game style line (`BIOME_META[biome].flavorText`), shown small on its own line right under the title. */
+    flavorText?: string | null;
+}
+
+/**
+ * A biome's flavor text as a small `-#` line (local forward card and Network Mirror). Markdown in it
+ * is escaped, so e.g. `Signal_Received ... Island_SOL` never turns into italics.
+ */
+export function flavorLine(text: string): string {
+    return `-# ${text.replace(/([_*~`|\\])/g, "\\$1")}`;
 }
 
 /** The finder/count inputs of a forward card, computed once per find and reused by the live forward, its vote, and the delayed forward. */
@@ -64,30 +74,38 @@ export interface ForwardBadges {
     simulated?: boolean;
     /** A Network Mirror - relayed from another server in the Network. */
     network?: boolean;
+    /** A Network Mirror of this server's own find - sent without a ping, since the local post already pinged. */
+    home?: boolean;
 }
 
 const DELAYED_EMOJI = "⏳";
 const SIMULATED_EMOJI = "🧪";
 const NETWORK_EMOJI = "🌐";
+const HOME_EMOJI = "🏠";
 
 export const FORWARD_INFO_PREFIX = "biomehunt:forward-info";
 
+/** The flags in customId order - delayed and simulated always written, the later ones only up to the last set one. */
+const FLAG_ORDER = ["delayed", "simulated", "network", "home"] as const;
+
 /**
- * `biomehunt:forward-info:<0|1 delayed>:<0|1 simulated>[:1 network]` - the "?" reply needs nothing
- * else, no DB lookup. The network flag is only appended when set, so every older id stays the same.
+ * `biomehunt:forward-info:<delayed>:<simulated>[:<network>[:<home>]]` (each 0|1) - the "?" reply needs
+ * nothing else, no DB lookup. Trailing unset flags after the first two are left off, so every older
+ * id keeps its exact shape.
  */
 export function forwardInfoCustomId(badges: ForwardBadges): string {
-    const base = `${FORWARD_INFO_PREFIX}:${badges.delayed ? "1" : "0"}:${badges.simulated ? "1" : "0"}`;
-    return badges.network ? `${base}:1` : base;
+    const flags = FLAG_ORDER.map((key) => (badges[key] ? "1" : "0"));
+    while (flags.length > 2 && flags[flags.length - 1] === "0") flags.pop();
+    return `${FORWARD_INFO_PREFIX}:${flags.join(":")}`;
 }
 
 /** Inverse of `forwardInfoCustomId` (the parts after the prefix) - `null` if malformed. */
 export function parseForwardInfoParts(parts: string[]): ForwardBadges | null {
-    const [delayed, simulated, network] = parts;
-    const isFlag = (v: string | undefined) => v === "0" || v === "1";
-    if (!isFlag(delayed) || !isFlag(simulated) || (network !== undefined && !isFlag(network))) return null;
-    const badges: ForwardBadges = { delayed: delayed === "1", simulated: simulated === "1" };
-    return network === "1" ? { ...badges, network: true } : badges;
+    if (parts.length < 2 || parts.length > FLAG_ORDER.length || parts.some((p) => p !== "0" && p !== "1")) return null;
+    const badges: ForwardBadges = { delayed: parts[0] === "1", simulated: parts[1] === "1" };
+    if (parts[2] === "1") badges.network = true;
+    if (parts[3] === "1") badges.home = true;
+    return badges;
 }
 
 /** Each forward type the "?" explains - deliberately vague: never how long the delay is, or that other channels were pinged first. */
@@ -103,7 +121,13 @@ const FORWARD_TYPE_INFO: Array<{ key: keyof ForwardBadges; emoji: string; name: 
         key: "network",
         emoji: NETWORK_EMOJI,
         name: "Network",
-        description: "Found in another server of the Network and relayed here.",
+        description: "Shared through the Network.",
+    },
+    {
+        key: "home",
+        emoji: HOME_EMOJI,
+        name: "Home",
+        description: "Found in this server - no ping here, you already got the local post.",
     },
 ];
 
@@ -120,12 +144,17 @@ export function buildForwardInfoContainer(badges: ForwardBadges): ContainerBuild
 }
 
 function hasBadges(badges: ForwardBadges | undefined): badges is ForwardBadges {
-    return Boolean(badges?.delayed || badges?.simulated || badges?.network);
+    return Boolean(badges?.delayed || badges?.simulated || badges?.network || badges?.home);
 }
 
 /** Just the emojis, like the profile's badges - the "?" button explains them. */
 export function forwardBadgeEmojis(badges: ForwardBadges): string {
-    return [badges.delayed ? DELAYED_EMOJI : null, badges.simulated ? SIMULATED_EMOJI : null, badges.network ? NETWORK_EMOJI : null]
+    return [
+        badges.delayed ? DELAYED_EMOJI : null,
+        badges.simulated ? SIMULATED_EMOJI : null,
+        badges.network ? NETWORK_EMOJI : null,
+        badges.home ? HOME_EMOJI : null,
+    ]
         .filter(Boolean)
         .join(" ");
 }
@@ -193,16 +222,15 @@ function findCountsLine(findCount: number | null | undefined, serverFindCount: n
 }
 
 /**
- * The card's heading, byline first: a small "Found by @finder" (the vote id rides after it, as
+ * The card's title block, byline first: a small "Found by @finder" (the vote id rides after it, as
  * secondary info), then the title - a big "🎉 X found!" for rare biomes, the plain name otherwise -
- * then the counts and "Last one <t:R>". The finder never sits on the title or counts line: a long
- * display name there made every card a different width.
+ * with the flavor text right under it. The finder never sits on the title line: a long display
+ * name there made every card a different width.
  */
-function headingLines(params: ForwardContainerParams): string[] {
+function titleBlock(params: ForwardContainerParams): string {
     const name = spoofBiomeName(params.biome);
     const title = params.serverLink ? `[${name}](${params.serverLink})` : name;
     const isRare = BIOME_META[params.biome]?.category === "rare";
-    const counts = findCountsLine(params.findCount, params.serverFindCount);
 
     const byline = [
         params.finderDiscordId ? `Found by <@${params.finderDiscordId}>` : null,
@@ -212,6 +240,14 @@ function headingLines(params: ForwardContainerParams): string[] {
     const lines: string[] = [];
     if (byline.length > 0) lines.push(`-# ${byline.join(" · ")}`);
     lines.push(isRare ? `## 🎉 ${title} found!` : `# ${title}`);
+    if (params.flavorText) lines.push(flavorLine(params.flavorText));
+    return lines.join("\n");
+}
+
+/** The extra facts under the title block (counts, "Last one <t:R>") - empty when there are none. */
+function detailLines(params: ForwardContainerParams): string[] {
+    const counts = findCountsLine(params.findCount, params.serverFindCount);
+    const lines: string[] = [];
     if (counts) lines.push(counts);
     if (params.lastSeenInServerAt) lines.push(`-# Last one <t:${epochOf(params.lastSeenInServerAt)}:R>`);
     return lines;
@@ -219,7 +255,7 @@ function headingLines(params: ForwardContainerParams): string[] {
 
 /**
  * The vote block's own components (a Large separator, the status line, and - only while open -
- * the Real/Fake buttons). The vote id sits in the heading's byline instead (see `headingLines`),
+ * the Real/Fake buttons). The vote id sits in the heading's byline instead (see `titleBlock`),
  * which every render - initial send and later edits - goes through.
  */
 function buildVoteBlockComponents(vote: VoteRenderInfo): Array<SeparatorBuilder | TextDisplayBuilder | ActionRowBuilder<ButtonBuilder>> {
@@ -248,7 +284,7 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     }
     if (params.roleId) container.addTextDisplayComponents((td) => td.setContent(`<@&${params.roleId}>`));
 
-    const heading = headingLines(params).join("\n");
+    const heading = titleBlock(params);
     const iconUrl = getBiomeIconUrl(params.biome);
     if (iconUrl) {
         container.addSectionComponents(
@@ -258,6 +294,13 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
         );
     } else {
         container.addTextDisplayComponents(new TextDisplayBuilder().setContent(heading));
+    }
+
+    // A divider keeps the title block (and its flavor text) apart from the extra facts.
+    const details = detailLines(params);
+    if (details.length > 0) {
+        container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        container.addTextDisplayComponents((td) => td.setContent(details.join("\n")));
     }
 
     if (params.vote) {

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { SeparatorSpacingSize } from "discord.js";
+import { BIOME_META } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
 import {
     buildForwardContainer,
@@ -216,4 +217,58 @@ test("the Network badge rides on a third flag - old two-flag ids still parse", (
 
     const text = textOf(buildForwardInfoContainer({ network: true }).toJSON() as Json);
     expect(text).toContain("- `🌐 Network`\n> ");
+});
+
+test("flavor text: its own small -# line right under the title, only when given", () => {
+    const withFlavor = textOf(buildForwardContainer({ ...BASE, flavorText: "Unexpected error occurred. [Code 404]" }).toJSON());
+    expect(withFlavor).toContain("found!\n-# Unexpected error occurred. [Code 404]");
+    expect(textOf(buildForwardContainer(BASE).toJSON())).not.toContain("Unexpected error");
+});
+
+test("every flavor text in BIOME_META is a non-empty single line", () => {
+    const texts = Object.values(BIOME_META)
+        .map((m) => m.flavorText)
+        .filter((t): t is string => t !== undefined);
+    expect(texts.length).toBeGreaterThan(0);
+    for (const t of texts) {
+        expect(t.trim()).toBe(t);
+        expect(t).not.toContain("\n");
+        expect(t.length).toBeGreaterThan(0);
+    }
+    expect(BIOME_META.GLITCHED.flavorText).toBe("Unexpected error occurred. [Code 404]");
+    expect(BIOME_META.EGGLAND.flavorText).toBeUndefined();
+});
+
+test("the Home badge rides on a fourth flag, and older ids keep their shape", () => {
+    expect(forwardInfoCustomId({ network: true, home: true })).toBe(`${FORWARD_INFO_PREFIX}:0:0:1:1`);
+    expect(forwardInfoCustomId({ network: true })).toBe(`${FORWARD_INFO_PREFIX}:0:0:1`);
+    expect(parseForwardInfoParts(["0", "0", "1", "1"])).toEqual({ delayed: false, simulated: false, network: true, home: true });
+    expect(parseForwardInfoParts(["0", "0", "1", "x"])).toBeNull();
+    expect(forwardBadgeEmojis({ network: true, home: true })).toBe("🌐 🏠");
+    const text = textOf(buildForwardInfoContainer({ network: true, home: true }).toJSON() as Json);
+    expect(text).toContain("- `🏠 Home`\n> ");
+});
+
+test("the counts and 'Last one' sit below a divider, apart from the title block (and its flavor text)", () => {
+    const json = buildForwardContainer({
+        ...BASE,
+        flavorText: "Unexpected error occurred. [Code 404]",
+        findCount: 3,
+        serverFindCount: 41,
+        lastSeenInServerAt: new Date(Date.now() - 86_400_000),
+    }).toJSON() as Json;
+    const top = json.components ?? [];
+    const sectionText = textOf(top[0]);
+    expect(sectionText).toContain("found!");
+    expect(sectionText).toContain("Unexpected error occurred.");
+    expect(sectionText).not.toContain("Personal find");
+    expect(top[1].divider).toBe(true);
+    expect(top[2].content).toContain("Personal find **#3**");
+    expect(top[2].content).toContain("-# Last one");
+});
+
+test("no divider under the title when there's nothing extra to show", () => {
+    const json = buildForwardContainer({ ...BASE, flavorText: "x" }).toJSON() as Json;
+    expect(textOf(json)).not.toContain("Personal find");
+    expect((json.components ?? [])[1]?.divider).not.toBe(true);
 });

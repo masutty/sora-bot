@@ -181,3 +181,10 @@ test("forwardBiome real find: only the forward's role may ping - the finder is n
     expect(sent[0]).toMatchObject({ allowedMentions: { parse: [], roles: ["role-1"] } });
     expect(JSON.stringify(sent[0])).toContain("<@finder-1>");
 });
+
+test("forwardBiome: the live forward card carries the biome's flavor text", async () => {
+    const { deps } = createFakeDeps();
+    const sent: unknown[] = [];
+    await forwardBiome(fakeClient(sent), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+    expect(JSON.stringify(sent[0])).toContain("Unexpected error occurred. [Code 404]");
+});

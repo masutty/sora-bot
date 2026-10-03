@@ -88,6 +88,8 @@ function buildPreview(biome: string, scenario: Scenario, finderId: string) {
         lastSeenInServerAt: scenario.firstFind ? null : new Date(now - 2 * 86_400_000 - 5 * 3_600_000),
         vote,
         badges: scenario.badges,
+        // Preview only for now - real forwards don't pass it yet.
+        flavorText: BIOME_META[biome]?.flavorText,
     });
 }
 
