@@ -404,3 +404,29 @@ test("publishDuePosts: each Mirror carries the biome's flavor text", async () =>
     await publishDuePosts(deps);
     expect(JSON.stringify(calls.sent[0].payload.components)).toContain("Unexpected error occurred. [Code 404]");
 });
+
+test("publishDuePosts: each recorded Mirror remembers the ping role it was sent with", async () => {
+    const { deps, calls, setClock } = createFakeDeps();
+    await scheduleNetworkPost(input(), deps);
+    setClock(new Date(T0.getTime() + 11_000));
+    await publishDuePosts(deps);
+    const byGuild = new Map(calls.mirrors.map((m) => [m.guild_id, m.role_id]));
+    expect(byGuild.get("gB")).toBe("ping-B");
+    expect(byGuild.get("gC")).toBeNull();
+});
+
+test("scheduleSimulatedNetworkPost with dryRun false: a real post (ping, vote, no test banner) to the listed servers only", async () => {
+    const { deps, posts, calls, setClock } = createFakeDeps();
+    const result = await scheduleSimulatedNetworkPost(input(), ["gB"], deps, { dryRun: false });
+    expect(result.kind).toBe("scheduled");
+    expect(posts.get("p1")).toMatchObject({ simulated: false, vote_status: "open", relay_guild_ids: ["gB"] });
+
+    setClock(new Date(T0.getTime() + 11_000));
+    await publishDuePosts(deps);
+    expect(calls.sent.map((s) => s.channelId)).toEqual(["net-gB"]);
+    const { payload } = calls.sent[0];
+    expect(payload.allowedMentions).toEqual({ parse: [], roles: ["ping-B"] });
+    const body = JSON.stringify(payload.components);
+    expect(body).toContain("biomehunt:net-vote:p1:real");
+    expect(body).not.toContain("SIMULATED");
+});

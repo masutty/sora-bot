@@ -439,7 +439,7 @@ CREATE TABLE IF NOT EXISTS bh_network_ballots (
     PRIMARY KEY (post_id, discord_user_id)
 );
 
-/* Alerts for the bot owner (fake_verdict | multi_macro | low_activity) - the history /bh-owner network lookup reads. */
+/* Alerts for the bot owner (fake_verdict | multi_macro | low_activity) - the history /network-admin lookup reads. */
 CREATE TABLE IF NOT EXISTS bh_network_alerts (
     id              BIGSERIAL PRIMARY KEY,
     kind            VARCHAR(20) NOT NULL,
@@ -458,6 +458,9 @@ CREATE INDEX IF NOT EXISTS bh_network_alerts_user ON bh_network_alerts(discord_u
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS simulated BOOLEAN NOT NULL DEFAULT FALSE;
 /* The only Member Servers a test post goes to (the ids given in network_relays) - NULL on real posts, which go to every member. */
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS relay_guild_ids TEXT[];
+
+/* The ping role each Mirror was sent with - its vote-close edit keeps showing it (an edit never pings). */
+ALTER TABLE bh_network_mirrors ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
 
 /* The daily activity check's streak (Phase 4): consecutive daily checks below the minimum. */
 ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS low_activity_checks SMALLINT NOT NULL DEFAULT 0;

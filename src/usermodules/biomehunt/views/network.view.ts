@@ -113,7 +113,7 @@ export function buildStatusContainer(p: StatusParams): ContainerBuilder {
 
 const ALERT_DETAIL_MAX = 200;
 
-/** `/bh-owner network lookup`'s alert history: one line per alert (first line of its details, cut short). */
+/** `/network-admin lookup`'s alert history: one line per alert (first line of its details, cut short). */
 export function formatAlertLines(alerts: NetworkAlertRow[]): string {
     if (alerts.length === 0) return "No alerts.";
     return alerts
@@ -125,7 +125,7 @@ export function formatAlertLines(alerts: NetworkAlertRow[]): string {
         .join("\n");
 }
 
-/** One server line in `/bh-owner network overview`. */
+/** One server line in `/network-admin overview`. */
 export interface OverviewServer {
     guildId: string;
     name: string;
@@ -135,7 +135,7 @@ export interface OverviewServer {
     botInGuild: boolean;
 }
 
-/** The Network-wide numbers in `/bh-owner network overview` - the `*7d` ones over the last 7 days. */
+/** The Network-wide numbers in `/network-admin overview` - the `*7d` ones over the last 7 days. */
 export interface OverviewStats {
     posts7d: number;
     fakeVerdicts7d: number;
@@ -181,7 +181,7 @@ function listPages(title: string, servers: OverviewServer[]): ContainerBuilder[]
 }
 
 /**
- * `/bh-owner network overview`, as pages: a summary first (how many servers, the Network's numbers),
+ * `/network-admin overview`, as pages: a summary first (how many servers, the Network's numbers),
  * then the members, then the pending requests - each list sorted by name, 15 per page.
  */
 export function buildNetworkOverviewPages(p: {

@@ -4,7 +4,8 @@ import {
     MessageFlags,
     type SlashCommandBuilder,
     type SlashCommandStringOption,
-    type SlashCommandSubcommandGroupBuilder,
+    type SlashCommandSubcommandBuilder,
+    type SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
 import { type CommandContext, confirm, paginate } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
@@ -44,10 +45,10 @@ const guildIdOption =
     (o: SlashCommandStringOption) =>
         o.setName("guild_id").setDescription(desc).setRequired(required);
 
-function networkGroup(g: SlashCommandSubcommandGroupBuilder): SlashCommandSubcommandGroupBuilder {
-    return g
-        .setName("network")
-        .setDescription("Manage the Network.")
+/** Every `/network-admin` subcommand, on its builder. */
+export function addNetworkAdminSubcommands(b: SlashCommandBuilder): SlashCommandSubcommandsOnlyBuilder {
+    return b
+        .addSubcommand(forceSubcommand)
         .addSubcommand((s) =>
             s.setName("approve").setDescription("Approve a pending join request.").addStringOption(guildIdOption("Guild ID")),
         )
@@ -56,13 +57,6 @@ function networkGroup(g: SlashCommandSubcommandGroupBuilder): SlashCommandSubcom
         )
         .addSubcommand((s) =>
             s.setName("remove").setDescription("Remove a server from the Network.").addStringOption(guildIdOption("Guild ID")),
-        )
-        .addSubcommand((s) =>
-            s
-                .setName("force")
-                .setDescription("Put a server in the Network without the checklist.")
-                .addStringOption(guildIdOption("Guild ID"))
-                .addStringOption((o) => o.setName("channel_id").setDescription("Its Network channel ID").setRequired(true)),
         )
         .addSubcommand((s) =>
             s
@@ -117,24 +111,20 @@ function networkGroup(g: SlashCommandSubcommandGroupBuilder): SlashCommandSubcom
         );
 }
 
-/** Adds the `network` subcommand group to `/bh-owner`'s builder. */
-export function addNetworkOwnerGroup<T extends Pick<SlashCommandBuilder, "addSubcommandGroup">>(builder: T): T {
-    builder.addSubcommandGroup(networkGroup);
-    return builder;
-}
-
 function requireBanKind(raw: string): NetworkBanKind {
     if (raw !== "guild" && raw !== "user") throw new BiomeHuntError("kind must be `guild` or `user`.");
     return raw;
 }
 
-/** `/bh-owner network <sub>` - the caller already deferred ephemerally. */
-export async function runNetworkOwnerSubcommand(ctx: CommandContext): Promise<void> {
+/** `/network-admin <sub>` - the caller already deferred ephemerally. */
+export async function runNetworkAdminSubcommand(ctx: CommandContext): Promise<void> {
     const sub = ctx.args.getSubcommand();
     const deps = defaultMembershipDeps(ctx.client);
     const ownerId = ctx.user.id;
 
     switch (sub) {
+        case "force":
+            return runNetworkForce(ctx);
         case "approve":
         case "reject": {
             const guildId = requireSnowflake(ctx.args.getString("guild_id", true));
@@ -160,8 +150,6 @@ export async function runNetworkOwnerSubcommand(ctx: CommandContext): Promise<vo
             );
             return;
         }
-        case "force":
-            return runForce(ctx, ownerId);
         case "ban":
         case "unban": {
             const kind = requireBanKind(ctx.args.getString("kind", true));
@@ -204,12 +192,44 @@ export async function runNetworkOwnerSubcommand(ctx: CommandContext): Promise<vo
 }
 
 /**
- * Forced entry: the channel must be a plain text or announcement channel of that guild (not a thread
- * or a voice chat), and not one of its local forward channels - Mirrors must never mix into local posts.
+ * Which guild/channel `force` targets: by default the server and channel it's run in (or the
+ * `channel` picked there); `guild_id` + `channel_id` only to force another server from afar.
  */
-async function runForce(ctx: CommandContext, ownerId: string): Promise<void> {
-    const guildId = requireSnowflake(ctx.args.getString("guild_id", true));
-    const channelId = requireSnowflake(ctx.args.getString("channel_id", true));
+async function forceTarget(ctx: CommandContext): Promise<{ guildId: string; channelId: string }> {
+    const rawGuild = ctx.args.getString("guild_id");
+    if (rawGuild) {
+        const rawChannel = ctx.args.getString("channel_id");
+        if (!rawChannel) throw new BiomeHuntError("With `guild_id`, also give that server's `channel_id`.");
+        return { guildId: requireSnowflake(rawGuild), channelId: requireSnowflake(rawChannel) };
+    }
+    if (!ctx.guild) throw new BiomeHuntError("Run this in the server to force, or give `guild_id` and `channel_id`.");
+    const picked = await ctx.args.getChannel("channel");
+    const here = ctx.raw.kind === "prefix" ? ctx.raw.message.channelId : ctx.raw.interaction.channelId;
+    return { guildId: ctx.guild.id, channelId: picked?.id ?? here };
+}
+
+/** `/network-admin force`'s options. */
+function forceSubcommand(s: SlashCommandSubcommandBuilder): SlashCommandSubcommandBuilder {
+    return s
+        .setName("force")
+        .setDescription("Put this server in the Network without the checklist.")
+        .addChannelOption((o) =>
+            o
+                .setName("channel")
+                .setDescription("Network channel (default: the channel you run this in)")
+                .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
+        )
+        .addStringOption(guildIdOption("Another server's ID (then give channel_id too)", false))
+        .addStringOption((o) => o.setName("channel_id").setDescription("That server's Network channel ID"));
+}
+
+/**
+ * `/network-admin force` - forced entry. The channel must be a plain text or announcement channel of that guild (not a thread or a
+ * voice chat), and not one of its local forward channels - Mirrors must never mix into local posts.
+ */
+async function runNetworkForce(ctx: CommandContext): Promise<void> {
+    const ownerId = ctx.user.id;
+    const { guildId, channelId } = await forceTarget(ctx);
     const channel = await ctx.client.channels.fetch(channelId).catch(() => null);
     const isPlainText = channel?.type === ChannelType.GuildText || channel?.type === ChannelType.GuildAnnouncement;
     if (!channel || !isPlainText || channel.guildId !== guildId) {
@@ -311,7 +331,8 @@ const idList = (ids: string[]) => ids.map((id) => `\`${id}\``).join(", ");
 
 /**
  * `/bh-owner simulate-biome network_relays:<guild ids>` - relays the simulated find to ONLY those
- * Network servers, as a test (see `scheduleSimulatedNetworkPost`). Returns the line added to the reply.
+ * Network servers (see `scheduleSimulatedNetworkPost`): as a test when `dry`, as a real Network
+ * Post (pings, vote) otherwise. Returns the line added to the reply.
  */
 export async function relaySimulationToNetwork(
     ctx: CommandContext,
@@ -321,6 +342,7 @@ export async function relaySimulationToNetwork(
     eventId: number | null,
     now: Date,
     relayGuildIds: string[],
+    dry: boolean,
 ): Promise<string> {
     const result = await scheduleSimulatedNetworkPost(
         {
@@ -335,16 +357,18 @@ export async function relaySimulationToNetwork(
         },
         relayGuildIds,
         defaultNetworkPublishDeps(ctx.client),
+        { dryRun: dry },
     );
     if (result.kind === "skipped") return `\nNetwork relay not sent: ${result.reason}.`;
     const ignored =
         result.ignored.length > 0 ? `\nIgnored (not a Network member with a channel, or this server): ${idList(result.ignored)}` : "";
-    return `\nNetwork relay \`${result.postId}\` scheduled to ${idList(result.targets)} - a TEST post (no ping, no vote) after the local post + home advantage.${ignored}`;
+    const kind = dry ? "a TEST post (no ping, no vote)" : "a REAL Network post (pings and vote)";
+    return `\nNetwork relay \`${result.postId}\` scheduled to ${idList(result.targets)} - ${kind} after the local post + home advantage.${ignored}`;
 }
 
 const WEEK_MS = 7 * 86_400_000;
 
-/** `/bh-owner network overview` - a summary page, then every member and pending server, paginated. */
+/** `/network-admin overview` - a summary page, then every member and pending server, paginated. */
 async function runOverview(ctx: CommandContext): Promise<void> {
     const [guilds, stats] = await Promise.all([getActiveNetworkGuilds(), getNetworkStats(new Date(Date.now() - WEEK_MS))]);
     const toServer = (row: NetworkGuildRow): OverviewServer => {

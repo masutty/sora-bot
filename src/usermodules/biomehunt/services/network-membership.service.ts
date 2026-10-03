@@ -146,7 +146,7 @@ export async function submitJoinRequest(guildId: string, deps: MembershipDeps): 
 export type DecideResult = "ok" | "not_pending" | "banned";
 
 /**
- * An owner's Approve/Reject on a pending request (DM button or `/bh-owner network approve|reject`).
+ * An owner's Approve/Reject on a pending request (DM button or `/network-admin approve|reject`).
  * Compare-and-set on `pending`: a second click, a second owner, or a request withdrawn by a leave in
  * the meantime is `not_pending`, and nothing is applied or announced twice. The ban is re-checked
  * here: a guild banned after it submitted (the ban found it still `none`, so nothing was removed)

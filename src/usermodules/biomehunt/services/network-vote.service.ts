@@ -158,7 +158,7 @@ export async function castNetworkBallot(
 }
 
 /**
- * Closes one Network vote (the Worker when its minute is up, or `/bh-owner network close-vote`):
+ * Closes one Network vote (the Worker when its minute is up, or `/network-admin close-vote`):
  * resolves it, closes it with a compare-and-set (so the Worker and an owner never both apply it),
  * edits every Mirror once with the result, and on a Fake verdict warns the origin's staff and the owners.
  */
@@ -175,19 +175,21 @@ export async function closeNetworkVote(
 
     // Read after the close committed - a ballot racing it is either counted here or was rejected.
     const final = resolveNetworkVote(await deps.getNetworkBallots(postId));
-    const payload: MessageEditOptions = {
+    // Each Mirror is rebuilt with the ping role it was sent with, so the mention stays visible - an
+    // edit never pings again.
+    const payloadFor = (mirror: NetworkMirrorRow): MessageEditOptions => ({
         components: [
             buildMirrorContainer({
                 post: closed,
-                roleId: null,
+                roleId: mirror.role_id,
                 vote: { status, scoreboard: final.scoreboard },
                 flavorText: BIOME_META[closed.biome]?.flavorText,
             }),
         ],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
-    };
-    for (const mirror of await deps.getNetworkMirrors(postId)) await deps.editMirror(mirror, payload);
+    });
+    for (const mirror of await deps.getNetworkMirrors(postId)) await deps.editMirror(mirror, payloadFor(mirror));
 
     if (status === "fake") await reportFakeVerdict(closed, final.scoreboard, deps);
     return "ok";

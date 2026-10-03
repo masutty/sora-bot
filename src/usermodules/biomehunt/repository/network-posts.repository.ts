@@ -100,9 +100,9 @@ export async function markNetworkPostDiscarded(id: string): Promise<void> {
 
 export async function insertNetworkMirror(m: NetworkMirrorRow): Promise<void> {
     await query(
-        `INSERT INTO bh_network_mirrors (post_id, guild_id, channel_id, message_id) VALUES ($1, $2, $3, $4)
+        `INSERT INTO bh_network_mirrors (post_id, guild_id, channel_id, message_id, role_id) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (post_id, guild_id) DO NOTHING`,
-        [m.post_id, m.guild_id, m.channel_id, m.message_id],
+        [m.post_id, m.guild_id, m.channel_id, m.message_id, m.role_id],
     );
 }
 
@@ -223,7 +223,7 @@ export interface NetworkStatsRow {
     banned_users: number;
 }
 
-/** The Network-wide numbers for `/bh-owner network overview` - posts/fakes/multi macro since `since`, the rest right now. Test relays don't count as posts. */
+/** The Network-wide numbers for `/network-admin overview` - posts/fakes/multi macro since `since`, the rest right now. Test relays don't count as posts. */
 export async function getNetworkStats(since: Date): Promise<NetworkStatsRow> {
     const result = await query<Record<keyof NetworkStatsRow, string>>(
         `SELECT

@@ -301,6 +301,8 @@ export interface NetworkMirrorRow {
     guild_id: string;
     channel_id: string;
     message_id: string;
+    /** The ping role this Mirror was sent with - kept so the vote-close edit still shows it. */
+    role_id: string | null;
 }
 
 export interface NetworkBallotRow {
