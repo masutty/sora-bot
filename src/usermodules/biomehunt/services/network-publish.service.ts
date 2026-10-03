@@ -273,9 +273,11 @@ async function publishOne(post: NetworkPostRow, deps: NetworkPublishDeps): Promi
         return;
     }
 
+    // Every member with a Network channel - the origin included (its Home Mirror, for parity), unless
+    // it's a test relay, which goes to the listed servers only.
     const relayOnly = post.relay_guild_ids ? new Set(post.relay_guild_ids) : null;
     const destinations = (await deps.getMemberNetworkGuilds()).filter(
-        (g) => g.guild_id !== post.origin_guild_id && g.network_channel_id && (!relayOnly || relayOnly.has(g.guild_id)),
+        (g) => g.network_channel_id && (!relayOnly || relayOnly.has(g.guild_id)),
     );
     const pingRoles = await deps.getNetworkPingRolesForBiome(post.biome);
     const order = deps.shuffle(destinations);
@@ -296,13 +298,16 @@ async function sendOneMirror(
     pingRoles: Map<string, string>,
     deps: NetworkPublishDeps,
 ): Promise<void> {
-    // A test relay never pings and never votes - it's shown as a test.
-    const roleId = post.simulated ? null : (pingRoles.get(guild.guild_id) ?? null);
+    // A test relay never pings and never votes - it's shown as a test. The origin's own (Home) Mirror
+    // never pings either: its local post already did.
+    const home = guild.guild_id === post.origin_guild_id;
+    const roleId = post.simulated || home ? null : (pingRoles.get(guild.guild_id) ?? null);
+    const flavorText = BIOME_META[post.biome]?.flavorText;
     const sent = await deps.sendMirror(guild.network_channel_id as string, {
         components: [
             post.simulated
-                ? buildMirrorContainer({ post, roleId: null, simulated: true, flavorText: BIOME_META[post.biome]?.flavorText })
-                : buildMirrorContainer({ post, roleId, vote: { status: "open" }, flavorText: BIOME_META[post.biome]?.flavorText }),
+                ? buildMirrorContainer({ post, roleId: null, simulated: true, home, flavorText })
+                : buildMirrorContainer({ post, roleId, vote: { status: "open" }, home, flavorText }),
         ],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [], roles: roleId ? [roleId] : [] },
