@@ -27,7 +27,11 @@ const FAKE_BIOMES = Object.keys(BIOME_META).map((biome, i) => ({
 export default {
     description: 'BiomeHunt\'s "Session Ended" macro-channel report, with fake session/biome data.',
     run(): TestPayload {
-        const container = buildSessionEndContainer(FAKE_SESSION, FAKE_BIOMES);
+        const container = buildSessionEndContainer(FAKE_SESSION, FAKE_BIOMES, {
+            todaySeconds: 3 * 3600 + 10 * 60,
+            windowSeconds: 6 * 3600 + 25 * 60,
+            windowHours: 24,
+        });
         return { flags: MessageFlags.IsComponentsV2, components: [container] };
     },
 } satisfies TestCase;

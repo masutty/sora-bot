@@ -14,14 +14,25 @@ function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
 }
 
+/** Aggregate macro time shown next to the finished session - same numbers as the profile's Quotas tab. */
+export interface SessionEndTotals {
+    /** Active seconds since the most recent quota-day rollover. */
+    todaySeconds: number;
+    windowSeconds: number;
+    windowHours: number;
+}
+
 /** Builds the "Session Ended" report Container - a pure builder (no interactive View) so it can be
  * previewed with fake data (see `tests/embed/session-end.ts`) without a real session in the DB.
  * `reportSessionEnd` (`services/activity-session-report.service.ts`) is the only caller in prod. */
-export function buildSessionEndContainer(session: ActivitySessionRow, biomes: Array<{ biome: string; count: number }>): ContainerBuilder {
+export function buildSessionEndContainer(
+    session: ActivitySessionRow,
+    biomes: Array<{ biome: string; count: number }>,
+    totals: SessionEndTotals,
+): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
-    container.addTextDisplayComponents((td) => td.setContent("## 🕐 Session Ended"));
-    container.addTextDisplayComponents((td) => td.setContent(`*${formatTime(session.duration_seconds)} active*`));
+    container.addTextDisplayComponents((td) => td.setContent(`## 🕐 Session Ended · \`${formatTime(session.duration_seconds)}\``));
 
     addDivider(container);
 
@@ -30,6 +41,13 @@ export function buildSessionEndContainer(session: ActivitySessionRow, biomes: Ar
             ? formatCodeblock(biomes.map((b) => ansiBiomeLine(b.biome, b.count)).join("\n"), "ansi")
             : "*No biomes recorded.*";
     container.addTextDisplayComponents((td) => td.setContent(`**Biomes found**\n${biomesBody}`));
+
+    addDivider(container);
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            `-# You have macroed \`${formatTime(totals.todaySeconds)}\` today, and \`${formatTime(totals.windowSeconds)}\` in the last ${totals.windowHours} hours.`,
+        ),
+    );
 
     return container;
 }
