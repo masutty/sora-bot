@@ -32,13 +32,14 @@ async function computeQuotaRewardProgress(
     return Promise.all(
         progress.map(async (p) => {
             const activeSeconds = await getActiveSecondsInWindow(userId, p.quota_window_hours);
-            const qualifies = p.held_granted_at !== null || activeSeconds >= p.quota_target_seconds;
+            const qualifies = activeSeconds >= p.quota_target_seconds;
             return { p, activeSeconds, qualifies };
         }),
     );
 }
 
-/** One-line-per-role summary (checkmark/X + role ping only) - used by the Quotas tab. */
+/** One-line-per-role summary (checkmark/X + role ping only) - used by the Quotas tab. The mark
+ * reflects whether the quota is met right now, not whether the user still holds the role. */
 async function getQuotaRewardSummaryLines(guildId: string, userId: number): Promise<string[]> {
     const progress = await computeQuotaRewardProgress(guildId, userId);
     return progress.map(({ p, qualifies }) => `${qualifies ? "✅" : "❌"} <@&${p.role_id}>`);
