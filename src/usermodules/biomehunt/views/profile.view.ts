@@ -9,7 +9,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
-import { quotaDayWindow } from "../services/quota-report.service";
+import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota-report.service";
 import { settings } from "../settings";
 import {
     buildBadgesTabContainer,
@@ -24,14 +24,23 @@ import {
 
 const logger = new Logger("biomehunt.views.profile");
 
+/** A role's progress over the stretch its mode is judged on: RW = the rolling last N hours, F = the current quota day (see `fixedQuotaProgressWindow`). */
 async function computeQuotaRewardProgress(
     guildId: string,
     userId: number,
+    quotaDayEnd: Date,
 ): Promise<Array<{ p: QuotaProgressRow; activeSeconds: number; qualifies: boolean }>> {
     const progress = await getUserQuotaProgress(guildId, userId);
+    const now = new Date();
     return Promise.all(
         progress.map(async (p) => {
-            const activeSeconds = await getActiveSecondsInWindow(userId, p.quota_window_hours);
+            let activeSeconds: number;
+            if (p.mode === "F") {
+                const { start, end } = fixedQuotaProgressWindow(p.quota_window_hours, quotaDayEnd, now);
+                activeSeconds = await getActiveSecondsBetween(userId, start, end);
+            } else {
+                activeSeconds = await getActiveSecondsInWindow(userId, p.quota_window_hours);
+            }
             const qualifies = activeSeconds >= p.quota_target_seconds;
             return { p, activeSeconds, qualifies };
         }),
@@ -40,8 +49,8 @@ async function computeQuotaRewardProgress(
 
 /** One-line-per-role summary (checkmark/X + role ping only) - used by the Quotas tab. The mark
  * reflects whether the quota is met right now, not whether the user still holds the role. */
-async function getQuotaRewardSummaryLines(guildId: string, userId: number): Promise<string[]> {
-    const progress = await computeQuotaRewardProgress(guildId, userId);
+async function getQuotaRewardSummaryLines(guildId: string, userId: number, quotaDayEnd: Date): Promise<string[]> {
+    const progress = await computeQuotaRewardProgress(guildId, userId, quotaDayEnd);
     return progress.map(({ p, qualifies }) => `${qualifies ? "✅" : "❌"} <@&${p.role_id}>`);
 }
 
@@ -61,7 +70,7 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
             getActiveSecondsBetween(user.id, quotaDay.start, quotaDay.end),
             getBiomeCounts(user.id),
             getMacroChannelByUserId(user.id),
-            getQuotaRewardSummaryLines(guildId, user.id),
+            getQuotaRewardSummaryLines(guildId, user.id, quotaDay.end),
             getUserBadges(user.id),
             getRecentSessions(user.id, 100),
             isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"),

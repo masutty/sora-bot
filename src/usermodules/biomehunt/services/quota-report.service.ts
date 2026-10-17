@@ -16,6 +16,16 @@ export function quotaDayWindow(quotaEvalHourUtc: number, now: Date, daysBack = 0
     return { start, end: new Date(start.getTime() + 86_400_000) };
 }
 
+/**
+ * Where an F-mode (fixed, daily) quota's progress is counted right now: the stretch the next sweep
+ * will look at - its `quota_window_hours` ending at the current quota day's end - up to `now`. For
+ * a 24h window that's simply "today's quota day so far", NOT the last 24 hours, which would count
+ * yesterday's quota day too.
+ */
+export function fixedQuotaProgressWindow(windowHours: number, quotaDayEnd: Date, now: Date): { start: Date; end: Date } {
+    return { start: new Date(quotaDayEnd.getTime() - windowHours * 3_600_000), end: now };
+}
+
 export interface QuotaMember {
     discordUserId: string;
     activeSeconds: number;
