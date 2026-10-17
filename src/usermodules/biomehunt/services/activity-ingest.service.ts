@@ -7,6 +7,7 @@ import { extendSession, getLatestSession, insertEventIfNew, openNewSession } fro
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserById, lookupChannel, touchLastActivity } from "../repository/users.repository";
 import { transitionUser } from "../workers/status.worker";
+import { effectiveLastActivity, nextActivityGrace } from "./activity-grace.service";
 import { grantBiomeReward } from "./biome-reward.service";
 import { checkAndForward } from "./forward.service";
 import { scheduleNetworkPostSafely } from "./network-publish.service";
@@ -58,7 +59,9 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     }
 
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
-    const deltaSeconds = user.last_activity_at ? (now.getTime() - user.last_activity_at.getTime()) / 1000 : Number.POSITIVE_INFINITY;
+    // Measured from the end of a running timed biome too, so a long admin event doesn't split the session.
+    const lastActivity = effectiveLastActivity(user.last_activity_at, user.activity_grace_until);
+    const deltaSeconds = lastActivity ? (now.getTime() - lastActivity.getTime()) / 1000 : Number.POSITIVE_INFINITY;
 
     await transaction(async (client) => {
         if (deltaSeconds > guildConfig.session_gap_threshold_s) {
@@ -70,7 +73,8 @@ export async function processIncomingMessage(message: Message): Promise<void> {
         }
     });
 
-    await touchLastActivity(entry.userId, now);
+    const currentGrace = { until: user.activity_grace_until, biome: user.activity_grace_biome };
+    await touchLastActivity(entry.userId, now, nextActivityGrace(currentGrace, parsed, now));
 
     if (user.current_status !== "active") {
         await transitionUser(entry.userId, entry.guildId, "active");

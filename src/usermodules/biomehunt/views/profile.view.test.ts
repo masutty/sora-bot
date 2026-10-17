@@ -22,6 +22,8 @@ function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
         discord_user_id: "u1",
         current_status: "idle",
         last_activity_at: null,
+        activity_grace_until: null,
+        activity_grace_biome: null,
         paused_at: null,
         created_at: new Date("2024-01-01T00:00:00Z"),
         seeds: 0,

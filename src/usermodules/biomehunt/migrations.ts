@@ -487,4 +487,11 @@ CREATE TABLE IF NOT EXISTS bh_biomes (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+/* How long a timed biome lasts - while it runs, its finder can't go idle (see activity-grace.service.ts). NULL = not timed. */
+ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS duration_s INTEGER;
+
+/* The user's activity grace from the most recently started timed biome - they count as active until activity_grace_until. */
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_until TIMESTAMPTZ;
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_biome VARCHAR(40);
+
 `;

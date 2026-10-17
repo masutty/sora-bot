@@ -10,6 +10,7 @@ interface BiomeRow {
     flavor_text: string | null;
     icon_url: string | null;
     ansi_color: string | null;
+    duration_s: number | null;
     enabled: boolean;
 }
 
@@ -22,8 +23,22 @@ function toEntry(row: BiomeRow): BiomeEntry {
         flavorText: row.flavor_text ?? undefined,
         iconUrl: row.icon_url ?? undefined,
         ansiColor: row.ansi_color ?? undefined,
+        durationS: row.duration_s ?? undefined,
         enabled: row.enabled,
     };
+}
+
+/** `$2..$8` of every write: label, category, color, flavor_text, icon_url, ansi_color, duration_s - unset values as NULL. */
+function metaParams(meta: BiomeMeta): unknown[] {
+    return [
+        meta.label,
+        meta.category,
+        meta.color,
+        meta.flavorText || null,
+        meta.iconUrl || null,
+        meta.ansiColor || null,
+        meta.durationS ?? null,
+    ];
 }
 
 /** Inserts every `DEFAULT_BIOMES` key missing from `bh_biomes` - never overwrites a row already there. */
@@ -53,7 +68,7 @@ export async function seedDefaultBiomes(): Promise<void> {
 /** Reads `bh_biomes` into the in-memory registry every lookup reads (see `setBiomeRegistry`). */
 export async function loadBiomeRegistry(): Promise<void> {
     const result = await query<BiomeRow>(
-        `SELECT biome, label, category, color, flavor_text, icon_url, ansi_color, enabled
+        `SELECT biome, label, category, color, flavor_text, icon_url, ansi_color, duration_s, enabled
          FROM bh_biomes
          ORDER BY sort_order, biome`,
     );
@@ -63,10 +78,10 @@ export async function loadBiomeRegistry(): Promise<void> {
 /** Adds a new biome at the end of the list. Returns false if the key already exists. */
 export async function insertBiome(key: string, meta: BiomeMeta): Promise<boolean> {
     const result = await query(
-        `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bh_biomes))
+        `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, duration_s, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bh_biomes))
          ON CONFLICT (biome) DO NOTHING`,
-        [key, meta.label, meta.category, meta.color, meta.flavorText || null, meta.iconUrl || null, meta.ansiColor || null],
+        [key, ...metaParams(meta)],
     );
     return (result.rowCount ?? 0) > 0;
 }
@@ -75,9 +90,9 @@ export async function insertBiome(key: string, meta: BiomeMeta): Promise<boolean
 export async function updateBiome(key: string, meta: BiomeMeta): Promise<void> {
     await query(
         `UPDATE bh_biomes
-         SET label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7, updated_at = NOW()
+         SET label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7, duration_s = $8, updated_at = NOW()
          WHERE biome = $1`,
-        [key, meta.label, meta.category, meta.color, meta.flavorText || null, meta.iconUrl || null, meta.ansiColor || null],
+        [key, ...metaParams(meta)],
     );
 }
 
@@ -90,12 +105,12 @@ export async function saveAllBiomes(entries: BiomeEntry[]): Promise<void> {
     await transaction(async (client) => {
         for (const [i, e] of entries.entries()) {
             await client.query(
-                `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, enabled, sort_order)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, duration_s, enabled, sort_order)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                  ON CONFLICT (biome) DO UPDATE SET
                      label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7,
-                     enabled = $8, sort_order = $9, updated_at = NOW()`,
-                [e.key, e.label, e.category, e.color, e.flavorText || null, e.iconUrl || null, e.ansiColor || null, e.enabled, i],
+                     duration_s = $8, enabled = $9, sort_order = $10, updated_at = NOW()`,
+                [e.key, ...metaParams(e), e.enabled, i],
             );
         }
     });

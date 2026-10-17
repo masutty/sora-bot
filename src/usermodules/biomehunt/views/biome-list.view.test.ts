@@ -67,7 +67,7 @@ test("a disabled biome is counted and drawn gray in the table", () => {
 
     const table = buildCategoryTable(entries.filter((e) => e.category === "biome"));
     expect(table).toContain("\u001b[30mHell");
-    expect(table).toMatch(/HELL\s+D7263D {2}disabled/);
+    expect(table).toMatch(/HELL\s+D7263D {2}- {2}disabled/);
 });
 
 test("table columns line up whatever the ANSI codes are", () => {

@@ -23,6 +23,9 @@ export interface BiomeMeta {
      * Unset = no color (terminal default). Discord's `ansi` codeblock only renders bold(1) plus
      * 8 foreground (30-37) and 8 background (40-47) codes - see `!test embed/ansi-colors`. */
     ansiColor?: string;
+    /** How long the biome lasts, for biomes with a fixed duration (admin events, mostly). While it
+     * runs, its finder can't go idle - see activity-grace.service.ts. Unset = not timed. */
+    durationS?: number;
 }
 
 /** One registered biome. A disabled biome is no longer recognized from macro webhooks nor offered
@@ -202,12 +205,13 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
     },
 };
 
-/** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token, the form every biome key is stored in. */
+/**
+ * The form every biome key is stored in: uppercase letters and digits only. Macros write names with
+ * spaces and punctuation ("SAND STORM", "THE NULL'S EXISTENCE") - all of it is dropped, so
+ * `THE NULL'S EXISTENCE` -> `THENULLSEXISTENCE`.
+ */
 export function normalizeBiomeName(raw: string): string {
-    return raw
-        .trim()
-        .toUpperCase()
-        .replace(/[\s_]+/g, "");
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
 function defaultEntries(): BiomeEntry[] {

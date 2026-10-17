@@ -41,6 +41,26 @@ test("J.Jaram's name-first format matches a three-word biome, even with words be
     expect(jjaram.extractBiome({ title: "[Macro] Sand Storm Biome Ended" })).toEqual({ biome: "SANDSTORM", eventType: "ended" });
 });
 
+test("an apostrophe stays inside the word, so THE NULL'S EXISTENCE is never read as Null", () => {
+    const text = { title: "Biome Ended - THE NULL'S EXISTENCE" };
+    expect(parser.extractBiome(text)).toEqual({ biome: null, eventType: null });
+
+    setBiomeRegistry([
+        ...getAllBiomes(),
+        { key: "THENULLSEXISTENCE", label: "The Null's Existence", category: "rare", color: 0, enabled: true },
+    ]);
+    expect(parser.extractBiome(text)).toEqual({ biome: "THENULLSEXISTENCE", eventType: "ended" });
+    expect(parser.extractBiome({ title: "Biome Ended - The Null’s Existence" })).toEqual({
+        biome: "THENULLSEXISTENCE",
+        eventType: "ended",
+    });
+});
+
+test("a known biome in the middle of an unknown name doesn't match alone", () => {
+    expect(parser.extractBiome({ title: "Biome Started - The Hell Gate" })).toEqual({ biome: null, eventType: null });
+    expect(new JJaramParser().extractBiome({ title: "Hell Gate Biome Started" })).toEqual({ biome: null, eventType: null });
+});
+
 test("an unknown name still reports no biome", () => {
     expect(parser.extractBiome({ title: "Biome Started - Not A Real Biome" })).toEqual({ biome: null, eventType: null });
 });

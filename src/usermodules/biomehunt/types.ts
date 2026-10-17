@@ -60,6 +60,10 @@ export interface UserRow {
     discord_user_id: string;
     current_status: ActivityStatus;
     last_activity_at: Date | null;
+    /** Active at least until this, because a timed biome started (see activity-grace.service.ts). */
+    activity_grace_until: Date | null;
+    /** The timed biome that set `activity_grace_until` - its Ended clears the grace. */
+    activity_grace_biome: string | null;
     paused_at: Date | null;
     created_at: Date;
     seeds: number;
@@ -220,6 +224,12 @@ export interface RoleJobRow {
     execute_after: Date;
     processed: boolean;
     created_at: Date;
+}
+
+/** A user's activity grace: they count as active until `until`, because `biome` (a timed biome) started. */
+export interface ActivityGrace {
+    until: Date | null;
+    biome: string | null;
 }
 
 export interface ParsedEvent {

@@ -7,6 +7,7 @@ import {
     CLEAR_VALUE,
     formatHexColor,
     parseCategory,
+    parseDuration,
     parseFlavorText,
     parseHexColor,
     parseIconUrl,
@@ -28,6 +29,8 @@ export interface BiomeConfigEntry {
     iconUrl: string | null;
     /** Slugs of `ANSI_TEXT_COLORS` / `ANSI_BACKGROUND_COLORS` - `null` = none. */
     ansi: { text: string | null; background: string | null; bold: boolean };
+    /** Fixed length in seconds (see `BiomeMeta.durationS`) - `null` = not timed. Optional in the file. */
+    durationSeconds?: number | null;
     enabled: boolean;
 }
 
@@ -58,6 +61,7 @@ function toConfigEntry(e: BiomeEntry): BiomeConfigEntry {
             background: ANSI_BACKGROUND_COLORS.find((c) => c.code === style.background)?.slug ?? null,
             bold: style.bold,
         },
+        durationSeconds: e.durationS ?? null,
         enabled: e.enabled,
     };
 }
@@ -74,6 +78,13 @@ export function buildBiomeConfig(entries: BiomeEntry[], exportedBy: string | nul
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const optionalString = (v: unknown) => (v === null || v === undefined ? null : String(v));
+
+function parseDurationSeconds(raw: unknown): number | undefined {
+    if (raw === null || raw === undefined) return undefined;
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0)
+        throw new BiomeHuntError("`durationSeconds` must be a whole number of seconds");
+    return parseDuration(`${raw}s`);
+}
 
 function fromConfigEntry(raw: unknown): BiomeEntry {
     if (!isObject(raw)) throw new BiomeHuntError("not an object");
@@ -94,6 +105,7 @@ function fromConfigEntry(raw: unknown): BiomeEntry {
             background: optionalString(ansi.background) ?? CLEAR_VALUE,
             bold: ansi.bold === true,
         }),
+        durationS: parseDurationSeconds(raw.durationSeconds),
         enabled: raw.enabled !== false,
     };
 }
@@ -137,7 +149,7 @@ export function parseBiomeConfig(text: string): BiomeEntry[] {
     return entries;
 }
 
-const COMPARED_FIELDS = ["label", "category", "color", "flavorText", "iconUrl", "ansiColor", "enabled"] as const;
+const COMPARED_FIELDS = ["label", "category", "color", "flavorText", "iconUrl", "ansiColor", "durationS", "enabled"] as const;
 
 /** `""` and `undefined` both mean "not set" (e.g. a seeded empty icon URL vs. a missing one). */
 const unset = <T>(v: T) => (v === "" ? undefined : v);
