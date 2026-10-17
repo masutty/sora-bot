@@ -17,7 +17,7 @@ const normalized = (entries: BiomeEntry[]) =>
     }));
 
 test("export -> import round-trips every field, disabled biomes and order included", () => {
-    const entries = getAllBiomes().map((e) => (e.key === "HELL" ? { ...e, enabled: false } : e));
+    const entries = getAllBiomes().map((e) => (e.key === "HELL" ? { ...e, enabled: false, durationS: 600 } : e));
     const parsed = parseBiomeConfig(exportText(entries));
     expect(parsed).toEqual(normalized(entries));
 });

@@ -23,6 +23,9 @@ export interface BiomeMeta {
      * Unset = no color (terminal default). Discord's `ansi` codeblock only renders bold(1) plus
      * 8 foreground (30-37) and 8 background (40-47) codes - see `!test embed/ansi-colors`. */
     ansiColor?: string;
+    /** How long the biome lasts, for biomes with a fixed duration (admin events, mostly). While it
+     * runs, its finder can't go idle - see activity-grace.service.ts. Unset = not timed. */
+    durationS?: number;
 }
 
 /** One registered biome. A disabled biome is no longer recognized from macro webhooks nor offered

@@ -14,6 +14,7 @@ import {
     resetActivityState,
     updateUserStatus,
 } from "../repository/users.repository";
+import { effectiveLastActivity } from "../services/activity-grace.service";
 import { reportSessionEnd } from "../services/activity-session-report.service";
 import { evaluateRollingRewards, runFixedRewardSweep } from "../services/reward.service";
 import { settings } from "../settings";
@@ -64,7 +65,9 @@ async function tick(client: BotClient): Promise<void> {
         if (!user.last_activity_at) continue;
 
         const guildConfig = await getOrCreateGuildConfig(user.guild_id);
-        const inactiveSeconds = (now - user.last_activity_at.getTime()) / 1000;
+        // A running timed biome keeps the user active; afterwards the idle threshold counts from its expected end.
+        const lastActivity = effectiveLastActivity(user.last_activity_at, user.activity_grace_until) ?? user.last_activity_at;
+        const inactiveSeconds = (now - lastActivity.getTime()) / 1000;
         const newStatus = resolveStatus(inactiveSeconds, guildConfig.idle_threshold_s, guildConfig.inactive_threshold_s);
         const wasActive = user.current_status === "active";
 

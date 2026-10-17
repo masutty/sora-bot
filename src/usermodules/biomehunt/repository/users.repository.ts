@@ -1,5 +1,5 @@
 import { query } from "@/database/connection";
-import type { ActivityStatus, UserMacroChannelRow, UserRow } from "../types";
+import type { ActivityGrace, ActivityStatus, UserMacroChannelRow, UserRow } from "../types";
 
 export interface ChannelIndexEntry {
     userId: number;
@@ -70,8 +70,13 @@ export async function updateUserStatus(userId: number, status: ActivityStatus): 
     await query(`UPDATE bh_users SET current_status = $2 WHERE id = $1`, [userId, status]);
 }
 
-export async function touchLastActivity(userId: number, when: Date): Promise<void> {
-    await query(`UPDATE bh_users SET last_activity_at = $2 WHERE id = $1`, [userId, when]);
+export async function touchLastActivity(userId: number, when: Date, grace: ActivityGrace): Promise<void> {
+    await query(`UPDATE bh_users SET last_activity_at = $2, activity_grace_until = $3, activity_grace_biome = $4 WHERE id = $1`, [
+        userId,
+        when,
+        grace.until,
+        grace.biome,
+    ]);
 }
 
 /**
@@ -82,7 +87,10 @@ export async function touchLastActivity(userId: number, when: Date): Promise<voi
  * gets deleted again before they can even set up their webhook.
  */
 export async function resetActivityState(userId: number): Promise<void> {
-    await query(`UPDATE bh_users SET last_activity_at = NULL, current_status = 'inactive' WHERE id = $1`, [userId]);
+    await query(
+        `UPDATE bh_users SET last_activity_at = NULL, activity_grace_until = NULL, activity_grace_biome = NULL, current_status = 'inactive' WHERE id = $1`,
+        [userId],
+    );
 }
 
 export async function pauseUser(guildId: string, discordUserId: string): Promise<boolean> {

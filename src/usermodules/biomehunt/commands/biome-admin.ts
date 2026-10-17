@@ -70,7 +70,10 @@ function addSharedBiomeOptions(s: SlashCommandSubcommandBuilder, required: boole
                 .setDescription(`Name background color ${ANSI_WHERE}`)
                 .addChoices(...ANSI_BACKGROUND_CHOICES),
         )
-        .addBooleanOption((o) => o.setName("ansi_bold").setDescription(`Bold name ${ANSI_WHERE}`));
+        .addBooleanOption((o) => o.setName("ansi_bold").setDescription(`Bold name ${ANSI_WHERE}`))
+        .addStringOption((o) =>
+            o.setName("duration").setDescription(`Fixed length (e.g. 10m, 1h30m) - its finder can't go idle meanwhile${removable}`),
+        );
 }
 
 /** `/bh-owner biome ...` - the bot owner's runtime biome registry (see `bh_biomes`). */
@@ -182,6 +185,7 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
                 flavorText: args.getString("flavor_text"),
                 iconUrl: args.getString("icon_url"),
                 ansi: ansiInputFrom(args),
+                duration: args.getString("duration"),
             });
             await ctx.reply(biomeCard("Biome added", entry, enabledNotes(entry, detectionName ?? entry.label)));
             return;
@@ -195,6 +199,7 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
                 flavorText: args.getString("flavor_text"),
                 iconUrl: args.getString("icon_url"),
                 ansi: ansiInputFrom(args),
+                duration: args.getString("duration"),
             });
             await ctx.reply(biomeCard("Biome updated", entry, entry.category === "rare" && entry.enabled ? [NETWORK_NOTE] : []));
             return;

@@ -50,6 +50,23 @@ export function parseCategory(raw: string): BiomeCategory {
     return category;
 }
 
+/** A timed biome can't last longer than this - far above any real admin event, it only catches typos. */
+const MAX_DURATION_S = 24 * 3600;
+
+/** `10m`, `1h30m`, `90s`, `2h` (units h/m/s, any combination, in that order) -> seconds. */
+export function parseDuration(raw: string): number {
+    const match = raw
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "")
+        .match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+    const seconds = match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0;
+    if (!match || seconds === 0)
+        throw new BiomeHuntError(`\`${raw}\` is not a duration - use something like \`10m\`, \`1h30m\` or \`90s\`.`);
+    if (seconds > MAX_DURATION_S) throw new BiomeHuntError("A biome duration can be at most 24h.");
+    return seconds;
+}
+
 export function parseIconUrl(raw: string): string {
     const url = raw.trim();
     if (!/^https:\/\/\S+$/i.test(url)) throw new BiomeHuntError("The icon must be an `https://` image URL.");
@@ -115,6 +132,8 @@ export interface AddBiomeInput {
     flavorText: string | null;
     iconUrl: string | null;
     ansi: AnsiInput;
+    /** e.g. `10m` - see `parseDuration`. On edit, `CLEAR_VALUE` removes it. */
+    duration: string | null;
 }
 
 /** Adds a new, enabled biome. Its key is the detection name normalized (e.g. "Blood Rain" -> `BLOODRAIN`). */
@@ -128,6 +147,7 @@ export async function addBiome(input: AddBiomeInput, deps: BiomeAdminDeps = defa
         flavorText: input.flavorText ? parseFlavorText(input.flavorText) : undefined,
         iconUrl: input.iconUrl ? parseIconUrl(input.iconUrl) : undefined,
         ansiColor: applyAnsiInput(undefined, input.ansi),
+        durationS: input.duration ? parseDuration(input.duration) : undefined,
     };
 
     const existing = getBiomeMeta(key);
@@ -148,6 +168,8 @@ export interface EditBiomeInput {
     /** `CLEAR_VALUE` removes it. */
     iconUrl: string | null;
     ansi: AnsiInput;
+    /** e.g. `10m` - see `parseDuration`. On edit, `CLEAR_VALUE` removes it. */
+    duration: string | null;
 }
 
 function requireBiome(raw: string): BiomeEntry {
@@ -162,7 +184,17 @@ const isClear = (raw: string) => raw.trim().toLowerCase() === CLEAR_VALUE;
 export async function editBiome(input: EditBiomeInput, deps: BiomeAdminDeps = defaultBiomeAdminDeps()): Promise<BiomeEntry> {
     const current = requireBiome(input.biome);
     const { ansi } = input;
-    const given = [input.label, input.category, input.color, input.flavorText, input.iconUrl, ansi.text, ansi.background, ansi.bold];
+    const given = [
+        input.label,
+        input.category,
+        input.color,
+        input.flavorText,
+        input.iconUrl,
+        input.duration,
+        ansi.text,
+        ansi.background,
+        ansi.bold,
+    ];
     if (given.every((v) => v === null)) throw new BiomeHuntError("Nothing to change - pass at least one field.");
 
     const next: BiomeEntry = { ...current };
@@ -172,6 +204,7 @@ export async function editBiome(input: EditBiomeInput, deps: BiomeAdminDeps = de
     if (input.flavorText !== null) next.flavorText = isClear(input.flavorText) ? undefined : parseFlavorText(input.flavorText);
     if (input.iconUrl !== null) next.iconUrl = isClear(input.iconUrl) ? undefined : parseIconUrl(input.iconUrl);
     next.ansiColor = applyAnsiInput(current.ansiColor, ansi);
+    if (input.duration !== null) next.durationS = isClear(input.duration) ? undefined : parseDuration(input.duration);
 
     await deps.updateBiome(next.key, next);
     await deps.reloadRegistry();

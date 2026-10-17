@@ -1,6 +1,6 @@
 import { ButtonStyle, ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
 import { defineView, type ViewDefinition, type ViewPayload } from "@/define";
-import { formatCodeblock, NO_PINGS } from "@/utils/format";
+import { formatCodeblock, formatTime, NO_PINGS } from "@/utils/format";
 import {
     ALL_BIOME_CATEGORIES,
     BIOME_CATEGORY_LABELS,
@@ -32,11 +32,13 @@ function fit(text: string, width: number): string {
 export function buildCategoryTable(biomes: BiomeEntry[]): string {
     const labelWidth = Math.min(MAX_LABEL_COLUMN, Math.max(...biomes.map((e) => e.label.length)));
     const keyWidth = Math.max(...biomes.map((e) => e.key.length));
+    const durationWidth = Math.max(...biomes.map((e) => (e.durationS ? formatTime(e.durationS).replace(/ /g, "").length : 1)));
     const lines = biomes.map((e) => {
         const label = fit(e.label, labelWidth);
         const rest = [
             e.key.padEnd(keyWidth),
             formatHexColor(e.color),
+            (e.durationS ? formatTime(e.durationS).replace(/ /g, "") : "-").padEnd(durationWidth),
             e.enabled ? `${e.iconUrl ? "icon" : "-   "} ${e.flavorText ? "flavor" : "-"}` : "disabled",
         ].join("  ");
         return e.enabled ? `${e.ansiColor ?? ""}${label}${ANSI_RESET}  ${rest}` : `${ANSI_DISABLED}${label}  ${rest}${ANSI_RESET}`;
@@ -51,6 +53,7 @@ function describeBiome(e: BiomeEntry): string {
         `Color: \`${formatHexColor(e.color)}\``,
         `Flavor text: ${e.flavorText ? `*${e.flavorText}*` : "none"}`,
         `Icon: ${e.iconUrl || "none"}`,
+        `Duration: ${e.durationS ? `${formatTime(e.durationS)} - its finder stays active meanwhile` : "not timed"}`,
         `ANSI: ${describeAnsiColor(e.ansiColor)}`,
         formatCodeblock(`${e.ansiColor ?? ""}${e.label}${ANSI_RESET}: 12`, "ansi"),
     ].join("\n");
@@ -78,7 +81,9 @@ function buildListContainer(): ContainerBuilder {
     const enabled = all.filter((e) => e.enabled).length;
     const container = new ContainerBuilder().setAccentColor(LIST_ACCENT);
     container.addTextDisplayComponents((td) =>
-        td.setContent(`### Biomes · ${enabled} enabled · ${all.length - enabled} disabled\n-# Display name · detection name · color`),
+        td.setContent(
+            `### Biomes · ${enabled} enabled · ${all.length - enabled} disabled\n-# Display name · detection name · color · duration`,
+        ),
     );
     for (const category of ALL_BIOME_CATEGORIES) {
         const biomes = all.filter((e) => e.category === category);

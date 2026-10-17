@@ -20,6 +20,7 @@ import {
     applyAnsiInput,
     type BiomeAdminDeps,
     editBiome,
+    parseDuration,
     parseHexColor,
     setBiomeActive,
 } from "./biome-admin.service";
@@ -58,9 +59,10 @@ const NEW_BIOME = {
     flavorText: null,
     iconUrl: null,
     ansi: { text: "red", background: null, bold: true },
+    duration: null,
 };
 
-const NO_EDIT = { label: null, category: null, color: null, flavorText: null, iconUrl: null, ansi: NO_ANSI };
+const NO_EDIT = { label: null, category: null, color: null, flavorText: null, iconUrl: null, ansi: NO_ANSI, duration: null };
 
 test("addBiome registers the normalized key, and the parser/selectors see it right away", async () => {
     const deps = createFakeDeps();
@@ -166,4 +168,21 @@ test("parseHexColor only takes 6 hex digits without #", () => {
     expect(() => parseHexColor("#ff8c00")).toThrow(BiomeHuntError);
     expect(() => parseHexColor("0xff8c00")).toThrow(BiomeHuntError);
     expect(() => parseHexColor("fff")).toThrow(BiomeHuntError);
+});
+
+test("parseDuration reads h/m/s combinations and refuses anything else", () => {
+    expect(parseDuration("10m")).toBe(600);
+    expect(parseDuration("1h30m")).toBe(5400);
+    expect(parseDuration("90s")).toBe(90);
+    expect(parseDuration(" 2H ")).toBe(7200);
+    expect(() => parseDuration("10")).toThrow(BiomeHuntError);
+    expect(() => parseDuration("0m")).toThrow(BiomeHuntError);
+    expect(() => parseDuration("25h")).toThrow("24h");
+});
+
+test("a duration is set on add, changed on edit and removed with 'none'", async () => {
+    const deps = createFakeDeps();
+    expect(await addBiome({ ...NEW_BIOME, category: "admin", duration: "2h" }, deps)).toMatchObject({ durationS: 7200 });
+    expect(await editBiome({ ...NO_EDIT, biome: "BLOODMOON", duration: "45m" }, deps)).toMatchObject({ durationS: 2700 });
+    expect((await editBiome({ ...NO_EDIT, biome: "BLOODMOON", duration: "none" }, deps)).durationS).toBeUndefined();
 });
