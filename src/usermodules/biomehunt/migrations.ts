@@ -490,6 +490,23 @@ CREATE TABLE IF NOT EXISTS bh_biomes (
 /* How long a timed biome lasts - while it runs, its finder can't go idle (see activity-grace.service.ts). NULL = not timed. */
 ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS duration_s INTEGER;
 
+/* Badges (see badges.constants.ts): a biome with has_badge gives a profile badge, keyed by the biome. */
+ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS has_badge BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS badge_emoji VARCHAR(64);
+/* The 3 badges that used to be hard-coded - only while badge_emoji is still unset, so an owner's later change sticks. */
+UPDATE bh_biomes SET has_badge = TRUE, badge_emoji = '🔥' WHERE biome = 'GLITCHED' AND badge_emoji IS NULL;
+UPDATE bh_biomes SET has_badge = TRUE, badge_emoji = '🌐' WHERE biome = 'CYBERSPACE' AND badge_emoji IS NULL;
+UPDATE bh_biomes SET has_badge = TRUE, badge_emoji = '🌸' WHERE biome = 'DREAMSPACE' AND badge_emoji IS NULL;
+/* A badge is a biome key now, which can be up to 40 characters - widened once (skipped when already done, so no table lock on every boot). */
+DO $$
+BEGIN
+    IF (SELECT character_maximum_length FROM information_schema.columns WHERE table_name = 'bh_user_badges' AND column_name = 'badge') < 40 THEN
+        ALTER TABLE bh_user_badges ALTER COLUMN badge TYPE VARCHAR(40);
+        ALTER TABLE bh_guild_badge_roles ALTER COLUMN badge TYPE VARCHAR(40);
+        ALTER TABLE bh_biome_rewards ALTER COLUMN badge_awarded TYPE VARCHAR(40);
+    END IF;
+END $$;
+
 /* The user's activity grace from the most recently started timed biome - they count as active until activity_grace_until. */
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_until TIMESTAMPTZ;
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_biome VARCHAR(40);

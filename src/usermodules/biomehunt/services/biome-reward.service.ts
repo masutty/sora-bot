@@ -1,5 +1,5 @@
 import { transaction } from "@/database/connection";
-import { ALL_BADGES } from "../constants/badges.constants";
+import { biomeHasBadge } from "../constants/badges.constants";
 import { getBiomeMeta } from "../constants/biomes.constants";
 import { getLevelForXp, REWARD_BY_CATEGORY } from "../constants/levels.constants";
 import { getGuildBadgeRole, grantUserBadge, revokeUserBadge } from "../repository/badges.repository";
@@ -14,10 +14,6 @@ import {
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import { getUserById } from "../repository/users.repository";
 import type { Badge, UserRow } from "../types";
-
-function isBadgeBiome(biome: string): biome is Badge {
-    return (ALL_BADGES as string[]).includes(biome);
-}
 
 /**
  * Grants the effects of a single confirmed biome find: the badge (if it's a badge biome and the
@@ -43,7 +39,7 @@ export async function grantBiomeReward(
     }
 
     let badge: Badge | null = null;
-    if (isBadgeBiome(biome)) {
+    if (biomeHasBadge(biome)) {
         const granted = await grantUserBadge(userId, biome);
         if (granted) badge = biome;
     }

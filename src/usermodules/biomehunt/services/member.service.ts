@@ -1,6 +1,6 @@
 import type { Guild, GuildMember, TextChannel } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { BADGE_META } from "../constants/badges.constants";
+import { getBadgeMeta } from "../constants/badges.constants";
 import { formatBiomeName } from "../constants/biomes.constants";
 import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
 import { deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId, pauseUser, unpauseUser } from "../repository/users.repository";
@@ -12,7 +12,7 @@ function formatRewardRevertSuffix(reverted: { seedsReverted: number; xpReverted:
     const parts: string[] = [];
     if (reverted.seedsReverted > 0) parts.push(`-${reverted.seedsReverted} 🌱`);
     if (reverted.xpReverted > 0) parts.push(`-${reverted.xpReverted} XP`);
-    if (revokedBadges.length > 0) parts.push(`${revokedBadges.map((b) => BADGE_META[b].display).join(", ")} badge revoked`);
+    if (revokedBadges.length > 0) parts.push(`${revokedBadges.map((b) => getBadgeMeta(b).display).join(", ")} badge revoked`);
     return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 

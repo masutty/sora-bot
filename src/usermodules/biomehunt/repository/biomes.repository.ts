@@ -11,6 +11,8 @@ interface BiomeRow {
     icon_url: string | null;
     ansi_color: string | null;
     duration_s: number | null;
+    has_badge: boolean;
+    badge_emoji: string | null;
     enabled: boolean;
 }
 
@@ -24,11 +26,16 @@ function toEntry(row: BiomeRow): BiomeEntry {
         iconUrl: row.icon_url ?? undefined,
         ansiColor: row.ansi_color ?? undefined,
         durationS: row.duration_s ?? undefined,
+        hasBadge: row.has_badge,
+        badgeEmoji: row.badge_emoji ?? undefined,
         enabled: row.enabled,
     };
 }
 
-/** `$2..$8` of every write: label, category, color, flavor_text, icon_url, ansi_color, duration_s - unset values as NULL. */
+/** The columns every write sets, in `metaParams` order - `$2..$10` after the key. */
+const META_COLUMNS = "label, category, color, flavor_text, icon_url, ansi_color, duration_s, has_badge, badge_emoji";
+
+/** `META_COLUMNS`' values - unset ones as NULL. */
 function metaParams(meta: BiomeMeta): unknown[] {
     return [
         meta.label,
@@ -38,6 +45,8 @@ function metaParams(meta: BiomeMeta): unknown[] {
         meta.iconUrl || null,
         meta.ansiColor || null,
         meta.durationS ?? null,
+        meta.hasBadge === true,
+        meta.badgeEmoji || null,
     ];
 }
 
@@ -51,14 +60,16 @@ export async function seedDefaultBiomes(): Promise<void> {
         flavor_text: meta.flavorText || null,
         icon_url: meta.iconUrl || null,
         ansi_color: meta.ansiColor || null,
+        has_badge: meta.hasBadge === true,
+        badge_emoji: meta.badgeEmoji || null,
         sort_order: i,
     }));
     await query(
-        `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, sort_order)
-         SELECT biome, label, category, color, flavor_text, icon_url, ansi_color, sort_order
+        `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, has_badge, badge_emoji, sort_order)
+         SELECT biome, label, category, color, flavor_text, icon_url, ansi_color, has_badge, badge_emoji, sort_order
          FROM jsonb_to_recordset($1::jsonb) AS x(
-             biome TEXT, label TEXT, category TEXT, color INTEGER,
-             flavor_text TEXT, icon_url TEXT, ansi_color TEXT, sort_order INTEGER
+             biome TEXT, label TEXT, category TEXT, color INTEGER, flavor_text TEXT, icon_url TEXT,
+             ansi_color TEXT, has_badge BOOLEAN, badge_emoji TEXT, sort_order INTEGER
          )
          ON CONFLICT (biome) DO NOTHING`,
         [JSON.stringify(rows)],
@@ -67,19 +78,15 @@ export async function seedDefaultBiomes(): Promise<void> {
 
 /** Reads `bh_biomes` into the in-memory registry every lookup reads (see `setBiomeRegistry`). */
 export async function loadBiomeRegistry(): Promise<void> {
-    const result = await query<BiomeRow>(
-        `SELECT biome, label, category, color, flavor_text, icon_url, ansi_color, duration_s, enabled
-         FROM bh_biomes
-         ORDER BY sort_order, biome`,
-    );
+    const result = await query<BiomeRow>(`SELECT biome, ${META_COLUMNS}, enabled FROM bh_biomes ORDER BY sort_order, biome`);
     setBiomeRegistry(result.rows.map(toEntry));
 }
 
 /** Adds a new biome at the end of the list. Returns false if the key already exists. */
 export async function insertBiome(key: string, meta: BiomeMeta): Promise<boolean> {
     const result = await query(
-        `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, duration_s, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bh_biomes))
+        `INSERT INTO bh_biomes (biome, ${META_COLUMNS}, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bh_biomes))
          ON CONFLICT (biome) DO NOTHING`,
         [key, ...metaParams(meta)],
     );
@@ -90,7 +97,8 @@ export async function insertBiome(key: string, meta: BiomeMeta): Promise<boolean
 export async function updateBiome(key: string, meta: BiomeMeta): Promise<void> {
     await query(
         `UPDATE bh_biomes
-         SET label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7, duration_s = $8, updated_at = NOW()
+         SET label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7,
+             duration_s = $8, has_badge = $9, badge_emoji = $10, updated_at = NOW()
          WHERE biome = $1`,
         [key, ...metaParams(meta)],
     );
@@ -105,11 +113,11 @@ export async function saveAllBiomes(entries: BiomeEntry[]): Promise<void> {
     await transaction(async (client) => {
         for (const [i, e] of entries.entries()) {
             await client.query(
-                `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, duration_s, enabled, sort_order)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                `INSERT INTO bh_biomes (biome, ${META_COLUMNS}, enabled, sort_order)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                  ON CONFLICT (biome) DO UPDATE SET
                      label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7,
-                     duration_s = $8, enabled = $9, sort_order = $10, updated_at = NOW()`,
+                     duration_s = $8, has_badge = $9, badge_emoji = $10, enabled = $11, sort_order = $12, updated_at = NOW()`,
                 [e.key, ...metaParams(e), e.enabled, i],
             );
         }

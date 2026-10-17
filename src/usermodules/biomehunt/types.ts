@@ -9,7 +9,8 @@ export type BiomeCategory = "biome" | "weather" | "rare" | "event" | "admin";
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 
-export type Badge = "GLITCHED" | "CYBERSPACE" | "DREAMSPACE" | "DELETED";
+/** A biome key (the biome badge of a biome with `hasBadge` - see `BiomeMeta`) or the bot-triggered `DELETED`. */
+export type Badge = string;
 
 export type FlagName =
     | "REPORT_SESSION_ON_END"

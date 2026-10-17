@@ -1,5 +1,5 @@
 import { ContainerBuilder } from "discord.js";
-import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import { DELETED_BADGE, getBadgeMeta, getBiomeBadges } from "../constants/badges.constants";
 import {
     getGuildBadgeRole,
     getGuildBadgeRoles,
@@ -17,12 +17,12 @@ export async function awardBadge(guildId: string, discordUserId: string, badge: 
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
     const granted = await grantUserBadge(user.id, badge);
-    if (!granted) return `<@${discordUserId}> already has the ${BADGE_META[badge].display} badge.`;
+    if (!granted) return `<@${discordUserId}> already has the ${getBadgeMeta(badge).display} badge.`;
 
     const roleId = await getGuildBadgeRole(guildId, badge);
     if (roleId) await enqueueRoleJob(guildId, user.id, roleId, "add");
 
-    return `${BADGE_META[badge].emoji} <@${discordUserId}> was granted the ${BADGE_META[badge].display} badge.`;
+    return `${getBadgeMeta(badge).emoji} <@${discordUserId}> was granted the ${getBadgeMeta(badge).display} badge.`;
 }
 
 export async function takeBadge(guildId: string, discordUserId: string, badge: Badge): Promise<string> {
@@ -30,34 +30,36 @@ export async function takeBadge(guildId: string, discordUserId: string, badge: B
     if (!user) throw new BiomeHuntError("That user has no profile yet.");
 
     const revoked = await revokeUserBadge(user.id, badge);
-    if (!revoked) return `<@${discordUserId}> doesn't have the ${BADGE_META[badge].display} badge.`;
+    if (!revoked) return `<@${discordUserId}> doesn't have the ${getBadgeMeta(badge).display} badge.`;
 
     const roleId = await getGuildBadgeRole(guildId, badge);
     if (roleId) await enqueueRoleJob(guildId, user.id, roleId, "remove");
 
-    return `${BADGE_META[badge].display} badge removed from <@${discordUserId}>.`;
+    return `${getBadgeMeta(badge).display} badge removed from <@${discordUserId}>.`;
 }
 
 /** `roleId` of `null` unconfigures the badge's role instead of setting one. */
 export async function setBadges(guildId: string, badge: Badge, roleId: string | null): Promise<string> {
     if (!roleId) {
         await removeGuildBadgeRole(guildId, badge);
-        return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display} no longer grants a role.`;
+        return `${getBadgeMeta(badge).emoji} ${getBadgeMeta(badge).display} no longer grants a role.`;
     }
+    if (!getBiomeBadges().includes(badge))
+        throw new BiomeHuntError(`${getBadgeMeta(badge).display} isn't a biome badge - only those can grant a role.`);
     await setGuildBadgeRole(guildId, badge, roleId);
-    return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display} will now grant <@&${roleId}>.`;
+    return `${getBadgeMeta(badge).emoji} ${getBadgeMeta(badge).display} will now grant <@&${roleId}>.`;
 }
 
 export async function listBadges(guildId: string): Promise<ContainerBuilder> {
     const badgeRoles = await getGuildBadgeRoles(guildId);
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
 
-    const allBadges = Object.keys(BADGE_META) as Badge[];
-    const lines = allBadges.map((badge) => {
-        const isConfigurable = (ALL_BADGES as string[]).includes(badge);
-        const roleNote = isConfigurable ? (badgeRoleMap.get(badge) ? `<@&${badgeRoleMap.get(badge)}>` : "not set") : "not configurable";
-        return `${BADGE_META[badge].emoji} ${BADGE_META[badge].display}: ${roleNote}`;
+    const finderLines = getBiomeBadges().map((badge) => {
+        const roleId = badgeRoleMap.get(badge);
+        return `${getBadgeMeta(badge).emoji} ${getBadgeMeta(badge).display}: ${roleId ? `<@&${roleId}>` : "not set"}`;
     });
+    const deleted = getBadgeMeta(DELETED_BADGE);
+    const lines = [...finderLines, `${deleted.emoji} ${deleted.display}: not configurable`];
 
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
     container.addTextDisplayComponents((td) => td.setContent(`**Badges**\n${lines.join("\n")}`));
