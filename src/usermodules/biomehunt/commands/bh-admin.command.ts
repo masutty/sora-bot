@@ -9,13 +9,14 @@ import { biomeAutocompleteChoices, MAX_DISCORD_CHOICES } from "../constants/biom
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
+import { getGuildFlags } from "../repository/flags.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import { resetActivityThresholds, setActivityRole, setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
 import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
-import { listFlags, setFlag } from "../services/flag.service";
+import { setFlag } from "../services/flag.service";
 import { listForwards, setForward } from "../services/forward.service";
 import {
     addCategory,
@@ -42,6 +43,7 @@ import {
 import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
 import { settings } from "../settings";
 import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
+import { defaultFlagsDeps, flagsView } from "../views/flags.view";
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
@@ -530,6 +532,12 @@ export default defineCommand({
             return;
         }
 
+        if (routeKey === "flag-list") {
+            await ctx.defer();
+            await ctx.open(flagsView(defaultFlagsDeps), { guildId: ctx.guild.id, flags: await getGuildFlags(ctx.guild.id) });
+            return;
+        }
+
         if (routeKey === "setup") {
             await ctx.defer();
             await runEzSetupFlow(ctx, ctx.guild.id);
@@ -641,8 +649,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
             return setFlag(guildId, flag, enabled);
         }
-        case "flag-list":
-            return listFlags(guildId);
         case "economy-grant": {
             const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
