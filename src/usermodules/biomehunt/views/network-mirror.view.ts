@@ -40,7 +40,7 @@ export interface MirrorParams {
     simulated?: boolean;
     /** The origin's own channel - Home badge, and never a ping (the local post already pinged). */
     home?: boolean;
-    /** The biome's optional flavor text (`BIOME_META[biome].flavorText`), on its own small line under the title. */
+    /** The biome's optional flavor text (`getBiomeMeta(biome)?.flavorText`), on its own small line under the title. */
     flavorText?: string | null;
 }
 

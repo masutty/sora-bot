@@ -12,9 +12,11 @@ import {
 import { defineView, type ViewPayload } from "@/define";
 import {
     BIOME_CATEGORY_LABELS,
-    BIOME_META,
     getBiomeColor,
     getBiomeIconUrl,
+    getBiomeMeta,
+    getEnabledBiomes,
+    MAX_DISCORD_CHOICES,
     spoofBiomeName,
 } from "@/usermodules/biomehunt/constants/biomes.constants";
 import { NO_PINGS, unix } from "@/utils/format";
@@ -110,7 +112,7 @@ const LAYOUTS: Record<string, Layout> = {
 };
 
 function buildCard(layout: Layout, d: CardData): ContainerBuilder {
-    const isRare = BIOME_META[d.biome].category === "rare";
+    const isRare = getBiomeMeta(d.biome)?.category === "rare";
     const name = `[${spoofBiomeName(d.biome)}](${FAKE_SERVER_LINK})`;
     const c = new ContainerBuilder().setAccentColor(getBiomeColor(d.biome));
     c.addSectionComponents(
@@ -163,7 +165,7 @@ export default {
                 const layout = LAYOUTS[state.layout];
                 const now = Date.now();
                 // Rare cards carry a vote block; three of them would pass Discord's 40-component limit, so show the shortest and longest name only.
-                const isRare = BIOME_META[state.biome].category === "rare";
+                const isRare = getBiomeMeta(state.biome)?.category === "rare";
                 const finders = isRare ? [FINDERS[0], FINDERS[FINDERS.length - 1]] : FINDERS;
                 const cards = finders.map((f, i) =>
                     buildCard(layout, {
@@ -188,12 +190,14 @@ export default {
                 );
                 const biomeSelect = kit.stringSelect("biome", (s) =>
                     s.setPlaceholder("Biome").addOptions(
-                        Object.entries(BIOME_META).map(([value, meta]) => ({
-                            label: meta.label,
-                            value,
-                            description: BIOME_CATEGORY_LABELS[meta.category],
-                            default: value === state.biome,
-                        })),
+                        getEnabledBiomes()
+                            .slice(0, MAX_DISCORD_CHOICES)
+                            .map((meta) => ({
+                                label: meta.label,
+                                value: meta.key,
+                                description: BIOME_CATEGORY_LABELS[meta.category],
+                                default: meta.key === state.biome,
+                            })),
                     ),
                 );
                 return {

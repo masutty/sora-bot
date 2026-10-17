@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
 import { EmbedFormatter } from "@/utils/format";
 import type { NetworkConfigPatch } from "../repository/network.repository";
-import { NETWORK_BIOMES } from "../services/network-eligibility.service";
+import { getNetworkBiomes } from "../services/network-eligibility.service";
 import { isValidInvite, type NetworkConfigDeps, networkConfigFlow } from "./network-config.flow";
 
 const OWNER = "owner";
@@ -83,8 +83,8 @@ test("biomehunt.net-config: refuses a local forward channel, then walks every st
     expect(updates).toContainEqual({ staffRoleId: "r-staff" });
     expect(text(fake.lastPayload())).toContain("Pings");
 
-    await fake.emit(fake.click(NETWORK_BIOMES[0], OWNER, ["r-ping"]));
-    expect(pings).toEqual([{ biome: NETWORK_BIOMES[0], roleId: "r-ping" }]);
+    await fake.emit(fake.click(getNetworkBiomes()[0], OWNER, ["r-ping"]));
+    expect(pings).toEqual([{ biome: getNetworkBiomes()[0], roleId: "r-ping" }]);
     await fake.emit(fake.click("skip", OWNER));
     expect(text(fake.lastPayload())).toContain("Announcements");
 
@@ -127,7 +127,7 @@ test("biomehunt.net-config: ping and announcement selects pre-select the current
     const { deps, pings, updates } = fakeDeps();
     deps.getNetworkGuild = async () =>
         ({ network_channel_id: null, staff_channel_id: null, staff_role_id: null, announce_role_id: "r-ann", invite_url: null }) as never;
-    deps.getNetworkPings = async () => [{ guild_id: "g1", biome: NETWORK_BIOMES[0], role_id: "r-old" }];
+    deps.getNetworkPings = async () => [{ guild_id: "g1", biome: getNetworkBiomes()[0], role_id: "r-old" }];
     const fake = createFakeViewTransport();
     void fake.run(
         networkConfigFlow(deps, "g1", async () => EmbedFormatter.success("saved")),
@@ -138,12 +138,12 @@ test("biomehunt.net-config: ping and announcement selects pre-select the current
 
     await fake.emit(fake.click("skip", OWNER)); // channel -> staff
     await fake.emit(fake.click("skip", OWNER)); // staff -> pings
-    expect(defaultRoleIds(fake.lastPayload(), NETWORK_BIOMES[0])).toEqual(["r-old"]);
-    expect(defaultRoleIds(fake.lastPayload(), NETWORK_BIOMES[1])).toEqual([]);
+    expect(defaultRoleIds(fake.lastPayload(), getNetworkBiomes()[0])).toEqual(["r-old"]);
+    expect(defaultRoleIds(fake.lastPayload(), getNetworkBiomes()[1])).toEqual([]);
 
-    await fake.emit(fake.click(NETWORK_BIOMES[0], OWNER, []));
-    expect(pings).toEqual([{ biome: NETWORK_BIOMES[0], roleId: null }]);
-    expect(defaultRoleIds(fake.lastPayload(), NETWORK_BIOMES[0])).toEqual([]);
+    await fake.emit(fake.click(getNetworkBiomes()[0], OWNER, []));
+    expect(pings).toEqual([{ biome: getNetworkBiomes()[0], roleId: null }]);
+    expect(defaultRoleIds(fake.lastPayload(), getNetworkBiomes()[0])).toEqual([]);
 
     await fake.emit(fake.click("skip", OWNER)); // pings -> announcements
     expect(defaultRoleIds(fake.lastPayload(), "role")).toEqual(["r-ann"]);

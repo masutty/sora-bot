@@ -1,5 +1,5 @@
 import { Logger } from "@/utils/logging";
-import { BIOME_META } from "../constants/biomes.constants";
+import { isKnownBiome, normalizeBiomeName } from "../constants/biomes.constants";
 import { type BiomeExtraction, type EmbedLike, MacroParser } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers");
@@ -15,17 +15,6 @@ const DEFAULT_BIOME_REGEX = /Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*(?<wo
 const DEFAULT_THUMBNAIL_REGEX = /\/([A-Z_]+)\.png$/i;
 
 const DEFAULT_ROBLOX_LINK_REGEX = /https?:\/\/(?:www\.)?roblox\.com\/[^\s)\]"'<>]+/i;
-
-/** Single source of truth for recognized biomes lives in `BIOME_META` (constants/biomes.constants.ts). */
-const VALID_BIOMES = new Set(Object.keys(BIOME_META));
-
-/** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token before matching against VALID_BIOMES. */
-function normalizeBiomeName(raw: string): string {
-    return raw
-        .trim()
-        .toUpperCase()
-        .replace(/[\s_]+/g, "");
-}
 
 function stripMarkdown(text: string): string {
     return text
@@ -98,7 +87,7 @@ export class DefaultMacroParser extends MacroParser {
                 const combined = normalizeBiomeName(words.join(" "));
                 logger.verbose(`Trying combined biome "${combined}" (${eventType})`);
 
-                if (VALID_BIOMES.has(combined)) {
+                if (isKnownBiome(combined)) {
                     logger.verbose(`Matched biome "${combined}"`);
                     return { biome: combined, eventType };
                 }
@@ -107,7 +96,7 @@ export class DefaultMacroParser extends MacroParser {
             const single = normalizeBiomeName(words[0]);
             logger.verbose(`Trying single biome "${single}" (${eventType})`);
 
-            if (VALID_BIOMES.has(single)) {
+            if (isKnownBiome(single)) {
                 logger.verbose(`Matched biome "${single}"`);
                 return { biome: single, eventType };
             }
@@ -128,7 +117,7 @@ export class DefaultMacroParser extends MacroParser {
                 const biome = normalizeBiomeName(match[1]);
                 logger.verbose(`Thumbnail resolved biome "${biome}"`);
 
-                if (VALID_BIOMES.has(biome)) {
+                if (isKnownBiome(biome)) {
                     logger.verbose(`Matched biome "${biome}" from thumbnail`);
                     return { biome, eventType: null };
                 }

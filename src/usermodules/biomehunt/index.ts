@@ -11,6 +11,7 @@ import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
 import { networkVoteComponent } from "./components/network-vote.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
+import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity-ingest.service";
 import { counterWorker } from "./workers/counter.worker";
@@ -47,6 +48,10 @@ export default defineCog({
     },
 
     async onReady(_client) {
+        logger.info("Loading biome registry...");
+        await seedDefaultBiomes();
+        await loadBiomeRegistry();
+
         logger.info("Loading channel index...");
         await loadChannelIndex();
 

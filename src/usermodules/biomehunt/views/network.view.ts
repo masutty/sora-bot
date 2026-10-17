@@ -2,7 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, Message
 import type { ViewPayload } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import { formatBiomeName } from "../constants/biomes.constants";
-import { describeGap, type EligibilityGap, NETWORK_BIOMES, type ServerCard } from "../services/network-eligibility.service";
+import { describeGap, type EligibilityGap, getNetworkBiomes, type ServerCard } from "../services/network-eligibility.service";
 import { type NetworkAlertRow, type NetworkGuildRow, type NetworkPingRow, NetworkStatus } from "../types";
 import { serverNameLink } from "./network-mirror.view";
 
@@ -99,7 +99,7 @@ export function buildStatusContainer(p: StatusParams): ContainerBuilder {
         `Staff: ${channel(p.row?.staff_channel_id ?? null)} · ${role(p.row?.staff_role_id ?? null)}`,
         `Announcements role: ${role(p.row?.announce_role_id ?? null)}`,
         `Invite: ${p.row?.invite_url ?? "none"}`,
-        ...NETWORK_BIOMES.map((b) => `${formatBiomeName(b)} ping: ${role(pingByBiome.get(b) ?? null)}`),
+        ...getNetworkBiomes().map((b) => `${formatBiomeName(b)} ping: ${role(pingByBiome.get(b) ?? null)}`),
     ].join("\n");
 
     const container = new ContainerBuilder().setAccentColor(NETWORK_COLOR);

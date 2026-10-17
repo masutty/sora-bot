@@ -5,7 +5,7 @@ import { formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs } from "../repository/delayed-forwards.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
 import { getNetworkGuild, getNetworkPings, setNetworkPing, updateNetworkConfig } from "../repository/network.repository";
-import { NETWORK_BIOMES } from "../services/network-eligibility.service";
+import { getNetworkBiomes } from "../services/network-eligibility.service";
 
 /** Injected so tests never touch the DB - `defaultNetworkConfigDeps` wires the real repository. */
 export interface NetworkConfigDeps {
@@ -141,9 +141,11 @@ function pingsStep(deps: NetworkConfigDeps) {
                 stepContainer(
                     "Pings",
                     "Which role to ping when each rare biome arrives from another server. Deselect a role for no ping.\n\n" +
-                        NETWORK_BIOMES.map((b) => `${formatBiomeName(b)}: ${role(s.pings[b] ?? null)}`).join("\n"),
+                        getNetworkBiomes()
+                            .map((b) => `${formatBiomeName(b)}: ${role(s.pings[b] ?? null)}`)
+                            .join("\n"),
                 ),
-                ...NETWORK_BIOMES.map((b) =>
+                ...getNetworkBiomes().map((b) =>
                     kit.row(
                         kit.roleSelect(b, (r) =>
                             r
@@ -158,7 +160,7 @@ function pingsStep(deps: NetworkConfigDeps) {
             ]),
         on: {
             ...Object.fromEntries(
-                NETWORK_BIOMES.map((b) => [
+                getNetworkBiomes().map((b) => [
                     b,
                     async (c: { state: { guildId: string; pings: Record<string, string | null> }; values: string[] }) => {
                         const roleId = c.values[0] ?? null;

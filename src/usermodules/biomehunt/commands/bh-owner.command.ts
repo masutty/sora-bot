@@ -9,10 +9,11 @@ import { newTraceRef } from "@/utils/trace";
 import {
     ALL_BIOME_CATEGORIES,
     BIOME_CATEGORY_LABELS,
-    BIOME_META,
-    BIOME_ONLY_CHOICES,
+    biomeAutocompleteChoices,
     formatBiomeName,
     getBiomesByCategory,
+    isKnownBiome,
+    rewardsOnDetection,
 } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { insertEventIfNew } from "../repository/activity.repository";
@@ -26,6 +27,7 @@ import { rerollFlower } from "../services/flower.service";
 import { forwardBiome } from "../services/forward.service";
 import { parseRelayGuildIds } from "../services/network-publish.service";
 import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
+import { biomeAdminSubcommandGroup, respondBiomeAdminAutocomplete, runBiomeAdminSubcommand } from "./biome-admin";
 import { relaySimulationToNetwork, runSimulateNetworkMirror } from "./network-admin";
 
 const logger = new Logger("biomehunt.commands.bh-owner");
@@ -49,6 +51,8 @@ export default defineCommand({
     category: CommandCategory.ADMIN,
     botOwnerOnly: true,
     showOnHelp: false,
+    // Import reads a Discord attachment, which prefix commands have no option for.
+    subcommandModes: { "biome:import": "slash" },
 
     options: new SlashCommandBuilder()
         .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."))
@@ -67,12 +71,7 @@ export default defineCommand({
                 .addStringOption((o) => o.setName("guild_id").setDescription("Guild ID the user's profile is in").setRequired(true))
                 .addStringOption((o) => o.setName("discord_user_id").setDescription("Target user's Discord ID").setRequired(true))
                 .addStringOption((o) => o.setName("after_date").setDescription("Only events on/after this date (YYYY-MM-DD)"))
-                .addStringOption((o) =>
-                    o
-                        .setName("biome")
-                        .setDescription("Only this specific biome")
-                        .addChoices(...BIOME_ONLY_CHOICES),
-                )
+                .addStringOption((o) => o.setName("biome").setDescription("Only this specific biome").setAutocomplete(true))
                 .addStringOption((o) =>
                     o
                         .setName("category")
@@ -98,12 +97,7 @@ export default defineCommand({
             s
                 .setName("simulate-biome")
                 .setDescription("TESTING: fakes a biome find to test the forward (and, for rare biomes, the community vote).")
-                .addStringOption((o) =>
-                    o
-                        .setName("biome")
-                        .setDescription("Biome to simulate (default Glitched)")
-                        .addChoices(...BIOME_ONLY_CHOICES),
-                )
+                .addStringOption((o) => o.setName("biome").setDescription("Biome to simulate (default Glitched)").setAutocomplete(true))
                 .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)"))
                 .addBooleanOption((o) =>
                     o.setName("dry").setDescription("No pings, no vote, no event/seeds/XP/badges - nothing changes (default true)"),
@@ -121,12 +115,25 @@ export default defineCommand({
                             "Network guild ids (comma-separated) that get this rare find - only those. dry decides test or real",
                         ),
                 ),
-        ),
+        )
+        .addSubcommandGroup(biomeAdminSubcommandGroup),
+
+    async executeAutocomplete(interaction) {
+        const focused = interaction.options.getFocused(true);
+        if (focused.name !== "biome") return interaction.respond([]);
+        if (interaction.options.getSubcommandGroup(false) === "biome") return respondBiomeAdminAutocomplete(interaction, focused.value);
+        await interaction.respond(biomeAutocompleteChoices(focused.value));
+    },
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
         await ctx.defer({ ephemeral: true });
         const reply = (payload: FormattedReply) => ctx.reply(payload);
+
+        if (ctx.args.getSubcommandGroup() === "biome") {
+            await runBiomeAdminSubcommand(ctx);
+            return;
+        }
 
         if (sub === "stale") {
             await ctx.reply(await renderStaleList(ctx.client));
@@ -317,7 +324,7 @@ function defaultSimulateBiomeDeps(): SimulateBiomeDeps {
  * Validates the preconditions for `/bh-owner simulate-biome`, split out from `runSimulateBiome`
  * so its three error paths (unknown biome, no profile, no live or delayed forward configured) can be unit-tested
  * without a real Discord context or a database. The biome is checked first, and against
- * `BIOME_META` directly rather than trusting the slash option's `choices` - a prefix invocation
+ * the biome registry directly rather than trusting the slash option's `choices` - a prefix invocation
  * isn't restricted to them (see `command-args.ts`: "Prefix does NOT enforce ... choices").
  */
 export async function resolveSimulateBiomeTarget(
@@ -326,7 +333,7 @@ export async function resolveSimulateBiomeTarget(
     biome: string,
     deps: SimulateBiomeDeps = defaultSimulateBiomeDeps(),
 ): Promise<{ userId: number; destinations: string }> {
-    if (!BIOME_META[biome]) throw new BiomeHuntError(`\`${biome}\` is not a known biome.`);
+    if (!isKnownBiome(biome)) throw new BiomeHuntError(`\`${biome}\` is not a known biome.`);
 
     const user = await deps.getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError(`<@${discordUserId}> has no profile in this server.`);
@@ -377,7 +384,7 @@ async function runSimulateBiome(ctx: CommandContext): Promise<void> {
             insertEventIfNew(client, userId, `sim-${newTraceRef()}`, biome, "simulated", "started", now),
         );
         if (eventId === null) throw new BiomeHuntError("Failed to create the simulated event - try again.");
-        if (BIOME_META[biome].category !== "rare") await grantBiomeReward(guild.id, userId, eventId, biome);
+        if (rewardsOnDetection(biome)) await grantBiomeReward(guild.id, userId, eventId, biome);
     }
 
     const parsed: ParsedEvent = { biome, macroType: "simulated", eventType: "started", eventTimestamp: now, serverLink: null };

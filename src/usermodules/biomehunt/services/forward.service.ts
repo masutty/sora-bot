@@ -1,7 +1,7 @@
 import type { Client, Message } from "discord.js";
 import { ContainerBuilder, MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
-import { BIOME_META, formatBiomeName, resolveBiomeSelector } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeMeta, resolveBiomeSelector } from "../constants/biomes.constants";
 import { getBiomeCountForUser, getGuildBiomeFindStats } from "../repository/activity.repository";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
@@ -158,7 +158,7 @@ async function sendLiveForward(
     if (!channel || channel.isDMBased() || !channel.isTextBased()) return null;
 
     const dryRun = eventId === null;
-    const isRare = BIOME_META[biome]?.category === "rare";
+    const isRare = getBiomeMeta(biome)?.category === "rare";
     const voteId = isRare && !dryRun ? deps.newVoteId() : null;
     const closesAt = new Date(now.getTime() + settings.votes.windowMs);
 
@@ -170,7 +170,7 @@ async function sendLiveForward(
         ...stats,
         vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
         badges: dryRun ? { simulated: true } : undefined,
-        flavorText: BIOME_META[biome]?.flavorText,
+        flavorText: getBiomeMeta(biome)?.flavorText,
     });
 
     try {

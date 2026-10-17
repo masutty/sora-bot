@@ -1,8 +1,15 @@
 import { ButtonStyle, ChannelType, ContainerBuilder, MessageFlags } from "discord.js";
 import { defineView, type ViewDefinition, type ViewPayload } from "@/define";
 import { NO_PINGS } from "@/utils/format";
-import { BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
+import {
+    ALL_BIOME_CATEGORIES,
+    BIOME_CATEGORY_LABELS,
+    formatBiomeName,
+    getBiomesByCategory,
+    MAX_DISCORD_CHOICES,
+} from "../constants/biomes.constants";
 import { settings } from "../settings";
+import type { BiomeCategory } from "../types";
 import type { ForwardListVariant } from "./forward-list.view";
 
 export interface CreatedForward {
@@ -14,16 +21,24 @@ export interface CreatedForward {
 }
 
 interface CreateForwardState {
+    /** The first select's pick - `ALL`, or the category whose biomes the second select lists. */
+    group?: "ALL" | BiomeCategory;
+    /** A `resolveBiomeSelector` selector: `ALL`, `CAT:<category>` or one biome key. */
     biome?: string;
     channelId?: string;
     roleId?: string;
     delayS?: number;
 }
 
+/** Second-select value meaning "the whole category" instead of one biome. */
+const WHOLE_CATEGORY = "__category";
+
 /**
- * Single screen with a biome select, a channel select, and an optional role select (plus a delay
- * select for the "delayed" variant), confirmed with a button - `biomehunt.forward-create`, a child
- * of `biomehunt.forward-list`'s "Create". Resolves the forward to create, or `undefined` on Cancel.
+ * Single screen with a biome group select (All, or a category) followed by a select of that
+ * category's biomes - two selects so none passes Discord's 25 options however many biomes are
+ * registered - a channel select, and an optional role select (plus a delay select for the
+ * "delayed" variant), confirmed with a button - `biomehunt.forward-create`, a child of
+ * `biomehunt.forward-list`'s "Create". Resolves the forward to create, or `undefined` on Cancel.
  */
 export function forwardCreateView(
     variant: ForwardListVariant = "live",
@@ -35,11 +50,30 @@ export function forwardCreateView(
         name: delayed ? "biomehunt.delayed-forward-create" : "biomehunt.forward-create",
         initial: () => ({}),
         render: (state, kit): ViewPayload => {
-            const biomeMenu = kit.stringSelect("biome", (s) =>
+            const groupMenu = kit.stringSelect("group", (s) =>
                 s
-                    .setPlaceholder("Select biome")
-                    .addOptions(BIOME_SELECTOR_CHOICES.map(({ name, value }) => ({ label: name, value, default: value === state.biome }))),
+                    .setPlaceholder("Select biomes")
+                    .addOptions(
+                        { label: "All biomes", value: "ALL", default: state.group === "ALL" },
+                        ...ALL_BIOME_CATEGORIES.map((c) => ({ label: BIOME_CATEGORY_LABELS[c], value: c, default: state.group === c })),
+                    ),
             );
+            const category = state.group && state.group !== "ALL" ? state.group : null;
+            // One slot goes to "All <category>", so a category lists at most 24 single biomes.
+            const biomeMenu = category
+                ? kit.stringSelect("biome", (s) =>
+                      s.setPlaceholder(`Select ${BIOME_CATEGORY_LABELS[category]} biome`).addOptions(
+                          {
+                              label: `All ${BIOME_CATEGORY_LABELS[category]}`,
+                              value: WHOLE_CATEGORY,
+                              default: state.biome === `CAT:${category}`,
+                          },
+                          ...getBiomesByCategory(category)
+                              .slice(0, MAX_DISCORD_CHOICES - 1)
+                              .map((b) => ({ label: formatBiomeName(b), value: b, default: state.biome === b })),
+                      ),
+                  )
+                : null;
             const channelMenu = kit.channelSelect("channel", (s) => {
                 s.setPlaceholder("Select destination channel").setChannelTypes(ChannelType.GuildText);
                 if (state.channelId) s.setDefaultChannels(state.channelId);
@@ -73,7 +107,8 @@ export function forwardCreateView(
                 flags: MessageFlags.IsComponentsV2,
                 components: [
                     container,
-                    kit.row(biomeMenu),
+                    kit.row(groupMenu),
+                    ...(biomeMenu ? [kit.row(biomeMenu)] : []),
                     kit.row(channelMenu),
                     ...(delayed ? [kit.row(delayMenu)] : []),
                     kit.row(roleMenu),
@@ -86,8 +121,14 @@ export function forwardCreateView(
             };
         },
         on: {
+            group: (c) => {
+                const group = c.values[0] as "ALL" | BiomeCategory;
+                c.state.group = group;
+                c.state.biome = group === "ALL" ? "ALL" : undefined;
+            },
             biome: (c) => {
-                c.state.biome = c.values[0];
+                const value = c.values[0];
+                c.state.biome = value === WHOLE_CATEGORY ? `CAT:${c.state.group}` : value;
             },
             channel: (c) => {
                 c.state.channelId = c.values[0];

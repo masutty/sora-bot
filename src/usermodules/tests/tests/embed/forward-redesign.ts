@@ -1,7 +1,12 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineView, type ViewPayload } from "@/define";
-import { BIOME_CATEGORY_LABELS, BIOME_META } from "@/usermodules/biomehunt/constants/biomes.constants";
+import {
+    BIOME_CATEGORY_LABELS,
+    getBiomeMeta,
+    getEnabledBiomes,
+    MAX_DISCORD_CHOICES,
+} from "@/usermodules/biomehunt/constants/biomes.constants";
 import { VoteStatus } from "@/usermodules/biomehunt/types";
 import { buildForwardContainer, type ForwardBadges, type VoteRenderInfo } from "@/usermodules/biomehunt/views/forward-post.view";
 import { NO_PINGS } from "@/utils/format";
@@ -89,7 +94,7 @@ function buildPreview(biome: string, scenario: Scenario, finderId: string) {
         vote,
         badges: scenario.badges,
         // Preview only for now - real forwards don't pass it yet.
-        flavorText: BIOME_META[biome]?.flavorText,
+        flavorText: getBiomeMeta(biome)?.flavorText,
     });
 }
 
@@ -108,12 +113,14 @@ export default {
             render: (state, kit): ViewPayload => {
                 const biomeSelect = kit.stringSelect("biome", (s) =>
                     s.setPlaceholder("Biome").addOptions(
-                        Object.entries(BIOME_META).map(([value, meta]) => ({
-                            label: meta.label,
-                            value,
-                            description: BIOME_CATEGORY_LABELS[meta.category],
-                            default: value === state.biome,
-                        })),
+                        getEnabledBiomes()
+                            .slice(0, MAX_DISCORD_CHOICES)
+                            .map((meta) => ({
+                                label: meta.label,
+                                value: meta.key,
+                                description: BIOME_CATEGORY_LABELS[meta.category],
+                                default: meta.key === state.biome,
+                            })),
                     ),
                 );
                 const scenarioSelect = kit.stringSelect("scenario", (s) =>

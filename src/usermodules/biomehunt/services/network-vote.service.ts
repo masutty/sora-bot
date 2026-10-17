@@ -2,7 +2,7 @@ import type { Client, MessageCreateOptions, MessageEditOptions } from "discord.j
 import { MessageFlags } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
-import { BIOME_META, formatBiomeName } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
 import {
     closeNetworkVoteRow,
@@ -184,7 +184,7 @@ export async function closeNetworkVote(
                 roleId: mirror.role_id,
                 home: mirror.guild_id === closed.origin_guild_id,
                 vote: { status, scoreboard: final.scoreboard },
-                flavorText: BIOME_META[closed.biome]?.flavorText,
+                flavorText: getBiomeMeta(closed.biome)?.flavorText,
             }),
         ],
         flags: MessageFlags.IsComponentsV2,

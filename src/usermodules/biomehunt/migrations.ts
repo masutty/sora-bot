@@ -466,4 +466,25 @@ ALTER TABLE bh_network_mirrors ADD COLUMN IF NOT EXISTS role_id VARCHAR(20);
 ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS low_activity_checks SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS last_activity_check DATE;
 
+/* ───────────────────────────────────────────── */
+/* Biome registry                               */
+/* ───────────────────────────────────────────── */
+
+/* Every recognized biome - managed by the bot owner with /bh-owner biome, seeded on boot from
+   DEFAULT_BIOMES (constants/biomes.constants.ts). Never deleted: a retired biome is disabled, so
+   old finds keep their label/color/category. */
+CREATE TABLE IF NOT EXISTS bh_biomes (
+    biome       VARCHAR(40) PRIMARY KEY,                /* canonical space-less uppercase key */
+    label       VARCHAR(60) NOT NULL,
+    category    VARCHAR(10) NOT NULL,                   /* biome | weather | rare | event */
+    color       INTEGER NOT NULL,                       /* 0xRRGGBB */
+    flavor_text TEXT,
+    icon_url    TEXT,
+    ansi_color  VARCHAR(20),                            /* raw ANSI escape prefix */
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order  INTEGER NOT NULL DEFAULT 0,             /* picker/display order */
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 `;

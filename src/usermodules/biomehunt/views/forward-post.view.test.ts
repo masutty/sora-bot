@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { SeparatorSpacingSize } from "discord.js";
-import { BIOME_META } from "../constants/biomes.constants";
+import { DEFAULT_BIOMES } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
 import {
     buildForwardContainer,
@@ -225,8 +225,8 @@ test("flavor text: its own small -# line right under the title, only when given"
     expect(textOf(buildForwardContainer(BASE).toJSON())).not.toContain("Unexpected error");
 });
 
-test("every flavor text in BIOME_META is a non-empty single line", () => {
-    const texts = Object.values(BIOME_META)
+test("every flavor text in DEFAULT_BIOMES is a non-empty single line", () => {
+    const texts = Object.values(DEFAULT_BIOMES)
         .map((m) => m.flavorText)
         .filter((t): t is string => t !== undefined);
     expect(texts.length).toBeGreaterThan(0);
@@ -235,8 +235,8 @@ test("every flavor text in BIOME_META is a non-empty single line", () => {
         expect(t).not.toContain("\n");
         expect(t.length).toBeGreaterThan(0);
     }
-    expect(BIOME_META.GLITCHED.flavorText).toBe("Unexpected error occurred. [Code 404]");
-    expect(BIOME_META.EGGLAND.flavorText).toBeUndefined();
+    expect(DEFAULT_BIOMES.GLITCHED.flavorText).toBe("Unexpected error occurred. [Code 404]");
+    expect(DEFAULT_BIOMES.EGGLAND.flavorText).toBeUndefined();
 });
 
 test("the Home badge rides on a fourth flag, and older ids keep their shape", () => {

@@ -6,16 +6,16 @@ import {
     type EligibilityDeps,
     type EligibilityFacts,
     evaluateEligibility,
+    getNetworkBiomes,
     isConfigGap,
     loadEligibility,
-    NETWORK_BIOMES,
 } from "./network-eligibility.service";
 
 const HOUR = 3600;
 
 function facts(overrides: Partial<EligibilityFacts> = {}): EligibilityFacts {
     return {
-        forwardedBiomes: new Set(NETWORK_BIOMES),
+        forwardedBiomes: new Set(getNetworkBiomes()),
         localForwardChannelIds: new Set(["local"]),
         networkChannelId: "net",
         staffChannelId: "staff",
@@ -25,8 +25,8 @@ function facts(overrides: Partial<EligibilityFacts> = {}): EligibilityFacts {
     };
 }
 
-test("NETWORK_BIOMES is the four rare biomes", () => {
-    expect([...NETWORK_BIOMES].sort()).toEqual(["CYBERSPACE", "DREAMSPACE", "GLITCHED", "SINGULARITY"]);
+test("the Network biomes are the four rare biomes", () => {
+    expect([...getNetworkBiomes()].sort()).toEqual(["CYBERSPACE", "DREAMSPACE", "GLITCHED", "SINGULARITY"]);
 });
 
 test("evaluateEligibility: a fully set-up guild has no gaps", () => {
@@ -34,8 +34,8 @@ test("evaluateEligibility: a fully set-up guild has no gaps", () => {
 });
 
 test("evaluateEligibility: lists exactly the Network biomes with no local forward", () => {
-    const gaps = evaluateEligibility(facts({ forwardedBiomes: new Set([NETWORK_BIOMES[0]]) }));
-    expect(gaps).toEqual([{ kind: "forwards", missing: NETWORK_BIOMES.slice(1) }]);
+    const gaps = evaluateEligibility(facts({ forwardedBiomes: new Set([getNetworkBiomes()[0]]) }));
+    expect(gaps).toEqual([{ kind: "forwards", missing: getNetworkBiomes().slice(1) }]);
 });
 
 test("evaluateEligibility: no Network channel is a gap", () => {
@@ -77,7 +77,7 @@ function liveForward(biome: string, channel_id: string): BiomeForwardRow {
 }
 
 test("loadEligibility: live and delayed forwards both count, and both kinds of channel are local", async () => {
-    const [first, ...rest] = NETWORK_BIOMES;
+    const [first, ...rest] = getNetworkBiomes();
     const delayed: BiomeDelayedForwardRow[] = rest.map((biome) => ({ ...liveForward(biome, "delayed-ch"), delay_s: 10 }));
     const deps: EligibilityDeps = {
         getNetworkGuild: async () => null,
@@ -86,7 +86,7 @@ test("loadEligibility: live and delayed forwards both count, and both kinds of c
         getGuildActiveSecondsBetween: async () => [],
     };
     const report = await loadEligibility("g1", new Date("2026-10-01T00:00:00Z"), deps);
-    expect(report.facts.forwardedBiomes).toEqual(new Set(NETWORK_BIOMES));
+    expect(report.facts.forwardedBiomes).toEqual(new Set(getNetworkBiomes()));
     expect(report.facts.localForwardChannelIds).toEqual(new Set(["live-ch", "delayed-ch"]));
     expect(report.gaps.map((g) => g.kind)).toEqual(["network_channel", "staff", "activity"]);
 });

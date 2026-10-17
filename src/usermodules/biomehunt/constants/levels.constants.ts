@@ -1,7 +1,7 @@
 import type { BiomeCategory } from "../types";
 
-/** Seeds/XP granted per biome detection, keyed by category - not per individual biome. Global constants for now (same posture as flowers.constants.ts's RARITY_CHANCE). */
-export const REWARD_BY_CATEGORY: Record<BiomeCategory, { seeds: number; xp: number }> = {
+/** Seeds/XP granted per biome detection, keyed by category - not per individual biome. Global constants for now (same posture as flowers.constants.ts's RARITY_CHANCE). `admin` finds never earn anything (see `rewardsOnDetection`). */
+export const REWARD_BY_CATEGORY: Record<Exclude<BiomeCategory, "admin">, { seeds: number; xp: number }> = {
     weather: { seeds: 1, xp: 2 },
     biome: { seeds: 2, xp: 4 },
     event: { seeds: 3, xp: 6 },

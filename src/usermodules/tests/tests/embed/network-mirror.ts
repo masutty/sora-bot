@@ -1,8 +1,8 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineView, type ViewPayload } from "@/define";
-import { BIOME_META, formatBiomeName } from "@/usermodules/biomehunt/constants/biomes.constants";
-import { NETWORK_BIOMES } from "@/usermodules/biomehunt/services/network-eligibility.service";
+import { formatBiomeName, getBiomeMeta } from "@/usermodules/biomehunt/constants/biomes.constants";
+import { getNetworkBiomes } from "@/usermodules/biomehunt/services/network-eligibility.service";
 import { buildMirrorContainer, type MirrorPost, type MirrorVoteInfo } from "@/usermodules/biomehunt/views/network-mirror.view";
 import { NO_PINGS } from "@/utils/format";
 import type { TestCase } from "../../registry";
@@ -79,7 +79,7 @@ function buildPreview(state: PreviewState, originName: string): ViewPayload["com
             vote: scenario.vote,
             simulated: scenario.simulated,
             home: scenario.home,
-            flavorText: BIOME_META[state.biome]?.flavorText,
+            flavorText: getBiomeMeta(state.biome)?.flavorText,
         }),
     ];
 }
@@ -96,7 +96,7 @@ export default {
                     s
                         .setPlaceholder("Biome")
                         .addOptions(
-                            NETWORK_BIOMES.map((value) => ({ label: formatBiomeName(value), value, default: value === state.biome })),
+                            getNetworkBiomes().map((value) => ({ label: formatBiomeName(value), value, default: value === state.biome })),
                         ),
                 );
                 const scenarioSelect = kit.stringSelect("scenario", (s) =>

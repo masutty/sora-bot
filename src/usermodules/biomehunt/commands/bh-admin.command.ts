@@ -5,7 +5,7 @@ import { type CommandArgs, type CommandContext, defineCommand, paginate, type Re
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
-import { BIOME_ONLY_CHOICES, BIOME_SELECTOR_CHOICES } from "../constants/biomes.constants";
+import { biomeAutocompleteChoices } from "../constants/biomes.constants";
 import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
@@ -406,13 +406,7 @@ export default defineCommand({
                         .setName("decrement-biome")
                         .setDescription("Remove the N most recent finds of a biome for a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) =>
-                            o
-                                .setName("biome")
-                                .setDescription("Biome")
-                                .setRequired(true)
-                                .addChoices(...BIOME_ONLY_CHOICES),
-                        )
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
                         .addIntegerOption((o) => o.setName("amount").setDescription("How many to remove (default 1)").setMinValue(1)),
                 )
                 .addSubcommand((s) =>
@@ -420,13 +414,7 @@ export default defineCommand({
                         .setName("clear-biomes")
                         .setDescription("Remove ALL recorded finds of a biome for a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) =>
-                            o
-                                .setName("biome")
-                                .setDescription("Biome")
-                                .setRequired(true)
-                                .addChoices(...BIOME_ONLY_CHOICES),
-                        ),
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true)),
                 ),
         )
         .addSubcommandGroup((g) =>
@@ -437,13 +425,7 @@ export default defineCommand({
                     s
                         .setName("set")
                         .setDescription("Forward a biome to a channel, optionally pinging a role. Omit channel to remove the forward.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("biome")
-                                .setDescription("Biome")
-                                .setRequired(true)
-                                .addChoices(...BIOME_SELECTOR_CHOICES),
-                        )
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
                         .addChannelOption((o) =>
                             o
                                 .setName("channel")
@@ -463,13 +445,7 @@ export default defineCommand({
                     s
                         .setName("set")
                         .setDescription("Delay-forward a biome to a channel, optionally pinging a role. Omit channel to remove it.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("biome")
-                                .setDescription("Biome")
-                                .setRequired(true)
-                                .addChoices(...BIOME_SELECTOR_CHOICES),
-                        )
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
                         .addChannelOption((o) =>
                             o
                                 .setName("channel")
@@ -487,6 +463,16 @@ export default defineCommand({
                 .addSubcommand((s) => s.setName("list").setDescription("List all configured delayed biome forwards."))
                 .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove delayed biome forwards.")),
         ),
+
+    // Biome options autocomplete from the live registry - fixed choices can't follow `/bh-owner biome` changes and cap at 25.
+    async executeAutocomplete(interaction) {
+        const focused = interaction.options.getFocused(true);
+        if (focused.name !== "biome") return interaction.respond([]);
+        const group = interaction.options.getSubcommandGroup(false);
+        const forward = group === "forward" || group === "delayed-forward";
+        // Forwards take ALL/CAT: shortcuts and only live biomes; member corrections can also target a disabled biome's old finds.
+        await interaction.respond(biomeAutocompleteChoices(focused.value, forward ? { selectors: true } : { which: "all" }));
+    },
 
     async run(ctx) {
         const group = ctx.args.getSubcommandGroup();

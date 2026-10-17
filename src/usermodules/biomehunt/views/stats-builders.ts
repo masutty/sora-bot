@@ -1,7 +1,13 @@
 import { ContainerBuilder, type GuildMember, SeparatorSpacingSize } from "discord.js";
 import { formatCodeblock, formatTime, unix } from "@/utils/format";
 import { BADGE_META } from "../constants/badges.constants";
-import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import {
+    ALL_BIOME_CATEGORIES,
+    BIOME_CATEGORY_LABELS,
+    formatBiomeName,
+    getBiomeAnsiColor,
+    getBiomeMeta,
+} from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { getLevelForXp } from "../constants/levels.constants";
 import { getLeaderboard, getRecentSessions } from "../repository/activity.repository";
@@ -43,9 +49,9 @@ export interface ProfileData {
 
 /** Sums per-biome counts (total sightings, not distinct biomes discovered) into their category buckets. */
 function totalBiomesFoundByCategory(biomes: Array<{ biome: string; count: number }>): Record<BiomeCategory, number> {
-    const totals: Record<BiomeCategory, number> = { biome: 0, weather: 0, rare: 0, event: 0 };
+    const totals: Record<BiomeCategory, number> = { biome: 0, weather: 0, rare: 0, event: 0, admin: 0 };
     for (const b of biomes) {
-        const category = BIOME_META[b.biome]?.category;
+        const category = getBiomeMeta(b.biome)?.category;
         if (category) totals[category] += b.count;
     }
     return totals;
@@ -68,7 +74,7 @@ function addSpacer(container: ContainerBuilder): void {
 
 const ANSI_RESET = "\u001b[0m";
 
-/** Per-biome ANSI color, from `BIOME_META[biome].ansiColor` - same treatment as the session-end
+/** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - same treatment as the session-end
  * report's biome breakdown (see `ansiBiomeLine` in services/activity-session-report.service.ts). */
 function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
@@ -178,7 +184,7 @@ export function buildBiomesTabContainer(member: GuildMember, data: ProfileData):
     const totals = totalBiomesFoundByCategory(biomes);
 
     for (const category of ALL_BIOME_CATEGORIES) {
-        const inCategory = biomes.filter((b) => BIOME_META[b.biome]?.category === category);
+        const inCategory = biomes.filter((b) => getBiomeMeta(b.biome)?.category === category);
         if (inCategory.length === 0) continue;
         const lines = [...inCategory].sort((a, b) => b.count - a.count).map((b) => ansiBiomeLine(b.biome, b.count));
         addDivider(container);
@@ -187,7 +193,7 @@ export function buildBiomesTabContainer(member: GuildMember, data: ProfileData):
         );
     }
 
-    const uncategorized = biomes.filter((b) => !BIOME_META[b.biome]);
+    const uncategorized = biomes.filter((b) => !getBiomeMeta(b.biome));
     if (uncategorized.length > 0) {
         const uncategorizedTotal = uncategorized.reduce((sum, b) => sum + b.count, 0);
         addDivider(container);

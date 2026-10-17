@@ -1,7 +1,7 @@
 import type { Message } from "discord.js";
 import { transaction } from "@/database/connection";
 import { Logger } from "@/utils/logging";
-import { BIOME_META } from "../constants/biomes.constants";
+import { rewardsOnDetection } from "../constants/biomes.constants";
 import { parseEvent } from "../macro-parsers";
 import { extendSession, getLatestSession, insertEventIfNew, openNewSession } from "../repository/activity.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
@@ -39,8 +39,7 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     if (!user) return;
 
     if (parsed.eventType === "started" && parsed.biome) {
-        const category = BIOME_META[parsed.biome]?.category;
-        if (category !== "rare") await grantBiomeReward(entry.guildId, entry.userId, eventId, parsed.biome);
+        if (rewardsOnDetection(parsed.biome)) await grantBiomeReward(entry.guildId, entry.userId, eventId, parsed.biome);
     }
 
     logger.verbose(`checkAndForward: ${entry.guildId} ${user.discord_user_id} :: Parsed -> ${JSON.stringify(parsed)}`);
