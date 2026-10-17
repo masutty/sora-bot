@@ -53,7 +53,7 @@ function describeBiome(e: BiomeEntry): string {
         `Color: \`${formatHexColor(e.color)}\``,
         `Flavor text: ${e.flavorText ? `*${e.flavorText}*` : "none"}`,
         `Icon: ${e.iconUrl || "none"}`,
-        `Duration: ${e.durationS ? `${formatTime(e.durationS)} - its finder stays active meanwhile` : "not timed"}`,
+        `Duration: ${e.durationS ? formatTime(e.durationS) : "none"}`,
         `ANSI: ${describeAnsiColor(e.ansiColor)}`,
         formatCodeblock(`${e.ansiColor ?? ""}${e.label}${ANSI_RESET}: 12`, "ansi"),
     ].join("\n");
