@@ -9,39 +9,33 @@ export type FlagDescription =
     | { description: string; on?: undefined; off?: undefined }
     | { on: string; off: string; description?: undefined };
 
-export type FlagDefinition = FlagDescription & { label: string; default: boolean };
+export type FlagDefinition = FlagDescription & { default: boolean };
 
 /** SINGLE SOURCE OF TRUTH for every guild feature flag - the flags menu reads name/description/default straight from here. */
 export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
     REPORT_SESSION_ON_END: {
-        label: "Report Session On End",
         description: "Posts a session summary (duration + biome breakdown) in the member's macro channel when their session ends.",
         default: false,
     },
     PING_ON_QUOTA_MET: {
-        label: "Ping On Quota Met",
         description: "Posts in the member's macro channel the moment they newly meet a quota role's target.",
         default: false,
     },
     AUTO_DELETE_ENABLED: {
-        label: "Auto Delete Enabled",
         description: "Auto-deletes inactive members' macro channels. The hours after going inactive are set with `activity delete`.",
         default: false,
     },
     CLEAR_PROFILE_ON_AUTODELETE: {
-        label: "Clear Profile On Autodelete",
         on: "auto-delete fully wipes the member's data.",
         off: "only the macro channel goes; history, badges and quota status stay, and they get the 'Deleted?!' badge.",
         default: false,
     },
     EXPERIMENT_WEBHOOK_FLOWERS: {
-        label: "Experiment: Webhook Flowers",
         on: "macro webhooks get a random Flower name and avatar on setup, rerollable by an admin or paid self-service.",
         off: "webhooks keep their plain name; no Flower is assigned or shown.",
         default: false,
     },
     EXPERIMENT_BIOME_ECONOMY: {
-        label: "Experiment: Biome Economy",
         on: "finding biomes earns Seeds and XP (shown on the profile), and Seeds can be spent (e.g. a paid Flower reroll).",
         off: "biome badges still work, but no Seeds/XP are earned or shown.",
         default: false,

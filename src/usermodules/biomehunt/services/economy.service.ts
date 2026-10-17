@@ -14,7 +14,7 @@ export async function getBalance(guildId: string, discordUserId: string): Promis
 
 export async function grantEconomy(guildId: string, discordUserId: string, seeds: number | null, xp: number | null): Promise<string> {
     if (!(await isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"))) {
-        throw new BiomeHuntError("The economy isn't enabled for this server. Enable `EXPERIMENT_BIOME_ECONOMY` first (`flag set`).");
+        throw new BiomeHuntError("The economy isn't enabled for this server. Enable `EXPERIMENT_BIOME_ECONOMY` first (`/bh-admin flags`).");
     }
     if (seeds === null && xp === null) {
         throw new BiomeHuntError("Provide at least one of seeds or xp.");

@@ -73,7 +73,8 @@ function flagsContainer(state: FlagsState, kit: RenderKit): ContainerBuilder {
         const on = state.flags[flag];
         container.addSectionComponents((section) =>
             section
-                .addTextDisplayComponents((td) => td.setContent(`**${flag}** (default: ${defaultLabel(flag)})`))
+                // The current state as an inline-code emoji, then the key and its default.
+                .addTextDisplayComponents((td) => td.setContent(`\`${on ? "✅" : "❌"}\` **${flag}** (default: ${defaultLabel(flag)})`))
                 .setButtonAccessory(
                     kit.button(`toggle:${flag}`, (b) =>
                         b.setLabel(on ? "Turn off" : "Turn on").setStyle(on ? ButtonStyle.Danger : ButtonStyle.Success),
@@ -86,7 +87,7 @@ function flagsContainer(state: FlagsState, kit: RenderKit): ContainerBuilder {
 }
 
 /**
- * `/bh-admin flag list`: the guild's flags, five per page, each with a Turn on / Turn off button.
+ * `/bh-admin flags`: the guild's flags, five per page, each with a Turn on / Turn off button.
  * A click asks for confirmation on the same message (mobile misclicks); confirming saves the flag
  * and returns to the same page with the button flipped.
  */

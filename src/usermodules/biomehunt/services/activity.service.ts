@@ -25,7 +25,7 @@ export async function setAutoDeleteThreshold(guildId: string, hoursAfterInactive
     await setAutoDeleteHours(guildId, Math.round(hoursAfterInactive * 3600));
     return (
         `Auto-delete threshold set: a user's macro channel is removed ${hoursAfterInactive}h after they go inactive. ` +
-        "Remember this only takes effect while the AUTO_DELETE_ENABLED flag is on (`flag set flag:AUTO_DELETE_ENABLED enabled:true`)."
+        "Remember this only takes effect while the AUTO_DELETE_ENABLED flag is on (`/bh-admin flags`)."
     );
 }
 

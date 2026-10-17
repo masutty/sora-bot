@@ -6,7 +6,6 @@ import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { getAwardableBadges, getBadgeMeta, getBiomeBadges, resolveBadgeSlug } from "../constants/badges.constants";
 import { biomeAutocompleteChoices, MAX_DISCORD_CHOICES } from "../constants/biomes.constants";
-import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
 import { getGuildFlags } from "../repository/flags.repository";
@@ -16,7 +15,6 @@ import { clearActivitySessions, deleteActivitySession } from "../services/activi
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
 import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
-import { setFlag } from "../services/flag.service";
 import { listForwards, setForward } from "../services/forward.service";
 import {
     addCategory,
@@ -42,14 +40,13 @@ import {
 } from "../services/member.service";
 import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
 import { settings } from "../settings";
-import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
+import { type ActivityStatus, type Badge, BiomeHuntError, type QuotaRoleMode } from "../types";
 import { defaultFlagsDeps, flagsView } from "../views/flags.view";
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
 
-const FLAG_CHOICES = ALL_FLAGS.map((name) => ({ name: FLAG_DEFINITIONS[name].label, value: name }));
 /**
  * Autocomplete for a `badge` option - `badges set` only offers biome badges (the ones a role can be
  * attached to), award/take also offer `DELETED`. Value is the badge's slug (easy to type in prefix
@@ -89,6 +86,7 @@ export default defineCommand({
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
+        .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
         .addSubcommand((s) =>
             s
                 .setName("profile")
@@ -213,25 +211,6 @@ export default defineCommand({
                         .addRoleOption((o) => o.setName("role").setDescription("Role to grant (leave empty to unconfigure)")),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all badges and their current role configuration.")),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("flag")
-                .setDescription("Toggle optional BiomeHunt behaviors.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Enable or disable a flag.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("flag")
-                                .setDescription("Flag")
-                                .setRequired(true)
-                                .addChoices(...FLAG_CHOICES),
-                        )
-                        .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
-                )
-                .addSubcommand((s) => s.setName("list").setDescription("List all flags, their description, default, and current value.")),
         )
         .addSubcommandGroup((g) =>
             g
@@ -532,7 +511,7 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "flag-list") {
+        if (routeKey === "flags") {
             await ctx.defer();
             await ctx.open(flagsView(defaultFlagsDeps), { guildId: ctx.guild.id, flags: await getGuildFlags(ctx.guild.id) });
             return;
@@ -642,13 +621,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "badges-list":
             return listBadges(guildId);
-        case "flag-set": {
-            const flag = args.getString("flag") as FlagName | null;
-            const enabled = args.getBoolean("enabled");
-            if (!flag) throw new BiomeHuntError("Missing required argument: flag");
-            if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
-            return setFlag(guildId, flag, enabled);
-        }
         case "economy-grant": {
             const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");

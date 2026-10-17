@@ -77,7 +77,8 @@ test("flags: renders the header, key + default and the right button per state", 
     const payload = fake.lastPayload();
 
     expect(text(payload)).toContain("**Flags**\nTurn optional features on or off for this server.");
-    expect(text(payload)).toContain("**REPORT_SESSION_ON_END** (default: OFF)");
+    expect(text(payload)).toContain("`✅` **REPORT_SESSION_ON_END** (default: OFF)");
+    expect(text(payload)).toContain("`❌` **PING_ON_QUOTA_MET** (default: OFF)");
     expect(comp(payload, "toggle:REPORT_SESSION_ON_END")).toMatchObject({ label: "Turn off", style: ButtonStyle.Danger });
     expect(comp(payload, "toggle:PING_ON_QUOTA_MET")).toMatchObject({ label: "Turn on", style: ButtonStyle.Success });
     expect(text(payload)).toContain(`-# ${FLAG_DEFINITIONS.PING_ON_QUOTA_MET.description}`);
