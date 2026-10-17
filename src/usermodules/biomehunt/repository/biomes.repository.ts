@@ -1,4 +1,4 @@
-import { query } from "@/database/connection";
+import { query, transaction } from "@/database/connection";
 import { type BiomeEntry, type BiomeMeta, DEFAULT_BIOMES, setBiomeRegistry } from "../constants/biomes.constants";
 import type { BiomeCategory } from "../types";
 
@@ -83,4 +83,20 @@ export async function updateBiome(key: string, meta: BiomeMeta): Promise<void> {
 
 export async function setBiomeEnabled(key: string, enabled: boolean): Promise<void> {
     await query(`UPDATE bh_biomes SET enabled = $2, updated_at = NOW() WHERE biome = $1`, [key, enabled]);
+}
+
+/** Writes the whole registry in one transaction - every entry upserted, `sort_order` = its position. Rows not given are left as they are. */
+export async function saveAllBiomes(entries: BiomeEntry[]): Promise<void> {
+    await transaction(async (client) => {
+        for (const [i, e] of entries.entries()) {
+            await client.query(
+                `INSERT INTO bh_biomes (biome, label, category, color, flavor_text, icon_url, ansi_color, enabled, sort_order)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 ON CONFLICT (biome) DO UPDATE SET
+                     label = $2, category = $3, color = $4, flavor_text = $5, icon_url = $6, ansi_color = $7,
+                     enabled = $8, sort_order = $9, updated_at = NOW()`,
+                [e.key, e.label, e.category, e.color, e.flavorText || null, e.iconUrl || null, e.ansiColor || null, e.enabled, i],
+            );
+        }
+    });
 }

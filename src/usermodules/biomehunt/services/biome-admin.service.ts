@@ -81,7 +81,7 @@ export function applyAnsiInput(current: string | undefined, input: AnsiInput): s
     return buildAnsiCode(style) || undefined;
 }
 
-function parseFlavorText(raw: string): string {
+export function parseFlavorText(raw: string): string {
     const text = raw.trim();
     if (text.includes("\n")) throw new BiomeHuntError("The flavor text must be a single line.");
     return text;
@@ -98,7 +98,7 @@ export function biomeKeyFor(detectionName: string): string {
     return key;
 }
 
-function parseLabel(raw: string): string {
+export function parseLabel(raw: string): string {
     const label = raw.trim();
     if (!label) throw new BiomeHuntError("The name can't be empty.");
     if (label.length > MAX_LABEL_LENGTH) throw new BiomeHuntError(`The name can have at most ${MAX_LABEL_LENGTH} characters.`);

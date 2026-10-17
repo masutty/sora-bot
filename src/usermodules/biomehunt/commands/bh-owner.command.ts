@@ -51,6 +51,8 @@ export default defineCommand({
     category: CommandCategory.ADMIN,
     botOwnerOnly: true,
     showOnHelp: false,
+    // Import reads a Discord attachment, which prefix commands have no option for.
+    subcommandModes: { "biome:import": "slash" },
 
     options: new SlashCommandBuilder()
         .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."))

@@ -1,12 +1,13 @@
 import {
+    AttachmentBuilder,
     type AutocompleteInteraction,
     MessageFlags,
     type SlashCommandSubcommandBuilder,
     type SlashCommandSubcommandGroupBuilder,
 } from "discord.js";
 import type { CommandArgs } from "@/core/command/command-args";
-import type { CommandContext } from "@/define";
-import { type FormattedReply, NO_PINGS } from "@/utils/format";
+import { type CommandContext, confirm } from "@/define";
+import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import {
     ALL_BIOME_CATEGORIES,
     ANSI_BACKGROUND_COLORS,
@@ -14,8 +15,16 @@ import {
     BIOME_CATEGORY_LABELS,
     type BiomeEntry,
     biomeAutocompleteChoices,
+    getAllBiomes,
 } from "../constants/biomes.constants";
 import { type AnsiInput, addBiome, CLEAR_VALUE, editBiome, setBiomeActive } from "../services/biome-admin.service";
+import {
+    applyBiomeImport,
+    type BiomeImportPlan,
+    exportCurrentBiomes,
+    parseBiomeConfig,
+    planBiomeImport,
+} from "../services/biome-config.service";
 import { BiomeHuntError } from "../types";
 import { biomeListView, buildBiomeCard } from "../views/biome-list.view";
 
@@ -108,7 +117,27 @@ export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder)
                 .setDescription("Turns a disabled biome back on.")
                 .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true)),
         )
-        .addSubcommand((s) => s.setName("list").setDescription("Lists every registered biome."));
+        .addSubcommand((s) => s.setName("list").setDescription("Lists every registered biome."))
+        .addSubcommand((s) =>
+            s.setName("export").setDescription("Downloads every biome as a JSON file - for /bh-owner biome import on another bot."),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("import")
+                .setDescription("Applies a file from /bh-owner biome export - shows what changes and asks first.")
+                .addAttachmentOption((o) =>
+                    o.setName("file").setDescription("The .json file /bh-owner biome export made").setRequired(true),
+                )
+                .addStringOption((o) =>
+                    o
+                        .setName("mode")
+                        .setDescription("What happens to biomes missing from the file (default: keep)")
+                        .addChoices(
+                            { name: "Keep them as they are", value: "merge" },
+                            { name: "Disable them (mirror the file)", value: "mirror" },
+                        ),
+                ),
+        );
 }
 
 /** Autocomplete for the `biome` option of `/bh-owner biome edit|disable|enable`. */
@@ -186,7 +215,69 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
         case "list":
             await ctx.open(biomeListView, undefined);
             return;
+        case "export":
+            return runBiomeExport(ctx);
+        case "import":
+            return runBiomeImport(ctx);
         default:
             throw new BiomeHuntError(`Unknown subcommand: ${args.getSubcommand()}`);
     }
+}
+
+async function runBiomeExport(ctx: CommandContext): Promise<void> {
+    const file = exportCurrentBiomes(ctx.client.user?.tag ?? null);
+    const name = `biomes-${file.exportedAt.slice(0, 10)}.json`;
+    await ctx.reply({
+        content: `Exported **${file.biomes.length}** biomes. Apply them on another bot with \`/bh-owner biome import\`.`,
+        files: [new AttachmentBuilder(Buffer.from(JSON.stringify(file, null, 4)), { name })],
+        allowedMentions: NO_PINGS,
+    });
+}
+
+/** Far above any real export (~300 bytes per biome) - only stops a wrong file from being downloaded. */
+const MAX_IMPORT_BYTES = 512 * 1024;
+
+const listOrNone = (keys: string[]) => (keys.length > 0 ? keys.join(", ") : "none");
+
+function importFields(plan: BiomeImportPlan, mirror: boolean): Array<{ label: string; value: string }> {
+    const fields = [
+        { label: "Added", value: listOrNone(plan.added) },
+        { label: "Updated", value: listOrNone(plan.updated.map((u) => `${u.key} (${u.fields.join(", ")})`)) },
+    ];
+    if (mirror) fields.push({ label: "Disabled (missing from the file)", value: listOrNone(plan.disabled) });
+    fields.push({ label: "Unchanged", value: String(plan.unchanged) }, { label: "Order", value: "the file's biomes first, in its order" });
+    return fields;
+}
+
+/** Slash only (see bh-owner's `subcommandModes`) - a prefix call has no attachment option to read. */
+async function runBiomeImport(ctx: CommandContext): Promise<void> {
+    if (ctx.raw.kind !== "slash") throw new BiomeHuntError("Import only works as a slash command.");
+    const attachment = ctx.raw.interaction.options.getAttachment("file", true);
+    if (attachment.size > MAX_IMPORT_BYTES) throw new BiomeHuntError("That file is too big to be a biome export.");
+
+    const response = await fetch(attachment.url);
+    if (!response.ok) throw new BiomeHuntError(`Couldn't download the file (HTTP ${response.status}).`);
+    const incoming = parseBiomeConfig(await response.text());
+
+    const mirror = ctx.args.getString("mode") === "mirror";
+    const plan = planBiomeImport(getAllBiomes(), incoming, mirror);
+    if (plan.added.length + plan.updated.length + plan.disabled.length === 0) {
+        await ctx.reply(EmbedFormatter.info(`Nothing to change - this bot's biomes already match \`${attachment.name}\`.`));
+        return;
+    }
+
+    await ctx.open(
+        confirm({
+            name: "biomehunt.biome-import",
+            title: `Import ${incoming.length} biomes from ${attachment.name}?`,
+            fields: importFields(plan, mirror),
+            color: mirror ? 0xf97316 : undefined,
+            onConfirm: async () => {
+                await applyBiomeImport(plan);
+                const changed = plan.added.length + plan.updated.length + plan.disabled.length;
+                return EmbedFormatter.success(`Imported - ${changed} biome(s) changed. It applies right away.`);
+            },
+        }),
+        undefined,
+    );
 }
