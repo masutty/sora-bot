@@ -1,15 +1,16 @@
 import { type BiomeCategory, BiomeHuntError } from "../types";
 
-export const ALL_BIOME_CATEGORIES: BiomeCategory[] = ["biome", "weather", "rare", "event"];
+export const ALL_BIOME_CATEGORIES: BiomeCategory[] = ["biome", "weather", "rare", "event", "admin"];
 
 export const BIOME_CATEGORY_LABELS: Record<BiomeCategory, string> = {
     biome: "Biome",
     weather: "Weather",
     rare: "Rare",
     event: "Event",
+    admin: "Admin",
 };
 
-interface BiomeMeta {
+export interface BiomeMeta {
     label: string;
     category: BiomeCategory;
     color: number;
@@ -24,15 +25,22 @@ interface BiomeMeta {
     ansiColor?: string;
 }
 
+/** One registered biome. A disabled biome is no longer recognized from macro webhooks nor offered
+ * in any picker, but keeps its label/color/category so old finds still display correctly. */
+export interface BiomeEntry extends BiomeMeta {
+    /** Canonical space-less uppercase form - how it's stored/matched (see `normalizeBiomeName`). */
+    key: string;
+    enabled: boolean;
+}
+
 /**
- * SINGLE SOURCE OF TRUTH for every recognized biome, keyed by its canonical space-less
- * uppercase form (how it's stored/matched - see `normalizeBiomeName` in macro-parsers/default-macro.parser.ts).
- * To add/rename/recolor/recategorize/reicon a biome, edit it here - everything else
- * (recognition, display name, category grouping, forward notification color/icon, session-end
- * ANSI color) reads from this one object. Anything not listed here falls back to a generic Title
- * Case display name, no category match, the default accent color, no icon, and no ANSI color.
+ * The biomes the bot shipped with - only a SEED now. The live list is the `bh_biomes` table,
+ * managed by the bot owner with `/bh-owner biome ...` (see repository/biomes.repository.ts): on
+ * boot every key here that's missing from the table is inserted, and rows already there are never
+ * overwritten. To add/edit a biome, use the command - editing an entry here does nothing on a
+ * database that already has it.
  */
-export const BIOME_META: Record<string, BiomeMeta> = {
+export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
     WINDY: {
         label: "Windy",
         flavorText: "A refreshing and cool wind passes through the world...",
@@ -194,12 +202,64 @@ export const BIOME_META: Record<string, BiomeMeta> = {
     },
 };
 
+/** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token, the form every biome key is stored in. */
+export function normalizeBiomeName(raw: string): string {
+    return raw
+        .trim()
+        .toUpperCase()
+        .replace(/[\s_]+/g, "");
+}
+
+function defaultEntries(): BiomeEntry[] {
+    return Object.entries(DEFAULT_BIOMES).map(([key, meta]) => ({ ...meta, key, enabled: true }));
+}
+
+/**
+ * SINGLE SOURCE OF TRUTH for every recognized biome at runtime - recognition, display name,
+ * category grouping, forward color/icon/flavor text and session-end ANSI color all read from it.
+ * Starts as `DEFAULT_BIOMES` (so tests and the first moments of boot work without a database) and
+ * is replaced by `loadBiomeRegistry` on boot and after every `/bh-owner biome` change. Anything not
+ * in it falls back to a generic Title Case display name, no category, the default accent color, no
+ * icon and no ANSI color.
+ */
+let registry = new Map<string, BiomeEntry>(defaultEntries().map((e) => [e.key, e]));
+
+/** Replaces the whole registry, keeping the given order (the order every picker shows). */
+export function setBiomeRegistry(entries: BiomeEntry[]): void {
+    registry = new Map(entries.map((e) => [e.key, e]));
+}
+
+/** Test helper - puts the registry back to `DEFAULT_BIOMES`. */
+export function resetBiomeRegistry(): void {
+    setBiomeRegistry(defaultEntries());
+}
+
+/** The biome's metadata, disabled ones included - for displaying something already recorded. */
+export function getBiomeMeta(biome: string): BiomeEntry | undefined {
+    return registry.get(biome);
+}
+
+/** Every registered biome, disabled ones included, in registry order. */
+export function getAllBiomes(): BiomeEntry[] {
+    return [...registry.values()];
+}
+
+/** Every biome currently recognized and offered in pickers, in registry order. */
+export function getEnabledBiomes(): BiomeEntry[] {
+    return getAllBiomes().filter((e) => e.enabled);
+}
+
+/** Whether a (normalized) biome key is one the bot currently recognizes. */
+export function isKnownBiome(biome: string): boolean {
+    return registry.get(biome)?.enabled === true;
+}
+
 export function getBiomeIconUrl(biome: string): string | undefined {
-    return BIOME_META[biome]?.iconUrl;
+    return registry.get(biome)?.iconUrl;
 }
 
 export function formatBiomeName(biome: string): string {
-    const known = BIOME_META[biome]?.label;
+    const known = registry.get(biome)?.label;
     if (known) return known;
     return biome.charAt(0) + biome.slice(1).toLowerCase();
 }
@@ -221,10 +281,11 @@ export function spoofBiomeName(biome: string): string {
     return label.slice(0, mid) + ZERO_WIDTH_SPACE + label.slice(mid);
 }
 
+/** Enabled biomes of one category. */
 export function getBiomesByCategory(category: BiomeCategory): string[] {
-    return Object.entries(BIOME_META)
-        .filter(([, meta]) => meta.category === category)
-        .map(([biome]) => biome);
+    return getEnabledBiomes()
+        .filter((e) => e.category === category)
+        .map((e) => e.key);
 }
 
 /**
@@ -233,32 +294,152 @@ export function getBiomesByCategory(category: BiomeCategory): string[] {
  * targets. Used wherever an admin can quick-apply a forward to a whole group at once.
  */
 export function resolveBiomeSelector(selector: string): string[] {
-    if (selector === "ALL") return Object.keys(BIOME_META);
-    if (selector.startsWith("CAT:")) return getBiomesByCategory(selector.slice(4) as BiomeCategory);
-    if (!(selector in BIOME_META)) throw new BiomeHuntError(`Unknown biome: ${selector}`);
+    if (selector === "ALL") return getEnabledBiomes().map((e) => e.key);
+    if (selector.startsWith("CAT:")) {
+        const category = selector.slice(4) as BiomeCategory;
+        if (!ALL_BIOME_CATEGORIES.includes(category)) throw new BiomeHuntError(`Unknown biome category: ${category}`);
+        return getBiomesByCategory(category);
+    }
+    if (!isKnownBiome(selector)) throw new BiomeHuntError(`Unknown biome: ${selector}`);
     return [selector];
 }
 
-/** Ready-made choice list (quick categories first, then every individual biome) for biome selectors in UI. */
-export const BIOME_SELECTOR_CHOICES: Array<{ name: string; value: string }> = [
-    { name: "All", value: "ALL" },
-    ...ALL_BIOME_CATEGORIES.map((category) => ({ name: `All ${BIOME_CATEGORY_LABELS[category]}`, value: `CAT:${category}` })),
-    ...Object.entries(BIOME_META).map(([value, meta]) => ({ name: meta.label, value })),
-];
+export interface BiomeChoice {
+    name: string;
+    value: string;
+}
 
-/** Individual biomes only (no ALL/category shortcuts) - used where a single concrete biome is required, e.g. correcting one user's find count. */
-export const BIOME_ONLY_CHOICES: Array<{ name: string; value: string }> = Object.entries(BIOME_META).map(([value, meta]) => ({
-    name: meta.label,
-    value,
-}));
+/** The `ALL` / `CAT:<category>` shortcuts `resolveBiomeSelector` accepts. */
+export function getBiomeGroupChoices(): BiomeChoice[] {
+    return [
+        { name: "All", value: "ALL" },
+        ...ALL_BIOME_CATEGORIES.map((category) => ({ name: `All ${BIOME_CATEGORY_LABELS[category]}`, value: `CAT:${category}` })),
+    ];
+}
+
+/** Individual enabled biomes only (no ALL/category shortcuts) - where a single concrete biome is required. */
+export function getBiomeOnlyChoices(): BiomeChoice[] {
+    return getEnabledBiomes().map((e) => ({ name: e.label, value: e.key }));
+}
+
+/** Discord's cap on autocomplete suggestions and on select menu options. */
+export const MAX_DISCORD_CHOICES = 25;
+
+export interface BiomeAutocompleteOptions {
+    /** Also suggest the `ALL` / `CAT:<category>` shortcuts (for options passed to `resolveBiomeSelector`). */
+    selectors?: boolean;
+    /** Which biomes to suggest - default `"enabled"`. */
+    which?: "enabled" | "disabled" | "all";
+}
+
+/**
+ * Autocomplete suggestions for a biome option: every choice whose name or key contains what the
+ * user typed so far (case-insensitive), capped at Discord's 25. Replaces fixed `.addChoices()`,
+ * which can't follow a biome list that changes at runtime and tops out at 25 entries.
+ */
+export function biomeAutocompleteChoices(
+    typed: string,
+    { selectors = false, which = "enabled" }: BiomeAutocompleteOptions = {},
+): BiomeChoice[] {
+    const pool =
+        which === "enabled" ? getEnabledBiomes() : which === "disabled" ? getAllBiomes().filter((e) => !e.enabled) : getAllBiomes();
+    const biomes = pool.map((e) => ({ name: e.enabled ? e.label : `${e.label} (disabled)`, value: e.key }));
+    const choices = selectors ? [...getBiomeGroupChoices(), ...biomes] : biomes;
+    const needle = typed.trim().toLowerCase();
+    return choices
+        .filter((c) => !needle || c.name.toLowerCase().includes(needle) || c.value.toLowerCase().includes(needle))
+        .slice(0, MAX_DISCORD_CHOICES);
+}
 
 const DEFAULT_BIOME_COLOR = 0x5865f2;
 
 export function getBiomeColor(biome: string): number {
-    return BIOME_META[biome]?.color ?? DEFAULT_BIOME_COLOR;
+    return registry.get(biome)?.color ?? DEFAULT_BIOME_COLOR;
+}
+
+/**
+ * Whether a find earns its Seeds/XP (and badge) the moment it's detected: a rare one waits for its
+ * community vote (see biome-vote.service.ts), and an admin one never earns anything - it's only
+ * tracked for stats and forwards.
+ */
+export function rewardsOnDetection(biome: string): boolean {
+    const category = registry.get(biome)?.category;
+    return category !== "rare" && category !== "admin";
 }
 
 /** Unset = no ANSI color applied - the biome's name prints in the codeblock's default color. */
 export function getBiomeAnsiColor(biome: string): string {
-    return BIOME_META[biome]?.ansiColor ?? "";
+    return registry.get(biome)?.ansiColor ?? "";
+}
+
+export interface AnsiColorOption {
+    slug: string;
+    name: string;
+    code: number;
+}
+
+/** The 8 text colors Discord's `ansi` codeblock renders (SGR 30-37), named as Discord shows them. */
+export const ANSI_TEXT_COLORS: readonly AnsiColorOption[] = [
+    { slug: "gray", name: "Gray", code: 30 },
+    { slug: "red", name: "Red", code: 31 },
+    { slug: "green", name: "Green", code: 32 },
+    { slug: "yellow", name: "Yellow", code: 33 },
+    { slug: "blue", name: "Blue", code: 34 },
+    { slug: "pink", name: "Pink", code: 35 },
+    { slug: "cyan", name: "Cyan", code: 36 },
+    { slug: "white", name: "White", code: 37 },
+];
+
+/** The 8 background colors Discord's `ansi` codeblock renders (SGR 40-47), named as Discord shows them. */
+export const ANSI_BACKGROUND_COLORS: readonly AnsiColorOption[] = [
+    { slug: "dark-blue", name: "Dark Blue", code: 40 },
+    { slug: "orange", name: "Orange", code: 41 },
+    { slug: "marble-blue", name: "Marble Blue", code: 42 },
+    { slug: "turquoise", name: "Grayish Turquoise", code: 43 },
+    { slug: "gray", name: "Gray", code: 44 },
+    { slug: "indigo", name: "Indigo", code: 45 },
+    { slug: "light-gray", name: "Light Gray", code: 46 },
+    { slug: "white", name: "White", code: 47 },
+];
+
+/** A biome name's ANSI styling, split into the parts Discord renders. `null` = that part unset. */
+export interface AnsiStyle {
+    bold: boolean;
+    /** SGR 30-37. */
+    text: number | null;
+    /** SGR 40-47. */
+    background: number | null;
+}
+
+const ANSI_ESCAPE = "\u001b[";
+
+/** `{ bold, text: 31, background: 40 }` -> `"\u001b[1;31;40m"`; nothing set -> `""` (no color). */
+export function buildAnsiCode(style: AnsiStyle): string {
+    const parts = [style.bold ? 1 : null, style.text, style.background].filter((p) => p !== null);
+    return parts.length > 0 ? `${ANSI_ESCAPE}${parts.join(";")}m` : "";
+}
+
+/** Reverse of `buildAnsiCode` - SGR parts Discord doesn't render are ignored. */
+export function parseAnsiCode(code: string | undefined): AnsiStyle {
+    const style: AnsiStyle = { bold: false, text: null, background: null };
+    if (!code?.startsWith(ANSI_ESCAPE) || !code.endsWith("m")) return style;
+    for (const part of code.slice(ANSI_ESCAPE.length, -1).split(";").map(Number)) {
+        if (part === 1) style.bold = true;
+        else if (part >= 30 && part <= 37) style.text = part;
+        else if (part >= 40 && part <= 47) style.background = part;
+    }
+    return style;
+}
+
+/** e.g. "Bold Red on Dark Blue", or "None". */
+export function describeAnsiColor(code: string | undefined): string {
+    const style = parseAnsiCode(code);
+    const text = ANSI_TEXT_COLORS.find((c) => c.code === style.text)?.name;
+    const background = ANSI_BACKGROUND_COLORS.find((c) => c.code === style.background)?.name;
+    const words = [
+        style.bold ? "Bold" : null,
+        text ?? (style.bold || background ? "Default" : null),
+        background ? `on ${background}` : null,
+    ];
+    return words.filter((w) => w !== null).join(" ") || "None";
 }

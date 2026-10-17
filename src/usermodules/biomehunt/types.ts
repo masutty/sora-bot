@@ -3,7 +3,8 @@ import { UserFacingError } from "@/define";
 export type ActivityStatus = "active" | "idle" | "inactive";
 
 /** Hardcoded biome grouping, used to quick-select "all biomes in category X" wherever biomes are configured. */
-export type BiomeCategory = "biome" | "weather" | "rare" | "event";
+/** `admin` = admin-spawned biomes: tracked for stats and forwards only - no Seeds/XP, no vote, not in the Network. */
+export type BiomeCategory = "biome" | "weather" | "rare" | "event" | "admin";
 
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";

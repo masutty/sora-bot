@@ -10,7 +10,7 @@ import {
     TextDisplayBuilder,
     ThumbnailBuilder,
 } from "discord.js";
-import { BIOME_META, getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
+import { getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
 
 export interface VoteRenderInfo {
@@ -41,7 +41,7 @@ export interface ForwardContainerParams {
     lastSeenInServerAt?: Date | null;
     vote?: VoteRenderInfo;
     badges?: ForwardBadges;
-    /** The biome's optional in-game style line (`BIOME_META[biome].flavorText`), shown small on its own line right under the title. */
+    /** The biome's optional in-game style line (`getBiomeMeta(biome)?.flavorText`), shown small on its own line right under the title. */
     flavorText?: string | null;
 }
 
@@ -230,7 +230,7 @@ function findCountsLine(findCount: number | null | undefined, serverFindCount: n
 function titleBlock(params: ForwardContainerParams): string {
     const name = spoofBiomeName(params.biome);
     const title = params.serverLink ? `[${name}](${params.serverLink})` : name;
-    const isRare = BIOME_META[params.biome]?.category === "rare";
+    const isRare = getBiomeMeta(params.biome)?.category === "rare";
 
     const byline = [
         params.finderDiscordId ? `Found by <@${params.finderDiscordId}>` : null,

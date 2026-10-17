@@ -9,13 +9,13 @@ import {
 } from "discord.js";
 import { type CommandContext, confirm, paginate } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
-import { BIOME_META, formatBiomeName } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs } from "../repository/delayed-forwards.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
 import { getActiveNetworkGuilds, getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
 import { getNetworkStats, getRecentNetworkAlerts } from "../repository/network-posts.repository";
 import { defaultAnnounceDeps, sendNetworkAnnouncement } from "../services/network-announce.service";
-import { loadEligibility, NETWORK_BIOMES } from "../services/network-eligibility.service";
+import { getNetworkBiomes, loadEligibility } from "../services/network-eligibility.service";
 import {
     banFromNetwork,
     decideJoinRequest,
@@ -304,7 +304,7 @@ const SIMULATED_SERVER_LINK = "https://www.roblox.com/share?code=SIMULATED&type=
  * the invoking guild's own Network channel, to check the layout without bothering any other server.
  */
 export async function runSimulateNetworkMirror(ctx: CommandContext, guild: Guild, biome: string): Promise<void> {
-    if (!NETWORK_BIOMES.includes(biome)) throw new BiomeHuntError(`${formatBiomeName(biome)} is not a Network biome.`);
+    if (!getNetworkBiomes().includes(biome)) throw new BiomeHuntError(`${formatBiomeName(biome)} is not a Network biome.`);
     const row = await getNetworkGuild(guild.id);
     if (!row?.network_channel_id) throw new BiomeHuntError("This server has no Network channel - set one with `/network config`.");
     const channel = await ctx.client.channels.fetch(row.network_channel_id).catch(() => null);
@@ -320,7 +320,7 @@ export async function runSimulateNetworkMirror(ctx: CommandContext, guild: Guild
         server_link: SIMULATED_SERVER_LINK,
     };
     await channel.send({
-        components: [buildMirrorContainer({ post, roleId: null, simulated: true, flavorText: BIOME_META[biome]?.flavorText })],
+        components: [buildMirrorContainer({ post, roleId: null, simulated: true, flavorText: getBiomeMeta(biome)?.flavorText })],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
     });

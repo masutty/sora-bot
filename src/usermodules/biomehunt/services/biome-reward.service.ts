@@ -1,6 +1,6 @@
 import { transaction } from "@/database/connection";
 import { ALL_BADGES } from "../constants/badges.constants";
-import { BIOME_META } from "../constants/biomes.constants";
+import { getBiomeMeta } from "../constants/biomes.constants";
 import { getLevelForXp, REWARD_BY_CATEGORY } from "../constants/levels.constants";
 import { getGuildBadgeRole, grantUserBadge, revokeUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
@@ -32,12 +32,12 @@ export async function grantBiomeReward(
     eventId: number,
     biome: string,
 ): Promise<{ seeds: number; xp: number; badge: Badge | null; leveledUp: boolean }> {
-    const category = BIOME_META[biome]?.category;
+    const category = getBiomeMeta(biome)?.category;
     const economyOn = await isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY");
 
     let seeds = 0;
     let xp = 0;
-    if (economyOn && category) {
+    if (economyOn && category && category !== "admin") {
         seeds = REWARD_BY_CATEGORY[category].seeds;
         xp = REWARD_BY_CATEGORY[category].xp;
     }
@@ -128,7 +128,7 @@ export interface RewardBackfillPlan {
     events: Array<{ id: number; biome: string; seeds: number; xp: number }>;
     totalSeeds: number;
     totalXp: number;
-    /** Confirmed events matching the filters whose biome isn't in BIOME_META (no category -> no
+    /** Confirmed events matching the filters whose biome isn't in the biome registry (no category -> no
      * reward value to compute) - reported so `bh-owner recalculate-user` can surface them instead
      * of silently doing nothing for them. */
     skippedUnknownCount: number;
@@ -151,11 +151,12 @@ export async function planUserRewardBackfill(userId: number, filters: RewardBack
     let skippedUnknownCount = 0;
 
     for (const c of candidates) {
-        const category = BIOME_META[c.biome]?.category;
+        const category = getBiomeMeta(c.biome)?.category;
         if (!category) {
             skippedUnknownCount++;
             continue;
         }
+        if (category === "admin") continue;
         const { seeds, xp } = REWARD_BY_CATEGORY[category];
         events.push({ id: c.id, biome: c.biome, seeds, xp });
         totalSeeds += seeds;

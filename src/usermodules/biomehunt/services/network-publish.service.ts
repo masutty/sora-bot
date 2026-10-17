@@ -3,7 +3,7 @@ import { MessageFlags } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
-import { BIOME_META, formatBiomeName } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import {
     getMemberNetworkGuilds,
@@ -27,7 +27,7 @@ import {
 import { settings } from "../settings";
 import { BiomeHuntError, type NetworkGuildRow, type NetworkPostRow, NetworkStatus } from "../types";
 import { buildMirrorContainer, serverNameLink } from "../views/network-mirror.view";
-import { type EligibilityReport, loadEligibility, NETWORK_BIOMES } from "./network-eligibility.service";
+import { type EligibilityReport, getNetworkBiomes, loadEligibility } from "./network-eligibility.service";
 import { type PrivateServerLink, parsePrivateServerLink } from "./network-link";
 import { requireSnowflake } from "./network-membership.service";
 import { notifyOwners } from "./owner-dm.service";
@@ -169,7 +169,7 @@ async function withDedupLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
  * Same private server from a different user = duplicate (dropped quietly).
  */
 export async function scheduleNetworkPost(input: ScheduleInput, deps: NetworkPublishDeps): Promise<ScheduleResult> {
-    if (!NETWORK_BIOMES.includes(input.biome)) return { kind: "skipped", reason: "not a Network biome" };
+    if (!getNetworkBiomes().includes(input.biome)) return { kind: "skipped", reason: "not a Network biome" };
     const link = parsePrivateServerLink(input.serverLink);
     if (!link) return { kind: "skipped", reason: "no private server link" };
     const blocker = await publishBlocker(input.originGuildId, input.finderDiscordId, deps);
@@ -304,7 +304,7 @@ async function sendOneMirror(
     // never pings either: its local post already did.
     const home = guild.guild_id === post.origin_guild_id;
     const roleId = post.simulated || home ? null : (pingRoles.get(guild.guild_id) ?? null);
-    const flavorText = BIOME_META[post.biome]?.flavorText;
+    const flavorText = getBiomeMeta(post.biome)?.flavorText;
     const sent = await deps.sendMirror(guild.network_channel_id as string, {
         components: [
             post.simulated
@@ -378,7 +378,8 @@ export async function scheduleSimulatedNetworkPost(
     deps: NetworkPublishDeps,
     opts: { dryRun?: boolean } = {},
 ): Promise<SimulatedScheduleResult> {
-    if (!NETWORK_BIOMES.includes(input.biome)) return { kind: "skipped", reason: `${formatBiomeName(input.biome)} is not a Network biome` };
+    if (!getNetworkBiomes().includes(input.biome))
+        return { kind: "skipped", reason: `${formatBiomeName(input.biome)} is not a Network biome` };
     const blocker = await simulatedBlocker(input.originGuildId, deps);
     if (blocker) return { kind: "skipped", reason: blocker };
 

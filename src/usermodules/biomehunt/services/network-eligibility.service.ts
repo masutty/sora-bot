@@ -5,8 +5,10 @@ import { getForwardConfigs } from "../repository/forwards.repository";
 import { getNetworkGuild } from "../repository/network.repository";
 import { settings } from "../settings";
 
-/** Every biome the Network carries - a Member Server must forward all of them locally (live or delayed). */
-export const NETWORK_BIOMES: readonly string[] = getBiomesByCategory("rare");
+/** Every biome the Network carries (the enabled rare ones) - a Member Server must forward all of them locally (live or delayed). */
+export function getNetworkBiomes(): string[] {
+    return getBiomesByCategory("rare");
+}
 
 const DAY_MS = 86_400_000;
 
@@ -30,7 +32,7 @@ export type EligibilityGap =
 
 export function evaluateEligibility(facts: EligibilityFacts): EligibilityGap[] {
     const gaps: EligibilityGap[] = [];
-    const missing = NETWORK_BIOMES.filter((b) => !facts.forwardedBiomes.has(b));
+    const missing = getNetworkBiomes().filter((b) => !facts.forwardedBiomes.has(b));
     if (missing.length > 0) gaps.push({ kind: "forwards", missing });
     if (!facts.networkChannelId) gaps.push({ kind: "network_channel" });
     else if (facts.localForwardChannelIds.has(facts.networkChannelId)) gaps.push({ kind: "network_channel_conflict" });

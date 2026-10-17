@@ -3,7 +3,13 @@ import { ContainerBuilder, MessageFlags, PermissionFlagsBits, SeparatorSpacingSi
 import { type CommandContext, defineCommand, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, formatCodeblock, formatTime, NO_PINGS, unix } from "@/utils/format";
-import { ALL_BIOME_CATEGORIES, BIOME_CATEGORY_LABELS, BIOME_META, formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import {
+    ALL_BIOME_CATEGORIES,
+    BIOME_CATEGORY_LABELS,
+    formatBiomeName,
+    getBiomeAnsiColor,
+    getBiomeMeta,
+} from "../constants/biomes.constants";
 import {
     getBiomeCounts,
     getBiomeTopContributors,
@@ -40,7 +46,7 @@ function biomeLinesByCategory(
 ): string[] {
     const blocks: string[] = [];
     for (const category of ALL_BIOME_CATEGORIES) {
-        const inCategory = counts.filter((c) => BIOME_META[c.biome]?.category === category);
+        const inCategory = counts.filter((c) => getBiomeMeta(c.biome)?.category === category);
         if (inCategory.length === 0) continue;
         const total = inCategory.reduce((sum, c) => sum + c.count, 0);
         blocks.push(`**${BIOME_CATEGORY_LABELS[category]} (${total})**\n${formatCodeblock(inCategory.map(lineFor).join("\n"), "ansi")}`);
@@ -80,7 +86,7 @@ async function buildBiomesContributorsContainer(guildId: string): Promise<Contai
     }
 
     for (const category of ALL_BIOME_CATEGORIES) {
-        const inCategory = top.filter((t) => BIOME_META[t.biome]?.category === category);
+        const inCategory = top.filter((t) => getBiomeMeta(t.biome)?.category === category);
         if (inCategory.length === 0) continue;
         const lines = inCategory.map((t) => `${formatBiomeName(t.biome)}: <@${t.discordUserId}> (\`${t.count}\`)`);
         container.addTextDisplayComponents((td) => td.setContent(`**${BIOME_CATEGORY_LABELS[category]}**\n${lines.join("\n")}`));

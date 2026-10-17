@@ -70,6 +70,8 @@ test("biomehunt.forward-list (close): starts empty, Create -> pick biome+channel
     expect(text(fake.lastPayload())).toContain("Create Biome Forward");
     expect(comp(fake.lastPayload(), "confirm").disabled).toBe(true);
 
+    await fake.emit(fake.click("group", OWNER, ["biome"]));
+
     await fake.emit(fake.click("biome", OWNER, ["HELL"]));
     expect(comp(fake.lastPayload(), "confirm").disabled).toBe(true); // channel still missing
 
@@ -188,6 +190,8 @@ test("biomehunt.delayed-forward-list: Create also requires a delay, and passes i
     expect(text(fake.lastPayload())).toContain("Delayed Biome Forwards");
     await fake.emit(fake.click("add", OWNER));
     expect(text(fake.lastPayload())).toContain("Create Delayed Biome Forward");
+
+    await fake.emit(fake.click("group", OWNER, ["biome"]));
 
     await fake.emit(fake.click("biome", OWNER, ["HELL"]));
     await fake.emit(fake.click("channel", OWNER, ["c1"]));
