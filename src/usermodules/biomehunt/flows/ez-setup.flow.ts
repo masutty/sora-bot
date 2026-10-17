@@ -12,7 +12,7 @@ import {
     type ViewPayload,
 } from "@/define";
 import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
-import { ALL_BADGES, BADGE_META } from "../constants/badges.constants";
+import { getBadgeMeta, getBiomeBadges } from "../constants/badges.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
@@ -770,7 +770,13 @@ interface BadgeRolesState {
     picked: Partial<Record<Badge, string>>;
 }
 
+/** Role selects shown at most - one row each, kept well under Discord's per-message component cap. */
+const MAX_BADGE_ROLE_SELECTS = 10;
+
 function badgeRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
+    // Read when the step is built, like the Network pings step - a biome badge added later shows on the next run.
+    const badges = getBiomeBadges().slice(0, MAX_BADGE_ROLE_SELECTS);
+    const label = (b: Badge) => `${getBadgeMeta(b).emoji} ${getBadgeMeta(b).display}`;
     return defineView<BadgeRolesState, StepResult, EzSetupContext>({
         name: "biomehunt.ez-setup.badge-roles",
         initial: async (ctx) => {
@@ -783,33 +789,28 @@ function badgeRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
             stepPayload([
                 stepContainer(
                     "Special Biome Badges (optional)",
-                    "Some biomes are rare: Glitched, Cyberspace and Dreamspace. The first time a user's macro reports one of them, they permanently earn a badge on their profile.\n\n" +
+                    `Some biomes give a badge: ${badges.map((b) => getBadgeMeta(b).display).join(", ") || "none right now"}. The first time a user's macro reports one of them, they permanently earn it on their profile.\n\n` +
                         "You can optionally also grant a role for each one found. Pick a role for any (or none) of them below.\n\n" +
                         "Currently:\n" +
-                        ALL_BADGES.map((b) => roleLine(`${BADGE_META[b].emoji} ${BADGE_META[b].display}`, state.current[b] ?? null)).join(
-                            "\n",
-                        ),
+                        badges.map((b) => roleLine(label(b), state.current[b] ?? null)).join("\n"),
                 ),
-                kit.row(kit.roleSelect("GLITCHED", (s) => s.setPlaceholder(`${BADGE_META.GLITCHED.emoji} Glitched role`))),
-                kit.row(kit.roleSelect("CYBERSPACE", (s) => s.setPlaceholder(`${BADGE_META.CYBERSPACE.emoji} Cyberspace role`))),
-                kit.row(kit.roleSelect("DREAMSPACE", (s) => s.setPlaceholder(`${BADGE_META.DREAMSPACE.emoji} Dreamspace role`))),
+                ...badges.map((b) => kit.row(kit.roleSelect(b, (s) => s.setPlaceholder(`${label(b)} role`)))),
                 navRow(kit, {
                     canBack: true,
                     extra: [kit.button("done", (b) => b.setLabel("Done").setStyle(ButtonStyle.Primary))],
                 }),
             ]),
         on: {
-            GLITCHED: (c) => {
-                c.state.picked.GLITCHED = c.values[0];
-            },
-            CYBERSPACE: (c) => {
-                c.state.picked.CYBERSPACE = c.values[0];
-            },
-            DREAMSPACE: (c) => {
-                c.state.picked.DREAMSPACE = c.values[0];
-            },
+            ...Object.fromEntries(
+                badges.map((b) => [
+                    b,
+                    (c: { state: BadgeRolesState; values: string[] }) => {
+                        c.state.picked[b] = c.values[0];
+                    },
+                ]),
+            ),
             done: async (c) => {
-                for (const badge of ALL_BADGES) {
+                for (const badge of badges) {
                     const roleId = c.state.picked[badge];
                     if (roleId) await deps.setBadges(c.state.guildId, badge, roleId);
                 }

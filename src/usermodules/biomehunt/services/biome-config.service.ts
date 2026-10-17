@@ -6,6 +6,7 @@ import {
     biomeKeyFor,
     CLEAR_VALUE,
     formatHexColor,
+    parseBadgeEmoji,
     parseCategory,
     parseDuration,
     parseFlavorText,
@@ -31,6 +32,10 @@ export interface BiomeConfigEntry {
     ansi: { text: string | null; background: string | null; bold: boolean };
     /** Fixed length in seconds (see `BiomeMeta.durationS`) - `null` = not timed. Optional in the file. */
     durationSeconds?: number | null;
+    /** Whether finding it gives a profile badge. Optional in the file - absent = no badge. */
+    hasBadge?: boolean;
+    /** The badge's emoji - `null` = the default one. Optional in the file. */
+    badgeEmoji?: string | null;
     enabled: boolean;
 }
 
@@ -62,6 +67,8 @@ function toConfigEntry(e: BiomeEntry): BiomeConfigEntry {
             bold: style.bold,
         },
         durationSeconds: e.durationS ?? null,
+        hasBadge: e.hasBadge === true,
+        badgeEmoji: e.badgeEmoji || null,
         enabled: e.enabled,
     };
 }
@@ -106,6 +113,8 @@ function fromConfigEntry(raw: unknown): BiomeEntry {
             bold: ansi.bold === true,
         }),
         durationS: parseDurationSeconds(raw.durationSeconds),
+        hasBadge: raw.hasBadge === true,
+        badgeEmoji: optionalString(raw.badgeEmoji) ? parseBadgeEmoji(String(raw.badgeEmoji)) : undefined,
         enabled: raw.enabled !== false,
     };
 }
@@ -149,10 +158,24 @@ export function parseBiomeConfig(text: string): BiomeEntry[] {
     return entries;
 }
 
-const COMPARED_FIELDS = ["label", "category", "color", "flavorText", "iconUrl", "ansiColor", "durationS", "enabled"] as const;
+const COMPARED_FIELDS = [
+    "label",
+    "category",
+    "color",
+    "flavorText",
+    "iconUrl",
+    "ansiColor",
+    "durationS",
+    "hasBadge",
+    "badgeEmoji",
+    "enabled",
+] as const;
 
 /** `""` and `undefined` both mean "not set" (e.g. a seeded empty icon URL vs. a missing one). */
 const unset = <T>(v: T) => (v === "" ? undefined : v);
+
+/** A field's value for comparing - an unset `hasBadge` is the same as `false`. */
+const comparable = (field: (typeof COMPARED_FIELDS)[number], v: unknown) => (field === "hasBadge" ? v === true : unset(v));
 
 export interface BiomeImportPlan {
     added: string[];
@@ -181,7 +204,7 @@ export function planBiomeImport(current: BiomeEntry[], incoming: BiomeEntry[], m
             plan.added.push(e.key);
             continue;
         }
-        const fields = COMPARED_FIELDS.filter((f) => unset(existing[f]) !== unset(e[f]));
+        const fields = COMPARED_FIELDS.filter((f) => comparable(f, existing[f]) !== comparable(f, e[f]));
         if (fields.length > 0) plan.updated.push({ key: e.key, fields: [...fields] });
         else plan.unchanged++;
     }

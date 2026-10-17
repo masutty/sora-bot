@@ -26,6 +26,10 @@ export interface BiomeMeta {
     /** How long the biome lasts, for biomes with a fixed duration (admin events, mostly). While it
      * runs, its finder can't go idle - see activity-grace.service.ts. Unset = not timed. */
     durationS?: number;
+    /** Finding this biome earns a permanent profile badge (and the guild's badge role, if set). */
+    hasBadge?: boolean;
+    /** The badge's emoji - unicode or a custom `<:name:id>`. Unset = the default badge emoji. */
+    badgeEmoji?: string;
 }
 
 /** One registered biome. A disabled biome is no longer recognized from macro webhooks nor offered
@@ -123,6 +127,8 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
         color: 0xff00ff,
         iconUrl: "https://i.imgur.com/xTd6Ku4.png",
         ansiColor: "\u001b[1;32;40m",
+        hasBadge: true,
+        badgeEmoji: "🔥",
     },
     CYBERSPACE: {
         label: "Cyberspace",
@@ -131,6 +137,8 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
         color: 0x00e5ff,
         iconUrl: "https://i.imgur.com/FxFEobX.png",
         ansiColor: "\u001b[1;34;40m",
+        hasBadge: true,
+        badgeEmoji: "🌐",
     },
     DREAMSPACE: {
         label: "Dreamspace",
@@ -139,6 +147,8 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
         color: 0xffb6d9,
         iconUrl: "https://i.imgur.com/JCoQDvY.png",
         ansiColor: "\u001b[1;37;45m",
+        hasBadge: true,
+        badgeEmoji: "🌸",
     },
     SINGULARITY: {
         label: "Singularity",
@@ -215,7 +225,7 @@ export function normalizeBiomeName(raw: string): string {
 }
 
 function defaultEntries(): BiomeEntry[] {
-    return Object.entries(DEFAULT_BIOMES).map(([key, meta]) => ({ ...meta, key, enabled: true }));
+    return Object.entries(DEFAULT_BIOMES).map(([key, meta]) => ({ ...meta, key, hasBadge: meta.hasBadge === true, enabled: true }));
 }
 
 /**
@@ -362,13 +372,12 @@ export function getBiomeColor(biome: string): number {
 }
 
 /**
- * Whether a find earns its Seeds/XP (and badge) the moment it's detected: a rare one waits for its
- * community vote (see biome-vote.service.ts), and an admin one never earns anything - it's only
- * tracked for stats and forwards.
+ * Whether a find gets its rewards the moment it's detected - every one but a rare find, which waits
+ * for its community vote (see biome-vote.service.ts). An admin find's only possible reward is its
+ * biome badge: `grantBiomeReward` never gives Seeds/XP for the admin category.
  */
 export function rewardsOnDetection(biome: string): boolean {
-    const category = registry.get(biome)?.category;
-    return category !== "rare" && category !== "admin";
+    return registry.get(biome)?.category !== "rare";
 }
 
 /** Unset = no ANSI color applied - the biome's name prints in the codeblock's default color. */

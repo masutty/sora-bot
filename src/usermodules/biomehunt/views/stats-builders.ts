@@ -1,6 +1,6 @@
 import { ContainerBuilder, type GuildMember, SeparatorSpacingSize } from "discord.js";
 import { formatCodeblock, formatTime, unix } from "@/utils/format";
-import { BADGE_META } from "../constants/badges.constants";
+import { getBadgeMeta } from "../constants/badges.constants";
 import {
     ALL_BIOME_CATEGORIES,
     BIOME_CATEGORY_LABELS,
@@ -126,7 +126,9 @@ export function buildProfileTabContainer(member: GuildMember, data: ProfileData)
 
     if (badges.length > 0) {
         addDivider(container);
-        container.addTextDisplayComponents((td) => td.setContent(`**Badges**\n${badges.map((b) => BADGE_META[b.badge].emoji).join(" ")}`));
+        container.addTextDisplayComponents((td) =>
+            td.setContent(`**Badges**\n${badges.map((b) => getBadgeMeta(b.badge).emoji).join(" ")}`),
+        );
     }
 
     addDivider(container);
@@ -218,7 +220,7 @@ export function buildBadgesTabContainer(member: GuildMember, data: ProfileData):
     }
 
     for (const b of badges) {
-        const meta = BADGE_META[b.badge];
+        const meta = getBadgeMeta(b.badge);
         addDivider(container);
         container.addTextDisplayComponents((td) =>
             td.setContent(`**${meta.emoji} ${meta.display}**\n${meta.description}\n-# Earned <t:${unix(b.awarded_at)}:R>`),

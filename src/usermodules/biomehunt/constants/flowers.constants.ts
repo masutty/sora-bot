@@ -87,3 +87,33 @@ export function flowerAssetPath(key: string): string {
     if (!meta) throw new Error(`Unknown flower key: ${key}`);
     return join(__dirname, "../../../assets/garden", meta.file);
 }
+
+/** Accent color of a container showing a Flower of this rarity. */
+export const RARITY_COLOR: Record<FlowerRarity, number> = {
+    [FlowerRarity.COMMON]: 0x9b9ca3,
+    [FlowerRarity.UNCOMMON]: 0x3ba55d,
+    [FlowerRarity.RARE]: 0x3b82f6,
+    [FlowerRarity.EPIC]: 0xa855f7,
+    [FlowerRarity.LEGENDARY]: 0xf0b232,
+    [FlowerRarity.MYTHICAL]: 0xef4444,
+    [FlowerRarity.RNGESUS]: 0xff73fa,
+};
+
+/**
+ * The REAL per-draw probability of a rarity, derived from RARITY_CHANCE the way a draw plays out:
+ * rarities are checked rarest first and each only counts if every rarer one missed; common is
+ * whatever is left over.
+ */
+export function rarityProbability(rarity: FlowerRarity): number {
+    let missedRarer = 1;
+    for (const entry of RARITY_CHANCE) {
+        if (entry.rarity === rarity) return missedRarer * entry.chance;
+        missedRarer *= 1 - entry.chance;
+    }
+    return missedRarer;
+}
+
+/** "1 in N" odds of a rarity (N rounded, en-US thousands separators), e.g. `"1,000"`. */
+export function rarityOneIn(rarity: FlowerRarity): string {
+    return Math.round(1 / rarityProbability(rarity)).toLocaleString("en-US");
+}

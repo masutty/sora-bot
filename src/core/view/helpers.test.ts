@@ -361,6 +361,28 @@ test("confirm: the summary container + [Confirm][Cancel]; files are attached", a
     expect(comp("no", sent)).toMatchObject({ label: "Cancel", style: ButtonStyle.Danger });
 });
 
+test("confirm: body replaces fields, and the button labels/styles are overridable", async () => {
+    void fake.run(
+        confirm({
+            name: "test.confirm",
+            title: "Turn on?",
+            body: "**KEY** (default: OFF)\n**On:** it does things",
+            confirmLabel: "Turn on",
+            confirmStyle: ButtonStyle.Primary,
+            cancelLabel: "Never mind",
+            cancelStyle: ButtonStyle.Secondary,
+            onConfirm: async () => EmbedFormatter.success("ok"),
+        }),
+        undefined,
+    );
+    await fake.flush();
+
+    const sent = fake.responded[0];
+    expect(text(sent)).toBe("**Turn on?**\n**KEY** (default: OFF)\n**On:** it does things");
+    expect(comp("yes", sent)).toMatchObject({ label: "Turn on", style: ButtonStyle.Primary });
+    expect(comp("no", sent)).toMatchObject({ label: "Never mind", style: ButtonStyle.Secondary });
+});
+
 test("confirm: yes runs onConfirm, resolves true, and the final screen is onConfirm's payload", async () => {
     let runs = 0;
     const result = fake.run(

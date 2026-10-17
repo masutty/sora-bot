@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { DEFAULT_BADGE_EMOJI, DELETED_BADGE, getBadgeMeta, getBiomeBadges, resolveBadgeSlug } from "../constants/badges.constants";
 import {
     type BiomeEntry,
     type BiomeMeta,
@@ -20,6 +21,7 @@ import {
     applyAnsiInput,
     type BiomeAdminDeps,
     editBiome,
+    parseBadgeEmoji,
     parseDuration,
     parseHexColor,
     setBiomeActive,
@@ -60,9 +62,21 @@ const NEW_BIOME = {
     iconUrl: null,
     ansi: { text: "red", background: null, bold: true },
     duration: null,
+    hasBadge: null,
+    badgeEmoji: null,
 };
 
-const NO_EDIT = { label: null, category: null, color: null, flavorText: null, iconUrl: null, ansi: NO_ANSI, duration: null };
+const NO_EDIT = {
+    label: null,
+    category: null,
+    color: null,
+    flavorText: null,
+    iconUrl: null,
+    ansi: NO_ANSI,
+    duration: null,
+    hasBadge: null,
+    badgeEmoji: null,
+};
 
 test("addBiome registers the normalized key, and the parser/selectors see it right away", async () => {
     const deps = createFakeDeps();
@@ -131,12 +145,12 @@ test("ANSI codes round-trip and read as words", () => {
     expect(describeAnsiColor(undefined)).toBe("None");
 });
 
-test("an admin biome is tracked but never rewarded on detection, and isn't a Network biome", async () => {
+test("an admin biome gets its rewards on detection (only ever its badge - no Seeds/XP for admin), and isn't a Network biome", async () => {
     const deps = createFakeDeps();
     await addBiome({ ...NEW_BIOME, name: "Admin Storm", category: "admin" }, deps);
 
     expect(isKnownBiome("ADMINSTORM")).toBe(true);
-    expect(rewardsOnDetection("ADMINSTORM")).toBe(false);
+    expect(rewardsOnDetection("ADMINSTORM")).toBe(true);
     expect(rewardsOnDetection("GLITCHED")).toBe(false);
     expect(rewardsOnDetection("HELL")).toBe(true);
     expect(resolveBiomeSelector("CAT:rare")).not.toContain("ADMINSTORM");
@@ -185,4 +199,29 @@ test("a duration is set on add, changed on edit and removed with 'none'", async 
     expect(await addBiome({ ...NEW_BIOME, category: "admin", duration: "2h" }, deps)).toMatchObject({ durationS: 7200 });
     expect(await editBiome({ ...NO_EDIT, biome: "BLOODMOON", duration: "45m" }, deps)).toMatchObject({ durationS: 2700 });
     expect((await editBiome({ ...NO_EDIT, biome: "BLOODMOON", duration: "none" }, deps)).durationS).toBeUndefined();
+});
+
+test("a biome badge is turned on with its emoji, and 'none' falls back to the default emoji", async () => {
+    const deps = createFakeDeps();
+    expect(await addBiome({ ...NEW_BIOME, hasBadge: true, badgeEmoji: "🩸" }, deps)).toMatchObject({
+        hasBadge: true,
+        badgeEmoji: "🩸",
+    });
+    expect(getBiomeBadges()).toContain("BLOODMOON");
+    expect(getBadgeMeta("BLOODMOON")).toMatchObject({ emoji: "🩸", display: "Blood Moon", description: "Found the Blood Moon biome!" });
+
+    await editBiome({ ...NO_EDIT, biome: "BLOODMOON", badgeEmoji: "none" }, deps);
+    expect(getBadgeMeta("BLOODMOON").emoji).toBe(DEFAULT_BADGE_EMOJI);
+
+    await editBiome({ ...NO_EDIT, biome: "BLOODMOON", hasBadge: false }, deps);
+    expect(getBiomeBadges()).not.toContain("BLOODMOON");
+    expect(() => parseBadgeEmoji("two emojis")).toThrow(BiomeHuntError);
+});
+
+test("the three badges that used to be hard-coded are biome badges by default", () => {
+    expect(getBiomeBadges()).toEqual(["GLITCHED", "CYBERSPACE", "DREAMSPACE"]);
+    expect(getBadgeMeta("GLITCHED")).toMatchObject({ slug: "glitched", emoji: "🔥", display: "Glitched" });
+    expect(resolveBadgeSlug("deleted")).toBe(DELETED_BADGE);
+    expect(resolveBadgeSlug("glitched")).toBe("GLITCHED");
+    expect(resolveBadgeSlug("nope")).toBeNull();
 });

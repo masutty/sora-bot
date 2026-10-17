@@ -67,6 +67,14 @@ export function parseDuration(raw: string): number {
     return seconds;
 }
 
+/** A badge emoji: a unicode emoji or a custom `<:name:id>` - checked only for size, Discord renders whatever it is. */
+export function parseBadgeEmoji(raw: string): string {
+    const emoji = raw.trim();
+    if (!emoji || emoji.length > 64 || /\s/.test(emoji))
+        throw new BiomeHuntError("The badge emoji must be one emoji - unicode or a custom `<:name:id>`.");
+    return emoji;
+}
+
 export function parseIconUrl(raw: string): string {
     const url = raw.trim();
     if (!/^https:\/\/\S+$/i.test(url)) throw new BiomeHuntError("The icon must be an `https://` image URL.");
@@ -134,6 +142,10 @@ export interface AddBiomeInput {
     ansi: AnsiInput;
     /** e.g. `10m` - see `parseDuration`. On edit, `CLEAR_VALUE` removes it. */
     duration: string | null;
+    /** Whether finding it gives a profile badge - `null` = not given (off on add, unchanged on edit). */
+    hasBadge: boolean | null;
+    /** The badge's emoji. On edit, `CLEAR_VALUE` removes it (the default emoji shows). */
+    badgeEmoji: string | null;
 }
 
 /** Adds a new, enabled biome. Its key is the detection name normalized (e.g. "Blood Rain" -> `BLOODRAIN`). */
@@ -148,6 +160,8 @@ export async function addBiome(input: AddBiomeInput, deps: BiomeAdminDeps = defa
         iconUrl: input.iconUrl ? parseIconUrl(input.iconUrl) : undefined,
         ansiColor: applyAnsiInput(undefined, input.ansi),
         durationS: input.duration ? parseDuration(input.duration) : undefined,
+        hasBadge: input.hasBadge === true,
+        badgeEmoji: input.badgeEmoji ? parseBadgeEmoji(input.badgeEmoji) : undefined,
     };
 
     const existing = getBiomeMeta(key);
@@ -170,6 +184,31 @@ export interface EditBiomeInput {
     ansi: AnsiInput;
     /** e.g. `10m` - see `parseDuration`. On edit, `CLEAR_VALUE` removes it. */
     duration: string | null;
+    /** Whether finding it gives a profile badge - `null` = not given (off on add, unchanged on edit). */
+    hasBadge: boolean | null;
+    /** The badge's emoji. On edit, `CLEAR_VALUE` removes it (the default emoji shows). */
+    badgeEmoji: string | null;
+}
+
+/** An edit that changes nothing - spread it and set only the fields to change. */
+export const NO_BIOME_CHANGES: Omit<EditBiomeInput, "biome"> = {
+    label: null,
+    category: null,
+    color: null,
+    flavorText: null,
+    iconUrl: null,
+    ansi: { text: null, background: null, bold: null },
+    duration: null,
+    hasBadge: null,
+    badgeEmoji: null,
+};
+
+/** Seconds -> the `1h30m` form `parseDuration` reads back (`formatTime` would write `1d` for 24h, which it doesn't). */
+export function formatDurationInput(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return [h && `${h}h`, m && `${m}m`, s && `${s}s`].filter(Boolean).join("");
 }
 
 function requireBiome(raw: string): BiomeEntry {
@@ -191,6 +230,8 @@ export async function editBiome(input: EditBiomeInput, deps: BiomeAdminDeps = de
         input.flavorText,
         input.iconUrl,
         input.duration,
+        input.hasBadge,
+        input.badgeEmoji,
         ansi.text,
         ansi.background,
         ansi.bold,
@@ -205,6 +246,8 @@ export async function editBiome(input: EditBiomeInput, deps: BiomeAdminDeps = de
     if (input.iconUrl !== null) next.iconUrl = isClear(input.iconUrl) ? undefined : parseIconUrl(input.iconUrl);
     next.ansiColor = applyAnsiInput(current.ansiColor, ansi);
     if (input.duration !== null) next.durationS = isClear(input.duration) ? undefined : parseDuration(input.duration);
+    if (input.hasBadge !== null) next.hasBadge = input.hasBadge;
+    if (input.badgeEmoji !== null) next.badgeEmoji = isClear(input.badgeEmoji) ? undefined : parseBadgeEmoji(input.badgeEmoji);
 
     await deps.updateBiome(next.key, next);
     await deps.reloadRegistry();

@@ -73,7 +73,11 @@ function addSharedBiomeOptions(s: SlashCommandSubcommandBuilder, required: boole
         .addBooleanOption((o) => o.setName("ansi_bold").setDescription(`Bold name ${ANSI_WHERE}`))
         .addStringOption((o) =>
             o.setName("duration").setDescription(`Fixed length (e.g. 10m, 1h30m) - its finder can't go idle meanwhile${removable}`),
-        );
+        )
+        .addBooleanOption((o) =>
+            o.setName("has_badge").setDescription("Finding it gives a profile badge (and the server's badge role, if set)"),
+        )
+        .addStringOption((o) => o.setName("badge_emoji").setDescription(`The badge's emoji - unicode or custom${removable}`));
 }
 
 /** `/bh-owner biome ...` - the bot owner's runtime biome registry (see `bh_biomes`). */
@@ -186,6 +190,8 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
                 iconUrl: args.getString("icon_url"),
                 ansi: ansiInputFrom(args),
                 duration: args.getString("duration"),
+                hasBadge: args.getBoolean("has_badge"),
+                badgeEmoji: args.getString("badge_emoji"),
             });
             await ctx.reply(biomeCard("Biome added", entry, enabledNotes(entry, detectionName ?? entry.label)));
             return;
@@ -200,6 +206,8 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
                 iconUrl: args.getString("icon_url"),
                 ansi: ansiInputFrom(args),
                 duration: args.getString("duration"),
+                hasBadge: args.getBoolean("has_badge"),
+                badgeEmoji: args.getString("badge_emoji"),
             });
             await ctx.reply(biomeCard("Biome updated", entry, entry.category === "rare" && entry.enabled ? [NETWORK_NOTE] : []));
             return;
@@ -219,7 +227,7 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
             return;
         }
         case "list":
-            await ctx.open(biomeListView, undefined);
+            await ctx.open(biomeListView(), undefined);
             return;
         case "export":
             return runBiomeExport(ctx);

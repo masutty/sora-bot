@@ -4,18 +4,17 @@ import type { BotClient } from "@/core/bot-client";
 import { type CommandArgs, type CommandContext, defineCommand, paginate, type ReplyPayload } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
-import { ALL_BADGES, BADGE_META, resolveBadgeSlug } from "../constants/badges.constants";
-import { biomeAutocompleteChoices } from "../constants/biomes.constants";
-import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
+import { getAwardableBadges, getBadgeMeta, getBiomeBadges, resolveBadgeSlug } from "../constants/badges.constants";
+import { biomeAutocompleteChoices, MAX_DISCORD_CHOICES } from "../constants/biomes.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
+import { getGuildFlags } from "../repository/flags.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import { resetActivityThresholds, setActivityRole, setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
 import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
-import { listFlags, setFlag } from "../services/flag.service";
 import { listForwards, setForward } from "../services/forward.service";
 import {
     addCategory,
@@ -41,17 +40,27 @@ import {
 } from "../services/member.service";
 import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
 import { settings } from "../settings";
-import { type ActivityStatus, type Badge, BiomeHuntError, type FlagName, type QuotaRoleMode } from "../types";
+import { type ActivityStatus, type Badge, BiomeHuntError, type QuotaRoleMode } from "../types";
+import { defaultFlagsDeps, flagsView } from "../views/flags.view";
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
 
-const FLAG_CHOICES = ALL_FLAGS.map((name) => ({ name: FLAG_DEFINITIONS[name].label, value: name }));
-/** All 4 badges - valid targets for manual award/take. Value is the badge's slug (easy to type in prefix mode), resolved back via `resolveBadgeSlug`. */
-const BADGE_CHOICES = (Object.keys(BADGE_META) as Badge[]).map((b) => ({ name: BADGE_META[b].display, value: BADGE_META[b].slug }));
-/** Only the role-configurable biome badges - valid targets for `badges set`. */
-const CONFIGURABLE_BADGE_CHOICES = ALL_BADGES.map((b) => ({ name: BADGE_META[b].display, value: BADGE_META[b].slug }));
+/**
+ * Autocomplete for a `badge` option - `badges set` only offers biome badges (the ones a role can be
+ * attached to), award/take also offer `DELETED`. Value is the badge's slug (easy to type in prefix
+ * mode), resolved back via `resolveBadgeSlug`.
+ */
+function badgeAutocompleteChoices(typed: string, sub: string | null): Array<{ name: string; value: string }> {
+    const badges = sub === "set" ? getBiomeBadges() : getAwardableBadges();
+    const needle = typed.trim().toLowerCase();
+    return badges
+        .map((b) => getBadgeMeta(b))
+        .filter((m) => !needle || m.display.toLowerCase().includes(needle) || m.slug.includes(needle))
+        .slice(0, MAX_DISCORD_CHOICES)
+        .map((m) => ({ name: m.display, value: m.slug }));
+}
 const STATUS_CHOICES = [
     { name: "Active", value: "active" },
     { name: "Idle", value: "idle" },
@@ -77,6 +86,7 @@ export default defineCommand({
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
+        .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
         .addSubcommand((s) =>
             s
                 .setName("profile")
@@ -184,60 +194,23 @@ export default defineCommand({
                         .setName("award")
                         .setDescription("Manually grant a badge to a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) =>
-                            o
-                                .setName("badge")
-                                .setDescription("Badge")
-                                .setRequired(true)
-                                .addChoices(...BADGE_CHOICES),
-                        ),
+                        .addStringOption((o) => o.setName("badge").setDescription("Badge").setRequired(true).setAutocomplete(true)),
                 )
                 .addSubcommand((s) =>
                     s
                         .setName("take")
                         .setDescription("Manually revoke a badge from a user.")
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
-                        .addStringOption((o) =>
-                            o
-                                .setName("badge")
-                                .setDescription("Badge")
-                                .setRequired(true)
-                                .addChoices(...BADGE_CHOICES),
-                        ),
+                        .addStringOption((o) => o.setName("badge").setDescription("Badge").setRequired(true).setAutocomplete(true)),
                 )
                 .addSubcommand((s) =>
                     s
                         .setName("set")
                         .setDescription("Configure the role a badge grants. Leave role empty to unconfigure it.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("badge")
-                                .setDescription("Badge")
-                                .setRequired(true)
-                                .addChoices(...CONFIGURABLE_BADGE_CHOICES),
-                        )
+                        .addStringOption((o) => o.setName("badge").setDescription("Badge").setRequired(true).setAutocomplete(true))
                         .addRoleOption((o) => o.setName("role").setDescription("Role to grant (leave empty to unconfigure)")),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all badges and their current role configuration.")),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("flag")
-                .setDescription("Toggle optional BiomeHunt behaviors.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Enable or disable a flag.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("flag")
-                                .setDescription("Flag")
-                                .setRequired(true)
-                                .addChoices(...FLAG_CHOICES),
-                        )
-                        .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
-                )
-                .addSubcommand((s) => s.setName("list").setDescription("List all flags, their description, default, and current value.")),
         )
         .addSubcommandGroup((g) =>
             g
@@ -467,6 +440,8 @@ export default defineCommand({
     // Biome options autocomplete from the live registry - fixed choices can't follow `/bh-owner biome` changes and cap at 25.
     async executeAutocomplete(interaction) {
         const focused = interaction.options.getFocused(true);
+        if (focused.name === "badge")
+            return interaction.respond(badgeAutocompleteChoices(focused.value, interaction.options.getSubcommand(false)));
         if (focused.name !== "biome") return interaction.respond([]);
         const group = interaction.options.getSubcommandGroup(false);
         const forward = group === "forward" || group === "delayed-forward";
@@ -533,6 +508,12 @@ export default defineCommand({
                 return;
             }
             await ctx.open(quotaDeleteView({ getQuotaRoles: getQuotaRolesForGuild, removeQuotaRole }), { guildId: ctx.guild.id });
+            return;
+        }
+
+        if (routeKey === "flags") {
+            await ctx.defer();
+            await ctx.open(flagsView(defaultFlagsDeps), { guildId: ctx.guild.id, flags: await getGuildFlags(ctx.guild.id) });
             return;
         }
 
@@ -640,15 +621,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "badges-list":
             return listBadges(guildId);
-        case "flag-set": {
-            const flag = args.getString("flag") as FlagName | null;
-            const enabled = args.getBoolean("enabled");
-            if (!flag) throw new BiomeHuntError("Missing required argument: flag");
-            if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
-            return setFlag(guildId, flag, enabled);
-        }
-        case "flag-list":
-            return listFlags(guildId);
         case "economy-grant": {
             const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");

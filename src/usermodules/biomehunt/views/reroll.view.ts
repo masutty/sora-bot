@@ -11,7 +11,7 @@ import {
 import type { BotClient } from "@/core/bot-client";
 import { type AnySelect, type CommandContext, defineView, type RenderKit, type ViewDefinition, type ViewPayload } from "@/define";
 import { EmbedFormatter } from "@/utils/format";
-import { FLOWER_META, flowerAssetPath } from "../constants/flowers.constants";
+import { FLOWER_META, FlowerRarity, flowerAssetPath, RARITY_COLOR, rarityOneIn } from "../constants/flowers.constants";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { adjustUserBalance } from "../repository/rewards.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
@@ -21,16 +21,18 @@ import { BiomeHuntError } from "../types";
 
 export const REROLL_COST = 50;
 
+/** Container accent when there is no Flower to take a rarity color from. */
+const NO_FLOWER_COLOR = 0x5865f2;
+
 /** Discord user ids with a reroll session currently open - guards against a second concurrent
  * `/bh reroll` for the same user, which would otherwise race two independent draw/apply loops
  * against the same webhook (and let two idle timeouts each try to apply their own Flower). */
 const activeRerolls = new Set<string>();
 
 /** `render` must stay pure/fast (see `view.ts`'s TSDoc), but this View re-sends the Flower PNG on
- * every render (by design - see `buildRerollPayload`'s doc). Caching the bytes here means only the
- * FIRST render of a given Flower ever touches disk; every later one (and every render of a Flower
- * already shown elsewhere in the process) just reads this Map. A fresh `AttachmentBuilder` is still
- * built each time - discord.js attachments aren't meant to be shared across payloads. */
+ * every render (by design - see `buildCard`). Caching the bytes here means only the FIRST render of
+ * a given Flower ever touches disk; every later one just reads this Map. A fresh `AttachmentBuilder`
+ * is still built each time - discord.js attachments aren't meant to be shared across payloads. */
 const flowerBufferCache = new Map<string, Buffer>();
 
 function flowerBuffer(flower: string): Buffer {
@@ -54,66 +56,73 @@ function capitalize(text: string): string {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** The Flower's name as the prominent heading, its rarity as a smaller bold line underneath -
- * name is the point, rarity is context, so name has to read bigger, not the other way around. */
-function flowerSectionContent(flower: string | null): string {
-    if (!flower || !FLOWER_META[flower]) return "*none yet*";
-    return `### ${FLOWER_META[flower].label}\n-# ${capitalize(FLOWER_META[flower].rarity)}`;
+/** Rarities that get a find banner and a "lose it?" confirmation before searching again. */
+type VeryRareRarity = FlowerRarity.LEGENDARY | FlowerRarity.MYTHICAL | FlowerRarity.RNGESUS;
+
+interface FindBanner {
+    tag: string;
+    color: string;
+    flavors: readonly string[];
+}
+
+const FIND_BANNERS: Record<VeryRareRarity, FindBanner> = {
+    [FlowerRarity.LEGENDARY]: {
+        tag: "\u001b[1;33m ★ LEGENDARY FIND ★ \u001b[0m",
+        color: "\u001b[33m",
+        flavors: [
+            "This one doesn't grow in just any garden.",
+            "You dug deep for this one.",
+            "The other Flowers are jealous.",
+            "Worth every Seed.",
+            "Plant it where everyone can see it.",
+        ],
+    },
+    [FlowerRarity.MYTHICAL]: {
+        tag: "\u001b[1;31;40m ◆ MYTHICAL FIND ◆ \u001b[0m",
+        color: "\u001b[31m",
+        flavors: [
+            "Gardeners talk about this one in whispers.",
+            "Even the bees stopped to look.",
+            "The soil still glows where it was.",
+            "One in a thousand, and it picked you.",
+        ],
+    },
+    [FlowerRarity.RNGESUS]: {
+        tag: "\u001b[1;37;45m ✦ RNGESUS FIND ✦ \u001b[0m",
+        color: "\u001b[35m",
+        flavors: [
+            "RNGesus has blessed your garden.",
+            "Gold petals, earned the hard way.",
+            "This shouldn't have grown here.",
+            "Screenshot this. Nobody will believe you.",
+            "The odds never stood a chance.",
+            "Somewhere, a statistician just fainted.",
+            "Your luck is now officially suspicious.",
+            "One in a hundred thousand, and it's yours.",
+        ],
+    },
+};
+
+function veryRareRarity(flower: string | null): VeryRareRarity | null {
+    const rarity = flower ? FLOWER_META[flower]?.rarity : undefined;
+    return rarity && rarity in FIND_BANNERS ? (rarity as VeryRareRarity) : null;
 }
 
 /**
- * Shared render for every stage of the reroll flow:
- * `-# Roll #N` (tracking line)
- * `## {heading}`
- * Flower name + rarity, with its image as a thumbnail
- * ---
- * `-# 🌱 Seeds: ...` (just the balance being spent - no Level/XP, irrelevant to a Flower reroll)
- * The Flower PNG is re-read and re-attached on every call rather than cached in state - matches
- * the old `runRerollSession`'s behavior of rebuilding the attachment on every `msg.edit`.
- */
-function buildRerollPayload(
-    heading: string,
-    flower: string | null,
-    seeds: number,
-    rollCount: number,
-    buttons?: ActionRowBuilder<ButtonBuilder | AnySelect>,
-    note?: string,
-): ViewPayload {
-    const { files, thumbnailAttachment } = flowerAttachment(flower);
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-
-    container.addTextDisplayComponents((td) => td.setContent(`-# Roll #${rollCount}`));
-    container.addTextDisplayComponents((td) => td.setContent(`## ${heading}`));
-    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
-    const flowerContent = flowerSectionContent(flower);
-    if (thumbnailAttachment) {
-        container.addSectionComponents((section) =>
-            section
-                .addTextDisplayComponents((td) => td.setContent(flowerContent))
-                .setThumbnailAccessory((thumb) => thumb.setURL(`attachment://${thumbnailAttachment}`)),
-        );
-    } else {
-        container.addTextDisplayComponents((td) => td.setContent(flowerContent));
-    }
-    if (note) container.addTextDisplayComponents((td) => td.setContent(`-# ${note}`));
-
-    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Large));
-    container.addTextDisplayComponents((td) => td.setContent(`-# 🌱 Seeds: ${seeds}`));
-
-    return { flags: MessageFlags.IsComponentsV2, components: buttons ? [container, buttons] : [container], files };
-}
-
-/**
- * Everything the View needs that would otherwise be a DB/webhook call, injected so its tests never
- * hit either - `openRerollView` wires the real ones (see below).
+ * Everything the View needs that would otherwise be a DB/webhook/clock/random call, injected so its
+ * tests never hit any of them - `openRerollView` wires the real ones (see below).
  */
 export interface RerollDeps {
     /** Spends REROLL_COST against a FRESH read of the user's balance (Seeds may have moved since
-     * the screen was last drawn) - `ok: false` if that fresh balance can no longer cover it. */
-    spendSeeds(): Promise<{ ok: true; seeds: number } | { ok: false }>;
+     * the screen was last drawn) - `ok: false` (with that fresh balance) if it can no longer cover it. */
+    spendSeeds(): Promise<{ ok: true; seeds: number } | { ok: false; seeds: number }>;
     /** The one real (rate-limited) webhook edit of the whole session. */
     applyFlower(flower: string): Promise<void>;
     drawFlower(): string;
+    /** Picks one entry at random (the find banner's flavor line). */
+    pick<T>(items: readonly T[]): T;
+    /** Current time in ms - the idle auto-apply deadline shown to the user is based on it. */
+    now(): number;
 }
 
 export interface RerollInput {
@@ -122,59 +131,147 @@ export interface RerollInput {
 }
 
 interface RerollState {
-    phase: "confirming" | "rolling" | "done";
+    /** `confirming`: nothing spent yet. `found`: a drawn Flower is on screen. `losing`: asking
+     * whether to give up a very rare find for another search. `done`: final screen in `payload`. */
+    phase: "confirming" | "found" | "losing" | "done";
     flower: string | null;
     seeds: number;
-    rollCount: number;
-    /** Set right before the webhook edit starts (on "Apply Now", or in `beforeExpire`'s idle
+    /** Ansi banner lines for a very rare find (flavor picked when drawn) - `null` otherwise. */
+    banner: { rarity: VeryRareRarity; flavor: string } | null;
+    /** When the idle auto-apply fires (ms epoch). Refreshed by every handler, since the idle
+     * timer restarts on each accepted click - stored here so `render` stays pure. */
+    deadline: number;
+    /** Set right before the webhook edit starts (on "Keep", or in `beforeExpire`'s idle
      * auto-apply) so the other path can never apply the same draw twice. */
     applying: boolean;
-    /** Only set once `phase` is "done" - the exact final screen (success, error, cancelled, timed
-     * out, or "no longer enough Seeds"). */
+    /** Only set once `phase` is "done" - the exact final screen. */
     payload?: ViewPayload;
 }
 
-function confirmingButtons(kit: RenderKit): ActionRowBuilder<ButtonBuilder | AnySelect> {
-    return kit.row(
-        kit.button("confirm", (b) => b.setLabel("Reroll").setStyle(ButtonStyle.Success)),
-        kit.button("cancel", (b) => b.setLabel("Cancel").setStyle(ButtonStyle.Danger)),
-    );
+function currentLabel(flower: string | null): string {
+    return flower && FLOWER_META[flower] ? FLOWER_META[flower].label : "as is";
 }
 
-function rollingButtons(kit: RenderKit, canRollAgain: boolean): ActionRowBuilder<ButtonBuilder | AnySelect> {
-    return kit.row(
-        kit.button("again", (b) => b.setEmoji("🎲").setLabel("Roll Again").setStyle(ButtonStyle.Primary).setDisabled(!canRollAgain)),
-        kit.button("apply", (b) => b.setEmoji("✅").setLabel("Apply Now").setStyle(ButtonStyle.Success)),
-    );
+interface CardOptions {
+    /** Normal-text line under the Flower name. */
+    second: string;
+    /** Text shown under the divider. */
+    footer: string;
+    buttons?: ActionRowBuilder<ButtonBuilder | AnySelect>;
+}
+
+/**
+ * Shared render for every stage of the flow, all inside one container whose accent is the shown
+ * Flower's rarity color: optional find banner, the Flower card (name + `second` line, image as
+ * thumbnail), a divider and the `footer` text. The Flower PNG is re-attached on every call.
+ */
+function buildCard(state: RerollState, { second, footer, buttons }: CardOptions): ViewPayload {
+    const meta = state.flower ? FLOWER_META[state.flower] : undefined;
+    const { files, thumbnailAttachment } = flowerAttachment(state.flower);
+    const container = new ContainerBuilder().setAccentColor(meta ? RARITY_COLOR[meta.rarity] : NO_FLOWER_COLOR);
+    const divider = () => container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+
+    if (state.banner) {
+        const { tag, color } = FIND_BANNERS[state.banner.rarity];
+        container.addTextDisplayComponents((td) => td.setContent(`\`\`\`ansi\n${tag}\n${color}${state.banner?.flavor}\u001b[0m\n\`\`\``));
+        divider();
+    }
+
+    // Name and second line in ONE TextDisplay, so the line sits right under the heading.
+    const card = [meta ? `## ${meta.label}` : "## No Flower yet", second].filter(Boolean).join("\n");
+    if (thumbnailAttachment) {
+        container.addSectionComponents((section) =>
+            section
+                .addTextDisplayComponents((td) => td.setContent(card))
+                .setThumbnailAccessory((thumb) => thumb.setURL(`attachment://${thumbnailAttachment}`)),
+        );
+    } else {
+        container.addTextDisplayComponents((td) => td.setContent(card));
+    }
+
+    divider();
+    container.addTextDisplayComponents((td) => td.setContent(footer));
+
+    return { flags: MessageFlags.IsComponentsV2, components: buttons ? [container, buttons] : [container], files };
+}
+
+function rarityOf(flower: string | null): FlowerRarity | null {
+    return flower ? (FLOWER_META[flower]?.rarity ?? null) : null;
+}
+
+function keptTimestamp(state: RerollState): string {
+    return `⏳ Kept <t:${Math.floor(state.deadline / 1000)}:R>`;
 }
 
 function render(state: RerollState, kit: RenderKit): ViewPayload {
     if (state.phase === "done") return state.payload as ViewPayload;
+    const rarity = rarityOf(state.flower);
+    const label = currentLabel(state.flower);
+
     if (state.phase === "confirming") {
-        return buildRerollPayload(
-            `Reroll your Flower for ${REROLL_COST} 🌱 Seeds?`,
-            state.flower,
-            state.seeds,
-            state.rollCount,
-            confirmingButtons(kit),
-        );
+        return buildCard(state, {
+            second: rarity ? capitalize(rarity) : "Nothing planted yet",
+            footer: `**Search for another Flower?**\nEach search digs up a random Flower for \`${REROLL_COST} 🌱\`.`,
+            buttons: kit.row(
+                kit.button("confirm", (b) => b.setEmoji("🔍").setLabel("Search").setStyle(ButtonStyle.Success)),
+                kit.button("cancel", (b) => b.setLabel(`Keep ${label}`).setStyle(ButtonStyle.Secondary)),
+            ),
+        });
     }
-    return buildRerollPayload(
-        "🎲 New Flower!",
-        state.flower,
-        state.seeds,
-        state.rollCount,
-        rollingButtons(kit, state.seeds >= REROLL_COST),
-        `If you don't pick one within ${settings.ui.rerollIdleMs / 1000}s, this Flower is applied automatically.`,
-    );
+
+    const veryRare = state.banner !== null;
+    const odds = rarity ? `${capitalize(rarity)} · 1 in ${rarityOneIn(rarity)}` : "";
+    const losing = state.phase === "losing";
+    return buildCard(state, {
+        second: odds,
+        footer: losing ? `**Search again and lose your ${label}?**\n${keptTimestamp(state)}` : keptTimestamp(state),
+        buttons: kit.row(
+            kit.button("again", (b) =>
+                b
+                    .setEmoji("🔍")
+                    .setLabel("Search again")
+                    .setStyle(veryRare ? ButtonStyle.Danger : ButtonStyle.Primary)
+                    .setDisabled(!losing && state.seeds < REROLL_COST),
+            ),
+            kit.button("apply", (b) => b.setLabel(`Keep ${label}`).setStyle(ButtonStyle.Success)),
+        ),
+    });
+}
+
+function keptPayload(state: RerollState): ViewPayload {
+    const rarity = rarityOf(state.flower);
+    // A very rare find keeps its odds (and banner) on the kept card; the rest show the rarity only.
+    const second = rarity ? (state.banner ? `${capitalize(rarity)} · 1 in ${rarityOneIn(rarity)}` : capitalize(rarity)) : "";
+    return buildCard(state, {
+        second,
+        footer: `🌱 You decided to keep your **${currentLabel(state.flower)}**.`,
+    });
+}
+
+/** Restarts the shown deadline - called by every handler that leaves the View open, since the
+ * engine restarts the idle timer on each accepted click. */
+function touch(state: RerollState, deps: RerollDeps): void {
+    state.deadline = deps.now() + settings.ui.rerollIdleMs;
+}
+
+/** Spends and draws a new Flower into `state`. `false` (and nothing changed but the balance) if the
+ * fresh balance can no longer cover it. */
+async function search(state: RerollState, deps: RerollDeps): Promise<boolean> {
+    const spent = await deps.spendSeeds();
+    state.seeds = spent.seeds;
+    if (!spent.ok) return false;
+    state.flower = deps.drawFlower();
+    const rarity = veryRareRarity(state.flower);
+    state.banner = rarity ? { rarity, flavor: deps.pick(FIND_BANNERS[rarity].flavors) } : null;
+    state.phase = "found";
+    touch(state, deps);
+    return true;
 }
 
 /**
  * Runs the one real webhook edit and moves `state` to its final "done" screen - shared by the
- * "Apply Now" handler and `beforeExpire`'s idle auto-apply, so both build the exact same
- * success/error text. Guarded by `state.applying`: whichever path gets there first wins (the engine
- * itself already skips `beforeExpire` while a handler is running its own code - this is belt and
- * suspenders against applying the same draw twice).
+ * "Keep" handler and `beforeExpire`'s idle auto-apply, so both build the exact same success/error
+ * text. Guarded by `state.applying`: whichever path gets there first wins.
  */
 async function applyDraw(state: RerollState, deps: RerollDeps): Promise<void> {
     if (state.applying) return;
@@ -182,7 +279,7 @@ async function applyDraw(state: RerollState, deps: RerollDeps): Promise<void> {
     try {
         await deps.applyFlower(state.flower as string);
         state.phase = "done";
-        state.payload = buildRerollPayload("✅ Flower applied!", state.flower, state.seeds, state.rollCount);
+        state.payload = keptPayload(state);
     } catch (err) {
         const text = err instanceof BiomeHuntError ? err.message : "Something went wrong applying your Flower.";
         state.phase = "done";
@@ -190,68 +287,74 @@ async function applyDraw(state: RerollState, deps: RerollDeps): Promise<void> {
     }
 }
 
+export function notEnoughSeedsText(seeds: number): string {
+    return `You need \`${REROLL_COST} 🌱\` to search for a new Flower - you have \`${seeds} 🌱\`.`;
+}
+
 /**
- * Self-service paid Flower reroll: `confirming` (nothing spent yet) -> `rolling` (each draw costs
- * REROLL_COST, looping on "Roll Again"/"Apply Now") -> `done`. Deliberately never calls the actual
- * (rate-limited) webhook edit more than once per session: every "Roll Again" click only redraws
- * client-side, still costing Seeds like the first one - the real webhook edit only happens once, on
- * "Apply Now" or on idle timeout (so Seeds already spent are never wasted just because the user
- * walked away).
+ * Self-service paid Flower reroll ("search the garden"): `confirming` (nothing spent yet) ->
+ * `found` (each search costs REROLL_COST, looping on "Search again"; for Legendary and rarer finds
+ * that first goes through `losing`, a confirmation) -> `done`. Deliberately never calls the actual
+ * (rate-limited) webhook edit more than once per session: searching again only redraws
+ * client-side, still costing Seeds - the real webhook edit only happens once, on "Keep" or on idle
+ * timeout (so Seeds already spent are never wasted just because the user walked away).
  */
 export function rerollView(deps: RerollDeps): ViewDefinition<RerollState, void, RerollInput> {
     return defineView<RerollState, void, RerollInput>({
         name: "biomehunt.reroll",
-        initial: (input) => ({ phase: "confirming", flower: input.flower, seeds: input.seeds, rollCount: 0, applying: false }),
+        initial: (input) => ({
+            phase: "confirming",
+            flower: input.flower,
+            seeds: input.seeds,
+            banner: null,
+            deadline: deps.now() + settings.ui.rerollIdleMs,
+            applying: false,
+        }),
         timeoutMs: settings.ui.rerollIdleMs,
         render,
         on: {
             confirm: async (c) => {
                 // If this throws (a DB exception, not just "not enough Seeds"), it's uncaught here:
                 // the engine's generic handler-error path shows an ephemeral quip and leaves the View
-                // open (unlike the old command-level error reply, which closed it right away and
-                // released `activeRerolls` on the spot - here the guard stays held until this session
-                // eventually expires on its own).
-                const spent = await deps.spendSeeds();
-                if (!spent.ok) {
-                    c.state.phase = "done";
-                    c.state.payload = EmbedFormatter.error("You no longer have enough Seeds.");
-                    c.done();
-                    return;
-                }
-                c.state.seeds = spent.seeds;
-                c.state.rollCount = 1;
-                c.state.flower = deps.drawFlower();
-                c.state.phase = "rolling";
+                // open - the guard stays held until this session eventually expires on its own.
+                if (await search(c.state, deps)) return;
+                c.state.phase = "done";
+                c.state.payload = EmbedFormatter.error(notEnoughSeedsText(c.state.seeds));
+                c.done();
             },
             cancel: (c) => {
+                // Keeping the current Flower: nothing spent, nothing to apply.
                 c.state.phase = "done";
-                c.state.payload = EmbedFormatter.warn("Reroll cancelled - nothing was spent.");
+                c.state.payload = c.state.flower ? keptPayload(c.state) : EmbedFormatter.warn("Nothing was spent.");
                 c.done();
             },
             again: async (c) => {
-                // The button is already disabled once this can't succeed - stay safe regardless.
-                // Same uncaught-throw caveat as `confirm` above: a DB exception here shows the
-                // engine's generic quip and leaves the View (and the guard) open, not a reply.
-                const spent = await deps.spendSeeds();
-                if (!spent.ok) return;
-                c.state.seeds = spent.seeds;
-                c.state.rollCount += 1;
-                c.state.flower = deps.drawFlower();
+                if (c.state.phase === "found" && c.state.banner) {
+                    c.state.phase = "losing";
+                    touch(c.state, deps);
+                    return;
+                }
+                // The button is already disabled once this can't succeed; a fresh balance that still
+                // can't cover it ends on the same error as `confirm`. Same uncaught-throw caveat.
+                if (await search(c.state, deps)) return;
+                c.state.phase = "done";
+                c.state.payload = EmbedFormatter.error(notEnoughSeedsText(c.state.seeds));
+                c.done();
             },
             apply: async (c) => {
                 await applyDraw(c.state, deps);
                 c.done();
             },
         },
-        beforeExpire: (state) => (state.phase === "rolling" ? applyDraw(state, deps) : Promise.resolve()),
+        beforeExpire: (state) => (state.phase === "found" || state.phase === "losing" ? applyDraw(state, deps) : Promise.resolve()),
         onExpire: (state) => {
             if (state.phase === "done") return state.payload as ViewPayload;
-            if (state.phase === "rolling") {
-                // The idle timer resets on every accepted click, so landing here still "rolling"
-                // means `applyDraw` above didn't finish turning it "done" - too rare (and unsafe) a
-                // race to guess an outcome for; show the last screen instead of claiming an apply
-                // that may not have gone through yet.
-                return buildRerollPayload("🎲 New Flower!", state.flower, state.seeds, state.rollCount);
+            if (state.phase === "found" || state.phase === "losing") {
+                // The idle timer resets on every accepted click, so landing here still open means
+                // `applyDraw` above didn't finish turning it "done" - too rare (and unsafe) a race
+                // to guess an outcome for; show the Flower without claiming an apply.
+                const rarity = rarityOf(state.flower);
+                return buildCard(state, { second: rarity ? capitalize(rarity) : "", footer: `🌱 **${currentLabel(state.flower)}**` });
             }
             return EmbedFormatter.warn("Reroll timed out - nothing was spent.");
         },
@@ -261,8 +364,8 @@ export function rerollView(deps: RerollDeps): ViewDefinition<RerollState, void, 
 /**
  * Loads what the reroll needs and opens `rerollView` on it - or replies with the matching notice
  * without opening anything (already in progress, flag off, no profile, not enough Seeds, no macro
- * channel yet). The `activeRerolls` guard wraps every one of those checks AND the open View, same
- * as the old `runReroll`/`runRerollSession` split, released in `finally` regardless of how it ends.
+ * channel yet). The `activeRerolls` guard wraps every one of those checks AND the open View,
+ * released in `finally` regardless of how it ends.
  */
 export async function openRerollView(ctx: CommandContext, client: BotClient, guildId: string, discordUserId: string): Promise<void> {
     if (activeRerolls.has(discordUserId)) {
@@ -286,7 +389,7 @@ export async function openRerollView(ctx: CommandContext, client: BotClient, gui
             return;
         }
         if (user.seeds < REROLL_COST) {
-            await ctx.reply(EmbedFormatter.error(`You need ${REROLL_COST} 🌱 Seeds to reroll - you have ${user.seeds}.`));
+            await ctx.reply(EmbedFormatter.error(notEnoughSeedsText(user.seeds)));
             return;
         }
 
@@ -299,12 +402,14 @@ export async function openRerollView(ctx: CommandContext, client: BotClient, gui
         const deps: RerollDeps = {
             spendSeeds: async () => {
                 const fresh = await getUserByDiscordId(guildId, discordUserId);
-                if (!fresh || fresh.seeds < REROLL_COST) return { ok: false };
+                if (!fresh || fresh.seeds < REROLL_COST) return { ok: false, seeds: fresh?.seeds ?? 0 };
                 await adjustUserBalance(null, user.id, -REROLL_COST, 0);
                 return { ok: true, seeds: fresh.seeds - REROLL_COST };
             },
             applyFlower: (flower) => applyFlowerToWebhook(client, user.id, flower),
             drawFlower: drawRandomFlower,
+            pick: (items) => items[Math.floor(Math.random() * items.length)],
+            now: Date.now,
         };
 
         await ctx.open(rerollView(deps), { seeds: user.seeds, flower: user.flower });
