@@ -19,10 +19,21 @@ export interface ConfirmOptions {
     name: string;
     /** Bold question at the top of the summary (e.g. "Remove this record?"). Mentions never ping. */
     title: string;
-    /** The action's summary, one `- label: \`value\`` line each. */
-    fields: ConfirmField[];
+    /** The action's summary, one `- label: \`value\`` line each. Ignored when `body` is set. */
+    fields?: ConfirmField[];
+    /**
+     * Free markdown shown under the title instead of `fields`. An array splits it into blocks: the
+     * first shares the title's TextDisplay, each other one is its own TextDisplay below it.
+     */
+    body?: string | string[];
     /** Container accent - default blurple. Use it for severity (orange overwrite, red removal). */
     color?: number;
+    /** Confirm button label and style. Default "Confirm" / Success. */
+    confirmLabel?: string;
+    confirmStyle?: ButtonStyle;
+    /** Cancel button label and style. Default "Cancel" / Danger. */
+    cancelLabel?: string;
+    cancelStyle?: ButtonStyle;
     /** Attachments sent with the question (e.g. the image `thumbnailAttachment` names). */
     files?: AttachmentBuilder[];
     /** Filename (one of `files`) shown as a thumbnail next to the summary. */
@@ -39,11 +50,12 @@ export interface ConfirmOptions {
 
 export type ConfirmState = { phase: "asking" } | { phase: "confirmed" | "cancelled" | "failed"; payload: ViewPayload };
 
-/** The summary container: bold title + one line per field. */
+/** The summary container: bold title + one line per field (or the `body` blocks). */
 function summaryContainer(opts: ConfirmOptions): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(opts.color ?? DEFAULT_COLOR);
-    const lines = opts.fields.map((f) => `- ${f.label}: \`${f.value}\``).join("\n");
-    const content = `**${opts.title}**\n${lines}`;
+    const blocks = typeof opts.body === "string" ? [opts.body] : (opts.body ?? []);
+    const [first, ...rest] = opts.body !== undefined ? blocks : [(opts.fields ?? []).map((f) => `- ${f.label}: \`${f.value}\``).join("\n")];
+    const content = `**${opts.title}**\n${first ?? ""}`;
     const thumbnail = opts.thumbnailAttachment;
     if (thumbnail) {
         container.addSectionComponents((section) =>
@@ -54,13 +66,14 @@ function summaryContainer(opts: ConfirmOptions): ContainerBuilder {
     } else {
         container.addTextDisplayComponents((td) => td.setContent(content));
     }
+    for (const block of rest) container.addTextDisplayComponents((td) => td.setContent(block));
     return container;
 }
 
-function confirmRow(kit: RenderKit): ActionRowBuilder<ButtonBuilder> {
+function confirmRow(kit: RenderKit, opts: ConfirmOptions): ActionRowBuilder<ButtonBuilder> {
     return new ActionRowBuilder<ButtonBuilder>().addComponents(
-        kit.button("yes", (b) => b.setLabel("Confirm").setStyle(ButtonStyle.Success)),
-        kit.button("no", (b) => b.setLabel("Cancel").setStyle(ButtonStyle.Danger)),
+        kit.button("yes", (b) => b.setLabel(opts.confirmLabel ?? "Confirm").setStyle(opts.confirmStyle ?? ButtonStyle.Success)),
+        kit.button("no", (b) => b.setLabel(opts.cancelLabel ?? "Cancel").setStyle(opts.cancelStyle ?? ButtonStyle.Danger)),
     );
 }
 
@@ -90,7 +103,7 @@ export function confirm(opts: ConfirmOptions): ViewDefinition<ConfirmState, bool
             if (state.phase !== "asking") return state.payload;
             return {
                 flags: MessageFlags.IsComponentsV2,
-                components: [summaryContainer(opts), confirmRow(kit)],
+                components: [summaryContainer(opts), confirmRow(kit, opts)],
                 ...(opts.files ? { files: opts.files } : {}),
             };
         },
