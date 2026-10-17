@@ -90,9 +90,9 @@ export function parseFlavorText(raw: string): string {
 /** The biome key a detection name maps to - the same normalization the macro parsers match with. */
 export function biomeKeyFor(detectionName: string): string {
     const key = normalizeBiomeName(detectionName);
-    if (!/^[A-Z0-9]+$/.test(key))
+    if (!key)
         throw new BiomeHuntError(
-            `\`${detectionName}\` can't be matched against macro text - a detection name only has letters, digits and spaces. Pass \`detection_name\` if the display name has other characters.`,
+            `\`${detectionName}\` can't be matched against macro text - a detection name needs letters or digits (A-Z, 0-9). Pass \`detection_name\` with the name as macros write it.`,
         );
     if (key.length > MAX_KEY_LENGTH) throw new BiomeHuntError(`A detection name can have at most ${MAX_KEY_LENGTH} letters/digits.`);
     return key;

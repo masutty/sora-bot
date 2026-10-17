@@ -202,12 +202,13 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
     },
 };
 
-/** Some macros report multi-word biome names with a literal space (e.g. "SAND STORM") - normalize to one space-less token, the form every biome key is stored in. */
+/**
+ * The form every biome key is stored in: uppercase letters and digits only. Macros write names with
+ * spaces and punctuation ("SAND STORM", "THE NULL'S EXISTENCE") - all of it is dropped, so
+ * `THE NULL'S EXISTENCE` -> `THENULLSEXISTENCE`.
+ */
 export function normalizeBiomeName(raw: string): string {
-    return raw
-        .trim()
-        .toUpperCase()
-        .replace(/[\s_]+/g, "");
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
 function defaultEntries(): BiomeEntry[] {

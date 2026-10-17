@@ -8,11 +8,18 @@ const logger = new Logger("biomehunt.macro-parsers");
 export const MAX_BIOME_NAME_WORDS = 5;
 
 /**
- * The `words` group every biome regex captures: 1 to `MAX_BIOME_NAME_WORDS` alphanumeric tokens.
- * It may run on into unrelated text around the name (e.g. a "Join Server" link on the same line) -
+ * One word of a biome name: letters/digits, with `'`, `’` or `-` allowed between them - so
+ * "NULL'S" stays one word (key part `NULLS`) instead of being cut to "NULL", which would match the
+ * Null biome.
+ */
+const BIOME_WORD = "[A-Za-z0-9_]+(?:['’-][A-Za-z0-9_]+)*";
+
+/**
+ * The `words` group every biome regex captures: 1 to `MAX_BIOME_NAME_WORDS` words. It may run on
+ * into unrelated text around the name (e.g. a "Join Server" link on the same line) -
  * `findBiomeInWords` picks the biome out of it.
  */
-export const BIOME_WORDS_PATTERN = String.raw`(?<words>[A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+){0,${MAX_BIOME_NAME_WORDS - 1}})`;
+export const BIOME_WORDS_PATTERN = String.raw`(?<words>${BIOME_WORD}(?:\s+${BIOME_WORD}){0,${MAX_BIOME_NAME_WORDS - 1}})`;
 
 /** Matches "Biome Started/Ended - NAME" (or "NAME Biome Started/Ended" if a subclass reorders it). */
 const DEFAULT_BIOME_REGEX = new RegExp(String.raw`Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*` + BIOME_WORDS_PATTERN, "i");
@@ -22,15 +29,16 @@ const DEFAULT_THUMBNAIL_REGEX = /\/([A-Z_]+)\.png$/i;
 const DEFAULT_ROBLOX_LINK_REGEX = /https?:\/\/(?:www\.)?roblox\.com\/[^\s)\]"'<>]+/i;
 
 /**
- * The longest run of consecutive words that is a known biome (leftmost on a tie), so a 3+ word name
- * like "The Radiant Forest" matches, and words captured around the name don't get in the way.
+ * The longest known biome the words start with - or end with, when the name comes before the
+ * "Biome Started" anchor (J.Jaram) - so a 3+ word name like "The Radiant Forest" matches and text
+ * on the far side of it doesn't get in the way. Anchored on purpose: a word in the middle never
+ * matches alone, so "The Hell Gate" isn't read as Hell.
  */
-function findBiomeInWords(words: string[]): string | null {
+function findBiomeInWords(words: string[], fromEnd: boolean): string | null {
     for (let length = words.length; length >= 1; length--) {
-        for (let start = 0; start + length <= words.length; start++) {
-            const candidate = normalizeBiomeName(words.slice(start, start + length).join(" "));
-            if (isKnownBiome(candidate)) return candidate;
-        }
+        const span = fromEnd ? words.slice(words.length - length) : words.slice(0, length);
+        const candidate = normalizeBiomeName(span.join(" "));
+        if (isKnownBiome(candidate)) return candidate;
     }
     return null;
 }
@@ -100,7 +108,9 @@ export class DefaultMacroParser extends MacroParser {
             const eventType: "started" | "ended" = match.groups.event.toLowerCase() === "started" ? "started" : "ended";
             const words = match.groups.words.trim().split(/\s+/);
 
-            const biome = findBiomeInWords(words);
+            // The name sits right after the anchor ("Biome Started - NAME"), unless the regex puts it first ("NAME Biome Started").
+            const nameBeforeAnchor = match[0].startsWith(match.groups.words);
+            const biome = findBiomeInWords(words, nameBeforeAnchor);
             if (biome) {
                 logger.verbose(`Matched biome "${biome}" (${eventType})`);
                 return { biome, eventType };

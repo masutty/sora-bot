@@ -74,14 +74,15 @@ test("addBiome registers the normalized key, and the parser/selectors see it rig
 
 test("addBiome takes the key from detection_name when given, so the display name can be any text", async () => {
     const deps = createFakeDeps();
-    const entry = await addBiome({ ...NEW_BIOME, name: "🩸 Blood Moon", detectionName: "BLOOD MOON" }, deps);
+    const entry = await addBiome({ ...NEW_BIOME, name: "🩸 Lua de Sangue", detectionName: "BLOOD MOON" }, deps);
 
-    expect(entry).toMatchObject({ key: "BLOODMOON", label: "🩸 Blood Moon" });
+    expect(entry).toMatchObject({ key: "BLOODMOON", label: "🩸 Lua de Sangue" });
 });
 
-test("addBiome refuses a display name that can't be a detection name when no detection_name is given", async () => {
+test("without detection_name the key comes from the display name, punctuation and emoji dropped", async () => {
     const deps = createFakeDeps();
-    await expect(addBiome({ ...NEW_BIOME, name: "🩸 Blood Moon" }, deps)).rejects.toThrow("detection_name");
+    expect(await addBiome({ ...NEW_BIOME, name: "The Null's Existence 🩸" }, deps)).toMatchObject({ key: "THENULLSEXISTENCE" });
+    await expect(addBiome({ ...NEW_BIOME, name: "🩸🩸" }, deps)).rejects.toThrow("detection_name");
 });
 
 test("addBiome refuses a key that already exists, even typed differently", async () => {

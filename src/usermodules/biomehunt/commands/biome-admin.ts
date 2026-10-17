@@ -90,7 +90,7 @@ export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder)
             ).addStringOption((o) =>
                 o
                     .setName("detection_name")
-                    .setDescription("Name as macros report it (letters/digits/spaces) - default: the display name")
+                    .setDescription("Name as macros write it (spaces/punctuation ignored) - default: the display name")
                     .setMaxLength(60),
             ),
         )
