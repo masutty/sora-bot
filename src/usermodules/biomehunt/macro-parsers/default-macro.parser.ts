@@ -4,17 +4,36 @@ import { type BiomeExtraction, type EmbedLike, MacroParser } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers");
 
+/** Longest biome name, in words, read from macro text - a detection name with more words can't be matched there. */
+export const MAX_BIOME_NAME_WORDS = 5;
+
 /**
- * Matches "Biome Started/Ended - NAME" (or "NAME2 NAME - Biome Started/Ended" if a subclass
- * reorders it). `words` captures 1-2 alphanumeric tokens - enough for any known 2-word biome
- * name - bounded so it can't run on into unrelated trailing text (e.g. a "Join Server" link
- * on the same line).
+ * The `words` group every biome regex captures: 1 to `MAX_BIOME_NAME_WORDS` alphanumeric tokens.
+ * It may run on into unrelated text around the name (e.g. a "Join Server" link on the same line) -
+ * `findBiomeInWords` picks the biome out of it.
  */
-const DEFAULT_BIOME_REGEX = /Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*(?<words>[A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)?)/i;
+export const BIOME_WORDS_PATTERN = String.raw`(?<words>[A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+){0,${MAX_BIOME_NAME_WORDS - 1}})`;
+
+/** Matches "Biome Started/Ended - NAME" (or "NAME Biome Started/Ended" if a subclass reorders it). */
+const DEFAULT_BIOME_REGEX = new RegExp(String.raw`Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*` + BIOME_WORDS_PATTERN, "i");
 
 const DEFAULT_THUMBNAIL_REGEX = /\/([A-Z_]+)\.png$/i;
 
 const DEFAULT_ROBLOX_LINK_REGEX = /https?:\/\/(?:www\.)?roblox\.com\/[^\s)\]"'<>]+/i;
+
+/**
+ * The longest run of consecutive words that is a known biome (leftmost on a tie), so a 3+ word name
+ * like "The Radiant Forest" matches, and words captured around the name don't get in the way.
+ */
+function findBiomeInWords(words: string[]): string | null {
+    for (let length = words.length; length >= 1; length--) {
+        for (let start = 0; start + length <= words.length; start++) {
+            const candidate = normalizeBiomeName(words.slice(start, start + length).join(" "));
+            if (isKnownBiome(candidate)) return candidate;
+        }
+    }
+    return null;
+}
 
 function stripMarkdown(text: string): string {
     return text
@@ -26,8 +45,8 @@ function stripMarkdown(text: string): string {
 
 export interface MacroParserRegexes {
     /**
-     * Must expose two named groups: `event` (Started|Ended) and `words` (1-2 alphanumeric
-     * tokens making up the biome name). The relative order of `words` and "Biome
+     * Must expose two named groups: `event` (Started|Ended) and `words` (the alphanumeric
+     * tokens around the biome name - build it from `BIOME_WORDS_PATTERN`). The relative order of `words` and "Biome
      * Started/Ended" in the string is up to the macro's format - e.g. JJaram reports
      * "NAME Biome Started/Ended" instead of the common "Biome Started/Ended - NAME".
      */
@@ -81,24 +100,10 @@ export class DefaultMacroParser extends MacroParser {
             const eventType: "started" | "ended" = match.groups.event.toLowerCase() === "started" ? "started" : "ended";
             const words = match.groups.words.trim().split(/\s+/);
 
-            // Try the 2-word combo first (e.g. "SAND STORM" -> SANDSTORM), then fall back to
-            // just the first word (e.g. "SINGULARITY" followed by unrelated trailing text).
-            if (words.length > 1) {
-                const combined = normalizeBiomeName(words.join(" "));
-                logger.verbose(`Trying combined biome "${combined}" (${eventType})`);
-
-                if (isKnownBiome(combined)) {
-                    logger.verbose(`Matched biome "${combined}"`);
-                    return { biome: combined, eventType };
-                }
-            }
-
-            const single = normalizeBiomeName(words[0]);
-            logger.verbose(`Trying single biome "${single}" (${eventType})`);
-
-            if (isKnownBiome(single)) {
-                logger.verbose(`Matched biome "${single}"`);
-                return { biome: single, eventType };
+            const biome = findBiomeInWords(words);
+            if (biome) {
+                logger.verbose(`Matched biome "${biome}" (${eventType})`);
+                return { biome, eventType };
             }
 
             logger.warn(`Unknown biome: ${normalizeBiomeName(words.join(" "))}`);

@@ -17,6 +17,7 @@ import {
     biomeAutocompleteChoices,
     getAllBiomes,
 } from "../constants/biomes.constants";
+import { MAX_BIOME_NAME_WORDS } from "../macro-parsers/default-macro.parser";
 import { type AnsiInput, addBiome, CLEAR_VALUE, editBiome, setBiomeActive } from "../services/biome-admin.service";
 import {
     applyBiomeImport,
@@ -160,8 +161,8 @@ const NETWORK_NOTE = "Rare biomes are Network biomes: a server joining the Netwo
 /** What the owner should know after a biome starts being recognized. */
 function enabledNotes(e: BiomeEntry, detectionName: string): string[] {
     const notes: string[] = [];
-    if (detectionName.trim().split(/\s+/).length > 2)
-        notes.push("Macro text is matched on up to 2 words - a 3+ word name is only caught from the embed thumbnail's file name.");
+    if (detectionName.trim().split(/\s+/).length > MAX_BIOME_NAME_WORDS)
+        notes.push(`Macro text is read on up to ${MAX_BIOME_NAME_WORDS} words - a longer name won't be detected.`);
     if (e.category === "rare") notes.push(NETWORK_NOTE);
     notes.push("Test it with `/bh-owner simulate-biome`.");
     return notes;
