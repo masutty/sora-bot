@@ -1,12 +1,20 @@
 import type { Guild, GuildMember, TextChannel } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { getBadgeMeta } from "../constants/badges.constants";
-import { formatBiomeName } from "../constants/biomes.constants";
-import { clearBiomeEvents, decrementBiomeEvents, deleteAllSessionsForUser } from "../repository/activity.repository";
+import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
+import {
+    clearBiomeEvents,
+    decrementBiomeEvents,
+    deleteAllSessionsForUser,
+    insertManualBiomeEvents,
+} from "../repository/activity.repository";
 import { deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId, pauseUser, unpauseUser } from "../repository/users.repository";
 import { type Badge, BiomeHuntError } from "../types";
 import { revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
 import { adoptMacroChannel, provisionMacroChannel } from "./macro-channel.service";
+
+/** Upper bound for `incrementMemberBiome` - guards against a typo'd amount flooding the events table. */
+export const MAX_MANUAL_FINDS = 1000;
 
 function formatRewardRevertSuffix(reverted: { seedsReverted: number; xpReverted: number }, revokedBadges: Badge[]): string {
     const parts: string[] = [];
@@ -126,6 +134,18 @@ export async function decrementMemberBiome(guildId: string, discordUserId: strin
     const revokedBadges = await revokeOrphanedBadges(guildId, user.id, badgeCandidates);
 
     return `Removed ${removedIds.length} recorded find(s) of ${formatBiomeName(biome)} for <@${discordUserId}>.${formatRewardRevertSuffix(reverted, revokedBadges)}`;
+}
+
+/** Records `amount` finds of a biome on a user's profile. A plain record only - no Seeds/XP/badge is granted. */
+export async function incrementMemberBiome(guildId: string, discordUserId: string, biome: string, amount: number): Promise<string> {
+    if (amount <= 0) throw new BiomeHuntError("Amount must be greater than zero.");
+    if (amount > MAX_MANUAL_FINDS) throw new BiomeHuntError(`Amount can't be more than ${MAX_MANUAL_FINDS}.`);
+    if (!getBiomeMeta(biome)) throw new BiomeHuntError(`Unknown biome: ${biome}`);
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    if (!user) throw new BiomeHuntError("That user has no profile yet.");
+
+    const addedIds = await insertManualBiomeEvents(user.id, biome, amount);
+    return `Added ${addedIds.length} recorded find(s) of ${formatBiomeName(biome)} for <@${discordUserId}>.`;
 }
 
 export async function clearMemberBiomes(guildId: string, discordUserId: string, biome: string): Promise<string> {
