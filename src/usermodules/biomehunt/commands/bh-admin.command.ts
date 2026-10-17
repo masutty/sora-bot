@@ -33,6 +33,8 @@ import {
     decrementMemberBiome,
     forceSetupMember,
     hardDeleteMember,
+    incrementMemberBiome,
+    MAX_MANUAL_FINDS,
     pauseMember,
     resetMemberChannel,
     softDeleteMember,
@@ -381,6 +383,16 @@ export default defineCommand({
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
                         .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
                         .addIntegerOption((o) => o.setName("amount").setDescription("How many to remove (default 1)").setMinValue(1)),
+                )
+                .addSubcommand((s) =>
+                    s
+                        .setName("increment-biome")
+                        .setDescription("Record N finds of a biome on a user's profile (no Seeds/XP/badge is granted).")
+                        .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
+                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
+                        .addIntegerOption((o) =>
+                            o.setName("amount").setDescription("How many to add (default 1)").setMinValue(1).setMaxValue(MAX_MANUAL_FINDS),
+                        ),
                 )
                 .addSubcommand((s) =>
                     s
@@ -740,6 +752,14 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             if (!biome) throw new BiomeHuntError("Missing required argument: biome");
             return decrementMemberBiome(guildId, id, biome, amount);
+        }
+        case "member-increment-biome": {
+            const id = await idOf(args.getUser("user"));
+            const biome = args.getString("biome");
+            const amount = args.getInteger("amount") ?? 1;
+            if (!id) throw new BiomeHuntError("Missing required argument: user");
+            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
+            return incrementMemberBiome(guildId, id, biome, amount);
         }
         case "member-clear-biomes": {
             const id = await idOf(args.getUser("user"));

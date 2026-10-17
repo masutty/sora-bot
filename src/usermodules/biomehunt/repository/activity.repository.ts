@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
+import { newTraceRef } from "@/utils/trace";
 import type { ActivitySessionRow } from "../types";
 
 export async function insertEventIfNew(
@@ -168,6 +169,21 @@ export async function decrementBiomeEvents(userId: number, biome: string, amount
          )
          RETURNING id`,
         [userId, biome, amount],
+    );
+    return result.rows.map((r) => r.id);
+}
+
+/**
+ * Inserts `amount` admin-recorded "started" events for a biome - raises the count `getBiomeCounts`
+ * reports. There's no source message, so each row gets a synthetic `adm-` id. Returns the new ids.
+ */
+export async function insertManualBiomeEvents(userId: number, biome: string, amount: number): Promise<number[]> {
+    const messageIds = Array.from({ length: amount }, () => `adm-${newTraceRef()}`);
+    const result = await query<{ id: number }>(
+        `INSERT INTO bh_activity_events (user_id, discord_message_id, biome, macro_type, event_type, event_timestamp)
+         SELECT $1, m, $2, 'manual', 'started', NOW() FROM unnest($3::text[]) AS m
+         RETURNING id`,
+        [userId, biome, messageIds],
     );
     return result.rows.map((r) => r.id);
 }
