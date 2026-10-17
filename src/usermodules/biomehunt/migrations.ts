@@ -314,27 +314,19 @@ CREATE TABLE IF NOT EXISTS bh_guild_flags (
 );
 
 /*
- * delete_inactive_after_s used to be nullable, with NULL meaning "auto-delete disabled".
- * That's now controlled by the AUTO_DELETE_ENABLED flag instead, so the column becomes a
- * plain always-set duration. Guilds that had a real (non-null) value get the flag turned on
- * here, to preserve their existing behavior across the migration.
+ * delete_inactive_after_s used to be nullable, with NULL meaning "auto-delete disabled". That's
+ * now the AUTO_DELETE_ENABLED flag, so the column is a plain always-set duration.
+ *
+ * NEVER write bh_guild_flags from this schema. This whole string re-runs every time any part of it
+ * changes, so a flag write here repeats on every such deploy. Two one-time steps used to live here:
+ * a backfill that turned AUTO_DELETE_ENABLED ON for every guild with an old non-null value, and a
+ * reset that turned it OFF for every guild. Auto-delete once deleted real users' macro channels.
+ * Both are long done and were removed; flags change only through an admin action
+ * (/bh-admin flags or ez-setup). migrations.test.ts enforces this.
  */
-INSERT INTO bh_guild_flags (guild_id, flag_name, enabled)
-SELECT guild_id, 'AUTO_DELETE_ENABLED', TRUE FROM bh_guilds WHERE delete_inactive_after_s IS NOT NULL
-ON CONFLICT (guild_id, flag_name) DO NOTHING;
-
 UPDATE bh_guilds SET delete_inactive_after_s = 86400 WHERE delete_inactive_after_s IS NULL;
 ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET DEFAULT 86400;
 ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET NOT NULL;
-
-/*
- * The backfill above turned AUTO_DELETE_ENABLED on for every existing guild to preserve legacy
- * behavior - but auto-delete acting on stale last_activity_at timestamps (e.g. right after
- * restoring an older database backup) deleted several users' macro channels for real. The flag's
- * own default is already false (see FLAG_DEFINITIONS) - reset every guild back to that actual
- * default here, unconditionally. Admins who want it back on: "!bh-admin flag set flag:AUTO_DELETE_ENABLED enabled:true".
- */
-UPDATE bh_guild_flags SET enabled = FALSE WHERE flag_name = 'AUTO_DELETE_ENABLED';
 
 /* ───────────────────────────────────────────── */
 /* The Network                                  */
