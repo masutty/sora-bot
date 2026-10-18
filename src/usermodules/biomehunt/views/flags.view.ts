@@ -11,7 +11,7 @@ import {
     type ViewPayload,
 } from "@/define";
 import { EmbedFormatter } from "@/utils/format";
-import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
+import { FLAG_DEFINITIONS, MENU_FLAGS } from "../constants/flags.constants";
 import { setGuildFlag } from "../repository/flags.repository";
 import type { FlagName } from "../types";
 
@@ -39,7 +39,7 @@ const GREEN = 0x248046;
 const RED = 0xda373c;
 
 export function flagsPageCount(): number {
-    return Math.max(1, Math.ceil(ALL_FLAGS.length / FLAGS_PER_PAGE));
+    return Math.max(1, Math.ceil(MENU_FLAGS.length / FLAGS_PER_PAGE));
 }
 
 const defaultLabel = (flag: FlagName) => (FLAG_DEFINITIONS[flag].default ? "ON" : "OFF");
@@ -68,7 +68,7 @@ function flagsContainer(state: FlagsState, kit: RenderKit): ContainerBuilder {
     addDivider();
 
     const from = state.page * FLAGS_PER_PAGE;
-    ALL_FLAGS.slice(from, from + FLAGS_PER_PAGE).forEach((flag, i) => {
+    MENU_FLAGS.slice(from, from + FLAGS_PER_PAGE).forEach((flag, i) => {
         if (i > 0) addDivider();
         const on = state.flags[flag];
         container.addSectionComponents((section) =>
@@ -126,7 +126,7 @@ export function flagsView(deps: FlagsDeps): ViewDefinition<FlagsState, void, Fla
         },
         on: {
             ...paginationHandlers<FlagsState>({ pages: flagsPageCount() }),
-            ...Object.fromEntries(ALL_FLAGS.map((flag) => [`toggle:${flag}`, toggle(flag)])),
+            ...Object.fromEntries(MENU_FLAGS.map((flag) => [`toggle:${flag}`, toggle(flag)])),
         },
     });
 }
