@@ -78,3 +78,14 @@ export async function getUserQuotaProgress(guildId: string, userId: number): Pro
     );
     return result.rows;
 }
+
+/** How many members currently hold a guild's quota role (by Discord role id). */
+export async function countQuotaRoleHolders(guildId: string, roleId: string): Promise<number> {
+    const result = await query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM bh_user_quota_roles uqr
+         JOIN bh_quota_roles qr ON qr.id = uqr.quota_role_id
+         WHERE qr.guild_id = $1 AND qr.role_id = $2`,
+        [guildId, roleId],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+}

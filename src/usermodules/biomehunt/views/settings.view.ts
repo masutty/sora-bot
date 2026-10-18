@@ -22,6 +22,7 @@ import {
 import { getGuildUserCounts } from "../repository/users.repository";
 import { forceCounterUpdate } from "../services/guild-config.service";
 import type { ActivityStatus, FlagName, GuildRolesConfig } from "../types";
+import { canBotAssignRole } from "./role-check";
 import { formatHours, renderSettings, STATUSES } from "./settings.screens";
 
 /** Defaults an empty form field falls back to - same values `resetGuildConfig` writes. */
@@ -113,12 +114,7 @@ export function defaultSettingsDeps(client: BotClient, guild: Guild): SettingsDe
         clearCounterChannel,
         forceCounterUpdate: (guildId) => forceCounterUpdate(client, guildId),
         resetGuildConfig,
-        canAssignRole: (roleId) => {
-            const role = guild.roles.cache.get(roleId);
-            const me = guild.members.me;
-            if (!role || !me || role.managed) return false;
-            return me.roles.highest.comparePositionTo(role) > 0;
-        },
+        canAssignRole: (roleId) => canBotAssignRole(guild, roleId),
         reload: () => loadSettingsInput(guild.id),
         counts: getGuildUserCounts,
     };

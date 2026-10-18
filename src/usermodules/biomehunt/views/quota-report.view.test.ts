@@ -120,3 +120,16 @@ test("view: opens on today, switching day or role goes back to page 1, paginatio
     expect(text()).toContain("## Quotas · Yesterday");
     expect(() => comp(fake.lastPayload(), "next")).toThrow(); // 5 members - a single page, no pager
 });
+
+test("view: opened on a role it starts on that role and Back ends it", async () => {
+    const other = { ...ROLE, id: 2, role_id: "role-2" } as QuotaRoleRow;
+    const both = report({ roles: [ROLE, other] });
+    const fake = createFakeViewTransport();
+    const done = fake.run(quotaStatsView, { reports: { today: both, yesterday: both }, roleNames: {}, roleId: "role-2" }, "owner");
+    await fake.flush();
+    expect(textOf({ components: fake.lastPayload().components as unknown as Json[] } as Json)).toBeDefined();
+    expect(JSON.stringify(fake.lastPayload().components)).toContain("role-2");
+    await fake.emit(fake.click("back", "owner"));
+    await done;
+    expect(fake.closed).toBe(1);
+});
