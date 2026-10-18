@@ -1,14 +1,27 @@
 import type { Guild, GuildMember, TextChannel } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
+import { transaction } from "@/database/connection";
 import { getBadgeMeta } from "../constants/badges.constants";
 import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import {
     clearBiomeEvents,
     decrementBiomeEvents,
     deleteAllSessionsForUser,
+    deleteSessionsByIds,
+    getBiomeCountForUser,
     insertManualBiomeEvents,
 } from "../repository/activity.repository";
-import { deleteMacroChannelOnly, deleteUserCascade, getUserByDiscordId, pauseUser, unpauseUser } from "../repository/users.repository";
+import { getGuildBadgeRoles } from "../repository/badges.repository";
+import { enqueueRoleJob } from "../repository/role-jobs.repository";
+import {
+    deleteMacroChannelOnly,
+    deleteUserCascade,
+    getUserByDiscordId,
+    getUserById,
+    pauseUser,
+    unpauseUser,
+    wipeUserProgress,
+} from "../repository/users.repository";
 import { type Badge, BiomeHuntError } from "../types";
 import { revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
 import { adoptMacroChannel, provisionMacroChannel } from "./macro-channel.service";
@@ -77,7 +90,7 @@ export async function forceSetupMember(
 }
 
 /** Full wipe: channel, webhook, sessions, badges, quota status - everything. The user can /bh setup again as if brand new. */
-export async function hardDeleteMember(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
+export async function deleteMemberEverything(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no data to delete.");
 
@@ -86,7 +99,7 @@ export async function hardDeleteMember(client: BotClient, guildId: string, disco
     return `<@${discordUserId}>'s data has been fully wiped. They can run \`/bh setup\` again.`;
 }
 
-/** Removes the macro channel/webhook and all session history, but keeps badges and quota status. */
+/** @deprecated Goes away with the `member-soft-delete` command (Task 15). Removes the macro channel and all sessions, keeps badges and quota status. */
 export async function softDeleteMember(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no data.");
@@ -99,15 +112,62 @@ export async function softDeleteMember(client: BotClient, guildId: string, disco
 }
 
 /** Removes only the macro channel/webhook - all history, badges, and quota status stay untouched. */
-export async function resetMemberChannel(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
+export async function unlinkMember(client: BotClient, guildId: string, discordUserId: string): Promise<void> {
     const user = await getUserByDiscordId(guildId, discordUserId);
     if (!user) throw new BiomeHuntError("That user has no data.");
 
     const deleted = await deleteMacroChannelOnly(user.id);
     if (!deleted) throw new BiomeHuntError("That user doesn't have a macro channel.");
     await deleteDiscordChannel(client, deleted.channelId);
+}
 
-    return `<@${discordUserId}>'s macro channel removed. All other data kept. They can run \`/bh setup\` again.`;
+export interface ResetTotals {
+    sessions: number;
+    finds: number;
+    badges: number;
+    seeds: number;
+    xp: number;
+}
+
+/**
+ * Erases a member's progress: biome finds (and their rewards), sessions, badges, quota status,
+ * Seeds and XP. The macro channel and Flower stay, and it works for members with no channel.
+ * Held badge and quota roles are queued for removal in the same transaction.
+ */
+export async function resetMemberProgress(
+    guildId: string,
+    discordUserId: string,
+    run: typeof transaction = transaction,
+): Promise<ResetTotals> {
+    const user = await getUserByDiscordId(guildId, discordUserId);
+    if (!user) throw new BiomeHuntError("That user has no data.");
+
+    const badgeRoles = new Map((await getGuildBadgeRoles(guildId)).map((r) => [r.badge, r.role_id]));
+    return run(async (db) => {
+        const wiped = await wipeUserProgress(db, user.id);
+        const roleIds = new Set<string>(wiped.quotaRoleIds);
+        for (const badge of wiped.badges) {
+            const roleId = badgeRoles.get(badge);
+            if (roleId) roleIds.add(roleId);
+        }
+        for (const roleId of roleIds) await enqueueRoleJob(guildId, user.id, roleId, "remove", undefined, db);
+        return { sessions: wiped.sessions, finds: wiped.finds, badges: wiped.badges.length, seeds: wiped.seeds, xp: wiped.xp };
+    });
+}
+
+/** Deletes the given sessions of one member. Ids that belong to someone else are ignored. */
+export async function deleteSessions(userId: number, ids: number[]): Promise<number> {
+    return deleteSessionsByIds(userId, ids);
+}
+
+/** Sets a member's recorded finds of a biome to `count`, adding or removing the difference. */
+export async function setBiomeCount(userId: number, biome: string, count: number): Promise<void> {
+    if (!Number.isInteger(count) || count < 0) throw new BiomeHuntError("Count must be a whole number, zero or more.");
+    const user = await getUserById(userId);
+    if (!user) throw new BiomeHuntError("That user has no profile yet.");
+    const current = await getBiomeCountForUser(userId, biome);
+    if (count > current) await incrementMemberBiome(user.guild_id, user.discord_user_id, biome, count - current);
+    else if (count < current) await decrementMemberBiome(user.guild_id, user.discord_user_id, biome, current - count);
 }
 
 export async function pauseMember(guildId: string, discordUserId: string): Promise<string> {

@@ -18,13 +18,13 @@ import {
     type AdoptParams,
     clearMemberBiomes,
     decrementMemberBiome,
+    deleteMemberEverything,
     forceSetupMember,
-    hardDeleteMember,
     incrementMemberBiome,
     MAX_MANUAL_FINDS,
     pauseMember,
-    resetMemberChannel,
     softDeleteMember,
+    unlinkMember,
     unpauseMember,
 } from "../services/member.service";
 import { settings } from "../settings";
@@ -467,7 +467,7 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "member-hard-delete": {
             const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return hardDeleteMember(client, guildId, id);
+            return deleteMemberEverything(client, guildId, id);
         }
         case "member-soft-delete": {
             const id = await idOf(args.getUser("user"));
@@ -477,7 +477,8 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         case "member-reset-channel": {
             const id = await idOf(args.getUser("user"));
             if (!id) throw new BiomeHuntError("Missing required argument: user");
-            return resetMemberChannel(client, guildId, id);
+            await unlinkMember(client, guildId, id);
+            return `<@${id}>'s macro channel removed. All other data kept. They can run \`/bh setup\` again.`;
         }
         case "member-pause": {
             const id = await idOf(args.getUser("user"));

@@ -1,14 +1,17 @@
+import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
 import type { RoleJobAction, RoleJobRow } from "../types";
 
+/** Pass `client` to enqueue inside the caller's transaction. */
 export async function enqueueRoleJob(
     guildId: string,
     userId: number,
     roleId: string,
     action: RoleJobAction,
     executeAfter?: Date,
+    client?: PoolClient,
 ): Promise<void> {
-    await query(
+    await (client ? client.query.bind(client) : query)(
         `INSERT INTO bh_role_jobs (guild_id, user_id, role_id, action, execute_after)
          VALUES ($1, $2, $3, $4, COALESCE($5, NOW()))`,
         [guildId, userId, roleId, action, executeAfter ?? null],

@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
 import type { ActivityGrace, ActivityStatus, UserMacroChannelRow, UserRow } from "../types";
 
@@ -187,4 +188,43 @@ export async function getMacroChannelByUserId(userId: number): Promise<UserMacro
 export async function setUserFlower(userId: number, flower: string): Promise<UserRow | null> {
     const result = await query<UserRow>(`UPDATE bh_users SET flower = $2 WHERE id = $1 RETURNING *`, [userId, flower]);
     return result.rows[0] ?? null;
+}
+
+export interface UserProgressWipe {
+    sessions: number;
+    finds: number;
+    badges: string[];
+    seeds: number;
+    xp: number;
+    /** Discord role ids of the quota roles the user held. */
+    quotaRoleIds: string[];
+}
+
+/**
+ * Erases a user's progress inside the caller's transaction: activity events (biome finds; their
+ * rewards cascade), sessions, badges, quota status, Seeds and XP. The user row, macro channel and
+ * Flower stay. Returns what was erased, counted before deleting.
+ */
+export async function wipeUserProgress(client: PoolClient, userId: number): Promise<UserProgressWipe> {
+    const balance = await client.query<{ seeds: number; xp: number }>(`SELECT seeds, xp FROM bh_users WHERE id = $1 FOR UPDATE`, [userId]);
+    const badges = await client.query<{ badge: string }>(`DELETE FROM bh_user_badges WHERE user_id = $1 RETURNING badge`, [userId]);
+    const quotas = await client.query<{ role_id: string }>(
+        `DELETE FROM bh_user_quota_roles uqr USING bh_quota_roles qr
+         WHERE uqr.user_id = $1 AND qr.id = uqr.quota_role_id
+         RETURNING qr.role_id`,
+        [userId],
+    );
+    const events = await client.query<{ event_type: string }>(`DELETE FROM bh_activity_events WHERE user_id = $1 RETURNING event_type`, [
+        userId,
+    ]);
+    const sessions = await client.query(`DELETE FROM bh_activity_sessions WHERE user_id = $1`, [userId]);
+    await client.query(`UPDATE bh_users SET seeds = 0, xp = 0 WHERE id = $1`, [userId]);
+    return {
+        sessions: sessions.rowCount ?? 0,
+        finds: events.rows.filter((e) => e.event_type === "started").length,
+        badges: badges.rows.map((b) => b.badge),
+        seeds: balance.rows[0]?.seeds ?? 0,
+        xp: balance.rows[0]?.xp ?? 0,
+        quotaRoleIds: quotas.rows.map((q) => q.role_id),
+    };
 }

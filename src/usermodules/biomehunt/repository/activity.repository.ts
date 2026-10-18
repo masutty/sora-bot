@@ -153,6 +153,13 @@ export async function deleteAllSessionsForUser(userId: number): Promise<number> 
     return result.rowCount ?? 0;
 }
 
+/** Deletes the given sessions, scoped to `userId` so ids of another user's sessions are ignored. Returns how many were removed. */
+export async function deleteSessionsByIds(userId: number, sessionIds: number[]): Promise<number> {
+    if (sessionIds.length === 0) return 0;
+    const result = await query(`DELETE FROM bh_activity_sessions WHERE user_id = $1 AND id = ANY($2::int[])`, [userId, sessionIds]);
+    return result.rowCount ?? 0;
+}
+
 /**
  * Removes the `amount` most recently recorded "started" events for a biome - decrements the
  * count `getBiomeCounts` reports without needing to touch any paired "ended" rows (those are
