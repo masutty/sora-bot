@@ -18,7 +18,7 @@ export async function createQuota(
     if (mode !== "F" && mode !== "RW") {
         throw new BiomeHuntError("mode must be either F (Fixed) or RW (Rolling Window).");
     }
-    if (quotaHours <= 0 || quotaWindowHours <= 0) {
+    if (quotaHours <= 0 || (mode === "RW" && quotaWindowHours <= 0)) {
         throw new BiomeHuntError("Quota hours and window must be greater than zero.");
     }
     if (mode === "F" && (!accessDurationDays || accessDurationDays <= 0)) {
@@ -44,7 +44,7 @@ export async function removeQuotaRole(guildId: string, roleId: string): Promise<
 
 export async function forceQuotaEval(client: BotClient, guildId: string): Promise<string> {
     const count = await evaluateFixedRewardsForGuild(client, guildId);
-    if (count === 0) throw new BiomeHuntError("No Fixed-mode quota reward roles are configured for this server.");
+    if (count === 0) throw new BiomeHuntError("No daily rewards are set up for this server.");
     await markQuotaEvaluated(guildId);
-    return `Fixed-mode quota rewards evaluated now for ${count} configured role(s).`;
+    return `Checked ${count} daily ${count === 1 ? "reward" : "rewards"}.`;
 }

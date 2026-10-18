@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveStatus } from "./status.worker";
+import { resolveStatus, shouldAutoDelete } from "./status.worker";
 
 const GAP = 1200;
 const IDLE = 1800;
@@ -12,5 +12,13 @@ describe("resolveStatus", () => {
         expect(resolveStatus(GAP + IDLE, GAP, IDLE, INACTIVE)).toBe("idle");
         expect(resolveStatus(GAP + INACTIVE - 1, GAP, IDLE, INACTIVE)).toBe("idle");
         expect(resolveStatus(GAP + INACTIVE, GAP, IDLE, INACTIVE)).toBe("inactive");
+    });
+});
+
+describe("shouldAutoDelete", () => {
+    test("waits for inactive plus the delete delay, counted from the session end", () => {
+        expect(shouldAutoDelete(86400 + 3600, 86400, 3600)).toBe(false);
+        expect(shouldAutoDelete(86400 + 3601, 86400, 3600)).toBe(true);
+        expect(shouldAutoDelete(86400, 86400, 3600)).toBe(false);
     });
 });

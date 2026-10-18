@@ -16,7 +16,7 @@ import { formatBiomeName, getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBio
 import { VoteStatus } from "../types";
 
 export interface VoteRenderInfo {
-    /** Short random code, shown on the message so it can be referenced (e.g. `/bh-admin review`). */
+    /** Short random code, shown on the message so it can be referenced (e.g. `/bh-admin review-voting`). */
     voteId: string;
     status: VoteStatus;
     closesAt: Date;

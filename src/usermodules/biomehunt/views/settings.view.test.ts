@@ -269,3 +269,11 @@ test("durations show as hours, and Back from What it does returns to Auto-delete
     await fake.emit(fake.click("back:autodelete", OWNER));
     expect(text(fake.lastPayload())).toContain("**Auto-delete inactive members**");
 });
+
+test("activity form is prefilled with the current values, so editing one keeps the others", async () => {
+    const { fake, calls } = await open(baseInput({ gapS: 900, idleS: 1800, inactiveS: 48 * 3600 }));
+    await submitForm(fake, "edit:activity", { gap: "15", idle: "45", inactive: "48" });
+    const fields = fake.modals.at(-1)?.spec.fields ?? [];
+    expect(fields.map((f) => f.value)).toEqual(["15", "30", "48"]);
+    expect(calls).toEqual([["updateThresholds", GUILD, 900, 2700, 172800]]);
+});

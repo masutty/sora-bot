@@ -170,11 +170,19 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
                         "Leave a field empty to use the default.",
                     ].join("\n"),
                     fields: [
-                        { key: "gap", label: "Session gap, minutes (default 20)", placeholder: "20", required: false, maxLength: 12 },
+                        {
+                            key: "gap",
+                            label: "Session gap, minutes (default 20)",
+                            placeholder: "20",
+                            value: String(Math.round(c.state.gapS / 60)),
+                            required: false,
+                            maxLength: 12,
+                        },
                         {
                             key: "idle",
                             label: "Idle after session end, minutes (default 30)",
                             placeholder: "30",
+                            value: String(Math.round(c.state.idleS / 60)),
                             required: false,
                             maxLength: 12,
                         },
@@ -182,6 +190,7 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
                             key: "inactive",
                             label: "Inactive after session, hours (default 24)",
                             placeholder: "24",
+                            value: String(Math.round(c.state.inactiveS / 3600)),
                             required: false,
                             maxLength: 12,
                         },
@@ -276,6 +285,7 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
                     return;
                 }
                 await c.notify(await deps.forceCounterUpdate(c.state.guildId));
+                c.state.counts = await deps.counts(c.state.guildId);
             },
 
             reset: async (c) => {

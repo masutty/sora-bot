@@ -112,7 +112,7 @@ const snapshot = (over: Partial<MemberAdminSnapshot> = {}): MemberAdminSnapshot 
 
 const PREVIEW: ResetTotals = { sessions: 38, finds: 22, badges: 3, seeds: 1240, xp: 6340 };
 
-function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; canAssign?: boolean }) {
+function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; canAssign?: boolean; present?: boolean }) {
     const calls: unknown[][] = [];
     const rec =
         <T>(name: string, ret?: T) =>
@@ -127,6 +127,7 @@ function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; can
         grant: rec("grant"),
         setup: rec("setup", "Setup complete."),
         adopt: rec("adopt", "Adopted."),
+        stillInGuild: async () => world.present ?? true,
         channelName: () => "truebnuy-old",
         unlink: rec("unlink"),
         resetPreview: async () => world.preview ?? PREVIEW,
@@ -144,7 +145,7 @@ function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; can
     return { deps, calls };
 }
 
-async function open(snap: MemberAdminSnapshot = snapshot(), extra: { preview?: ResetTotals; canAssign?: boolean } = {}) {
+async function open(snap: MemberAdminSnapshot = snapshot(), extra: { preview?: ResetTotals; canAssign?: boolean; present?: boolean } = {}) {
     const world = { snap, ...extra };
     const { deps, calls } = fakeDeps(world);
     const fake = createFakeViewTransport();
@@ -435,4 +436,11 @@ test("the busiest screens stay within 40 components", async () => {
         await fake.emit(fake.click(`tab:${tab}`, OWNER));
         expect(countComponents(fake.lastPayload())).toBeLessThanOrEqual(40);
     }
+});
+
+test("a member who left the server gets a notice and nothing is changed", async () => {
+    const { fake, calls } = await open(snapshot({ data: null, channel: null }), { present: false });
+    await fake.emit(fake.click("setupOnly", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("That user isn't in this server.");
+    expect(calls).toEqual([]);
 });

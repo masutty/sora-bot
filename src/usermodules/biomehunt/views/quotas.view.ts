@@ -117,6 +117,14 @@ type Ctx = HandlerContext<QuotasState, void>;
 
 const quotaOf = (s: QuotasState, roleId: string | null) => s.quotas.find((q) => q.role_id === roleId);
 
+/** What happens to the members who already have the role when its quota is deleted. */
+function deleteNote(mode: QuotaRoleMode, holders: number): string {
+    const who = `The ${holders} ${holders === 1 ? "member who has it" : "members who have it"}`;
+    return mode === "F"
+        ? `${who} ${holders === 1 ? "keeps" : "keep"} it until it runs out.`
+        : `${who} ${holders === 1 ? "keeps" : "keep"} the role until an admin removes it.`;
+}
+
 /**
  * `/bh-admin quotas`: the server's quotas as a list, an editor per quota, and the daily check time.
  * Every change saves at once. Stored modes stay `F` / `RW`; the UI says Daily reward / Live role.
@@ -269,7 +277,7 @@ export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, 
                     confirm({
                         name: "biomehunt.quotas-delete",
                         title: `Delete the <@&${roleId}> quota?`,
-                        body: `-# The ${holders} ${holders === 1 ? "member who has it keeps it" : "members who have it keep it"} until it runs out.`,
+                        body: `-# ${deleteNote(q.mode, holders)}`,
                         color: RED,
                         confirmLabel: "Delete",
                         confirmStyle: ButtonStyle.Danger,
@@ -312,6 +320,11 @@ export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, 
                 c.state.evalHourUtc = hour;
             },
             checkNow: async (c) => {
+                if (!c.state.quotas.some((q) => q.mode === "F")) {
+                    await c.notify("No daily rewards to check.");
+                    return;
+                }
+                let result = "";
                 const ran = await c.open(
                     confirm({
                         name: "biomehunt.quotas-check-now",
@@ -320,11 +333,15 @@ export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, 
                         color: ORANGE,
                         confirmLabel: "Check now",
                         cancelStyle: ButtonStyle.Secondary,
-                        onConfirm: async () => EmbedFormatter.success(await deps.forceQuotaEval(c.state.guildId)),
+                        onConfirm: async () => {
+                            result = await deps.forceQuotaEval(c.state.guildId);
+                            return EmbedFormatter.success(result);
+                        },
                     }),
                     undefined,
                 );
                 if (!ran) return;
+                await c.notify(result);
                 // The check grants and renews roles, so the counts shown are stale.
                 const counts = await Promise.all(c.state.quotas.map((q) => deps.countHolders(q.role_id)));
                 c.state.holders = Object.fromEntries(c.state.quotas.map((q, i) => [q.role_id, counts[i]]));

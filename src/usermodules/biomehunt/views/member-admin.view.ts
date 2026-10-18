@@ -72,6 +72,8 @@ export interface MemberAdminDeps {
     setup(dmUser: boolean): Promise<string>;
     /** Registers an existing channel with its webhook; resolves with the text to show the admin. */
     adopt(channelId: string, webhookUrl: string): Promise<string>;
+    /** False once the member has left the server. */
+    stillInGuild(): Promise<boolean>;
     channelName(channelId: string): string;
     unlink(): Promise<void>;
     /** What a reset would erase, read now. */
@@ -150,6 +152,14 @@ export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: 
             }
             return forceSetupMember(client, guild, member, false, { channel: channel as never, webhookUrl });
         },
+        stillInGuild: () =>
+            guild.members.fetch(member.id).then(
+                () => true,
+                (err: { code?: number }) => {
+                    if (err?.code === 10007) return false;
+                    throw err;
+                },
+            ),
         channelName: (channelId) => guild.channels.cache.get(channelId)?.name ?? "channel",
         unlink: () => unlinkMember(client, guild.id, member.id),
         resetPreview: async () => {
@@ -291,6 +301,13 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
         c.state.screen = screen;
     };
 
+    /** True while the member is in the server; otherwise tells the admin and returns false. */
+    async function present(c: Ctx): Promise<boolean> {
+        if (await deps.stillInGuild()) return true;
+        await c.notify("That user isn't in this server.");
+        return false;
+    }
+
     /** Back to the Profile tab. */
     const home = (c: Ctx) => {
         Object.assign(c.state, { tab: "profile", screen: "main", page: 0, biome: null });
@@ -364,6 +381,7 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
     // --- Macro channel ---
 
     const recreate = async (c: Ctx) => {
+        if (!(await present(c))) return;
         const text = await c.open(recreateChoice(c.state.channel?.channelId ?? null, deps.setup), undefined);
         await reload(c.state);
         home(c);
@@ -380,6 +398,7 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
             ],
         });
         if (!values) return;
+        if (!(await present(c))) return;
         const adopted = await attempt(c, () => deps.adopt(channelId, (values.url ?? "").trim()));
         if (!adopted) return;
         await reload(c.state);
@@ -388,6 +407,7 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
     };
 
     const setupFor = (dmUser: boolean) => async (c: Ctx) => {
+        if (!(await present(c))) return;
         const made = await attempt(c, () => deps.setup(dmUser));
         if (!made) return;
         await reload(c.state);
@@ -450,11 +470,13 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
         const meta = getBadgeMeta(badge);
         const roleId = badgeRoles[badge];
         if (!data.badges.some((b) => b.badge === badge)) {
+            if (!(await present(c))) return;
             if (!(await attempt(c, () => deps.giveBadge(badge)))) return;
             await reload(c.state);
             if (roleId && !deps.canAssignRole(roleId)) await c.notify(`I can't give <@&${roleId}> - it's above my highest role.`);
             return;
         }
+        if (!(await present(c))) return;
         const taken = await c.open(
             confirm({
                 name: "biomehunt.member-take-badge",

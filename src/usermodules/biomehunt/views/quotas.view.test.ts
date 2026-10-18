@@ -72,7 +72,7 @@ function fakeDeps(opts: { canAssign?: boolean } = {}) {
         },
         forceQuotaEval: async (guildId) => {
             calls.push(["forceQuotaEval", guildId]);
-            return "Evaluated.";
+            return "Checked 2 daily rewards.";
         },
         countHolders: async () => holderCount,
         countHitToday: async () => 9,
@@ -220,4 +220,26 @@ test("check now reloads the holder counts after the check runs", async () => {
     expect(t).toContain("20 members have it");
     expect(t).not.toContain("14 members have it");
     holderCount = 0;
+});
+
+test("check now tells the result in a notice", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("checkNow", OWNER));
+    await fake.emit(fake.click("yes", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("Checked 2 daily rewards.");
+});
+
+test("check now with no daily rewards says so and opens no confirm", async () => {
+    const { fake, calls } = await open(baseInput([LIVE]));
+    await fake.emit(fake.click("checkNow", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("No daily rewards to check.");
+    expect(text(fake.lastPayload())).not.toContain("Check daily rewards now?");
+    expect(calls).toHaveLength(0);
+});
+
+test("deleting a live role says the members keep the role until an admin removes it", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("edit:1", OWNER));
+    await fake.emit(fake.click("delete", OWNER));
+    expect(text(fake.lastPayload())).toContain("-# The 1 member who has it keeps the role until an admin removes it.");
 });

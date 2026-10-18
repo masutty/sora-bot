@@ -22,6 +22,11 @@ import type { ActivityStatus } from "../types";
 
 const logger = new Logger("biomehunt.workers.status");
 
+/** True once a member has been inactive for the full delete delay, counted from the end of their last session. */
+export function shouldAutoDelete(secondsSinceSessionEnd: number, inactiveS: number, deleteAfterS: number): boolean {
+    return secondsSinceSessionEnd > inactiveS + deleteAfterS;
+}
+
 export async function transitionUser(userId: number, guildId: string, newStatus: ActivityStatus): Promise<void> {
     await updateUserStatus(userId, newStatus);
 
@@ -101,7 +106,7 @@ async function tick(client: BotClient): Promise<void> {
         const shouldDelete =
             newStatus === "inactive" &&
             user.paused_at === null &&
-            secondsSinceSessionEnd > guildConfig.inactive_threshold_s + guildConfig.delete_inactive_after_s &&
+            shouldAutoDelete(secondsSinceSessionEnd, guildConfig.inactive_threshold_s, guildConfig.delete_inactive_after_s) &&
             (await isFlagEnabled(user.guild_id, "AUTO_DELETE_ENABLED"));
 
         if (shouldDelete) {

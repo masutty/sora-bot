@@ -251,7 +251,7 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS last_seen_in_server_at TIMES
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
- * event, which used to cascade away the vote AND its ballots too: /bh-admin review <id> would
+ * event, which used to cascade away the vote AND its ballots too: /bh-admin review-voting <id> would
  * then say "No vote with that id.", and the rejected-find stats derivable from the ballot rows
  * were gone. Now nullable with ON DELETE SET NULL: denying still deletes the event, but the vote
  * and its ballots survive with event_id = NULL - applyOutcome (biome-vote.service.ts) skips any

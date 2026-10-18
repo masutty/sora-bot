@@ -152,7 +152,7 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
 
 /**
  * Grants the outcome exactly once - `community_real`/`admin_confirmed` grant the reward only if
- * this event doesn't already have one (an admin later re-confirming, e.g. via `/bh-admin review`,
+ * this event doesn't already have one (an admin later re-confirming, e.g. via `/bh-admin review-voting`,
  * must never double-grant); `admin_denied` reverts whatever was granted (safe/no-op if nothing
  * was) and deletes the event, mirroring the existing admin-deny behavior. `no_votes`/`tie`/
  * `community_fake` do nothing - the event is kept for a possible later admin review.
@@ -185,7 +185,7 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
 /**
  * Applies the outcome, logging (rather than throwing) if it fails - by this point `vote`'s CAS
  * close has ALREADY committed, so a failure here must never look like the vote itself failed to
- * close: it did, just without its grant/revert applied yet. The log line names `/bh-admin review`
+ * close: it did, just without its grant/revert applied yet. The log line names `/bh-admin review-voting`
  * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
  * itself idempotent).
  */
@@ -195,7 +195,7 @@ async function applyOutcomeSafely(vote: BiomeVoteRow, deps: VoteServiceDeps): Pr
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,
-            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /bh-admin review ${vote.id}`,
+            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /bh-admin review-voting ${vote.id}`,
         });
     }
 }
@@ -280,7 +280,7 @@ export type AdminDecideResult =
 
 /**
  * An admin's decisive click - real (confirm) or fake (deny), inside OR after the vote's window
- * (an admin overriding a closed vote later, e.g. via `/bh-admin review`, still goes through here).
+ * (an admin overriding a closed vote later, e.g. via `/bh-admin review-voting`, still goes through here).
  * An admin CAN decide on their own find: the admin's word outranks the "no self-vote" rule, which
  * only applies to community ballots (`castBallot`). The close itself is a compare-and-set on the status
  * this call just read (`vote.status`): if another decision (a racing admin click, or

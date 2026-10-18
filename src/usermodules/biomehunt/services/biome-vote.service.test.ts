@@ -567,7 +567,7 @@ test("reward is granted exactly once even if the vote is somehow closed twice", 
     const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
-    // A later admin re-confirmation (e.g. `/bh-admin review`) must not double-grant.
+    // A later admin re-confirmation (e.g. `/bh-admin review-voting`) must not double-grant.
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
 
     expect(calls.grantBiomeReward).toHaveLength(1);

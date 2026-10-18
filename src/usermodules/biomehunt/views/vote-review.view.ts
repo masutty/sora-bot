@@ -132,7 +132,7 @@ async function decide(c: HandlerContext<VoteReviewState, void>, deps: VoteReview
 }
 
 /**
- * `/bh-admin review <id>` - who voted Real/Fake, the vote's current state, and (since `bh-admin` is
+ * `/bh-admin review-voting <id>` - who voted Real/Fake, the vote's current state, and (since `bh-admin` is
  * already admin-only) Confirm/Deny buttons that call `adminDecide` the same way the forward
  * message's own buttons do, including AFTER the vote closed (overriding a community/no-votes/tie
  * outcome, or even flip-flopping an earlier admin decision - `adminDecide`'s CAS only guards

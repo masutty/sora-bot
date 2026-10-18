@@ -27,3 +27,8 @@ test("createQuota: rolling window mode keeps the given window", async () => {
     await createQuota("g", "r", "RW", 5, 72, null);
     expect(upserts).toEqual([["g", "r", "RW", 5 * 3600, 72, null]]);
 });
+
+test("createQuota: fixed mode ignores a zero window", async () => {
+    await createQuota("g", "r", "F", 5, 0, 1);
+    expect(upserts).toEqual([["g", "r", "F", 5 * 3600, 24, 1]]);
+});
