@@ -71,9 +71,7 @@ export function buildQuotaDayContainer(report: QuotaDayReport, label: string, ro
 
     const role = report.roles[roleIndex];
     if (!role) {
-        container.addTextDisplayComponents((td) =>
-            td.setContent("-# No quota roles configured - create one with `/bh-admin quotas create`."),
-        );
+        container.addTextDisplayComponents((td) => td.setContent("-# No quota roles configured - create one with `/bh-admin quotas`."));
         return container;
     }
 

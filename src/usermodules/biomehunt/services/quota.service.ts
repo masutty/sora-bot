@@ -1,18 +1,11 @@
-import { ContainerBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { markQuotaEvaluated, updateQuotaEvalHour } from "../repository/guilds.repository";
-import { deleteQuotaRole, getQuotaRolesForGuild, upsertQuotaRole } from "../repository/quota-roles.repository";
-import { BiomeHuntError, type QuotaRoleMode, type QuotaRoleRow } from "../types";
+import { markQuotaEvaluated } from "../repository/guilds.repository";
+import { deleteQuotaRole, upsertQuotaRole } from "../repository/quota-roles.repository";
+import { BiomeHuntError, type QuotaRoleMode } from "../types";
 import { evaluateFixedRewardsForGuild } from "./reward.service";
 
 /* Fixed mode is a daily reward, so its window is always 24h. */
 const DAILY_WINDOW_HOURS = 24;
-
-function formatQuotaRoleLine(r: QuotaRoleRow): string {
-    const modeLabel = r.mode === "F" ? "Fixed" : "Rolling Window";
-    const durationNote = r.mode === "F" ? `, ${r.access_duration_days}d access` : "";
-    return `<@&${r.role_id}> - ${modeLabel}: ${r.quota_target_seconds / 3600}h / ${r.quota_window_hours}h window${durationNote}`;
-}
 
 export async function createQuota(
     guildId: string,
@@ -47,25 +40,6 @@ export async function removeQuotaRole(guildId: string, roleId: string): Promise<
     const removed = await deleteQuotaRole(guildId, roleId);
     if (!removed) throw new BiomeHuntError("That quota role isn't configured.");
     return `Quota role <@&${roleId}> removed. Members who already hold it keep it until it expires (Fixed mode) or is removed manually.`;
-}
-
-export async function listQuotas(guildId: string): Promise<ContainerBuilder> {
-    const roles = await getQuotaRolesForGuild(guildId);
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-
-    if (roles.length === 0) {
-        container.addTextDisplayComponents((td) => td.setContent("**Quotas**\nNo quota roles configured yet."));
-        return container;
-    }
-
-    container.addTextDisplayComponents((td) => td.setContent(`**Quotas**\n${roles.map(formatQuotaRoleLine).join("\n")}`));
-    return container;
-}
-
-export async function setQuotaEvalHour(guildId: string, hourUtc: number): Promise<string> {
-    if (hourUtc < 0 || hourUtc > 23) throw new BiomeHuntError("Hour must be between 0 and 23.");
-    await updateQuotaEvalHour(guildId, hourUtc);
-    return `Fixed-mode quota rewards will now be evaluated daily at ${hourUtc}:00 UTC.`;
 }
 
 export async function forceQuotaEval(client: BotClient, guildId: string): Promise<string> {

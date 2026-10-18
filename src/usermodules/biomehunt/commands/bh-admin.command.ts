@@ -1,7 +1,7 @@
 import type { Guild, GuildMember } from "discord.js";
 import { ChannelType, type ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { type CommandArgs, type CommandContext, defineCommand, paginate, type ReplyPayload } from "@/define";
+import { type CommandArgs, type CommandContext, defineCommand, paginate } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { getAwardableBadges, getBadgeMeta, getBiomeBadges, resolveBadgeSlug } from "../constants/badges.constants";
@@ -9,7 +9,6 @@ import { biomeAutocompleteChoices, MAX_DISCORD_CHOICES } from "../constants/biom
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
 import { getGuildFlags } from "../repository/flags.repository";
-import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
 import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
@@ -28,12 +27,11 @@ import {
     softDeleteMember,
     unpauseMember,
 } from "../services/member.service";
-import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
 import { settings } from "../settings";
-import { type Badge, BiomeHuntError, type QuotaRoleMode } from "../types";
+import { type Badge, BiomeHuntError } from "../types";
 import { defaultFlagsDeps, flagsView } from "../views/flags.view";
 import { openProfileView } from "../views/profile.view";
-import { quotaDeleteView } from "../views/quota-delete.view";
+import { defaultQuotasDeps, loadQuotasInput, quotasView } from "../views/quotas.view";
 import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
@@ -72,6 +70,7 @@ export default defineCommand({
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
+        .addSubcommand((s) => s.setName("quotas").setDescription("Quota reward roles members earn by macroing."))
         .addSubcommand((s) =>
             s.setName("settings").setDescription("Activity, status roles, macro channels, auto-delete and the live counter."),
         )
@@ -125,62 +124,6 @@ export default defineCommand({
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
                         .addIntegerOption((o) => o.setName("seeds").setDescription("Seeds delta (negative to take away)"))
                         .addIntegerOption((o) => o.setName("xp").setDescription("XP delta (negative to take away)")),
-                ),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("quotas")
-                .setDescription("Quota reward roles.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("create")
-                        .setDescription("Create (or update) a quota reward role.")
-                        .addRoleOption((o) => o.setName("role").setDescription("Reward role").setRequired(true))
-                        .addStringOption((o) =>
-                            o
-                                .setName("mode")
-                                .setDescription("Evaluation mode")
-                                .setRequired(true)
-                                .addChoices(
-                                    { name: "Fixed (daily check, timed access)", value: "F" },
-                                    { name: "Rolling Window (continuous)", value: "RW" },
-                                ),
-                        )
-                        .addNumberOption((o) =>
-                            o
-                                .setName("quota_hours")
-                                .setDescription("Required active hours within the window")
-                                .setRequired(true)
-                                .setMinValue(0.1),
-                        )
-                        .addIntegerOption((o) =>
-                            o
-                                .setName("quota_window_hours")
-                                .setDescription("Rolling window size, in hours")
-                                .setRequired(true)
-                                .setMinValue(1),
-                        )
-                        .addIntegerOption((o) =>
-                            o.setName("access_duration_days").setDescription("Access duration in days (Fixed mode only)").setMinValue(1),
-                        ),
-                )
-                .addSubcommand((s) =>
-                    s
-                        .setName("delete")
-                        .setDescription("Delete a quota reward role. Omit role to pick from a numbered list.")
-                        .addRoleOption((o) => o.setName("role").setDescription("Reward role")),
-                )
-                .addSubcommand((s) => s.setName("list").setDescription("List all configured quota reward roles."))
-                .addSubcommand((s) =>
-                    s.setName("force-eval").setDescription("Immediately run the Fixed-mode quota reward evaluation for this server."),
-                )
-                .addSubcommand((s) =>
-                    s
-                        .setName("set-eval-hour")
-                        .setDescription("Set the UTC hour Fixed-mode rewards are evaluated at.")
-                        .addIntegerOption((o) =>
-                            o.setName("hour").setDescription("UTC hour (0-23)").setRequired(true).setMinValue(0).setMaxValue(23),
-                        ),
                 ),
         )
         .addSubcommandGroup((g) =>
@@ -349,7 +292,6 @@ export default defineCommand({
     async run(ctx) {
         const group = ctx.args.getSubcommandGroup();
         const sub = ctx.args.getSubcommand();
-        const send = (payload: Exclude<ReplyPayload, string>) => ctx.reply({ ...payload, allowedMentions: NO_PINGS });
 
         // onMissingSubcommand: "run" - a bare `!bh-admin forward` / `delayed-forward` opens its menu; any other
         // missing/unknown subcommand gets the framework's usage.
@@ -391,20 +333,15 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "quotas-delete") {
-            await ctx.defer();
-            const roleId = (await ctx.args.getRole("role"))?.id ?? null;
-            if (roleId) {
-                await send(EmbedFormatter.success(await removeQuotaRole(ctx.guild.id, roleId)));
-                return;
-            }
-            await ctx.open(quotaDeleteView({ getQuotaRoles: getQuotaRolesForGuild, removeQuotaRole }), { guildId: ctx.guild.id });
-            return;
-        }
-
         if (routeKey === "flags") {
             await ctx.defer();
             await ctx.open(flagsView(defaultFlagsDeps), { guildId: ctx.guild.id, flags: await getGuildFlags(ctx.guild.id) });
+            return;
+        }
+
+        if (routeKey === "quotas") {
+            await ctx.defer();
+            await ctx.open(quotasView(defaultQuotasDeps(ctx.client, ctx.guild)), await loadQuotasInput(ctx.guild.id));
             return;
         }
 
@@ -447,11 +384,6 @@ async function requireMember(args: CommandArgs, name: string): Promise<GuildMemb
     const member = await args.getMember(name);
     if (!member) throw new BiomeHuntError(`Missing required argument: \`${name}\``);
     return member;
-}
-
-function requireNumber(value: number | null, name: string): number {
-    if (value === null) throw new BiomeHuntError(`Missing required argument: ${name}`);
-    return value;
 }
 
 async function runSubcommand(sub: string, guild: Guild, client: BotClient, args: CommandArgs): Promise<string | ContainerBuilder> {
@@ -500,31 +432,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "delayed-forward-list":
             return listDelayedForwards(guildId);
-        case "quotas-create": {
-            const roleId = await idOf(args.getRole("role"));
-            const mode = args.getString("mode")?.toUpperCase() as QuotaRoleMode | null;
-            const quotaHours = args.getNumber("quota_hours");
-            const quotaWindowHours = args.getInteger("quota_window_hours");
-            const accessDurationDays = args.getInteger("access_duration_days");
-            if (!roleId || !mode) throw new BiomeHuntError("Missing required argument: role or mode.");
-            return createQuota(
-                guildId,
-                roleId,
-                mode,
-                requireNumber(quotaHours, "quota_hours"),
-                requireNumber(quotaWindowHours, "quota_window_hours"),
-                accessDurationDays,
-            );
-        }
-        case "quotas-list":
-            return listQuotas(guildId);
-        case "quotas-force-eval":
-            return forceQuotaEval(client, guildId);
-        case "quotas-set-eval-hour": {
-            const hour = args.getInteger("hour");
-            if (hour === null) throw new BiomeHuntError("Missing required argument: hour");
-            return setQuotaEvalHour(guildId, hour);
-        }
         case "session-delete": {
             const id = await idOf(args.getUser("user"));
             const sessionId = args.getInteger("session_id");

@@ -637,5 +637,4 @@ Useful pieces:
   fake.modalResult = async () => ({ values: { hours: "12" }, ack: fake.modalSubmit(OWNER.id) });
   ```
 
-See `src/usermodules/biomehunt/views/quota-delete.view.test.ts` for a full example covering a typed
-retry loop, idle expiry, another user's input being ignored, and a `start`-driven immediate `done`.
+See `src/usermodules/biomehunt/views/settings.view.test.ts` for a full example of testing a view with the fake context.
