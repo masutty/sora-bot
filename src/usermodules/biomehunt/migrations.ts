@@ -506,7 +506,22 @@ ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_biome VARCHAR(40);
 /* Daily rewards (mode F) are always a 24h window - fixes rows stored with another window. */
 UPDATE bh_quota_roles SET quota_window_hours = 24 WHERE mode = 'F' AND quota_window_hours <> 24;
 
-/* Delayed forwards are only for rare biomes - drops any non-rare ones set before that rule. */
-DELETE FROM bh_biome_delayed_forwards d WHERE NOT EXISTS (SELECT 1 FROM bh_biomes b WHERE b.biome = d.biome AND b.category = 'rare');
+/* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
+CREATE TABLE IF NOT EXISTS bh_data_migrations (
+    name       VARCHAR(80) PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+/* Delayed forwards are only for rare biomes - drops the non-rare ones set before that rule, once.
+   Skipped while bh_biomes is still empty (seeded after the schema runs): every row would look non-rare. */
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM bh_data_migrations WHERE name = 'delayed-forwards-rare-only')
+       AND EXISTS (SELECT 1 FROM bh_biomes) THEN
+        DELETE FROM bh_biome_delayed_forwards d
+         WHERE NOT EXISTS (SELECT 1 FROM bh_biomes b WHERE b.biome = d.biome AND b.category = 'rare');
+        INSERT INTO bh_data_migrations (name) VALUES ('delayed-forwards-rare-only');
+    END IF;
+END $$;
 
 `;
