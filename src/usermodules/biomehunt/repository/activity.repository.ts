@@ -156,7 +156,7 @@ export async function deleteAllSessionsForUser(userId: number): Promise<number> 
 /** Deletes the given sessions, scoped to `userId` so ids of another user's sessions are ignored. Returns how many were removed. */
 export async function deleteSessionsByIds(userId: number, sessionIds: number[]): Promise<number> {
     if (sessionIds.length === 0) return 0;
-    const result = await query(`DELETE FROM bh_activity_sessions WHERE user_id = $1 AND id = ANY($2::int[])`, [userId, sessionIds]);
+    const result = await query(`DELETE FROM bh_activity_sessions WHERE user_id = $1 AND id = ANY($2::bigint[])`, [userId, sessionIds]);
     return result.rowCount ?? 0;
 }
 

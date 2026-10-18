@@ -9,6 +9,7 @@ interface Call {
 let calls: Call[] = [];
 let biomeCount = 0;
 let sessionRowsDeleted = 0;
+let holdsRoles = true;
 
 function respond(sql: string, params: unknown[] = []) {
     calls.push({ sql, params });
@@ -18,6 +19,8 @@ function respond(sql: string, params: unknown[] = []) {
         return { rows: [{ id: 7, guild_id: "g", discord_user_id: "u" }], rowCount: 1 };
     }
     if (sql.includes("FROM bh_guild_badge_roles")) return { rows: [{ badge: "GLITCHED", role_id: "role-badge" }], rowCount: 1 };
+    if (sql.includes("DELETE FROM bh_user_badges") && !holdsRoles) return { rows: [], rowCount: 0 };
+    if (sql.includes("DELETE FROM bh_user_quota_roles") && !holdsRoles) return { rows: [], rowCount: 0 };
     if (sql.includes("DELETE FROM bh_user_badges")) return { rows: [{ badge: "GLITCHED" }, { badge: "other" }], rowCount: 2 };
     if (sql.includes("DELETE FROM bh_user_quota_roles")) return { rows: [{ role_id: "role-quota" }], rowCount: 1 };
     if (sql.includes("DELETE FROM bh_activity_events") && sql.includes("RETURNING event_type")) {
@@ -45,6 +48,7 @@ beforeEach(() => {
     calls = [];
     biomeCount = 0;
     sessionRowsDeleted = 0;
+    holdsRoles = true;
 });
 
 const sqlOf = () => calls.map((c) => c.sql).join("\n");
@@ -99,4 +103,11 @@ test("setBiomeCount: does nothing when the count already matches", async () => {
     biomeCount = 4;
     await setBiomeCount(7, "GLITCHED", 4);
     expect(calls.some((c) => c.sql.includes("INSERT") || c.sql.includes("DELETE"))).toBe(false);
+});
+
+test("resetMemberProgress: queues no role jobs when the member holds no badges or quota roles", async () => {
+    holdsRoles = false;
+    const totals = await resetMemberProgress("g", "u", fakeTransaction);
+    expect(totals.badges).toBe(0);
+    expect(calls.some((c) => c.sql.includes("INSERT INTO bh_role_jobs"))).toBe(false);
 });
