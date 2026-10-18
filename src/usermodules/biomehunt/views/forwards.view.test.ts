@@ -274,7 +274,7 @@ test("test post allows no mentions and starts with the test line", () => {
     const t = text(post);
     expect(t.split("\n")[0]).toBe("**🧪 Test - not a real find**");
     expect(t).toContain("Pings <@&r1> on a real find.");
-    expect(t).toContain("-# Sent by <@admin1> from /bh-admin forwards. Nobody was pinged.");
+    expect(t).toContain("-# Sent by <@admin1> from /bh-admin forwarding. Nobody was pinged.");
 });
 
 test("stop forwarding removes both", async () => {

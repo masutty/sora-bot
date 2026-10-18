@@ -51,7 +51,7 @@ export default defineCommand({
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
         .addSubcommand((s) => s.setName("quotas").setDescription("Quota reward roles members earn by macroing."))
-        .addSubcommand((s) => s.setName("forwards").setDescription("Where biome finds get posted, right away and after a delay."))
+        .addSubcommand((s) => s.setName("forwarding").setDescription("Where biome finds get posted, right away and after a delay."))
         .addSubcommand((s) =>
             s.setName("settings").setDescription("Activity, status roles, macro channels, auto-delete and the live counter."),
         )
@@ -129,7 +129,7 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "forwards") {
+        if (routeKey === "forwarding") {
             await ctx.defer();
             await ctx.open(forwardsView(defaultForwardsDeps(ctx.client, ctx.guild)), undefined);
             return;

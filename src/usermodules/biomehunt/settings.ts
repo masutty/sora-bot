@@ -18,7 +18,7 @@ export const settings = {
         windowMs: 60_000,
     },
     delayedForward: {
-        /** The only delays `/bh-admin forwards` offers - past 60s a delayed ping loses its point. */
+        /** The only delays `/bh-admin forwarding` offers - past 60s a delayed ping loses its point. */
         delayChoicesS: [5, 10, 15, 20, 25, 30, 45, 60],
     },
     network: {

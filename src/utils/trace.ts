@@ -11,7 +11,7 @@ export interface TraceContext {
     ref: string;
     /** A later step of the same invocation, e.g. a View click: `"<n>:<key>"`. */
     step?: string;
-    /** `"bh balance"`, `"bh-admin forwards"`... (name + group + subcommand). */
+    /** `"bh balance"`, `"bh-admin forwarding"`... (name + group + subcommand). */
     command?: string;
     mode?: "slash" | "prefix";
     userId?: string;
