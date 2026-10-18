@@ -43,6 +43,10 @@ describe("user context menu", () => {
         });
     });
 
+    test("adminOnly hides it from non-admins", () => {
+        expect(buildSlashJson(menu({ adminOnly: true }))).toMatchObject({ default_member_permissions: "8" });
+    });
+
     test("never exists on prefix", () => {
         expect(effectiveMode(menu({ modes: "both" }), null)).toBe("slash");
         expect(isAllowed(menu(), "prefix", null)).toBe(false);

@@ -1,6 +1,7 @@
 import {
     ApplicationCommandType,
     InteractionContextType,
+    PermissionFlagsBits,
     type RESTPostAPIChatInputApplicationCommandsJSONBody,
     type RESTPostAPIContextMenuApplicationCommandsJSONBody,
     SlashCommandBuilder,
@@ -108,6 +109,8 @@ export function buildSlashJson(
     if (def.contextMenu === "user") {
         const menu: RESTPostAPIContextMenuApplicationCommandsJSONBody = { type: ApplicationCommandType.User, name: def.name };
         if (def.guildOnly) menu.contexts = [InteractionContextType.Guild];
+        // Hidden from non-admins in the Apps menu - the adminOnly guard still runs on use.
+        if (def.adminOnly) menu.default_member_permissions = String(PermissionFlagsBits.Administrator);
         return menu;
     }
     assertSubcommandModeKeys(def);

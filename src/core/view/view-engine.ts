@@ -528,6 +528,7 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
             },
             values: !run.start && e?.kind === "component" ? e.values : [],
             user: run.user,
+            isChild: inst.opener !== null,
             get raw() {
                 if (!e) throw new Error(`View "${name}": c.raw isn't available in the root's start() - no interaction opened it`);
                 return e.raw as HandlerContext<unknown, unknown>["raw"];
