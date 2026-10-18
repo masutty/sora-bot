@@ -22,7 +22,7 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
         default: false,
     },
     AUTO_DELETE_ENABLED: {
-        description: "Auto-deletes inactive members' macro channels. The hours after going inactive are set with `activity delete`.",
+        description: "Auto-deletes inactive members' macro channels. The hours after going inactive are set in `/bh-admin settings`.",
         default: false,
     },
     CLEAR_PROFILE_ON_AUTODELETE: {
