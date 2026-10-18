@@ -106,7 +106,7 @@ export async function removeCategory(guildId: string, categoryId: string): Promi
     return `Category <#${categoryId}> removed.`;
 }
 
-/** Sets all 3 status roles at once - used by the ez-setup wizard's single-screen role picker. The admin CLI sets them one at a time via `activity set-role`. */
+/** Sets all 3 status roles at once - used by the ez-setup wizard's single-screen role picker. */
 export async function setRoles(
     guildId: string,
     activeId: string | null,
@@ -131,7 +131,7 @@ export async function disableCounter(guildId: string): Promise<string> {
 export async function forceCounterUpdate(client: BotClient, guildId: string): Promise<string> {
     const guildConfig = await getOrCreateGuildConfig(guildId);
     if (!guildConfig.counter_channel_id) {
-        throw new BiomeHuntError("Live counter isn't configured for this server. Set one with `counter set`.");
+        throw new BiomeHuntError("Live counter isn't configured for this server. Set one in `/bh-admin settings`.");
     }
     await updateCounterForGuild(client, guildConfig);
     return `Live counter updated in <#${guildConfig.counter_channel_id}>.`;

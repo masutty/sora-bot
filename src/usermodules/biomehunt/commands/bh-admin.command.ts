@@ -10,23 +10,11 @@ import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
 import { getGuildFlags } from "../repository/flags.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
-import { resetActivityThresholds, setActivityRole, setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
 import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
 import { listForwards, setForward } from "../services/forward.service";
-import {
-    addCategory,
-    disableCounter,
-    forceCounterUpdate,
-    removeCategory,
-    resetConfig,
-    setAutoCreateCategories,
-    setCounterChannel,
-    showConfig,
-    testConfig,
-} from "../services/guild-config.service";
 import {
     type AdoptParams,
     clearMemberBiomes,
@@ -42,10 +30,11 @@ import {
 } from "../services/member.service";
 import { createQuota, forceQuotaEval, listQuotas, removeQuotaRole, setQuotaEvalHour } from "../services/quota.service";
 import { settings } from "../settings";
-import { type ActivityStatus, type Badge, BiomeHuntError, type QuotaRoleMode } from "../types";
+import { type Badge, BiomeHuntError, type QuotaRoleMode } from "../types";
 import { defaultFlagsDeps, flagsView } from "../views/flags.view";
 import { openProfileView } from "../views/profile.view";
 import { quotaDeleteView } from "../views/quota-delete.view";
+import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
 import { buildHistoryContainer, getSessionHistory, SESSIONS_PER_PAGE } from "../views/stats-builders";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
 
@@ -63,12 +52,6 @@ function badgeAutocompleteChoices(typed: string, sub: string | null): Array<{ na
         .slice(0, MAX_DISCORD_CHOICES)
         .map((m) => ({ name: m.display, value: m.slug }));
 }
-const STATUS_CHOICES = [
-    { name: "Active", value: "active" },
-    { name: "Idle", value: "idle" },
-    { name: "Inactive", value: "inactive" },
-];
-
 function requireBadge(slug: string | null): Badge {
     if (!slug) throw new BiomeHuntError("Missing required argument: badge");
     const badge = resolveBadgeSlug(slug);
@@ -90,6 +73,9 @@ export default defineCommand({
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
         .addSubcommand((s) =>
+            s.setName("settings").setDescription("Activity, status roles, macro channels, auto-delete and the live counter."),
+        )
+        .addSubcommand((s) =>
             s
                 .setName("profile")
                 .setDescription("View a user's BiomeHunt profile.")
@@ -100,92 +86,6 @@ export default defineCommand({
                 .setName("review-voting")
                 .setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
                 .addStringOption((o) => o.setName("id").setDescription("Vote id (shown on the forward message)").setRequired(true)),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("config")
-                .setDescription("Overall BiomeHunt configuration.")
-                .addSubcommand((s) => s.setName("show").setDescription("Show the current BiomeHunt configuration."))
-                .addSubcommand((s) => s.setName("test").setDescription("Check whether required configuration is complete."))
-                .addSubcommand((s) => s.setName("reset").setDescription("Reset all BiomeHunt configuration for this server.")),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("activity")
-                .setDescription("Activity thresholds, auto-delete, and status roles.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Set activity thresholds.")
-                        .addIntegerOption((o) =>
-                            o.setName("session_gap_minutes").setDescription("Session gap, in minutes").setRequired(true).setMinValue(1),
-                        )
-                        .addIntegerOption((o) =>
-                            o.setName("idle_minutes").setDescription("Idle threshold, in minutes").setRequired(true).setMinValue(1),
-                        )
-                        .addIntegerOption((o) =>
-                            o.setName("inactive_hours").setDescription("Inactive threshold, in hours").setRequired(true).setMinValue(1),
-                        ),
-                )
-                .addSubcommand((s) => s.setName("reset").setDescription("Reset thresholds to defaults."))
-                .addSubcommand((s) =>
-                    s
-                        .setName("delete")
-                        .setDescription(
-                            "Set the auto-delete hours-after-inactive threshold. Requires the AUTO_DELETE_ENABLED flag to be on.",
-                        )
-                        .addNumberOption((o) =>
-                            o.setName("hours").setDescription("Hours after going inactive").setRequired(true).setMinValue(0.1),
-                        ),
-                )
-                .addSubcommand((s) =>
-                    s
-                        .setName("set-role")
-                        .setDescription("Set (or unset) one status role at a time.")
-                        .addStringOption((o) =>
-                            o
-                                .setName("type")
-                                .setDescription("Status")
-                                .setRequired(true)
-                                .addChoices(...STATUS_CHOICES),
-                        )
-                        .addRoleOption((o) => o.setName("role").setDescription("Role (leave empty to unset)")),
-                ),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("categories")
-                .setDescription("Macro channel categories.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("add")
-                        .setDescription("Allow a category for macro channels.")
-                        .addChannelOption((o) =>
-                            o
-                                .setName("category")
-                                .setDescription("Category channel")
-                                .setRequired(true)
-                                .addChannelTypes(ChannelType.GuildCategory),
-                        ),
-                )
-                .addSubcommand((s) =>
-                    s
-                        .setName("remove")
-                        .setDescription("Disallow a category for macro channels.")
-                        .addChannelOption((o) =>
-                            o
-                                .setName("category")
-                                .setDescription("Category channel")
-                                .setRequired(true)
-                                .addChannelTypes(ChannelType.GuildCategory),
-                        ),
-                )
-                .addSubcommand((s) =>
-                    s
-                        .setName("auto-create")
-                        .setDescription("Toggle automatic category creation.")
-                        .addBooleanOption((o) => o.setName("enabled").setDescription("Enable or disable").setRequired(true)),
-                ),
         )
         .addSubcommandGroup((g) =>
             g
@@ -226,21 +126,6 @@ export default defineCommand({
                         .addIntegerOption((o) => o.setName("seeds").setDescription("Seeds delta (negative to take away)"))
                         .addIntegerOption((o) => o.setName("xp").setDescription("XP delta (negative to take away)")),
                 ),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("counter")
-                .setDescription("Live activity counter.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Set the live counter channel.")
-                        .addChannelOption((o) =>
-                            o.setName("channel").setDescription("Text channel").setRequired(true).addChannelTypes(ChannelType.GuildText),
-                        ),
-                )
-                .addSubcommand((s) => s.setName("disable").setDescription("Disable the live counter."))
-                .addSubcommand((s) => s.setName("force-update").setDescription("Immediately refresh the live activity counter.")),
         )
         .addSubcommandGroup((g) =>
             g
@@ -484,12 +369,6 @@ export default defineCommand({
         }
         const routeKey = group ? `${group}-${sub}` : sub;
 
-        if (routeKey === "counter-force-update") {
-            await ctx.defer();
-            await ctx.reply(toReplyPayload(await forceCounterUpdate(ctx.client, ctx.guild.id)));
-            return;
-        }
-
         if (routeKey === "session-view") {
             const member = await requireMember(ctx.args, "user");
             await ctx.defer();
@@ -526,6 +405,12 @@ export default defineCommand({
         if (routeKey === "flags") {
             await ctx.defer();
             await ctx.open(flagsView(defaultFlagsDeps), { guildId: ctx.guild.id, flags: await getGuildFlags(ctx.guild.id) });
+            return;
+        }
+
+        if (routeKey === "settings") {
+            await ctx.defer();
+            await ctx.open(settingsView(defaultSettingsDeps(ctx.client, ctx.guild)), await loadSettingsInput(ctx.guild.id));
             return;
         }
 
@@ -573,47 +458,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
     const guildId = guild.id;
 
     switch (sub) {
-        case "config-show":
-            return showConfig(guildId);
-        case "config-test":
-            return testConfig(guildId);
-        case "config-reset":
-            return resetConfig(guildId);
-        case "activity-set":
-            return setActivityThresholds(
-                guildId,
-                requireNumber(args.getInteger("session_gap_minutes"), "session_gap_minutes"),
-                requireNumber(args.getInteger("idle_minutes"), "idle_minutes"),
-                requireNumber(args.getInteger("inactive_hours"), "inactive_hours"),
-            );
-        case "activity-reset":
-            return resetActivityThresholds(guildId);
-        case "activity-delete": {
-            const hours = args.getNumber("hours");
-            if (hours === null) throw new BiomeHuntError("Missing required argument: hours");
-            return setAutoDeleteThreshold(guildId, hours);
-        }
-        case "activity-set-role": {
-            const type = args.getString("type") as ActivityStatus | null;
-            const roleId = await idOf(args.getRole("role"));
-            if (!type) throw new BiomeHuntError("Missing required argument: type");
-            return setActivityRole(guildId, type, roleId);
-        }
-        case "categories-auto-create": {
-            const enabled = args.getBoolean("enabled");
-            if (enabled === null) throw new BiomeHuntError("Missing required argument: enabled");
-            return setAutoCreateCategories(guildId, enabled);
-        }
-        case "categories-add": {
-            const id = await idOf(args.getChannel("category"));
-            if (!id) throw new BiomeHuntError("Missing required argument: category");
-            return addCategory(guildId, id);
-        }
-        case "categories-remove": {
-            const id = await idOf(args.getChannel("category"));
-            if (!id) throw new BiomeHuntError("Missing required argument: category");
-            return removeCategory(guildId, id);
-        }
         case "badges-award": {
             const id = await idOf(args.getUser("user"));
             const badge = requireBadge(args.getString("badge"));
@@ -656,13 +500,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
         }
         case "delayed-forward-list":
             return listDelayedForwards(guildId);
-        case "counter-set": {
-            const id = await idOf(args.getChannel("channel"));
-            if (!id) throw new BiomeHuntError("Missing required argument: channel");
-            return setCounterChannel(guildId, id);
-        }
-        case "counter-disable":
-            return disableCounter(guildId);
         case "quotas-create": {
             const roleId = await idOf(args.getRole("role"));
             const mode = args.getString("mode")?.toUpperCase() as QuotaRoleMode | null;
