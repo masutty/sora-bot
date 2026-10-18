@@ -55,6 +55,8 @@ export interface MemberAdminSnapshot {
     /** The `AUTO_DELETE_ENABLED` flag. */
     autoDelete: boolean;
     deleteAfterS: number;
+    /** How many sessions the member has in all. */
+    sessionTotal: number;
     /** Badge -> the role it gives. */
     badgeRoles: Record<string, string>;
 }
@@ -127,6 +129,7 @@ export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: 
                 channel: row ? { channelId: row.channel_id, createdAt: row.created_at, webhookWorking } : null,
                 autoDelete,
                 deleteAfterS: config.delete_inactive_after_s,
+                sessionTotal: data ? await countSessionsForUser(data.user.id) : 0,
                 badgeRoles: Object.fromEntries(roles.map((r) => [r.badge, r.role_id])),
             };
         },

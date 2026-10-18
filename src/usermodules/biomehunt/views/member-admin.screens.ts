@@ -363,7 +363,7 @@ function tabScreen(member: GuildMember, s: MemberAdminState, data: ProfileData, 
             if (badgePages(data) > 1) parts.push(paginationRow(kit, s.page, badgePages(data)));
             return parts;
         case "sessions":
-            parts.push(buildSessionsTabContainer(member, data, s.page), tabRow(s, kit), ...sessionRows(s, data, kit));
+            parts.push(buildSessionsTabContainer(member, data, s.page, s.sessionTotal), tabRow(s, kit), ...sessionRows(s, data, kit));
             return parts;
         default:
             parts.push(buildProfileTabContainer(member, data), adminBox(s, data, kit), tabRow(s, kit));

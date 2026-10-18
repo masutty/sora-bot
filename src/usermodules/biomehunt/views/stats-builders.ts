@@ -232,7 +232,13 @@ export function buildBadgesTabContainer(member: GuildMember, data: ProfileData):
 
 /** Container version of buildHistoryEmbed's content, for the ComponentsV2 profile view - the
  * classic embed version stays as-is for `!bh-admin member session-view`'s own pagination. */
-export function buildSessionsTabContainer(member: GuildMember, data: ProfileData, page: number): ContainerBuilder {
+export function buildSessionsTabContainer(
+    member: GuildMember,
+    data: ProfileData,
+    page: number,
+    /** All the member's sessions, when `data.sessions` (the newest 100) may be only some of them. */
+    totalSessions?: number,
+): ContainerBuilder {
     const container = baseContainer(0x5865f2);
     const { sessions, user } = data;
 
@@ -266,7 +272,11 @@ export function buildSessionsTabContainer(member: GuildMember, data: ProfileData
     container.addTextDisplayComponents((td) => td.setContent(lines.join("\n")));
 
     addDivider(container);
-    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages}, ${completed.length} total sessions`));
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            `-# Page ${page + 1} of ${pages}, ${totalSessions === undefined ? completed.length : totalSessions - (ongoing ? 1 : 0)} total sessions`,
+        ),
+    );
 
     return container;
 }

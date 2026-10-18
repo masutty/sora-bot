@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { GuildMember } from "discord.js";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
+import { NO_PINGS } from "@/utils/format";
 import { getAwardableBadges } from "../constants/badges.constants";
 import type { ResetTotals } from "../services/member.service";
 import type { ActivitySessionRow, UserRow } from "../types";
@@ -104,6 +105,7 @@ const snapshot = (over: Partial<MemberAdminSnapshot> = {}): MemberAdminSnapshot 
     channel: { channelId: "c1", createdAt: new Date("2026-09-03T00:00:00Z"), webhookWorking: true },
     autoDelete: true,
     deleteAfterS: 48 * 3600,
+    sessionTotal: 12,
     badgeRoles: { GLITCHED: "r1" },
     ...over,
 });
@@ -383,4 +385,54 @@ test("delete everything runs only on the exact name", async () => {
     await submitForm(fake, "deleteAll", { confirm: "truebnuy" });
     expect(fake.modals.at(-1)?.spec.text).toContain("Deletes their whole profile here, macro channel included.");
     expect(calls).toEqual([["deleteEverything"]]);
+});
+
+test("Take confirm is sent with no pings", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("tab:badges", OWNER));
+    const take = flatten(fake.lastPayload())
+        .find((c) => c.label === "Take")
+        ?.custom_id?.split(":")
+        .slice(-2)
+        .join(":") as string;
+    await fake.emit(fake.click(take, OWNER));
+    expect(text(fake.lastPayload())).toContain("<@u1>");
+    expect(fake.lastPayload().allowedMentions).toEqual(NO_PINGS);
+});
+
+test("sessions footer uses the fresh total", async () => {
+    const { fake } = await open(snapshot({ sessionTotal: 250 }));
+    await fake.emit(fake.click("tab:sessions", OWNER));
+    expect(text(fake.lastPayload())).toContain("Page 1 of 2, 250 total sessions");
+});
+
+test("running session is skipped by the list and the select alike", async () => {
+    const data = profile({ user: user({ current_status: "active" }), sessions: sessions(3) });
+    const { fake } = await open(snapshot({ data, sessionTotal: 3 }));
+    await fake.emit(fake.click("tab:sessions", OWNER));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("Currently macroing");
+    expect(t).not.toContain("`#4821`");
+    expect(t).toContain("2 total sessions");
+    expect(comp(fake.lastPayload(), "deleteSessions").options?.map((o) => o.value)).toEqual(["4820", "4819"]);
+});
+
+/** Counts every component the way Discord does: each nested one, plus the top-level rows and containers. */
+const countComponents = (payload: ViewPayload) => flatten(payload).length;
+
+test("the busiest screens stay within 40 components", async () => {
+    const full = profile({
+        user: user({ current_status: "active" }),
+        flowersEnabled: true,
+        flower: "PEONY",
+        badges: getAwardableBadges().map((badge) => ({ user_id: 1, badge, awarded_at: new Date() })),
+        biomes: getAwardableBadges().map((biome) => ({ biome, count: 1 })),
+        sessions: sessions(40),
+    });
+    const { fake } = await open(snapshot({ data: full, sessionTotal: 40 }));
+    expect(countComponents(fake.lastPayload())).toBeLessThanOrEqual(40);
+    for (const tab of ["biomes", "badges", "sessions"]) {
+        await fake.emit(fake.click(`tab:${tab}`, OWNER));
+        expect(countComponents(fake.lastPayload())).toBeLessThanOrEqual(40);
+    }
 });
