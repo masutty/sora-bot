@@ -141,6 +141,12 @@ export async function getRecentSessions(userId: number, limit: number): Promise<
     return result.rows;
 }
 
+/** How many sessions a user has recorded. */
+export async function countSessionsForUser(userId: number): Promise<number> {
+    const result = await query<{ count: string }>(`SELECT COUNT(*) AS count FROM bh_activity_sessions WHERE user_id = $1`, [userId]);
+    return Number(result.rows[0]?.count ?? 0);
+}
+
 /** Deletes one specific session (scoped to `userId` too, so an admin can't accidentally target another user's row by guessing an ID). Returns true iff a row was actually removed. */
 export async function deleteSessionById(userId: number, sessionId: number): Promise<boolean> {
     const result = await query(`DELETE FROM bh_activity_sessions WHERE id = $1 AND user_id = $2`, [sessionId, userId]);
