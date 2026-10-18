@@ -42,9 +42,16 @@ export async function transitionUser(userId: number, guildId: string, newStatus:
     }
 }
 
-function resolveStatus(inactiveSeconds: number, idleThresholdS: number, inactiveThresholdS: number): ActivityStatus {
-    if (inactiveSeconds < idleThresholdS) return "active";
-    if (inactiveSeconds < inactiveThresholdS) return "idle";
+/** Idle and inactive thresholds count from the end of the session: last activity plus the session gap. */
+export function resolveStatus(
+    secondsSinceLastActivity: number,
+    sessionGapS: number,
+    idleThresholdS: number,
+    inactiveThresholdS: number,
+): ActivityStatus {
+    const secondsSinceSessionEnd = secondsSinceLastActivity - sessionGapS;
+    if (secondsSinceSessionEnd < idleThresholdS) return "active";
+    if (secondsSinceSessionEnd < inactiveThresholdS) return "idle";
     return "inactive";
 }
 
@@ -67,8 +74,14 @@ async function tick(client: BotClient): Promise<void> {
         const guildConfig = await getOrCreateGuildConfig(user.guild_id);
         // A running timed biome keeps the user active; afterwards the idle threshold counts from its expected end.
         const lastActivity = effectiveLastActivity(user.last_activity_at, user.activity_grace_until) ?? user.last_activity_at;
-        const inactiveSeconds = (now - lastActivity.getTime()) / 1000;
-        const newStatus = resolveStatus(inactiveSeconds, guildConfig.idle_threshold_s, guildConfig.inactive_threshold_s);
+        const secondsSinceLastActivity = (now - lastActivity.getTime()) / 1000;
+        const secondsSinceSessionEnd = secondsSinceLastActivity - guildConfig.session_gap_threshold_s;
+        const newStatus = resolveStatus(
+            secondsSinceLastActivity,
+            guildConfig.session_gap_threshold_s,
+            guildConfig.idle_threshold_s,
+            guildConfig.inactive_threshold_s,
+        );
         const wasActive = user.current_status === "active";
 
         if (newStatus !== user.current_status) {
@@ -88,7 +101,7 @@ async function tick(client: BotClient): Promise<void> {
         const shouldDelete =
             newStatus === "inactive" &&
             user.paused_at === null &&
-            inactiveSeconds > guildConfig.inactive_threshold_s + guildConfig.delete_inactive_after_s &&
+            secondsSinceSessionEnd > guildConfig.inactive_threshold_s + guildConfig.delete_inactive_after_s &&
             (await isFlagEnabled(user.guild_id, "AUTO_DELETE_ENABLED"));
 
         if (shouldDelete) {
