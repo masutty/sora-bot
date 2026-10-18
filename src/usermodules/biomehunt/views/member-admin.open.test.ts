@@ -47,6 +47,13 @@ test("openMemberAdmin tells the admin when the user is not in this server and op
     expect(JSON.stringify(calls[1]?.[1])).toContain("That user isn't in this server.");
 });
 
+test("openMemberAdmin defers publicly and opens the panel when the member is present", async () => {
+    const { ctx, calls } = fakeCtx();
+    await openMemberAdmin({ ...ctx, client: {} as never } as CommandContext, { id: "g1" } as never, fakeMember("1"));
+    expect(calls.map(([k]) => k)).toEqual(["defer", "open"]);
+    expect(calls[0]?.[1]).toBeUndefined();
+});
+
 test("Manage member is a guild-only, admin-only user context menu", () => {
     expect(manageMember.name).toBe("Manage member");
     expect(manageMember.contextMenu).toBe("user");

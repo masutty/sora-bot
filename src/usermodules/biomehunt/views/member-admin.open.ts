@@ -18,17 +18,12 @@ export async function resolveTargetMember(args: CommandArgs, name = "user"): Pro
  * Opens the Member panel for `member`, or says the user is not in this server.
  * Shared by `/bh-admin member` and the "Manage member" user context menu.
  */
-export async function openMemberAdmin(
-    ctx: CommandContext,
-    guild: Guild,
-    member: GuildMember | null,
-    opts?: { ephemeral?: boolean },
-): Promise<void> {
+export async function openMemberAdmin(ctx: CommandContext, guild: Guild, member: GuildMember | null): Promise<void> {
     if (!member) {
         await ctx.defer({ ephemeral: true });
         await ctx.reply({ ...EmbedFormatter.info("That user isn't in this server."), allowedMentions: NO_PINGS });
         return;
     }
-    await ctx.defer(opts);
+    await ctx.defer();
     await ctx.open(memberAdminView(member, defaultMemberAdminDeps(ctx.client, guild, member)), undefined);
 }

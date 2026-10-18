@@ -128,8 +128,7 @@ function buildTabContent(state: ProfileState, member: GuildMember): ContainerBui
 /**
  * Interactive Profile/Biomes/Badges/Quotas/Sessions tabbed view - data is fetched once upfront
  * (`loadProfileData`), tab switches (and session pagination) just re-render from it. Only the
- * invoker can interact (the profile owner for `/bh profile`)
- * - default View access is "invoker".
+ * invoker can interact (the profile owner for `/bh profile`) - default View access is "invoker".
  */
 export function profileView(member: GuildMember): ViewDefinition<ProfileState, void, ProfileData> {
     return tabs<ProfileState, ProfileData>({

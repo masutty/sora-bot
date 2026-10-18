@@ -13,6 +13,6 @@ export default defineCommand({
     guildOnly: true,
 
     async run(ctx) {
-        await openMemberAdmin(ctx, ctx.guild, await resolveTargetMember(ctx.args), { ephemeral: true });
+        await openMemberAdmin(ctx, ctx.guild, await resolveTargetMember(ctx.args));
     },
 });
