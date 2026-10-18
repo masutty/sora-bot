@@ -27,6 +27,28 @@ function def(extra: Partial<CommandDefinition> = {}): CommandDefinition {
 
 const subNames = (json: ReturnType<typeof buildSlashJson>) => (json?.options ?? []).map((o) => o.name);
 
+describe("user context menu", () => {
+    const menu = (extra: Partial<CommandDefinition> = {}) =>
+        ({ name: "Manage member", description: "", contextMenu: "user", run: noop, ...extra }) as CommandDefinition;
+
+    test("registers as a user command with just its name", () => {
+        expect(buildSlashJson(menu())).toEqual({ type: 2, name: "Manage member" });
+    });
+
+    test("guildOnly limits it to servers", () => {
+        expect(buildSlashJson(menu({ guildOnly: true }) as CommandDefinition)).toEqual({
+            type: 2,
+            name: "Manage member",
+            contexts: [InteractionContextType.Guild],
+        });
+    });
+
+    test("never exists on prefix", () => {
+        expect(effectiveMode(menu({ modes: "both" }), null)).toBe("slash");
+        expect(isAllowed(menu(), "prefix", null)).toBe(false);
+    });
+});
+
 describe("selectHandler", () => {
     test("an override for the invoked mode wins over run", () => {
         expect(selectHandler(def({ run: noop, executeAsSlash: noop }), "slash")).toEqual({ kind: "override-slash" });
