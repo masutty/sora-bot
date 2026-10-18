@@ -35,8 +35,8 @@ function newContainer(): { container: ContainerBuilder; divider: () => void } {
     };
 }
 
-function backRow(kit: RenderKit): ActionRowBuilder<ButtonBuilder> {
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(kit.button("back", (b) => b.setLabel("Back")));
+function backRow(kit: RenderKit, key = "back"): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(kit.button(key, (b) => b.setLabel("Back")));
 }
 
 /** One line: bold title, the value text under it, and an accessory button. */
@@ -47,7 +47,7 @@ function addSetting(container: ContainerBuilder, title: string, value: string, b
 }
 
 function autoDeleteSummary(s: SettingsState): string {
-    const after = `\`${formatTime(s.deleteAfterS)}\``;
+    const after = `\`${formatHours(s.deleteAfterS)}\``;
     return s.autoDelete
         ? `On · removes a channel ${after} after its member goes inactive.`
         : `Off · would remove a channel ${after} after its member goes inactive.`;
@@ -92,7 +92,7 @@ function overviewScreen(s: SettingsState, kit: RenderKit): Parts {
     addSetting(
         container,
         "Activity",
-        `A session ends \`${formatTime(s.gapS)}\` after the last macro message. Idle \`${formatTime(s.idleS)}\` after a session ends, inactive after \`${formatTime(s.inactiveS)}\`.`,
+        `A session ends \`${formatTime(s.gapS)}\` after the last macro message. Idle \`${formatTime(s.idleS)}\` after a session ends, inactive after \`${formatHours(s.inactiveS)}\`.`,
         edit("edit:activity"),
     );
     divider();
@@ -130,7 +130,9 @@ function rolesScreen(s: SettingsState, kit: RenderKit): Parts {
         container.addActionRowComponents(
             kit.row(
                 kit.roleSelect(`role:${status}`, (r) => {
-                    r.setMinValues(0).setMaxValues(1).setPlaceholder(label);
+                    r.setMinValues(0)
+                        .setMaxValues(1)
+                        .setPlaceholder(status === "inactive" ? "No role" : label);
                     const current = s.roles[status];
                     return current ? r.setDefaultRoles(current) : r;
                 }),
@@ -189,7 +191,7 @@ function autoDeleteScreen(s: SettingsState, kit: RenderKit): Parts {
     addSetting(
         container,
         "After",
-        `\`${formatTime(s.deleteAfterS)}\` inactive`,
+        `\`${formatHours(s.deleteAfterS)}\` inactive`,
         kit.button("ad:after", (b) => b.setLabel("Change")),
     );
     divider();
@@ -221,7 +223,7 @@ function autoDeleteWhatScreen(s: SettingsState, kit: RenderKit): Parts {
     choice("what:unlink", "Unlink", "Removes the channel. Keeps their data. Gives the Deleted?! badge.", !s.clearProfileOnAutoDelete);
     divider();
     choice("what:wipe", "Delete everything", "Removes their whole profile.", s.clearProfileOnAutoDelete);
-    return [container, backRow(kit)];
+    return [container, backRow(kit, "back:autodelete")];
 }
 
 function counterScreen(s: SettingsState, kit: RenderKit): Parts {
@@ -244,8 +246,16 @@ function counterScreen(s: SettingsState, kit: RenderKit): Parts {
     );
     divider();
     container.addTextDisplayComponents((td) => td.setContent("-# Preview"));
+    const n = s.counts ?? { active: 0, idle: 0, inactive: 0 };
     container.addTextDisplayComponents((td) =>
-        td.setContent("**Macro Activity Counter**\n- 🟢 Active: `n`\n- 🟡 Idle: `n`\n- 🔴 Inactive: `n`"),
+        td.setContent(
+            [
+                "**Macro Activity Counter**",
+                `- 🟢 Active: \`${n.active}\``,
+                `- 🟡 Idle: \`${n.idle}\``,
+                `- 🔴 Inactive: \`${n.inactive}\``,
+            ].join("\n"),
+        ),
     );
     return [
         container,
@@ -272,4 +282,9 @@ const SCREENS: Record<Screen, (s: SettingsState, kit: RenderKit) => Parts> = {
 /** The whole message for the screen the state is on. */
 export function renderSettings(s: SettingsState, kit: RenderKit): ViewRender {
     return { flags: MessageFlags.IsComponentsV2, components: SCREENS[s.screen](s, kit), allowedMentions: NO_PINGS };
+}
+
+/** Whole hours (`72h`) when the seconds are a round number of hours, else the usual `1h 30m`. */
+export function formatHours(seconds: number): string {
+    return seconds % 3600 === 0 ? `${seconds / 3600}h` : formatTime(seconds);
 }

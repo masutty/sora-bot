@@ -2,7 +2,8 @@ import type { Guild } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineView, type HandlerContext, type ViewDefinition } from "@/define";
 import { parseDuration } from "@/utils/duration";
-import { formatTime } from "@/utils/format";
+
+import { FLAG_DEFINITIONS } from "../constants/flags.constants";
 import { getGuildFlags, setGuildFlag } from "../repository/flags.repository";
 import {
     clearCounterChannel,
@@ -18,9 +19,10 @@ import {
     updateCounterChannel,
     updateThresholds,
 } from "../repository/guilds.repository";
+import { getGuildUserCounts } from "../repository/users.repository";
 import { forceCounterUpdate } from "../services/guild-config.service";
 import type { ActivityStatus, FlagName, GuildRolesConfig } from "../types";
-import { renderSettings, STATUSES } from "./settings.screens";
+import { formatHours, renderSettings, STATUSES } from "./settings.screens";
 
 /** Defaults an empty form field falls back to - same values `resetGuildConfig` writes. */
 const DEFAULT_GAP_S = 20 * 60;
@@ -45,7 +47,11 @@ export interface SettingsDeps {
     /** False when the role is managed or not below the bot's highest role. */
     canAssignRole(roleId: string): boolean;
     reload(): Promise<SettingsInput>;
+    /** Member count per status, for the live counter preview. */
+    counts(guildId: string): Promise<StatusCounts>;
 }
+
+export type StatusCounts = Record<ActivityStatus, number>;
 
 export interface SettingsInput {
     guildId: string;
@@ -65,6 +71,8 @@ export type Screen = "home" | "roles" | "channels" | "autodelete" | "autodeleteW
 
 export interface SettingsState extends SettingsInput {
     screen: Screen;
+    /** Member counts for the live counter preview, loaded when that screen opens. */
+    counts: StatusCounts | null;
     /** Past the not-ready screen with "Show all settings". */
     showAll: boolean;
 }
@@ -112,6 +120,7 @@ export function defaultSettingsDeps(client: BotClient, guild: Guild): SettingsDe
             return me.roles.highest.comparePositionTo(role) > 0;
         },
         reload: () => loadSettingsInput(guild.id),
+        counts: getGuildUserCounts,
     };
 }
 
@@ -135,7 +144,7 @@ const goTo = (screen: Screen) => (c: Ctx) => {
 export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, void, SettingsInput> {
     return defineView<SettingsState, void, SettingsInput>({
         name: "biomehunt.settings",
-        initial: (input) => ({ ...input, screen: "home", showAll: false }),
+        initial: (input) => ({ ...input, screen: "home", showAll: false, counts: null }),
         render: renderSettings,
         on: {
             showAll: (c) => {
@@ -146,7 +155,11 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
             "edit:roles": goTo("roles"),
             "edit:channels": goTo("channels"),
             "edit:autodelete": goTo("autodelete"),
-            "edit:counter": goTo("counter"),
+            "edit:counter": async (c) => {
+                c.state.counts = await deps.counts(c.state.guildId);
+                c.state.screen = "counter";
+            },
+            "back:autodelete": goTo("autodelete"),
             "ad:what": goTo("autodeleteWhat"),
 
             "edit:activity": async (c) => {
@@ -171,7 +184,7 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
                         },
                         {
                             key: "inactive",
-                            label: "Inactive after end, hours (default 24)",
+                            label: "Inactive after session, hours (default 24)",
                             placeholder: "24",
                             required: false,
                             maxLength: 12,
@@ -231,7 +244,7 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
                         {
                             key: "after",
                             label: "Hours inactive",
-                            placeholder: formatTime(c.state.deleteAfterS),
+                            placeholder: formatHours(c.state.deleteAfterS),
                             required: true,
                             maxLength: 12,
                         },
@@ -281,7 +294,10 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
                     return;
                 }
                 await deps.resetGuildConfig(c.state.guildId);
-                Object.assign(c.state, await deps.reload(), { screen: "home", showAll: false });
+                for (const flag of ["AUTO_DELETE_ENABLED", "CLEAR_PROFILE_ON_AUTODELETE"] as const) {
+                    await deps.setGuildFlag(c.state.guildId, flag, FLAG_DEFINITIONS[flag].default);
+                }
+                Object.assign(c.state, await deps.reload(), { screen: "home", showAll: false, counts: null });
             },
         },
     });

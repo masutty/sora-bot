@@ -75,6 +75,7 @@ function fakeDeps(opts: { canAssign?: boolean; reloaded?: SettingsInput } = {}) 
         resetGuildConfig: rec("resetGuildConfig"),
         canAssignRole: () => opts.canAssign ?? true,
         reload: async () => opts.reloaded ?? baseInput(),
+        counts: async () => ({ active: 12, idle: 4, inactive: 31 }),
     };
     return { deps, calls };
 }
@@ -108,7 +109,7 @@ test("opens on not-ready when there's no category", async () => {
 test("overview shows each setting in plain words", async () => {
     const { fake } = await open(baseInput({ roles: { active: "r1", idle: null, inactive: null }, counterChannelId: "c9" }));
     const t = text(fake.lastPayload());
-    expect(t).toContain("A session ends `20m` after the last macro message. Idle `30m` after a session ends, inactive after `1d`.");
+    expect(t).toContain("A session ends `20m` after the last macro message. Idle `30m` after a session ends, inactive after `24h`.");
     expect(t).toContain("🟢 <@&r1> · 🟡 no role · 🔴 no role");
     expect(t).toContain("New channels go in <#cat1>.");
     expect(t).toContain("In <#c9>");
@@ -232,7 +233,11 @@ test("reset needs the word reset", async () => {
     expect(fake.notifies).toHaveLength(1);
 
     await submitForm(fake, "reset", { confirm: "reset" });
-    expect(calls).toEqual([["resetGuildConfig", GUILD]]);
+    expect(calls).toEqual([
+        ["resetGuildConfig", GUILD],
+        ["setGuildFlag", GUILD, "AUTO_DELETE_ENABLED", false],
+        ["setGuildFlag", GUILD, "CLEAR_PROFILE_ON_AUTODELETE", false],
+    ]);
 });
 
 test("reset reloads the settings and lands on the not-ready screen", async () => {
@@ -245,4 +250,22 @@ test("Close ends the view", async () => {
     const { fake } = await open();
     await fake.emit(fake.click("close", OWNER));
     expect(fake.closed).toBe(1);
+});
+
+test("counter screen previews the real counts", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("edit:counter", OWNER));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("Active: `12`");
+    expect(t).toContain("Idle: `4`");
+    expect(t).toContain("Inactive: `31`");
+});
+
+test("durations show as hours, and Back from What it does returns to Auto-delete", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("edit:autodelete", OWNER));
+    expect(text(fake.lastPayload())).toContain("`72h` inactive");
+    await fake.emit(fake.click("ad:what", OWNER));
+    await fake.emit(fake.click("back:autodelete", OWNER));
+    expect(text(fake.lastPayload())).toContain("**Auto-delete inactive members**");
 });
