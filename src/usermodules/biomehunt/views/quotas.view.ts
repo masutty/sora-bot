@@ -312,7 +312,7 @@ export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, 
                 c.state.evalHourUtc = hour;
             },
             checkNow: async (c) => {
-                await c.open(
+                const ran = await c.open(
                     confirm({
                         name: "biomehunt.quotas-check-now",
                         title: "Check daily rewards now?",
@@ -324,6 +324,10 @@ export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, 
                     }),
                     undefined,
                 );
+                if (!ran) return;
+                // The check grants and renews roles, so the counts shown are stale.
+                const counts = await Promise.all(c.state.quotas.map((q) => deps.countHolders(q.role_id)));
+                c.state.holders = Object.fromEntries(c.state.quotas.map((q, i) => [q.role_id, counts[i]]));
             },
         },
     });

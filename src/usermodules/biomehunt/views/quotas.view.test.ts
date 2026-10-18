@@ -54,6 +54,8 @@ const baseInput = (quotas: QuotaRoleRow[] = [DAILY, LIVE]): QuotasInput => ({
     evalHourUtc: 21,
 });
 
+let holderCount = 0;
+
 function fakeDeps(opts: { canAssign?: boolean } = {}) {
     const calls: unknown[][] = [];
     const deps: QuotasDeps = {
@@ -72,7 +74,7 @@ function fakeDeps(opts: { canAssign?: boolean } = {}) {
             calls.push(["forceQuotaEval", guildId]);
             return "Evaluated.";
         },
-        countHolders: async () => 0,
+        countHolders: async () => holderCount,
         countHitToday: async () => 9,
         canAssignRole: () => opts.canAssign ?? true,
         roleInfo: (roleId) => ({ name: `Role ${roleId}`, color: 0x112233 }),
@@ -205,4 +207,17 @@ test("delete confirm mentions the holder count, then the quota is gone", async (
     await fake.emit(fake.click("yes", OWNER));
     expect(calls).toEqual([["deleteQuotaRole", GUILD, "r1"]]);
     expect(text(fake.lastPayload())).not.toContain("<@&r1>");
+});
+
+test("check now reloads the holder counts after the check runs", async () => {
+    holderCount = 0;
+    const { fake } = await open();
+    expect(text(fake.lastPayload())).toContain("14 members have it");
+    await fake.emit(fake.click("checkNow", OWNER));
+    holderCount = 20;
+    await fake.emit(fake.click("yes", OWNER));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("20 members have it");
+    expect(t).not.toContain("14 members have it");
+    holderCount = 0;
 });
