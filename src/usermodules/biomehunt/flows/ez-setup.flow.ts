@@ -859,8 +859,7 @@ async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<Vie
 
 /**
  * `bh-admin setup`'s guided wizard - welcome, categories, activity roles, thresholds, auto-delete,
- * live counter, quota reward roles, badge roles, then biome forwards (`forwardListView`, shared
- * with the standalone `bh-admin forward menu`), ending in a `showConfig`/`isGuildReady` summary.
+ * live counter, quota reward roles, badge roles, then biome forwards (`forwardListView`), ending in a `showConfig`/`isGuildReady` summary.
  */
 export function ezSetupFlow(
     deps: EzSetupDeps,

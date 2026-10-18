@@ -425,10 +425,9 @@ on: { ...navHandlers() },
 **Two steps, one reused**: `src/usermodules/biomehunt/flows/ez-setup.flow.ts` is the canonical
 example — most of its own steps (`welcomeStep`, `categoriesStep`, ...) live right there, but its
 *last* step is `forwardListView(deps.forwards, "step")` from
-`src/usermodules/biomehunt/views/forward-list.view.ts` — the exact same View also runs **standalone**
-(`forwardListView(deps, "close")`) from `src/usermodules/biomehunt/flows/forward-config.flow.ts`'s own
-`bh-admin forward menu`. One `defineView`, two call sites, its `exit: "close" | "step"` parameter
-picking the right exit row/result type for each:
+`src/usermodules/biomehunt/views/forward-list.view.ts`. The same View can also run **standalone**
+(`forwardListView(deps, "close")`, no flow involved). Its `exit: "close" | "step"` parameter
+picks the right exit row/result type for each:
 
 ```ts
 // flows/ez-setup.flow.ts (excerpt)
@@ -439,7 +438,7 @@ return flow<EzSetupContext>({
     onFinish: (ctx) => buildSummary(ctx, deps),
 });
 
-// flows/forward-config.flow.ts - the SAME view, opened directly, no flow involved
+// the SAME view, opened directly, no flow involved
 await ctx.open(forwardListView(deps, "close"), { guildId });
 ```
 

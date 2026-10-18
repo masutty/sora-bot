@@ -340,7 +340,7 @@ export async function resolveSimulateBiomeTarget(
 
     const [forward, delayed] = await Promise.all([deps.getForwardConfig(guildId, biome), deps.getDelayedForwardConfig(guildId, biome)]);
     if (!forward && !delayed)
-        throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/bh-admin forward set\`.`);
+        throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/bh-admin forwards\`.`);
 
     const destinations = [
         ...(forward ? [`forwarded to <#${forward.channel_id}>`] : []),

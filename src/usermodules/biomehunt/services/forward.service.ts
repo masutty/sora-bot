@@ -1,15 +1,15 @@
 import type { Client, Message } from "discord.js";
-import { ContainerBuilder, MessageFlags } from "discord.js";
+import { MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
-import { formatBiomeName, getBiomeMeta, resolveBiomeSelector } from "../constants/biomes.constants";
+import { getBiomeMeta } from "../constants/biomes.constants";
 import { getBiomeCountForUser, getGuildBiomeFindStats } from "../repository/activity.repository";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
-import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
+import { getForwardConfig } from "../repository/forwards.repository";
 import { getUserById } from "../repository/users.repository";
 import { newVoteId, openVote } from "../services/biome-vote.service";
 import { scheduleDelayedForward } from "../services/delayed-forward.service";
 import { settings } from "../settings";
-import { type BiomeForwardRow, BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
+import { type BiomeForwardRow, type ParsedEvent, VoteStatus } from "../types";
 import { buildForwardContainer, type ForwardFindStats, forwardMentions } from "../views/forward-post.view";
 
 const logger = new Logger("biomehunt.services.forward");
@@ -199,51 +199,4 @@ async function sendLiveForward(
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome });
         return null;
     }
-}
-
-async function applyForward(guildId: string, selector: string, channelId: string, roleId: string | null): Promise<string> {
-    const biomes = resolveBiomeSelector(selector);
-    for (const biome of biomes) await setForwardConfig(guildId, biome, channelId, roleId);
-
-    const roleNote = roleId ? `, pinging <@&${roleId}>` : "";
-    if (biomes.length === 1) return `${formatBiomeName(biomes[0])} will now be forwarded to <#${channelId}>${roleNote}.`;
-    return `${biomes.length} biomes will now be forwarded to <#${channelId}>${roleNote}: ${biomes.map(formatBiomeName).join(", ")}.`;
-}
-
-/**
- * `channel` is optional: omitting it (with no `role` either) removes the forward instead of
- * setting it. Passing `role` without `channel` is rejected - a role ping needs a destination.
- */
-export async function setForward(guildId: string, selector: string, channelId: string | null, roleId: string | null): Promise<string> {
-    if (!channelId) {
-        if (roleId) throw new BiomeHuntError("Missing required argument: channel");
-        return removeForward(guildId, selector);
-    }
-    return applyForward(guildId, selector, channelId, roleId);
-}
-
-async function removeForward(guildId: string, selector: string): Promise<string> {
-    const biomes = resolveBiomeSelector(selector);
-    const removed: string[] = [];
-    for (const biome of biomes) {
-        if (await removeForwardConfig(guildId, biome)) removed.push(biome);
-    }
-
-    if (removed.length === 0) throw new BiomeHuntError("No matching biome forward is configured.");
-    if (removed.length === 1) return `Forward for ${formatBiomeName(removed[0])} removed.`;
-    return `Removed ${removed.length} biome forward(s): ${removed.map(formatBiomeName).join(", ")}.`;
-}
-
-export async function listForwards(guildId: string): Promise<ContainerBuilder> {
-    const forwards = await getForwardConfigs(guildId);
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-
-    if (forwards.length === 0) {
-        container.addTextDisplayComponents((td) => td.setContent("**Biome Forwards**\nNo biome forwards configured yet."));
-        return container;
-    }
-
-    const lines = forwards.map((f) => `${formatBiomeName(f.biome)} - <#${f.channel_id}>${f.role_id ? ` (pings <@&${f.role_id}>)` : ""}`);
-    container.addTextDisplayComponents((td) => td.setContent(`**Biome Forwards**\n${lines.join("\n")}`));
-    return container;
 }

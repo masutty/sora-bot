@@ -7,13 +7,10 @@ import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { getAwardableBadges, getBadgeMeta, getBiomeBadges, resolveBadgeSlug } from "../constants/badges.constants";
 import { biomeAutocompleteChoices, MAX_DISCORD_CHOICES } from "../constants/biomes.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
-import { runDelayedForwardConfigFlow, runForwardConfigFlow } from "../flows/forward-config.flow";
 import { getGuildFlags } from "../repository/flags.repository";
 import { clearActivitySessions, deleteActivitySession } from "../services/activity-session.service";
 import { awardBadge, listBadges, setBadges, takeBadge } from "../services/badge.service";
-import { listDelayedForwards, setDelayedForward } from "../services/delayed-forward.service";
 import { grantEconomy } from "../services/economy.service";
-import { listForwards, setForward } from "../services/forward.service";
 import {
     type AdoptParams,
     clearMemberBiomes,
@@ -27,9 +24,9 @@ import {
     unlinkMember,
     unpauseMember,
 } from "../services/member.service";
-import { settings } from "../settings";
 import { type Badge, BiomeHuntError } from "../types";
 import { defaultFlagsDeps, flagsView } from "../views/flags.view";
+import { defaultForwardsDeps, forwardsView } from "../views/forwards.view";
 import { openProfileView } from "../views/profile.view";
 import { defaultQuotasDeps, loadQuotasInput, quotasView } from "../views/quotas.view";
 import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
@@ -71,6 +68,7 @@ export default defineCommand({
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
         .addSubcommand((s) => s.setName("quotas").setDescription("Quota reward roles members earn by macroing."))
+        .addSubcommand((s) => s.setName("forwards").setDescription("Where biome finds get posted, right away and after a delay."))
         .addSubcommand((s) =>
             s.setName("settings").setDescription("Activity, status roles, macro channels, auto-delete and the live counter."),
         )
@@ -229,52 +227,6 @@ export default defineCommand({
                         .addUserOption((o) => o.setName("user").setDescription("Target user").setRequired(true))
                         .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true)),
                 ),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("forward")
-                .setDescription("Forward detected biomes to a channel.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Forward a biome to a channel, optionally pinging a role. Omit channel to remove the forward.")
-                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
-                        .addChannelOption((o) =>
-                            o
-                                .setName("channel")
-                                .setDescription("Destination channel (omit to remove the forward)")
-                                .addChannelTypes(ChannelType.GuildText),
-                        )
-                        .addRoleOption((o) => o.setName("role").setDescription("Role to ping (optional, requires channel)")),
-                )
-                .addSubcommand((s) => s.setName("list").setDescription("List all configured biome forwards."))
-                .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove biome forwards.")),
-        )
-        .addSubcommandGroup((g) =>
-            g
-                .setName("delayed-forward")
-                .setDescription("Forward detected biomes to a channel after a delay.")
-                .addSubcommand((s) =>
-                    s
-                        .setName("set")
-                        .setDescription("Delay-forward a biome to a channel, optionally pinging a role. Omit channel to remove it.")
-                        .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true))
-                        .addChannelOption((o) =>
-                            o
-                                .setName("channel")
-                                .setDescription("Destination channel (omit to remove the delayed forward)")
-                                .addChannelTypes(ChannelType.GuildText),
-                        )
-                        .addIntegerOption((o) =>
-                            o
-                                .setName("delay")
-                                .setDescription("Seconds to wait after the find (required with channel)")
-                                .addChoices(...settings.delayedForward.delayChoicesS.map((d) => ({ name: `${d}s`, value: d }))),
-                        )
-                        .addRoleOption((o) => o.setName("role").setDescription("Role to ping (optional, requires channel)")),
-                )
-                .addSubcommand((s) => s.setName("list").setDescription("List all configured delayed biome forwards."))
-                .addSubcommand((s) => s.setName("menu").setDescription("Interactive menu to add or remove delayed biome forwards.")),
         ),
 
     // Biome options autocomplete from the live registry - fixed choices can't follow `/bh-owner biome` changes and cap at 25.
@@ -283,29 +235,16 @@ export default defineCommand({
         if (focused.name === "badge")
             return interaction.respond(badgeAutocompleteChoices(focused.value, interaction.options.getSubcommand(false)));
         if (focused.name !== "biome") return interaction.respond([]);
-        const group = interaction.options.getSubcommandGroup(false);
-        const forward = group === "forward" || group === "delayed-forward";
-        // Forwards take ALL/CAT: shortcuts and only live biomes; member corrections can also target a disabled biome's old finds.
-        await interaction.respond(biomeAutocompleteChoices(focused.value, forward ? { selectors: true } : { which: "all" }));
+        // Member corrections can also target a disabled biome's old finds.
+        await interaction.respond(biomeAutocompleteChoices(focused.value, { which: "all" }));
     },
 
     async run(ctx) {
         const group = ctx.args.getSubcommandGroup();
         const sub = ctx.args.getSubcommand();
 
-        // onMissingSubcommand: "run" - a bare `!bh-admin forward` / `delayed-forward` opens its menu; any other
-        // missing/unknown subcommand gets the framework's usage.
+        // onMissingSubcommand: "run" - a missing/unknown subcommand gets the framework's usage.
         if (!sub) {
-            // Only a truly bare `forward` opens the menu - `forward lst` (a typo) gets the usage.
-            const nothingAfterGroup = ctx.raw.kind === "prefix" && ctx.raw.args.getRawArgs().length === 0;
-            if (group === "forward" && nothingAfterGroup) {
-                await runForwardConfigFlow(ctx, ctx.guild.id);
-                return;
-            }
-            if (group === "delayed-forward" && nothingAfterGroup) {
-                await runDelayedForwardConfigFlow(ctx, ctx.guild.id);
-                return;
-            }
             await ctx.replyUsage();
             return;
         }
@@ -351,21 +290,15 @@ export default defineCommand({
             return;
         }
 
+        if (routeKey === "forwards") {
+            await ctx.defer();
+            await ctx.open(forwardsView(defaultForwardsDeps(ctx.client, ctx.guild)), undefined);
+            return;
+        }
+
         if (routeKey === "setup") {
             await ctx.defer();
             await runEzSetupFlow(ctx, ctx.guild.id);
-            return;
-        }
-
-        if (routeKey === "forward-menu") {
-            await ctx.defer();
-            await runForwardConfigFlow(ctx, ctx.guild.id);
-            return;
-        }
-
-        if (routeKey === "delayed-forward-menu") {
-            await ctx.defer();
-            await runDelayedForwardConfigFlow(ctx, ctx.guild.id);
             return;
         }
 
@@ -414,24 +347,6 @@ async function runSubcommand(sub: string, guild: Guild, client: BotClient, args:
             if (!id) throw new BiomeHuntError("Missing required argument: user");
             return grantEconomy(guildId, id, args.getInteger("seeds"), args.getInteger("xp"));
         }
-        case "forward-set": {
-            const biome = args.getString("biome");
-            const channelId = await idOf(args.getChannel("channel"));
-            const roleId = await idOf(args.getRole("role"));
-            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
-            return setForward(guildId, biome, channelId, roleId);
-        }
-        case "forward-list":
-            return listForwards(guildId);
-        case "delayed-forward-set": {
-            const biome = args.getString("biome");
-            const channelId = await idOf(args.getChannel("channel"));
-            const roleId = await idOf(args.getRole("role"));
-            if (!biome) throw new BiomeHuntError("Missing required argument: biome");
-            return setDelayedForward(guildId, biome, channelId, roleId, args.getInteger("delay"));
-        }
-        case "delayed-forward-list":
-            return listDelayedForwards(guildId);
         case "session-delete": {
             const id = await idOf(args.getUser("user"));
             const sessionId = args.getInteger("session_id");

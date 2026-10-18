@@ -1,13 +1,12 @@
 import type { Client } from "discord.js";
-import { ContainerBuilder, MessageFlags } from "discord.js";
+import { MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { formatBiomeName, getBiomeMeta, resolveBiomeSelector } from "../constants/biomes.constants";
 import { eventExists } from "../repository/activity.repository";
-import { getDelayedForwardConfigs, removeDelayedForwardConfig, setDelayedForwardConfig } from "../repository/delayed-forwards.repository";
+import { removeDelayedForwardConfig, setDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getVoteById } from "../repository/votes.repository";
 import { settings } from "../settings";
 import { type BiomeDelayedForwardRow, BiomeHuntError, VoteStatus } from "../types";
-import { formatForwardLine } from "../views/forward-list.view";
 import { buildForwardContainer, type ForwardFindStats, forwardMentions } from "../views/forward-post.view";
 
 const logger = new Logger("biomehunt.services.delayed-forward");
@@ -100,7 +99,7 @@ function requireValidDelay(delayS: number | null): number {
 }
 
 /**
- * Same contract as `setForward`: omitting `channel` (with no `role`/`delay` either) removes the
+ * Omitting `channel` (with no `role`/`delay` either) removes the
  * delayed forward instead. Setting one requires a delay.
  */
 export async function setDelayedForward(
@@ -138,12 +137,4 @@ async function removeDelayedForward(guildId: string, selector: string): Promise<
     if (removed.length === 0) throw new BiomeHuntError("No matching delayed biome forward is configured.");
     if (removed.length === 1) return `Delayed forward for ${formatBiomeName(removed[0])} removed.`;
     return `Removed ${removed.length} delayed biome forward(s): ${removed.map(formatBiomeName).join(", ")}.`;
-}
-
-export async function listDelayedForwards(guildId: string): Promise<ContainerBuilder> {
-    const forwards = await getDelayedForwardConfigs(guildId);
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    const body = forwards.length === 0 ? "No delayed biome forwards configured yet." : forwards.map(formatForwardLine).join("\n");
-    container.addTextDisplayComponents((td) => td.setContent(`**Delayed Biome Forwards**\n${body}`));
-    return container;
 }
