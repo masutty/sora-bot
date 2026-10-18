@@ -24,18 +24,27 @@ function componentEvent(i: MessageComponentInteraction | ModalSubmitInteraction)
     return { kind: "component", customId: i.customId, userId: i.user.id, values, raw: i };
 }
 
-function buildModal(spec: ModalSpec, customId: string): ModalBuilder {
+/**
+ * `spec.text` goes first as a TextDisplay; the fields then use Label components, since the
+ * builders don't allow the old action-row inputs next to the new components. Without `text` the
+ * modal is built the old way - submits read the same either way (`getTextInputValue`).
+ */
+export function buildModal(spec: ModalSpec, customId: string): ModalBuilder {
     const modal = new ModalBuilder().setCustomId(customId).setTitle(spec.title);
+    if (spec.text) modal.addTextDisplayComponents((td) => td.setContent(spec.text as string));
     for (const f of spec.fields) {
         const input = new TextInputBuilder()
             .setCustomId(f.key)
-            .setLabel(f.label)
             .setStyle(f.style === "paragraph" ? TextInputStyle.Paragraph : TextInputStyle.Short)
             .setRequired(f.required ?? true);
         if (f.value !== undefined) input.setValue(f.value);
         if (f.placeholder !== undefined) input.setPlaceholder(f.placeholder);
         if (f.maxLength !== undefined) input.setMaxLength(f.maxLength);
-        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+        if (spec.text) {
+            modal.addLabelComponents((label) => label.setLabel(f.label).setTextInputComponent(input));
+        } else {
+            modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input.setLabel(f.label)));
+        }
     }
     return modal;
 }

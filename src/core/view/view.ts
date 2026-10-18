@@ -40,6 +40,8 @@ export interface RenderKit {
 
 export interface ModalSpec {
     title: string;
+    /** Markdown shown above the fields - e.g. what submitting does. A modal still needs at least one field. */
+    text?: string;
     fields: Array<{
         key: string;
         label: string;
