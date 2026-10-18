@@ -136,6 +136,8 @@ interface RerollState {
     phase: "confirming" | "found" | "losing" | "done";
     flower: string | null;
     seeds: number;
+    /** Paid searches made this session - shown on the kept card. */
+    searches: number;
     /** Ansi banner lines for a very rare find (flavor picked when drawn) - `null` otherwise. */
     banner: { rarity: VeryRareRarity; flavor: string } | null;
     /** When the idle auto-apply fires (ms epoch). Refreshed by every handler, since the idle
@@ -199,8 +201,8 @@ function rarityOf(flower: string | null): FlowerRarity | null {
     return flower ? (FLOWER_META[flower]?.rarity ?? null) : null;
 }
 
-function keptTimestamp(state: RerollState): string {
-    return `⏳ Kept <t:${Math.floor(state.deadline / 1000)}:R>`;
+function foundFooter(state: RerollState): string {
+    return `⏳ Kept <t:${Math.floor(state.deadline / 1000)}:R>\nYou have \`${state.seeds.toLocaleString("en-US")} 🌱\` left.`;
 }
 
 function render(state: RerollState, kit: RenderKit): ViewPayload {
@@ -224,7 +226,7 @@ function render(state: RerollState, kit: RenderKit): ViewPayload {
     const losing = state.phase === "losing";
     return buildCard(state, {
         second: odds,
-        footer: losing ? `**Search again and lose your ${label}?**\n${keptTimestamp(state)}` : keptTimestamp(state),
+        footer: losing ? `**Search again and lose your ${label}?**\n${foundFooter(state)}` : foundFooter(state),
         buttons: kit.row(
             kit.button("again", (b) =>
                 b
@@ -242,10 +244,12 @@ function keptPayload(state: RerollState): ViewPayload {
     const rarity = rarityOf(state.flower);
     // A very rare find keeps its odds (and banner) on the kept card; the rest show the rarity only.
     const second = rarity ? (state.banner ? `${capitalize(rarity)} · 1 in ${rarityOneIn(rarity)}` : capitalize(rarity)) : "";
-    return buildCard(state, {
-        second,
-        footer: `🌱 You decided to keep your **${currentLabel(state.flower)}**.`,
-    });
+    const keep = `you decided to keep your **${currentLabel(state.flower)}**.`;
+    const footer =
+        state.searches > 0
+            ? `🌱 After ${state.searches} ${state.searches === 1 ? "search" : "searches"}, ${keep}`
+            : `🌱 ${capitalize(keep)}`;
+    return buildCard(state, { second, footer });
 }
 
 /** Restarts the shown deadline - called by every handler that leaves the View open, since the
@@ -260,6 +264,7 @@ async function search(state: RerollState, deps: RerollDeps): Promise<boolean> {
     const spent = await deps.spendSeeds();
     state.seeds = spent.seeds;
     if (!spent.ok) return false;
+    state.searches++;
     state.flower = deps.drawFlower();
     const rarity = veryRareRarity(state.flower);
     state.banner = rarity ? { rarity, flavor: deps.pick(FIND_BANNERS[rarity].flavors) } : null;
@@ -306,6 +311,7 @@ export function rerollView(deps: RerollDeps): ViewDefinition<RerollState, void, 
             phase: "confirming",
             flower: input.flower,
             seeds: input.seeds,
+            searches: 0,
             banner: null,
             deadline: deps.now() + settings.ui.rerollIdleMs,
             applying: false,

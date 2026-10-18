@@ -148,7 +148,7 @@ test("reroll: search, search again, keep - spends per draw and applies once", as
     let t = text(fake.lastPayload());
     expect(t).toContain("## Poppy");
     expect(t).toContain("Common · 1 in 2");
-    expect(t).toContain(`⏳ Kept ${DEADLINE}`);
+    expect(t).toContain(`⏳ Kept ${DEADLINE}\nYou have \`150 🌱\` left.`);
     expect(t).not.toContain("Roll #");
     expect(comp(fake.lastPayload(), "again").style).toBe(1);
     expect(applyCalls.length).toBe(0);
@@ -157,10 +157,11 @@ test("reroll: search, search again, keep - spends per draw and applies once", as
     t = text(fake.lastPayload());
     expect(t).toContain("## Rose Bush");
     expect(t).toContain("Uncommon · 1 in 4");
+    expect(t).toContain("You have `100 🌱` left.");
 
     await fake.emit(fake.click("apply", OWNER));
     expect(applyCalls).toEqual(["ROSE_BUSH"]);
-    expect(text(fake.lastPayload())).toContain("🌱 You decided to keep your **Rose Bush**.");
+    expect(text(fake.lastPayload())).toContain("🌱 After 2 searches, you decided to keep your **Rose Bush**.");
     expect(await resultP).toBeUndefined();
 });
 
@@ -192,7 +193,13 @@ test("reroll: idle timeout after a find auto-applies it exactly once", async () 
 
     expect(await resultP).toBeUndefined();
     expect(applyCalls).toEqual(["POPPY"]);
-    expect(text(fake.lastPayload())).toContain("🌱 You decided to keep your **Poppy**.");
+    expect(text(fake.lastPayload())).toContain("🌱 After 1 search, you decided to keep your **Poppy**.");
+});
+
+test("reroll: Seeds left use thousands separators", async () => {
+    const { fake } = await open(2_000, "DANDELION");
+    await fake.emit(fake.click("confirm", OWNER));
+    expect(text(fake.lastPayload())).toContain("You have `1,950 🌱` left.");
 });
 
 test("reroll: a find that can't afford another search disables Search again", async () => {
@@ -252,7 +259,7 @@ test("reroll: Search again on a very rare find asks first - Keep applies it", as
     expect(spend.count).toBe(1);
     const t = text(fake.lastPayload());
     expect(t).toContain("**Search again and lose your Wither Rose?**");
-    expect(t).toContain(`⏳ Kept ${DEADLINE}`);
+    expect(t).toContain(`⏳ Kept ${DEADLINE}\nYou have \`150 🌱\` left.`);
     expect(t).toContain("LEGENDARY FIND");
     expect(comp(fake.lastPayload(), "again").style).toBe(4);
 
