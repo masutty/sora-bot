@@ -503,4 +503,7 @@ END $$;
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_until TIMESTAMPTZ;
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_biome VARCHAR(40);
 
+/* Daily rewards (mode F) are always a 24h window - fixes rows stored with another window. */
+UPDATE bh_quota_roles SET quota_window_hours = 24 WHERE mode = 'F' AND quota_window_hours <> 24;
+
 `;

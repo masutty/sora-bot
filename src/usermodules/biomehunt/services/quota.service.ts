@@ -5,6 +5,9 @@ import { deleteQuotaRole, getQuotaRolesForGuild, upsertQuotaRole } from "../repo
 import { BiomeHuntError, type QuotaRoleMode, type QuotaRoleRow } from "../types";
 import { evaluateFixedRewardsForGuild } from "./reward.service";
 
+/* Fixed mode is a daily reward, so its window is always 24h. */
+const DAILY_WINDOW_HOURS = 24;
+
 function formatQuotaRoleLine(r: QuotaRoleRow): string {
     const modeLabel = r.mode === "F" ? "Fixed" : "Rolling Window";
     const durationNote = r.mode === "F" ? `, ${r.access_duration_days}d access` : "";
@@ -32,11 +35,12 @@ export async function createQuota(
         throw new BiomeHuntError("access_duration_days isn't used in RW mode - omit it.");
     }
 
-    await upsertQuotaRole(guildId, roleId, mode, Math.round(quotaHours * 3600), quotaWindowHours, mode === "F" ? accessDurationDays : null);
+    const windowHours = mode === "F" ? DAILY_WINDOW_HOURS : quotaWindowHours;
+    await upsertQuotaRole(guildId, roleId, mode, Math.round(quotaHours * 3600), windowHours, mode === "F" ? accessDurationDays : null);
 
     const modeLabel = mode === "F" ? "Fixed" : "Rolling Window";
     const durationNote = mode === "F" ? `, ${accessDurationDays} day(s) access` : "";
-    return `Quota role <@&${roleId}> created: ${modeLabel} mode, ${quotaHours}h within a ${quotaWindowHours}h window${durationNote}.`;
+    return `Quota role <@&${roleId}> created: ${modeLabel} mode, ${quotaHours}h within a ${windowHours}h window${durationNote}.`;
 }
 
 export async function removeQuotaRole(guildId: string, roleId: string): Promise<string> {
