@@ -125,7 +125,7 @@ export async function adoptMacroChannel(
 ): Promise<MacroChannelResult> {
     const { ready } = await isGuildReady(guild.id);
     if (!ready) {
-        throw new BiomeHuntError("This server isn't fully configured yet - set up categories and status roles first.");
+        throw new BiomeHuntError("This server isn't fully configured yet - set up the macro channel categories first.");
     }
 
     const user = await ensureUser(guild.id, member.id);

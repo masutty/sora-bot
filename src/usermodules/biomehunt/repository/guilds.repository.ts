@@ -143,7 +143,7 @@ export async function getGuildRoles(guildId: string): Promise<GuildRolesConfig> 
     return roles;
 }
 
-export async function setGuildRoles(guildId: string, active: string, idle: string, inactive: string): Promise<void> {
+export async function setGuildRoles(guildId: string, active: string | null, idle: string | null, inactive: string | null): Promise<void> {
     await query(
         `INSERT INTO bh_guild_roles (guild_id, active_role_id, idle_role_id, inactive_role_id)
          VALUES ($1, $2, $3, $4)
@@ -174,13 +174,12 @@ export async function setGuildRoleForStatus(guildId: string, status: ActivitySta
     invalidate(guildId);
 }
 
-export async function isGuildReady(guildId: string): Promise<{ ready: boolean; hasCategory: boolean; hasRoles: boolean }> {
+export async function isGuildReady(guildId: string): Promise<{ ready: boolean; hasCategory: boolean }> {
     await getOrCreateGuildConfig(guildId);
     const categories = await getEnabledCategories(guildId);
-    const roles = await getGuildRoles(guildId);
     const hasCategory = categories.length > 0;
-    const hasRoles = Boolean(roles.active && roles.idle && roles.inactive);
-    return { ready: hasCategory && hasRoles, hasCategory, hasRoles };
+    // Status roles are optional: the status worker skips a status with no role.
+    return { ready: hasCategory, hasCategory };
 }
 
 export interface StaleGuildSummary {

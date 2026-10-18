@@ -224,10 +224,13 @@ interface RolesState {
 }
 
 async function maybeSaveRoles(c: HandlerContext<RolesState, StepResult>, deps: EzSetupDeps): Promise<void> {
-    const { active, idle, inactive, guildId } = c.state;
-    if (!active || !idle || !inactive) return;
+    const { guildId } = c.state;
+    // Each status is optional: save what is picked now, and finish the step once all three are set.
+    const active = c.state.active ?? c.state.currentActive;
+    const idle = c.state.idle ?? c.state.currentIdle;
+    const inactive = c.state.inactive ?? c.state.currentInactive;
     await deps.setRoles(guildId, active, idle, inactive);
-    c.done({ kind: "ok" });
+    if (active && idle && inactive) c.done({ kind: "ok" });
 }
 
 function rolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
@@ -837,7 +840,7 @@ async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<Vie
             1,
             0,
             new TextDisplayBuilder().setContent(
-                `**Setup Status**\n${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\n${readiness.hasRoles ? "✅" : "❌"} All 3 status roles configured`,
+                `**Setup Status**\n${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\nℹ️ Status roles are optional`,
             ),
         )
         .addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small))

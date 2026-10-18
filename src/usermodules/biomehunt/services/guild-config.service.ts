@@ -107,9 +107,15 @@ export async function removeCategory(guildId: string, categoryId: string): Promi
 }
 
 /** Sets all 3 status roles at once - used by the ez-setup wizard's single-screen role picker. The admin CLI sets them one at a time via `activity set-role`. */
-export async function setRoles(guildId: string, activeId: string, idleId: string, inactiveId: string): Promise<string> {
+export async function setRoles(
+    guildId: string,
+    activeId: string | null,
+    idleId: string | null,
+    inactiveId: string | null,
+): Promise<string> {
     await setGuildRoles(guildId, activeId, idleId, inactiveId);
-    return `Roles updated: active <@&${activeId}>, idle <@&${idleId}>, inactive <@&${inactiveId}>.`;
+    const show = (id: string | null) => (id ? `<@&${id}>` : "none");
+    return `Roles updated: active ${show(activeId)}, idle ${show(idleId)}, inactive ${show(inactiveId)}.`;
 }
 
 export async function setCounterChannel(guildId: string, channelId: string): Promise<string> {
@@ -132,13 +138,14 @@ export async function forceCounterUpdate(client: BotClient, guildId: string): Pr
 }
 
 export async function testConfig(guildId: string): Promise<ContainerBuilder> {
-    const { hasCategory, hasRoles } = await isGuildReady(guildId);
+    const { ready, hasCategory } = await isGuildReady(guildId);
     const config = await getOrCreateGuildConfig(guildId);
-    const ready = hasCategory && hasRoles;
+    const roles = await getGuildRoles(guildId);
+    const rolesSet = [roles.active, roles.idle, roles.inactive].filter(Boolean).length;
 
     const lines = [
         `${hasCategory ? "✅" : "❌"} At least one enabled category`,
-        `${hasRoles ? "✅" : "❌"} All 3 status roles configured`,
+        `ℹ️ Status roles: ${rolesSet}/3 set (optional)`,
         `✅ Thresholds: gap=${formatTime(config.session_gap_threshold_s)} idle=${formatTime(config.idle_threshold_s)} inactive=${formatTime(config.inactive_threshold_s)}`,
         `ℹ️ Live counter: ${config.counter_channel_id ? "enabled (optional)" : "disabled (optional)"}`,
     ];
