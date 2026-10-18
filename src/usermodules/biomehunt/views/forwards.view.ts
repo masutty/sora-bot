@@ -135,6 +135,27 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
 
     // --- Editor: each select saves on change ---
 
+    /** Asks before a cleared channel select removes a forward; Cancel leaves everything as it was. */
+    async function confirmClear(c: Ctx, title: string, remove: () => Promise<void>): Promise<void> {
+        const removed = await c.open(
+            confirm({
+                name: "biomehunt.forwards-clear",
+                title,
+                body: "",
+                color: RED,
+                confirmLabel: "Stop forwarding",
+                confirmStyle: ButtonStyle.Danger,
+                cancelStyle: ButtonStyle.Secondary,
+                onConfirm: async () => {
+                    await remove();
+                    return EmbedFormatter.success("Stopped.");
+                },
+            }),
+            undefined,
+        );
+        if (removed) await reload(c.state);
+    }
+
     async function setNow(c: Ctx, patch: { channelId?: string | null; roleId?: string | null }): Promise<void> {
         const { biome } = c.state;
         if (!biome) return;
@@ -145,7 +166,8 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
                 await c.notify("Pick the channel first.");
                 return;
             }
-            await deps.removeForward(biome);
+            if (current) await confirmClear(c, `Stop forwarding ${formatBiomeName(biome)} now?`, () => deps.removeForward(biome));
+            return;
         } else {
             const roleId = patch.roleId === undefined ? (current?.role_id ?? null) : patch.roleId;
             await deps.setForward(biome, channelId, roleId);
@@ -163,7 +185,10 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
                 await c.notify("Pick the delayed channel first.");
                 return;
             }
-            await deps.removeDelayed(biome);
+            if (current) {
+                await confirmClear(c, `Stop the delayed forward for ${formatBiomeName(biome)}?`, () => deps.removeDelayed(biome));
+            }
+            return;
         } else {
             const roleId = patch.roleId === undefined ? (current?.role_id ?? null) : patch.roleId;
             await deps.setDelayed(biome, channelId, roleId, patch.delayS ?? current?.delay_s ?? DEFAULT_DELAY_S);
@@ -217,72 +242,70 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
 
     // --- Set for all ---
 
-    /** What the draft would overwrite with a different value, from a fresh read: one line per biome. */
-    async function overwriteLines(s: ForwardsState): Promise<string[]> {
-        const d = s.all;
-        const { now, late } = await freshRows();
-        const nowByBiome = byBiome(now);
-        const lateByBiome = byBiome(late);
-        const delay = draftDelay(d);
-        const lines: string[] = [];
-        for (const biome of tabBiomes(s.tab)) {
-            const name = formatBiomeName(biome);
-            const cur = nowByBiome[biome];
-            if (d.channelId && cur && cur.channel_id !== d.channelId) {
-                lines.push(`**Now:** ${name} is currently forwarding to <#${cur.channel_id}>.`);
-            }
-        }
-        if (s.tab === "rare") {
-            for (const biome of tabBiomes(s.tab)) {
-                const cur = lateByBiome[biome];
-                if (!cur) continue;
-                const channelDiffers = d.lateChannelId !== null && cur.channel_id !== d.lateChannelId;
-                const delayDiffers = delay !== null && cur.delay_s !== delay;
-                if (channelDiffers || delayDiffers) {
-                    lines.push(
-                        `**After a delay:** ${formatBiomeName(biome)} is currently forwarding to <#${cur.channel_id}> after ${cur.delay_s}s.`,
-                    );
-                }
-            }
-        }
-        return lines;
+    interface AllWrite {
+        kind: "now" | "late";
+        biome: string;
+        channelId: string;
+        roleId: string | null;
+        delayS: number;
     }
 
-    /** Writes the draft to every biome of the tab. Each biome keeps its own Now ping. */
-    async function applyAll(s: ForwardsState): Promise<void> {
+    /**
+     * What "Set for all" would change, from a fresh read: the writes (only those that differ from what is
+     * stored) and one line per value they would overwrite. Each biome keeps its own Now ping.
+     */
+    async function planAll(s: ForwardsState): Promise<{ writes: AllWrite[]; lines: string[] }> {
         const d = s.all;
         const { now, late } = await freshRows();
         const nowByBiome = byBiome(now);
         const lateByBiome = byBiome(late);
         const delay = draftDelay(d);
+        const writes: AllWrite[] = [];
+        const lines: string[] = [];
+        const pings = (roleId: string | null) => (roleId ? `<@&${roleId}>` : "nobody");
         for (const biome of tabBiomes(s.tab)) {
-            const nowRole = nowByBiome[biome]?.role_id ?? null;
-            if (d.channelId) await deps.setForward(biome, d.channelId, nowRole);
+            const name = formatBiomeName(biome);
+            const curNow = nowByBiome[biome];
+            const nowRole = curNow?.role_id ?? null;
+            if (d.channelId && curNow?.channel_id !== d.channelId) {
+                writes.push({ kind: "now", biome, channelId: d.channelId, roleId: nowRole, delayS: 0 });
+                if (curNow) lines.push(`**Now:** ${name} is currently forwarding to <#${curNow.channel_id}>.`);
+            }
             if (s.tab !== "rare") continue;
             const cur = lateByBiome[biome];
             const channelId = d.lateChannelId ?? cur?.channel_id;
             const touched = d.lateChannelId !== null || delay !== null || (d.copyPings && cur !== undefined);
             if (!channelId || !touched) continue;
-            await deps.setDelayed(
-                biome,
-                channelId,
-                d.copyPings ? nowRole : (cur?.role_id ?? null),
-                delay ?? cur?.delay_s ?? DEFAULT_DELAY_S,
-            );
+            const roleId = d.copyPings ? nowRole : (cur?.role_id ?? null);
+            const delayS = delay ?? cur?.delay_s ?? DEFAULT_DELAY_S;
+            if (cur && cur.channel_id === channelId && cur.role_id === roleId && cur.delay_s === delayS) continue;
+            writes.push({ kind: "late", biome, channelId, roleId, delayS });
+            if (!cur) continue;
+            if (cur.channel_id !== channelId || cur.delay_s !== delayS) {
+                lines.push(`**After a delay:** ${name} is currently forwarding to <#${cur.channel_id}> after ${cur.delay_s}s.`);
+            }
+            if (cur.role_id !== roleId) lines.push(`**After a delay:** ${name} pings ${pings(roleId)} instead of ${pings(cur.role_id)}.`);
+        }
+        return { writes, lines };
+    }
+
+    async function applyWrites(s: ForwardsState, writes: AllWrite[]): Promise<void> {
+        for (const w of writes) {
+            if (w.kind === "now") await deps.setForward(w.biome, w.channelId, w.roleId);
+            else await deps.setDelayed(w.biome, w.channelId, w.roleId, w.delayS);
         }
         await reload(s);
     }
 
     const apply = async (c: Ctx) => {
         const { state } = c;
-        const d = state.all;
-        if (!d.channelId && !d.lateChannelId && d.delayS === null && !d.copyPings) {
-            await c.notify("Pick a channel first.");
+        const { writes, lines } = await planAll(state);
+        if (writes.length === 0) {
+            await c.notify("Nothing to change.");
             return;
         }
-        const lines = await overwriteLines(state);
         if (lines.length === 0) {
-            await applyAll(state);
+            await applyWrites(state, writes);
             state.screen = "list";
             return;
         }
@@ -297,7 +320,7 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
                 confirmStyle: ButtonStyle.Primary,
                 cancelStyle: ButtonStyle.Secondary,
                 onConfirm: async () => {
-                    await applyAll(state);
+                    await applyWrites(state, writes);
                     return EmbedFormatter.success("Applied.");
                 },
             }),

@@ -208,11 +208,41 @@ test("rare editor is pre-filled and saves each select", async () => {
     ]);
 });
 
-test("clearing the delayed channel removes the delayed forward only", async () => {
+test("clearing the delayed channel asks, then removes the delayed forward only", async () => {
     const { fake, calls } = await open({ forwards: [fwd("GLITCHED", "c1")], delayed: [late("GLITCHED", "c2", null, 30)] });
     await fake.emit(fake.click(`edit:${rareSlot("GLITCHED")}`, OWNER));
     await fake.emit(fake.click("lateChannel", OWNER, []));
+    expect(text(fake.lastPayload())).toContain("Stop the delayed forward for Glitched?");
+    expect(calls).toHaveLength(0);
+    await fake.emit(fake.click("yes", OWNER));
     expect(calls).toEqual([["removeDelayed", "GLITCHED"]]);
+});
+
+test("clearing the Now channel asks, and Cancel keeps the forward", async () => {
+    const { fake, calls } = await open({ forwards: [fwd("GLITCHED", "c1", "r1")] });
+    await fake.emit(fake.click(`edit:${rareSlot("GLITCHED")}`, OWNER));
+    await fake.emit(fake.click("nowChannel", OWNER, []));
+    expect(text(fake.lastPayload())).toContain("Stop forwarding Glitched now?");
+    await fake.emit(fake.click("no", OWNER));
+    expect(calls).toHaveLength(0);
+    expect(component(fake.lastPayload(), "nowChannel")?.default_values?.[0]?.id).toBe("c1");
+});
+
+test("clearing the Now channel and confirming removes the Now forward", async () => {
+    const { fake, calls } = await open({ forwards: [fwd("GLITCHED", "c1", "r1")] });
+    await fake.emit(fake.click(`edit:${rareSlot("GLITCHED")}`, OWNER));
+    await fake.emit(fake.click("nowChannel", OWNER, []));
+    await fake.emit(fake.click("yes", OWNER));
+    expect(calls).toEqual([["removeForward", "GLITCHED"]]);
+});
+
+test("Cancel on the delayed clear keeps the delayed forward", async () => {
+    const { fake, calls } = await open({ delayed: [late("GLITCHED", "c2", null, 30)] });
+    await fake.emit(fake.click(`edit:${rareSlot("GLITCHED")}`, OWNER));
+    await fake.emit(fake.click("lateChannel", OWNER, []));
+    await fake.emit(fake.click("no", OWNER));
+    expect(calls).toHaveLength(0);
+    expect(component(fake.lastPayload(), "lateChannel")?.default_values?.[0]?.id).toBe("c2");
 });
 
 test("a role needs its channel first", async () => {
@@ -276,8 +306,8 @@ test("set for all applies without asking when nothing is overwritten", async () 
     expect(text(fake.lastPayload())).toContain("Applies to all 4. Each biome keeps its own ping.");
     await fake.emit(fake.click("allNow", OWNER, ["c1"]));
     await fake.emit(fake.click("apply", OWNER));
-    expect(calls.filter((c) => c[0] === "setForward")).toHaveLength(4);
-    expect(calls).toContainEqual(["setForward", "GLITCHED", "c1", "r1"]);
+    expect(calls.filter((c) => c[0] === "setForward")).toHaveLength(3);
+    expect(calls).not.toContainEqual(["setForward", "GLITCHED", "c1", "r1"]);
     expect(text(fake.lastPayload())).toContain("**Forwards · Rare**");
 });
 
@@ -298,8 +328,8 @@ test("set for all lists only biomes that change", async () => {
     expect(t).toContain("**After a delay:** Dreamspace is currently forwarding to <#late-old> after 45s.");
     expect(calls).toHaveLength(0);
     await fake.emit(fake.click("yes", OWNER));
-    expect(calls.filter((c) => c[0] === "setForward")).toHaveLength(4);
-    expect(calls.filter((c) => c[0] === "setDelayed")).toHaveLength(4);
+    expect(calls.filter((c) => c[0] === "setForward")).toHaveLength(3);
+    expect(calls.filter((c) => c[0] === "setDelayed")).toHaveLength(3);
 });
 
 test("set for all diff uses a fresh read", async () => {
@@ -321,12 +351,33 @@ test("copy Now pings puts each Now role on its delayed forward", async () => {
     expect(calls).toContainEqual(["setDelayed", "DREAMSPACE", "late", null, 30]);
 });
 
-test("set for all with nothing picked asks for a channel", async () => {
+test("set for all with nothing to write says so and stays", async () => {
     const { fake, calls } = await open();
     await fake.emit(fake.click("all", OWNER));
     await fake.emit(fake.click("apply", OWNER));
-    expect(fake.notifies.at(-1)?.content).toBe("Pick a channel first.");
+    expect(fake.notifies.at(-1)?.content).toBe("Nothing to change.");
+    expect(text(fake.lastPayload())).toContain("Set for all");
     expect(calls).toHaveLength(0);
+});
+
+test("set for all with the same values already stored changes nothing", async () => {
+    const { fake, calls } = await open({ forwards: tabBiomes("rare").map((b) => fwd(b, "c1")) });
+    await fake.emit(fake.click("all", OWNER));
+    await fake.emit(fake.click("allNow", OWNER, ["c1"]));
+    await fake.emit(fake.click("apply", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("Nothing to change.");
+    expect(calls).toHaveLength(0);
+});
+
+test("copy Now pings lists a delayed role it would change", async () => {
+    const { fake, calls } = await open({ forwards: [fwd("GLITCHED", "c1", "rNow")], delayed: [late("GLITCHED", "c2", "rOld", 30)] });
+    await fake.emit(fake.click("all", OWNER));
+    await fake.emit(fake.click("allCopy", OWNER));
+    await fake.emit(fake.click("apply", OWNER));
+    expect(text(fake.lastPayload())).toContain("**After a delay:** Glitched pings <@&rNow> instead of <@&rOld>.");
+    expect(calls).toHaveLength(0);
+    await fake.emit(fake.click("yes", OWNER));
+    expect(calls).toEqual([["setDelayed", "GLITCHED", "c2", "rNow", 30]]);
 });
 
 test("non-rare set for all has no delayed block", async () => {
