@@ -3,6 +3,7 @@ import {
     ButtonBuilder,
     ButtonStyle,
     ContainerBuilder,
+    MessageFlags,
     type MessageMentionOptions,
     SectionBuilder,
     SeparatorBuilder,
@@ -10,7 +11,8 @@ import {
     TextDisplayBuilder,
     ThumbnailBuilder,
 } from "discord.js";
-import { getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBiomeName } from "../constants/biomes.constants";
+import type { ViewPayload } from "@/define";
+import { formatBiomeName, getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
 
 export interface VoteRenderInfo {
@@ -313,4 +315,33 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
     container.addActionRowComponents(buildLinkButtonsRow(params.jumpLink, params.serverLink, badges));
 
     return container;
+}
+
+const TEST_COLOR = 0x4e5058;
+
+/**
+ * The test post `/bh-admin forwards` sends from "Send a test": the biome's card with a test line on
+ * top, so it can't pass as a find. Sent with no mentions allowed - the role shows, nobody is pinged.
+ */
+export function buildTestForwardPost(biome: string, roleId: string | null, adminId: string): ViewPayload {
+    const name = formatBiomeName(biome);
+    const ping = roleId ? `Pings <@&${roleId}> on a real find.` : "Pings nobody on a real find.";
+    const heading = `## ${name}\nThis is how a ${name} find will look here. ${ping}`;
+
+    const container = new ContainerBuilder().setAccentColor(TEST_COLOR);
+    container.addTextDisplayComponents((td) => td.setContent("**🧪 Test - not a real find**"));
+    const iconUrl = getBiomeIconUrl(biome);
+    if (iconUrl) {
+        container.addSectionComponents(
+            new SectionBuilder()
+                .addTextDisplayComponents(new TextDisplayBuilder().setContent(heading))
+                .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: iconUrl } })),
+        );
+    } else {
+        container.addTextDisplayComponents((td) => td.setContent(heading));
+    }
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents((td) => td.setContent(`-# Sent by <@${adminId}> from /bh-admin forwards. Nobody was pinged.`));
+
+    return { components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
 }
