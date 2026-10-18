@@ -117,6 +117,9 @@ export async function setDelayedForward(
 
     const delay = requireValidDelay(delayS);
     const biomes = resolveBiomeSelector(selector);
+    if (biomes.some((biome) => getBiomeMeta(biome)?.category !== "rare")) {
+        throw new BiomeHuntError("Delayed forwards are only for rare biomes.");
+    }
     for (const biome of biomes) await setDelayedForwardConfig(guildId, biome, channelId, roleId, delay);
 
     const roleNote = roleId ? `, pinging <@&${roleId}>` : "";

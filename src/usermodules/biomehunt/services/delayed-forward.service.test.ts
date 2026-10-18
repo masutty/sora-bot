@@ -1,8 +1,14 @@
 import { expect, test } from "bun:test";
 import type { Client } from "discord.js";
-import { type BiomeVoteRow, VoteStatus } from "../types";
+import { BiomeHuntError, type BiomeVoteRow, VoteStatus } from "../types";
 import { FORWARD_INFO_PREFIX } from "../views/forward-post.view";
-import { type DelayedForwardDeps, type DelayedForwardJob, scheduleDelayedForward, sendDelayedForward } from "./delayed-forward.service";
+import {
+    type DelayedForwardDeps,
+    type DelayedForwardJob,
+    scheduleDelayedForward,
+    sendDelayedForward,
+    setDelayedForward,
+} from "./delayed-forward.service";
 
 /** A fake client whose one channel records every `send`. */
 function fakeClient() {
@@ -80,4 +86,10 @@ test("sendDelayedForward: the delayed card carries the biome's flavor text too",
     const { client, sent } = fakeClient();
     await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
     expect(JSON.stringify(sent[0])).toContain("Unexpected error occurred. [Code 404]");
+});
+
+test("setDelayedForward rejects a non-rare biome before touching the DB", async () => {
+    await expect(setDelayedForward("g1", "HELL", "delayed-channel", null, 30)).rejects.toThrow(
+        new BiomeHuntError("Delayed forwards are only for rare biomes."),
+    );
 });
