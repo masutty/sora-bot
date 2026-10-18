@@ -6,7 +6,6 @@ import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import {
     clearBiomeEvents,
     decrementBiomeEvents,
-    deleteAllSessionsForUser,
     deleteSessionsByIds,
     getBiomeCountForUser,
     insertManualBiomeEvents,
@@ -97,18 +96,6 @@ export async function deleteMemberEverything(client: BotClient, guildId: string,
     const deleted = await deleteUserCascade(user.id);
     if (deleted) await deleteDiscordChannel(client, deleted.channelId);
     return `<@${discordUserId}>'s data has been fully wiped. They can run \`/bh setup\` again.`;
-}
-
-/** @deprecated Goes away with the `member-soft-delete` command (Task 15). Removes the macro channel and all sessions, keeps badges and quota status. */
-export async function softDeleteMember(client: BotClient, guildId: string, discordUserId: string): Promise<string> {
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) throw new BiomeHuntError("That user has no data.");
-
-    const deleted = await deleteMacroChannelOnly(user.id);
-    const sessionsRemoved = await deleteAllSessionsForUser(user.id);
-    if (deleted) await deleteDiscordChannel(client, deleted.channelId);
-
-    return `<@${discordUserId}>: macro channel removed and ${sessionsRemoved} session(s) cleared. Badges and quota status kept. They can run \`/bh setup\` again.`;
 }
 
 /** Removes only the macro channel/webhook - all history, badges, and quota status stay untouched. */

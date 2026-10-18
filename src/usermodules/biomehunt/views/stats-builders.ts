@@ -10,9 +10,9 @@ import {
 } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
 import { getLevelForXp } from "../constants/levels.constants";
-import { getLeaderboard, getRecentSessions } from "../repository/activity.repository";
+import { getLeaderboard } from "../repository/activity.repository";
 import type { getUserBadges } from "../repository/badges.repository";
-import { getGuildUserCounts, getUserByDiscordId, getUsersByGuildStatus } from "../repository/users.repository";
+import { getGuildUserCounts, getUsersByGuildStatus } from "../repository/users.repository";
 import type { ActivitySessionRow, ActivityStatus, BiomeCategory, UserRow } from "../types";
 
 export const SESSIONS_PER_PAGE = 10;
@@ -231,7 +231,7 @@ export function buildBadgesTabContainer(member: GuildMember, data: ProfileData):
 }
 
 /** Container version of buildHistoryEmbed's content, for the ComponentsV2 profile view - the
- * classic embed version stays as-is for `!bh-admin member session-view`'s own pagination. */
+ * classic embed version stays as-is. */
 export function buildSessionsTabContainer(
     member: GuildMember,
     data: ProfileData,
@@ -278,31 +278,6 @@ export function buildSessionsTabContainer(
         ),
     );
 
-    return container;
-}
-
-export async function getSessionHistory(guildId: string, discordUserId: string, limit = 100): Promise<ActivitySessionRow[] | null> {
-    const user = await getUserByDiscordId(guildId, discordUserId);
-    if (!user) return null;
-    return getRecentSessions(user.id, limit);
-}
-
-/** Standalone (non-tab) container for `!bh-admin session view` - paginated via `paginate`. */
-export function buildHistoryContainer(sessions: ActivitySessionRow[], member: GuildMember, page: number): ContainerBuilder {
-    const pages = Math.max(Math.ceil(sessions.length / SESSIONS_PER_PAGE), 1);
-    const start = page * SESSIONS_PER_PAGE;
-    const slice = sessions.slice(start, start + SESSIONS_PER_PAGE);
-    const oldestFirst = [...slice].reverse();
-
-    const lines = oldestFirst.map(
-        (session) =>
-            `\`#${session.id}\` <t:${unix(session.started_at)}:s> - <t:${unix(session.ended_at)}:s> (${formatTime(session.duration_seconds)})`,
-    );
-
-    const container = baseContainer(0x5865f2);
-    addHeaderSection(container, member, `**\`${member.user.username}\`'s Session History**\n${lines.join("\n")}`);
-    addDivider(container);
-    container.addTextDisplayComponents((td) => td.setContent(`-# Page ${page + 1} of ${pages} · ${sessions.length} session(s) total`));
     return container;
 }
 

@@ -128,8 +128,8 @@ function buildTabContent(state: ProfileState, member: GuildMember): ContainerBui
 /**
  * Interactive Profile/Biomes/Badges/Quotas/Sessions tabbed view - data is fetched once upfront
  * (`loadProfileData`), tab switches (and session pagination) just re-render from it. Only the
- * invoker can interact (the profile owner for `/bh profile`, the admin who ran it for `/bh-admin
- * profile` - default View access is "invoker").
+ * invoker can interact (the profile owner for `/bh profile`)
+ * - default View access is "invoker".
  */
 export function profileView(member: GuildMember): ViewDefinition<ProfileState, void, ProfileData> {
     return tabs<ProfileState, ProfileData>({
@@ -168,7 +168,7 @@ export function profileView(member: GuildMember): ViewDefinition<ProfileState, v
 
 /**
  * Loads the target's profile and opens `profileView` on it - or replies with the "no profile yet"
- * notice without opening anything. Shared by `/bh profile` and `/bh-admin profile`.
+ * notice without opening anything. Used by `/bh profile`.
  */
 export async function openProfileView(ctx: CommandContext, guildId: string, member: GuildMember, opts?: ReplyOptions): Promise<void> {
     const data = await loadProfileData(guildId, member.id);
