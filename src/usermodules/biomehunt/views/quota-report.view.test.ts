@@ -120,3 +120,29 @@ test("view: opens on today, switching day or role goes back to page 1, paginatio
     expect(text()).toContain("## Quotas · Yesterday");
     expect(() => comp(fake.lastPayload(), "next")).toThrow(); // 5 members - a single page, no pager
 });
+
+async function openStats(roleId?: string) {
+    const roles = [ROLE, { ...ROLE, id: 2, role_id: "role-2" } as QuotaRoleRow];
+    const both = report({ roles });
+    const fake = createFakeViewTransport();
+    const done = fake.run(quotaStatsView, { reports: { today: both, yesterday: both }, roleNames: {}, roleId }, "owner");
+    await fake.flush();
+    const text = () =>
+        textOf({ components: (fake.lastPayload().components ?? []).map((c) => (c as unknown as { toJSON(): Json }).toJSON()) });
+    return { fake, done, text };
+}
+
+test("view: opened on a role it starts on that role and Back ends it", async () => {
+    const { fake, done, text } = await openStats("role-2");
+    expect(text()).toContain("### <@&role-2>");
+    expect(text()).not.toContain("### <@&role-1>");
+    await fake.emit(fake.click("back", "owner"));
+    await done;
+    expect(fake.closed).toBe(1);
+});
+
+test("view: without a role it opens on the first one and has no Back button", async () => {
+    const { fake, text } = await openStats();
+    expect(text()).toContain("### <@&role-1>");
+    expect(() => comp(fake.lastPayload(), "back")).toThrow();
+});

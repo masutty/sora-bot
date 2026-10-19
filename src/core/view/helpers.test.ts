@@ -429,6 +429,44 @@ test('confirm: an onConfirm that throws shows "Error running the action!" (a Use
     expect(text()).toContain("Not today.");
 });
 
+test("confirm: as a child, a failing onConfirm is told to the user as a private notice", async () => {
+    const parent = defineView<{ n: number }>({
+        name: "test.confirm-parent",
+        initial: () => ({ n: 0 }),
+        render: (_s, kit) => ({ content: "parent", components: [kit.row(kit.button("go", (b) => b.setLabel("Go")))] }),
+        on: {
+            go: async (c) => {
+                await c.open(
+                    confirmView(async () => {
+                        throw new UserFacingError("Not today.");
+                    }),
+                    undefined,
+                );
+            },
+        },
+    });
+    void fake.run(parent, undefined);
+    await fake.flush();
+    void fake.emit(fake.click("go", OWNER));
+    await fake.flush();
+    await fake.emit(fake.click("yes", OWNER));
+    await fake.flush();
+    expect(fake.notifies.map((n) => n.content)).toEqual(["Not today."]);
+    expect(fake.lastPayload().content).toBe("parent");
+});
+
+test("confirm: as the root, a failure is the final screen and isn't also sent as a notice", async () => {
+    void fake.run(
+        confirmView(async () => {
+            throw new UserFacingError("Not today.");
+        }),
+        undefined,
+    );
+    await fake.flush();
+    await fake.emit(fake.click("yes", OWNER));
+    expect(fake.notifies).toEqual([]);
+});
+
 test('confirm: no resolves false and shows "Action cancelled." without running onConfirm', async () => {
     let runs = 0;
     const result = fake.run(

@@ -191,9 +191,7 @@ test("biomehunt.delayed-forward-list: Create also requires a delay, and passes i
     await fake.emit(fake.click("add", OWNER));
     expect(text(fake.lastPayload())).toContain("Create Delayed Biome Forward");
 
-    await fake.emit(fake.click("group", OWNER, ["biome"]));
-
-    await fake.emit(fake.click("biome", OWNER, ["HELL"]));
+    await fake.emit(fake.click("biome", OWNER, ["GLITCHED"]));
     await fake.emit(fake.click("channel", OWNER, ["c1"]));
     expect(comp(fake.lastPayload(), "confirm").disabled).toBe(true); // delay still missing
 
@@ -201,5 +199,5 @@ test("biomehunt.delayed-forward-list: Create also requires a delay, and passes i
     expect(comp(fake.lastPayload(), "confirm").disabled).toBe(false);
 
     await fake.emit(fake.click("confirm", OWNER));
-    expect(setCalls).toEqual([{ guildId: GUILD_ID, biome: "HELL", channelId: "c1", roleId: null, delayS: 30 }]);
+    expect(setCalls).toEqual([{ guildId: GUILD_ID, biome: "GLITCHED", channelId: "c1", roleId: null, delayS: 30 }]);
 });

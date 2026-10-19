@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ButtonStyle } from "discord.js";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
-import { ALL_FLAGS, FLAG_DEFINITIONS } from "../constants/flags.constants";
+import { ALL_FLAGS, FLAG_DEFINITIONS, MENU_FLAGS } from "../constants/flags.constants";
 import type { FlagName } from "../types";
 import { FLAGS_PER_PAGE, type FlagsDeps, flagsView } from "./flags.view";
 
@@ -84,20 +84,22 @@ test("flags: renders the header, key + default and the right button per state", 
     expect(text(payload)).toContain(`-# ${FLAG_DEFINITIONS.PING_ON_QUOTA_MET.description}`);
 });
 
-test("flags: 5 flags per page, and the pagination row reaches the rest", async () => {
+test("flags menu no longer lists the two auto-delete flags", async () => {
     const { fake } = await open();
-    expect(ALL_FLAGS.length).toBeGreaterThan(FLAGS_PER_PAGE);
-    expect(toggleCount(fake.lastPayload())).toBe(FLAGS_PER_PAGE);
-    expect(comp(fake.lastPayload(), "jump").label).toBe("1 / 2");
+    expect(MENU_FLAGS).toEqual(ALL_FLAGS.filter((f) => f !== "AUTO_DELETE_ENABLED" && f !== "CLEAR_PROFILE_ON_AUTODELETE"));
+    expect(toggleCount(fake.lastPayload())).toBe(MENU_FLAGS.length);
+    expect(text(fake.lastPayload())).not.toContain("AUTO_DELETE_ENABLED");
+    expect(text(fake.lastPayload())).not.toContain("CLEAR_PROFILE_ON_AUTODELETE");
+});
 
-    await fake.emit(fake.click("next", OWNER));
-    expect(toggleCount(fake.lastPayload())).toBe(ALL_FLAGS.length - FLAGS_PER_PAGE);
-    expect(comp(fake.lastPayload(), "jump").label).toBe("2 / 2");
+test("flags: paginates MENU_FLAGS - no pagination row while they fit one page", async () => {
+    const { fake } = await open();
+    expect(MENU_FLAGS.length).toBeLessThanOrEqual(FLAGS_PER_PAGE);
+    expect(() => comp(fake.lastPayload(), "jump")).toThrow();
 });
 
 test("flags: a flag that explains both states shows On/Off subtext lines", async () => {
     const { fake } = await open();
-    await fake.emit(fake.click("next", OWNER));
     const def = FLAG_DEFINITIONS.EXPERIMENT_BIOME_ECONOMY;
     expect(text(fake.lastPayload())).toContain(`-# **On:** ${def.on}\n-# **Off:** ${def.off}`);
 });
@@ -120,18 +122,17 @@ test("flags: Turn on opens a green confirm with only the On line; Confirm saves 
 
     await fake.emit(fake.click("yes", OWNER));
     expect(calls).toEqual([{ guildId: GUILD_ID, flag: "EXPERIMENT_WEBHOOK_FLOWERS", enabled: true }]);
-    expect(comp(fake.lastPayload(), "jump").label).toBe("1 / 2");
     expect(comp(fake.lastPayload(), "toggle:EXPERIMENT_WEBHOOK_FLOWERS")).toMatchObject({ label: "Turn off", style: ButtonStyle.Danger });
 });
 
 test("flags: Turn off opens a red confirm with only the Off line", async () => {
-    const { fake } = await open({ CLEAR_PROFILE_ON_AUTODELETE: true });
-    await fake.emit(fake.click("toggle:CLEAR_PROFILE_ON_AUTODELETE", OWNER));
+    const { fake } = await open({ EXPERIMENT_BIOME_ECONOMY: true });
+    await fake.emit(fake.click("toggle:EXPERIMENT_BIOME_ECONOMY", OWNER));
 
     const asking = fake.lastPayload();
-    const def = FLAG_DEFINITIONS.CLEAR_PROFILE_ON_AUTODELETE;
+    const def = FLAG_DEFINITIONS.EXPERIMENT_BIOME_ECONOMY;
     expect(text(asking)).toContain("**Turn off this flag?**");
-    expect(text(asking)).toContain("Only the macro channel goes; history, badges and quota status stay");
+    expect(text(asking)).toContain("Biome badges still work, but no Seeds/XP are earned or shown.");
     expect(text(asking)).not.toContain("**Off:**");
     expect(text(asking)).not.toContain(def.on as string);
     expect(comp(asking, "yes")).toMatchObject({ label: "Turn off", style: ButtonStyle.Danger });

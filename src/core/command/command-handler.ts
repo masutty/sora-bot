@@ -205,7 +205,7 @@ export function registerCommandHandlers(client: BotClient): void {
 
         const command = client.commands.get(commandName.toLowerCase());
         if (!command) return;
-        // A slash-only command doesn't exist on prefix at all - ignored like an unknown name.
+        // A slash-only command (or a context-menu entry) doesn't exist on prefix at all - ignored like an unknown name.
         if (effectiveMode(command, null) === "slash") return;
         if (selectHandler(command, "prefix").kind === "none") return; // Command doesn't support prefix
 
@@ -250,14 +250,16 @@ export function registerCommandHandlers(client: BotClient): void {
 
     // ── Slash ─────────────────────────────────────────────────────────────────
     client.on(Events.InteractionCreate, async (interaction) => {
-        if (!interaction.isChatInputCommand()) return;
+        if (!interaction.isChatInputCommand() && !interaction.isUserContextMenuCommand()) return;
 
         const command = client.commands.get(interaction.commandName);
-        if (!command) {
+        if (!command || Boolean(command.contextMenu) !== interaction.isUserContextMenuCommand()) {
             await interaction.reply({ content: "Unknown command.", ephemeral: true });
             return;
         }
 
+        // A user context-menu interaction goes through the slash path: its options resolver carries
+        // the clicked user as the "user" option, and has no subcommands - the context's args read it as-is.
         const slash = interaction as ChatInputCommandInteraction;
         const started = Date.now();
         const ctx: CommandContext = createSlashContext(slash, client, {

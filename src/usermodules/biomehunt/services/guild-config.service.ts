@@ -8,15 +8,11 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfigs } from "../repository/forwards.repository";
 import {
     clearCounterChannel,
-    deleteCategory,
     getEnabledCategories,
     getGuildRoles,
     getOrCreateGuildConfig,
     insertCategory,
-    isGuildReady,
-    resetGuildConfig,
     setGuildRoles,
-    updateAutoCreateCategories,
     updateCounterChannel,
 } from "../repository/guilds.repository";
 import { BiomeHuntError } from "../types";
@@ -90,26 +86,21 @@ export async function showConfig(guildId: string): Promise<ContainerBuilder> {
     return container;
 }
 
-export async function setAutoCreateCategories(guildId: string, enabled: boolean): Promise<string> {
-    await updateAutoCreateCategories(guildId, enabled);
-    return `Auto-create categories ${enabled ? "enabled" : "disabled"}.`;
-}
-
 export async function addCategory(guildId: string, categoryId: string): Promise<string> {
     await insertCategory(guildId, categoryId);
     return `Category <#${categoryId}> is now allowed for macro channels.`;
 }
 
-export async function removeCategory(guildId: string, categoryId: string): Promise<string> {
-    const removed = await deleteCategory(guildId, categoryId);
-    if (!removed) throw new BiomeHuntError("That category isn't registered.");
-    return `Category <#${categoryId}> removed.`;
-}
-
-/** Sets all 3 status roles at once - used by the ez-setup wizard's single-screen role picker. The admin CLI sets them one at a time via `activity set-role`. */
-export async function setRoles(guildId: string, activeId: string, idleId: string, inactiveId: string): Promise<string> {
+/** Sets all 3 status roles at once - used by the ez-setup wizard's single-screen role picker. */
+export async function setRoles(
+    guildId: string,
+    activeId: string | null,
+    idleId: string | null,
+    inactiveId: string | null,
+): Promise<string> {
     await setGuildRoles(guildId, activeId, idleId, inactiveId);
-    return `Roles updated: active <@&${activeId}>, idle <@&${idleId}>, inactive <@&${inactiveId}>.`;
+    const show = (id: string | null) => (id ? `<@&${id}>` : "none");
+    return `Roles updated: active ${show(activeId)}, idle ${show(idleId)}, inactive ${show(inactiveId)}.`;
 }
 
 export async function setCounterChannel(guildId: string, channelId: string): Promise<string> {
@@ -125,36 +116,8 @@ export async function disableCounter(guildId: string): Promise<string> {
 export async function forceCounterUpdate(client: BotClient, guildId: string): Promise<string> {
     const guildConfig = await getOrCreateGuildConfig(guildId);
     if (!guildConfig.counter_channel_id) {
-        throw new BiomeHuntError("Live counter isn't configured for this server. Set one with `counter set`.");
+        throw new BiomeHuntError("Live counter isn't configured for this server. Set one in `/bh-admin settings`.");
     }
     await updateCounterForGuild(client, guildConfig);
     return `Live counter updated in <#${guildConfig.counter_channel_id}>.`;
-}
-
-export async function testConfig(guildId: string): Promise<ContainerBuilder> {
-    const { hasCategory, hasRoles } = await isGuildReady(guildId);
-    const config = await getOrCreateGuildConfig(guildId);
-    const ready = hasCategory && hasRoles;
-
-    const lines = [
-        `${hasCategory ? "✅" : "❌"} At least one enabled category`,
-        `${hasRoles ? "✅" : "❌"} All 3 status roles configured`,
-        `✅ Thresholds: gap=${formatTime(config.session_gap_threshold_s)} idle=${formatTime(config.idle_threshold_s)} inactive=${formatTime(config.inactive_threshold_s)}`,
-        `ℹ️ Live counter: ${config.counter_channel_id ? "enabled (optional)" : "disabled (optional)"}`,
-    ];
-
-    const container = new ContainerBuilder().setAccentColor(ready ? 0x57f287 : 0xed4245);
-    container.addTextDisplayComponents((td) => td.setContent(`**Configuration Check**\n${lines.join("\n")}`));
-    addDivider(container);
-    container.addTextDisplayComponents((td) =>
-        td.setContent(
-            `-# ${ready ? "System ready - /bh setup is enabled." : "System incomplete - /bh setup is blocked until required items are set."}`,
-        ),
-    );
-    return container;
-}
-
-export async function resetConfig(guildId: string): Promise<string> {
-    await resetGuildConfig(guildId);
-    return "All BiomeHunt configuration for this server has been reset.";
 }

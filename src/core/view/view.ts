@@ -40,6 +40,8 @@ export interface RenderKit {
 
 export interface ModalSpec {
     title: string;
+    /** Markdown shown above the fields - e.g. what submitting does. A modal still needs at least one field. */
+    text?: string;
     fields: Array<{
         key: string;
         label: string;
@@ -63,6 +65,8 @@ export interface HandlerContext<S, R> {
     values: string[];
     /** Who interacted. In `start`: whoever opened the view (the invoker for the root). */
     user: User;
+    /** True when this view was opened with `c.open` - its own final screen is replaced by the opener's next one. */
+    isChild: boolean;
     /**
      * Ends THIS view with `result` once the handler returns; whoever opened it (open/runView) gets
      * the value. A child hands the message back to its opener; the root's final screen is its

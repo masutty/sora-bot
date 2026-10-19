@@ -1,4 +1,11 @@
-import { InteractionContextType, type RESTPostAPIChatInputApplicationCommandsJSONBody, SlashCommandBuilder } from "discord.js";
+import {
+    ApplicationCommandType,
+    InteractionContextType,
+    PermissionFlagsBits,
+    type RESTPostAPIChatInputApplicationCommandsJSONBody,
+    type RESTPostAPIContextMenuApplicationCommandsJSONBody,
+    SlashCommandBuilder,
+} from "discord.js";
 import type { CommandDefinition, CommandModes } from "../../types";
 import type { CommandMode } from "./command-context";
 
@@ -31,6 +38,8 @@ export function effectiveMode(def: CommandDefinition, key: string | null): Comma
         const group = key.includes(":") ? key.split(":")[0] : null;
         if (group && overrides[group]) return overrides[group];
     }
+    // A context-menu entry exists only as an application command - never on prefix.
+    if (def.contextMenu) return "slash";
     return def.modes ?? "both";
 }
 
@@ -94,7 +103,16 @@ export function assertSubcommandModeKeys(def: CommandDefinition): void {
     }
 }
 
-export function buildSlashJson(def: CommandDefinition): RESTPostAPIChatInputApplicationCommandsJSONBody | null {
+export function buildSlashJson(
+    def: CommandDefinition,
+): RESTPostAPIChatInputApplicationCommandsJSONBody | RESTPostAPIContextMenuApplicationCommandsJSONBody | null {
+    if (def.contextMenu === "user") {
+        const menu: RESTPostAPIContextMenuApplicationCommandsJSONBody = { type: ApplicationCommandType.User, name: def.name };
+        if (def.guildOnly) menu.contexts = [InteractionContextType.Guild];
+        // Hidden from non-admins in the Apps menu - the adminOnly guard still runs on use.
+        if (def.adminOnly) menu.default_member_permissions = String(PermissionFlagsBits.Administrator);
+        return menu;
+    }
     assertSubcommandModeKeys(def);
     if (effectiveMode(def, null) === "prefix") return null;
 

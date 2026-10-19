@@ -48,16 +48,21 @@ export function forwardCreateView(
 
     return defineView<CreateForwardState, CreatedForward | undefined, void>({
         name: delayed ? "biomehunt.delayed-forward-create" : "biomehunt.forward-create",
-        initial: () => ({}),
+        // Delayed forwards only exist on rare biomes, so that variant is pinned to the rare category.
+        initial: () => (delayed ? { group: "rare" } : {}),
         render: (state, kit): ViewPayload => {
-            const groupMenu = kit.stringSelect("group", (s) =>
-                s
-                    .setPlaceholder("Select biomes")
-                    .addOptions(
-                        { label: "All biomes", value: "ALL", default: state.group === "ALL" },
-                        ...ALL_BIOME_CATEGORIES.map((c) => ({ label: BIOME_CATEGORY_LABELS[c], value: c, default: state.group === c })),
-                    ),
-            );
+            const groupMenu = delayed
+                ? null
+                : kit.stringSelect("group", (s) =>
+                      s.setPlaceholder("Select biomes").addOptions(
+                          { label: "All biomes", value: "ALL", default: state.group === "ALL" },
+                          ...ALL_BIOME_CATEGORIES.map((c) => ({
+                              label: BIOME_CATEGORY_LABELS[c],
+                              value: c,
+                              default: state.group === c,
+                          })),
+                      ),
+                  );
             const category = state.group && state.group !== "ALL" ? state.group : null;
             // One slot goes to "All <category>", so a category lists at most 24 single biomes.
             const biomeMenu = category
@@ -107,7 +112,7 @@ export function forwardCreateView(
                 flags: MessageFlags.IsComponentsV2,
                 components: [
                     container,
-                    kit.row(groupMenu),
+                    ...(groupMenu ? [kit.row(groupMenu)] : []),
                     ...(biomeMenu ? [kit.row(biomeMenu)] : []),
                     kit.row(channelMenu),
                     ...(delayed ? [kit.row(delayMenu)] : []),

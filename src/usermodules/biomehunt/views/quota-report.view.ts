@@ -71,9 +71,7 @@ export function buildQuotaDayContainer(report: QuotaDayReport, label: string, ro
 
     const role = report.roles[roleIndex];
     if (!role) {
-        container.addTextDisplayComponents((td) =>
-            td.setContent("-# No quota roles configured - create one with `/bh-admin quotas create`."),
-        );
+        container.addTextDisplayComponents((td) => td.setContent("-# No quota roles configured - create one with `/bh-admin quotas`."));
         return container;
     }
 
@@ -93,6 +91,8 @@ export interface QuotaStatsInput {
     reports: Record<QuotaDay, QuotaDayReport>;
     /** Quota role id -> its name, for the role select (a select option can't render a mention). */
     roleNames: Record<string, string>;
+    /** Opens on this quota role, with a Back button that ends the view - for opening it as a child. */
+    roleId?: string;
 }
 
 interface QuotaStatsState extends QuotaStatsInput {
@@ -110,7 +110,15 @@ const DAY_LABELS: Record<QuotaDay, string> = { yesterday: "Yesterday", today: "T
  */
 export const quotaStatsView: ViewDefinition<QuotaStatsState, void, QuotaStatsInput> = defineView<QuotaStatsState, void, QuotaStatsInput>({
     name: "biomehunt.stats-quotas",
-    initial: (input) => ({ ...input, day: "today", roleIndex: 0, page: 0 }),
+    initial: (input) => ({
+        ...input,
+        day: "today",
+        roleIndex: Math.max(
+            0,
+            input.reports.today.roles.findIndex((r) => r.role_id === input.roleId),
+        ),
+        page: 0,
+    }),
     render: (state, kit): ViewPayload => {
         const report = state.reports[state.day];
         const pages = quotaPageCount(report);
@@ -147,6 +155,7 @@ export const quotaStatsView: ViewDefinition<QuotaStatsState, void, QuotaStatsInp
                         .setStyle(state.day === "today" ? ButtonStyle.Primary : ButtonStyle.Secondary)
                         .setDisabled(state.day === "today"),
                 ),
+                ...(state.roleId ? [kit.button("back", (b) => b.setLabel("Back"))] : []),
             ),
         );
 
@@ -157,6 +166,7 @@ export const quotaStatsView: ViewDefinition<QuotaStatsState, void, QuotaStatsInp
     },
     on: {
         ...paginationHandlers<QuotaStatsState>({ pages: (s) => quotaPageCount(s.reports[s.day]) }),
+        back: (c) => c.done(),
         role: (c) => {
             c.state.roleIndex = Number(c.values[0]);
             c.state.page = 0;

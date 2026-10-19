@@ -96,7 +96,6 @@ function fakeDeps(quotaRoles: QuotaRoleRow[] = []) {
         isGuildReady: async () => ({
             ready: false,
             hasCategory: false,
-            hasRoles: false,
         }),
         forwards: {
             getForwards: async () => [],

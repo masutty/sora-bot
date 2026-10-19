@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { type Message, MessageFlags } from "discord.js";
-import { createDiscordTransport } from "./discord-transport";
+import { buildModal, createDiscordTransport } from "./discord-transport";
 import type { ComponentEvent } from "./view-engine";
 
 /** Just the Message members the transport touches; `edit` records (or 404s, like an ephemeral message would). */
@@ -45,6 +45,18 @@ function click(overrides: Record<string, Fn> = {}) {
 }
 
 const spec = { title: "t", fields: [{ key: "a", label: "A" }] };
+
+test("buildModal: text goes first as a TextDisplay, then each field as a labelled input", () => {
+    const json = buildModal({ title: "t", text: "Hello", fields: [{ key: "a", label: "A", value: "1" }] }, "v:1:m").toJSON();
+    expect(json.components[0]).toMatchObject({ type: 10, content: "Hello" });
+    expect(json.components[1]).toMatchObject({ type: 18, label: "A", component: { custom_id: "a", value: "1" } });
+});
+
+test("buildModal: without text, fields stay plain action-row inputs", () => {
+    const json = buildModal(spec, "v:1:m").toJSON();
+    expect(json.components).toHaveLength(1);
+    expect(json.components[0]).toMatchObject({ type: 1, components: [{ custom_id: "a", label: "A" }] });
+});
 
 test("ephemeral View, no clicks yet: render(null) (e.g. expiry) goes through the seeded editor", async () => {
     const { message } = fakeMessage({ ephemeral: true });

@@ -109,7 +109,7 @@ function stepPayload(components: NonNullable<ViewPayload["components"]>): ViewPa
 }
 
 function formatQuotaRoleLine(qr: QuotaRoleRow): string {
-    const modeLabel = qr.mode === "F" ? "Fixed" : "RW";
+    const modeLabel = qr.mode === "F" ? "Daily reward" : "Live role";
     const hours = qr.quota_target_seconds / 3600;
     const durationNote = qr.mode === "F" ? `, ${qr.access_duration_days}d access` : "";
     return `<@&${qr.role_id}> - ${modeLabel} ${hours}h/${qr.quota_window_hours}h${durationNote}`;
@@ -224,10 +224,13 @@ interface RolesState {
 }
 
 async function maybeSaveRoles(c: HandlerContext<RolesState, StepResult>, deps: EzSetupDeps): Promise<void> {
-    const { active, idle, inactive, guildId } = c.state;
-    if (!active || !idle || !inactive) return;
+    const { guildId } = c.state;
+    // Each status is optional: save what is picked now, and finish the step once all three are set.
+    const active = c.state.active ?? c.state.currentActive;
+    const idle = c.state.idle ?? c.state.currentIdle;
+    const inactive = c.state.inactive ?? c.state.currentInactive;
     await deps.setRoles(guildId, active, idle, inactive);
-    c.done({ kind: "ok" });
+    if (active && idle && inactive) c.done({ kind: "ok" });
 }
 
 function rolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
@@ -309,16 +312,16 @@ function thresholdsStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
                         "> How long a gap between two macro messages can be before we consider it a new session instead of a continuation of the current one. Messages sent within this gap all count toward the same session; once the gap is exceeded, we assume you stopped macroing in between, and the next message starts a brand new session instead (the idle time in between is not counted as active).\n" +
                         "> Recommended: don't set this below 22 minutes.\n\n" +
                         "- Idle Threshold\n" +
-                        "> How long since the last valid __macro message__ within the user's macro channel to consider this user as Idle, meaning, they are probably not macroing anymore.\n" +
-                        `> Example: If the last valid message happened 30 minutes ago, we assume this user stopped macroing for now (and consequently give him the ${state.idleRoleId ? `<@&${state.idleRoleId}>` : "`role_not_set`"} role)\n\n` +
+                        "> How long since their last session ended (the last valid __macro message__ plus the session gap) to consider this user as Idle, meaning, they are probably not macroing anymore.\n" +
+                        `> Example: If the last session ended 30 minutes ago, we assume this user stopped macroing for now (and consequently give him the ${state.idleRoleId ? `<@&${state.idleRoleId}>` : "`role_not_set`"} role)\n\n` +
                         "- Inactive Threshold\n" +
-                        "> How long since the last valid __macro message__ within an user's macro channel to consider this user as Inactive, meaning, they are probably not macroing anymore since a long time.\n" +
-                        `> Example: If the last valid message happened 1 day ago, we assume this user is not macroing anymore (and consequently give them the ${state.inactiveRoleId ? `<@&${state.inactiveRoleId}>` : "`role_not_set`"} role)\n\n` +
+                        "> How long since their last session ended to consider this user as Inactive, meaning, they are probably not macroing anymore since a long time.\n" +
+                        `> Example: If the last session ended 1 day ago, we assume this user is not macroing anymore (and consequently give them the ${state.inactiveRoleId ? `<@&${state.inactiveRoleId}>` : "`role_not_set`"} role)\n\n` +
                         "Practical example:\n" +
                         "- With `session_gap_mins` as `22`, `idle_threshold_mins` as `30` and `inactive_threshold_days` as `1`:\n" +
-                        "> last valid message within 22 minutes: user becomes active\n" +
-                        "> last valid message is older than 30 minutes: user becomes idle\n" +
-                        "> last valid message is older than 1 day: user becomes inactive\n\n" +
+                        "> last valid message within 22 minutes: the session is still going, user is active\n" +
+                        "> session ended (22 minutes after the last message) more than 30 minutes ago: user becomes idle\n" +
+                        "> session ended more than 1 day ago: user becomes inactive\n\n" +
                         "NOTE: *(in a later stage, you can configure that, if an user is inactive for too long, their channel gets auto-deleted.*",
                 ),
                 navRow(kit, {
@@ -648,16 +651,16 @@ function quotaRoleAddView(deps: EzSetupDeps): ViewDefinition<QuotaAddState, Step
                     stepContainer(
                         "Quota Reward Roles",
                         "How should this role be evaluated?\n\n" +
-                            "- Fixed\n" +
+                            "- Daily reward\n" +
                             "> Checked once a day. If the user meets quota, they get the role for a fixed number of days, renewed if they still meet quota before it expires.\n\n" +
-                            "- Rolling Window\n" +
+                            "- Live role\n" +
                             "> Checked continuously. The role is granted or removed automatically the moment the user's rolling activity crosses the target, no fixed duration.",
                     ),
                     navRow(kit, {
                         canBack: true,
                         extra: [
-                            kit.button("modeF", (b) => b.setLabel("Fixed").setStyle(ButtonStyle.Primary)),
-                            kit.button("modeRW", (b) => b.setLabel("Rolling Window").setStyle(ButtonStyle.Primary)),
+                            kit.button("modeF", (b) => b.setLabel("Daily reward").setStyle(ButtonStyle.Primary)),
+                            kit.button("modeRW", (b) => b.setLabel("Live role").setStyle(ButtonStyle.Primary)),
                         ],
                     }),
                 ]);
@@ -695,8 +698,7 @@ function quotaRoleAddView(deps: EzSetupDeps): ViewDefinition<QuotaAddState, Step
                     title: "Quota Reward Roles",
                     fields: needsDuration
                         ? [
-                              { key: "hours", label: "Required hours" },
-                              { key: "window", label: "Window (hours)" },
+                              { key: "hours", label: "Required hours per day" },
                               { key: "duration", label: "Access duration (days)" },
                           ]
                         : [
@@ -706,7 +708,8 @@ function quotaRoleAddView(deps: EzSetupDeps): ViewDefinition<QuotaAddState, Step
                 });
                 if (!v) return;
                 const hours = Number(v.hours);
-                const windowHours = Number(v.window);
+                // A daily reward always counts a 24h window.
+                const windowHours = needsDuration ? 24 : Number(v.window);
                 const duration = needsDuration ? Number(v.duration) : null;
                 const numbers = needsDuration ? [hours, windowHours, duration as number] : [hours, windowHours];
                 if (numbers.some((n) => Number.isNaN(n) || n <= 0)) {
@@ -837,7 +840,7 @@ async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<Vie
             1,
             0,
             new TextDisplayBuilder().setContent(
-                `**Setup Status**\n${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\n${readiness.hasRoles ? "✅" : "❌"} All 3 status roles configured`,
+                `**Setup Status**\n${readiness.hasCategory ? "✅" : "❌"} At least one enabled category\nℹ️ Status roles are optional`,
             ),
         )
         .addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small))
@@ -856,8 +859,7 @@ async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<Vie
 
 /**
  * `bh-admin setup`'s guided wizard - welcome, categories, activity roles, thresholds, auto-delete,
- * live counter, quota reward roles, badge roles, then biome forwards (`forwardListView`, shared
- * with the standalone `bh-admin forward menu`), ending in a `showConfig`/`isGuildReady` summary.
+ * live counter, quota reward roles, badge roles, then biome forwards (`forwardListView`), ending in a `showConfig`/`isGuildReady` summary.
  */
 export function ezSetupFlow(
     deps: EzSetupDeps,

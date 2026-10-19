@@ -82,8 +82,8 @@ function confirmRow(kit: RenderKit, opts: ConfirmOptions): ActionRowBuilder<Butt
  * once the user confirmed and `onConfirm` succeeded (its payload is the final screen); `false` on
  * Cancel ("Action cancelled.") or when `onConfirm` threw (the error is the final screen);
  * `undefined` on idle expiry ("Confirmation expired.").
- * Opened as a child (`c.open`), the opener's next screen replaces `onConfirm`'s payload, and it
- * runs on the root's clock (e.g. a flow step's).
+ * Opened as a child (`c.open`), the opener's next screen replaces `onConfirm`'s payload (a failure
+ * is still told to the user, as a private notice), and it runs on the root's clock (e.g. a flow step's).
  *
  * @example
  * await ctx.open(confirm({
@@ -117,11 +117,11 @@ export function confirm(opts: ConfirmOptions): ViewDefinition<ConfirmState, bool
                     const described = describeCommandError(err);
                     if (described.kind === "internal")
                         logger.error(err instanceof Error ? err : new Error(String(err)), { view: opts.name });
+                    const message = described.kind === "user" ? described.message : "Error running the action!";
+                    // As a child, the opener's next screen replaces this one - tell the user privately instead.
+                    if (c.isChild) await c.notify(message);
                     c.done(false);
-                    return {
-                        phase: "failed",
-                        payload: EmbedFormatter.error(described.kind === "user" ? described.message : "Error running the action!"),
-                    };
+                    return { phase: "failed", payload: EmbedFormatter.error(message) };
                 }
             },
             no: (c) => {

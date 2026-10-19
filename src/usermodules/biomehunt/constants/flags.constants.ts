@@ -22,7 +22,7 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
         default: false,
     },
     AUTO_DELETE_ENABLED: {
-        description: "Auto-deletes inactive members' macro channels. The hours after going inactive are set with `activity delete`.",
+        description: "Auto-deletes inactive members' macro channels. The hours after going inactive are set in `/bh-admin settings`.",
         default: false,
     },
     CLEAR_PROFILE_ON_AUTODELETE: {
@@ -43,3 +43,6 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
 };
 
 export const ALL_FLAGS: FlagName[] = Object.keys(FLAG_DEFINITIONS) as FlagName[];
+
+/** Flags the Flags menu lists. The two auto-delete flags live in Settings -> Auto-delete instead. */
+export const MENU_FLAGS: FlagName[] = ALL_FLAGS.filter((flag) => flag !== "AUTO_DELETE_ENABLED" && flag !== "CLEAR_PROFILE_ON_AUTODELETE");

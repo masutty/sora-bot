@@ -7,7 +7,7 @@ import type { BiomeForwardRow } from "../types";
 import { forwardCreateView } from "./forward-create.view";
 import { forwardRemoveView } from "./forward-remove.view";
 
-/** Whether a `biomehunt.forward-list` closes on its own ("Close" button, standalone `bh-admin forward menu`)
+/** Whether a `biomehunt.forward-list` closes on its own ("Close" button)
  * or is a step in a bigger flow (Back/Skip/Cancel, driving a `StepResult`). */
 export type ForwardListExit = "close" | "step";
 
@@ -16,8 +16,8 @@ export type ForwardListVariant = "live" | "delayed";
 
 /**
  * Everything the View needs that would otherwise be a DB call, injected so its tests never hit it
- * - `runForwardConfigFlow` (`flows/forward-config.flow.ts`) and `ezSetupFlow`/`defaultEzSetupDeps`
- * (`flows/ez-setup.flow.ts`) each wire the real repository functions.
+ * - `ezSetupFlow`/`defaultEzSetupDeps`
+ * (`flows/ez-setup.flow.ts`) wires the real repository functions.
  */
 export interface ForwardListDeps {
     getForwards(guildId: string): Promise<BiomeForwardRow[]>;
@@ -80,8 +80,7 @@ function sharedHandlers(
 }
 
 /**
- * Shared list + Create/Remove screen for biome forwards - `exit: "close"` (a "Close" button, the
- * standalone `bh-admin forward menu`) or `exit: "step"` (Back/Skip/Cancel, driving a `StepResult`
+ * Shared list + Create/Remove screen for biome forwards - `exit: "close"` (a "Close" button) or `exit: "step"` (Back/Skip/Cancel, driving a `StepResult`
  * for `ez-setup.flow.ts`'s wizard). Both modes share the same list/Create/Remove behavior; only the
  * exit row and what `done` resolves with differ.
  */
