@@ -55,7 +55,7 @@ async function getQuotaRewardSummaryLines(guildId: string, userId: number, quota
 }
 
 /** Loads everything the Profile view's tabs render from, once upfront - `null` if the user has no
- * BiomeHunt profile in this guild. Warns if the DB round-trip is slow (see settings.diagnostics.slowProfileLoadMs). */
+ * hunter profile in this guild. Warns if the DB round-trip is slow (see settings.diagnostics.slowProfileLoadMs). */
 export async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
     const start = Date.now();
     const user = await getUserByDiscordId(guildId, discordUserId);

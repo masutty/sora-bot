@@ -19,7 +19,7 @@ import {
 export const BIOME_CONFIG_FORMAT = "sora-bot.biomes";
 export const BIOME_CONFIG_VERSION = 1;
 
-/** One biome in the file - the same fields `/bh-owner biome add` takes, in the same forms. */
+/** One biome in the file - the same fields `/owner biome add` takes, in the same forms. */
 export interface BiomeConfigEntry {
     detectionName: string;
     label: string;
@@ -40,7 +40,7 @@ export interface BiomeConfigEntry {
 }
 
 /**
- * `/bh-owner biome export`'s file - every registered biome (disabled ones included) in picker
+ * `/owner biome export`'s file - every registered biome (disabled ones included) in picker
  * order, so `import` on another bot (dev -> prod or back) can reproduce the same registry.
  */
 export interface BiomeConfigFile {
@@ -121,7 +121,7 @@ function fromConfigEntry(raw: unknown): BiomeEntry {
 
 /**
  * Reads and fully validates an exported file - every biome is checked with the same rules as
- * `/bh-owner biome add`. Any problem refuses the WHOLE file, listing every bad biome, so a partial
+ * `/owner biome add`. Any problem refuses the WHOLE file, listing every bad biome, so a partial
  * import never happens.
  */
 export function parseBiomeConfig(text: string): BiomeEntry[] {

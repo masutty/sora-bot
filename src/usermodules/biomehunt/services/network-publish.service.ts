@@ -406,7 +406,7 @@ export type SimulatedScheduleResult =
     | { kind: "skipped"; reason: string };
 
 /**
- * `/bh-owner simulate-biome network_relays:<guild ids>` - relays a simulated rare find to ONLY those
+ * `/owner simulate-biome network_relays:<guild ids>` - relays a simulated rare find to ONLY those
  * Member Servers, through the real pipeline (local post + home advantage, Worker, fan-out), so the
  * owner can test it end to end between test servers without touching anyone else. Ids that can't
  * receive Network posts (not a member, no Network channel, the origin itself) are ignored and

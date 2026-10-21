@@ -44,7 +44,7 @@ export interface UnrewardedEvent {
  * Confirmed (`started`, non-null biome) events for a user that DON'T yet have a `bh_biome_rewards`
  * row - i.e. biome finds that predate the economy being turned on, or were otherwise missed.
  * `afterDate`/`biomes` are optional narrowing filters (`null` = no restriction on that axis); used
- * by `bh-owner recalculate-user`'s backfill, which is additive only - it never touches an event
+ * by `owner recalculate-user`'s backfill, which is additive only - it never touches an event
  * that already has a ledger row.
  */
 export async function getUnrewardedEventsForUser(

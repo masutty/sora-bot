@@ -125,7 +125,7 @@ export interface RewardBackfillPlan {
     totalSeeds: number;
     totalXp: number;
     /** Confirmed events matching the filters whose biome isn't in the biome registry (no category -> no
-     * reward value to compute) - reported so `bh-owner recalculate-user` can surface them instead
+     * reward value to compute) - reported so `owner recalculate-user` can surface them instead
      * of silently doing nothing for them. */
     skippedUnknownCount: number;
 }

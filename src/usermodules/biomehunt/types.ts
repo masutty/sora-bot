@@ -70,7 +70,7 @@ export interface UserRow {
     seeds: number;
     xp: number;
     /** Sticks to the user, not the macro channel - survives soft-delete/reset-channel. Only
-     * `/bh reroll` and `/bh-owner reroll-flower` are allowed to change it once set. */
+     * `/bh reroll` and `/owner reroll-flower` are allowed to change it once set. */
     flower: string | null;
 }
 
@@ -158,7 +158,7 @@ export interface BiomeDelayedForwardRow extends BiomeForwardRow {
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later
- * via `/bh-admin review-voting`, re-editing the forward message again with the new outcome.
+ * via `/admin review-voting`, re-editing the forward message again with the new outcome.
  * `NO_VOTES` and `TIE` are distinct: 0×0 is "no votes", not a tie - a tie requires at least one
  * vote on each side.
  */
@@ -209,7 +209,7 @@ export interface BiomeVoteRow {
 
 export interface BiomeVoteBallotRow {
     vote_id: string;
-    /** Raw Discord user id (not `bh_users.id`) - a voter need not have a BiomeHunt profile. */
+    /** Raw Discord user id (not `bh_users.id`) - a voter need not have a hunter profile. */
     user_id: string;
     choice: VoteChoice;
     /** True once the voter switched their choice - they can't switch again. */

@@ -12,7 +12,7 @@ import { localVoteVerdict, voteOutcomeLine } from "./vote-outcome";
 
 /**
  * Everything the View needs that would otherwise be a DB/Discord call, injected so its tests never
- * touch either - `defaultVoteReviewDeps(client, voteId)` (called from `bh-admin.command.ts`) wires
+ * touch either - `defaultVoteReviewDeps(client, voteId)` (called from `admin.command.ts`) wires
  * the real ones, binding `client`/`voteId` into `adminDecide` (it needs both, and the View itself
  * only ever gets a plain `(adminDiscordId, choice)` call).
  */
@@ -114,7 +114,7 @@ async function decide(c: HandlerContext<VoteReviewState, void>, deps: VoteReview
 }
 
 /**
- * `/bh-admin review-voting <id>` - who voted Real/Fake, the vote's current state, and (since `bh-admin` is
+ * `/admin review-voting <id>` - who voted Real/Fake, the vote's current state, and (since `admin` is
  * already admin-only) Confirm/Deny buttons that call `adminDecide` the same way the forward
  * message's own buttons do, including AFTER the vote closed (overriding a community/no-votes/tie
  * outcome, or even flip-flopping an earlier admin decision - `adminDecide`'s CAS only guards

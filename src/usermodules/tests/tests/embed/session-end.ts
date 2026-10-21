@@ -19,7 +19,7 @@ const FAKE_SESSION: ActivitySessionRow = {
 /** Every biome registered right now, so this preview always covers whatever's currently
  * registered (new biomes included) instead of a hand-picked handful. Rare biomes get a small
  * count, everything else a varied spread - just for a realistic-looking layout. Built per run, so
- * biomes added with `/bh-owner biome add` show up without a restart. */
+ * biomes added with `/owner biome add` show up without a restart. */
 function fakeBiomes() {
     return getEnabledBiomes().map((meta, i) => ({
         biome: meta.key,
@@ -28,7 +28,7 @@ function fakeBiomes() {
 }
 
 export default {
-    description: 'BiomeHunt\'s "Session Ended" macro-channel report, with fake session/biome data.',
+    description: 'The "Session Ended" macro-channel report, with fake session/biome data.',
     run(): TestPayload {
         const container = buildSessionEndContainer(FAKE_SESSION, fakeBiomes(), {
             todaySeconds: 3 * 3600 + 10 * 60,

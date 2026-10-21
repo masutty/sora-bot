@@ -61,14 +61,14 @@ const VOTE_KIND_LABEL: Record<VoteKind, string> = { local: "Local", network: "Ne
 export const VOTE_WINDOW_MIN_S = 30;
 export const VOTE_WINDOW_MAX_S = 600;
 
-/** How long a new vote of `kind` stays open - what an owner set with `/bh-owner vote-duration`, else the settings default. */
+/** How long a new vote of `kind` stays open - what an owner set with `/owner vote-duration`, else the settings default. */
 export async function getVoteWindowMs(kind: VoteKind): Promise<number> {
     const seconds = Number(await getBotSetting(VOTE_WINDOW_KEY[kind]));
     if (seconds > 0) return seconds * 1000;
     return kind === "local" ? settings.votes.windowMs : settings.network.voteWindowMs;
 }
 
-/** `/bh-owner vote-duration` - `seconds` of `null` only shows the current duration. Votes already open keep their deadline. */
+/** `/owner vote-duration` - `seconds` of `null` only shows the current duration. Votes already open keep their deadline. */
 export async function setVoteWindow(kind: VoteKind, seconds: number | null): Promise<string> {
     const label = VOTE_KIND_LABEL[kind];
     if (seconds === null) return `${label} votes stay open for **${(await getVoteWindowMs(kind)) / 1000}s**.`;
@@ -177,7 +177,7 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
 
 /**
  * Grants the outcome exactly once - `community_real`/`admin_confirmed` grant the reward only if
- * this event doesn't already have one (an admin later re-confirming, e.g. via `/bh-admin review-voting`,
+ * this event doesn't already have one (an admin later re-confirming, e.g. via `/admin review-voting`,
  * must never double-grant); `admin_denied` reverts whatever was granted (safe/no-op if nothing
  * was) and deletes the event, mirroring the existing admin-deny behavior. `no_votes`/`tie`/
  * `community_fake` do nothing - the event is kept for a possible later admin review.
@@ -210,7 +210,7 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
 /**
  * Applies the outcome, logging (rather than throwing) if it fails - by this point `vote`'s CAS
  * close has ALREADY committed, so a failure here must never look like the vote itself failed to
- * close: it did, just without its grant/revert applied yet. The log line names `/bh-admin review-voting`
+ * close: it did, just without its grant/revert applied yet. The log line names `/admin review-voting`
  * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
  * itself idempotent).
  */
@@ -220,7 +220,7 @@ async function applyOutcomeSafely(vote: BiomeVoteRow, deps: VoteServiceDeps): Pr
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,
-            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /bh-admin review-voting ${vote.id}`,
+            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /admin review-voting ${vote.id}`,
         });
     }
 }
@@ -312,7 +312,7 @@ export type AdminDecideResult =
 
 /**
  * An admin's decisive click - real (confirm) or fake (deny), inside OR after the vote's window
- * (an admin overriding a closed vote later, e.g. via `/bh-admin review-voting`, still goes through here).
+ * (an admin overriding a closed vote later, e.g. via `/admin review-voting`, still goes through here).
  * An admin CAN decide on their own find: the admin's word outranks the "no self-vote" rule, which
  * only applies to community ballots (`castBallot`). The close itself is a compare-and-set on the status
  * this call just read (`vote.status`): if another decision (a racing admin click, or

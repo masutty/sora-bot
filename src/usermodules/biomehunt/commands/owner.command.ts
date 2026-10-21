@@ -31,11 +31,11 @@ import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
 import { biomeAdminSubcommandGroup, respondBiomeAdminAutocomplete, runBiomeAdminSubcommand } from "./biome-admin";
 import { relaySimulationToNetwork, runSimulateNetworkMirror } from "./network-admin";
 
-const logger = new Logger("biomehunt.commands.bh-owner");
+const logger = new Logger("biomehunt.commands.owner");
 
 const BIOME_CATEGORY_CHOICES = ALL_BIOME_CATEGORIES.map((c) => ({ name: BIOME_CATEGORY_LABELS[c], value: c }));
 
-/** Guilds with BiomeHunt data (bh_guilds) the bot is no longer a member of. */
+/** Guilds with hunting data (bh_guilds) the bot is no longer a member of. */
 async function findStaleGuilds(client: BotClient): Promise<StaleGuildSummary[]> {
     const allGuildIds = await getAllGuildIds();
     const staleIds = allGuildIds.filter((id) => !client.guilds.cache.has(id));
@@ -47,8 +47,8 @@ function formatGuildList(guilds: StaleGuildSummary[]): string {
 }
 
 export default defineCommand({
-    name: "bh-owner",
-    description: "Bot-owner housekeeping for BiomeHunt data across all guilds.",
+    name: "owner",
+    description: "Bot-owner housekeeping for hunting data across all guilds.",
     category: CommandCategory.ADMIN,
     botOwnerOnly: true,
     showOnHelp: false,
@@ -56,11 +56,11 @@ export default defineCommand({
     subcommandModes: { "biome:import": "slash" },
 
     options: new SlashCommandBuilder()
-        .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with BiomeHunt data the bot is no longer a member of."))
+        .addSubcommand((s) => s.setName("stale").setDescription("Lists guilds with hunting data the bot is no longer a member of."))
         .addSubcommand((s) =>
             s
                 .setName("stale-cleanup")
-                .setDescription("Deletes a guild's BiomeHunt data - all stale guilds if none is given.")
+                .setDescription("Deletes a guild's hunting data - all stale guilds if none is given.")
                 .addStringOption((o) =>
                     o.setName("guild_id").setDescription("Specific guild ID to clean up (omit for all stale guilds)").setRequired(false),
                 ),
@@ -278,7 +278,7 @@ interface RerollFlowerArgs {
 }
 
 /**
- * When `guild_id` is omitted, resolves it from the user's BiomeHunt profiles - only safe when they
+ * When `guild_id` is omitted, resolves it from the user's hunter profiles - only safe when they
  * have exactly one across every guild; ambiguous (or absent) otherwise, in which case the caller
  * must specify guild_id explicitly.
  */
@@ -286,7 +286,7 @@ async function resolveOwnerTargetGuild(discordUserId: string, guildId: string | 
     if (guildId) return { guildId };
 
     const profiles = await getUsersByDiscordId(discordUserId);
-    if (profiles.length === 0) return { error: `<@${discordUserId}> has no BiomeHunt profile in any guild.` };
+    if (profiles.length === 0) return { error: `<@${discordUserId}> has no hunter profile in any guild.` };
     if (profiles.length > 1) {
         return {
             error: `<@${discordUserId}> has profiles in multiple guilds - specify guild_id: ${profiles.map((p) => `\`${p.guild_id}\``).join(", ")}.`,
@@ -349,7 +349,7 @@ function defaultSimulateBiomeDeps(): SimulateBiomeDeps {
 }
 
 /**
- * Validates the preconditions for `/bh-owner simulate-biome`, split out from `runSimulateBiome`
+ * Validates the preconditions for `/owner simulate-biome`, split out from `runSimulateBiome`
  * so its three error paths (unknown biome, no profile, no live or delayed forward configured) can be unit-tested
  * without a real Discord context or a database. The biome is checked first, and against
  * the biome registry directly rather than trusting the slash option's `choices` - a prefix invocation
@@ -368,7 +368,7 @@ export async function resolveSimulateBiomeTarget(
 
     const [forward, delayed] = await Promise.all([deps.getForwardConfig(guildId, biome), deps.getDelayedForwardConfig(guildId, biome)]);
     if (!forward && !delayed)
-        throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/bh-admin forwarding\`.`);
+        throw new BiomeHuntError(`No forward is configured for ${formatBiomeName(biome)} - set one with \`/admin forwarding\`.`);
 
     const destinations = [
         ...(forward ? [`forwarded to <#${forward.channel_id}>`] : []),
@@ -437,20 +437,20 @@ async function runSimulateBiome(ctx: CommandContext): Promise<void> {
 
 async function renderStaleList(client: BotClient): Promise<FormattedReply> {
     const stale = await findStaleGuilds(client);
-    if (!stale.length) return EmbedFormatter.plain("No stale guilds - every guild with BiomeHunt data still has the bot in it.");
+    if (!stale.length) return EmbedFormatter.plain("No stale guilds - every guild with hunting data still has the bot in it.");
     return EmbedFormatter.plain(`**${stale.length} stale guild(s):**\n${formatGuildList(stale)}`);
 }
 
 /**
  * `guildId` given -> targets just that guild, whether it's stale or not (a general "wipe this
- * guild's BiomeHunt data" escape hatch). `guildId` omitted -> targets every stale guild at once,
+ * guild's hunting data" escape hatch). `guildId` omitted -> targets every stale guild at once,
  * with a SINGLE confirmation covering all of them - never one confirmation per guild.
  */
 async function runStaleCleanup(ctx: CommandContext, client: BotClient, guildId: string | null): Promise<void> {
     const targets = guildId ? await getGuildDataSummary([guildId]) : await findStaleGuilds(client);
 
     if (!targets.length) {
-        await ctx.reply(EmbedFormatter.info(guildId ? `Guild \`${guildId}\` has no BiomeHunt data.` : "No stale guilds to clean up."));
+        await ctx.reply(EmbedFormatter.info(guildId ? `Guild \`${guildId}\` has no hunting data.` : "No stale guilds to clean up."));
         return;
     }
 
@@ -462,8 +462,8 @@ async function runStaleCleanup(ctx: CommandContext, client: BotClient, guildId: 
             name: "biomehunt.stale-cleanup",
             title:
                 targets.length === 1
-                    ? `Delete all BiomeHunt data for guild \`${targets[0].guild_id}\`?`
-                    : `Delete all BiomeHunt data for ${targets.length} stale guild(s)?`,
+                    ? `Delete all hunting data for guild \`${targets[0].guild_id}\`?`
+                    : `Delete all hunting data for ${targets.length} stale guild(s)?`,
             fields: [
                 { label: "Guilds", value: targets.map((g) => g.guild_id).join(", ") },
                 { label: "Users tracked", value: String(totalUsers) },
@@ -473,8 +473,8 @@ async function runStaleCleanup(ctx: CommandContext, client: BotClient, guildId: 
             onConfirm: async () => {
                 const guildIds = targets.map((g) => g.guild_id);
                 const deleted = await deleteGuildData(guildIds);
-                logger.info(`Deleted BiomeHunt data for ${deleted} guild(s): ${guildIds.join(", ")}`);
-                return EmbedFormatter.success(`Deleted BiomeHunt data for ${deleted} guild(s).`);
+                logger.info(`Deleted hunting data for ${deleted} guild(s): ${guildIds.join(", ")}`);
+                return EmbedFormatter.success(`Deleted hunting data for ${deleted} guild(s).`);
             },
         }),
         undefined,

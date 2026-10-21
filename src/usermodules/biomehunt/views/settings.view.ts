@@ -134,7 +134,7 @@ const goTo = (screen: Screen) => (c: Ctx) => {
 };
 
 /**
- * `/bh-admin settings`: one overview of how the server is set up, with a screen per setting. Opens
+ * `/admin settings`: one overview of how the server is set up, with a screen per setting. Opens
  * on just the missing macro channel category when the server isn't ready. Every change saves at once.
  */
 export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, void, SettingsInput> {

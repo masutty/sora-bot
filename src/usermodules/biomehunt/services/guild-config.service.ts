@@ -118,7 +118,7 @@ export async function disableCounter(guildId: string): Promise<string> {
 export async function forceCounterUpdate(client: BotClient, guildId: string): Promise<string> {
     const guildConfig = await getOrCreateGuildConfig(guildId);
     if (!guildConfig.counter_channel_id) {
-        throw new BiomeHuntError("Live counter isn't configured for this server. Set one in `/bh-admin settings`.");
+        throw new BiomeHuntError("Live counter isn't configured for this server. Set one in `/admin settings`.");
     }
     await updateCounterForGuild(client, guildConfig);
     return `Live counter updated in <#${guildConfig.counter_channel_id}>.`;
@@ -143,6 +143,6 @@ export async function setAutoDeleteThreshold(guildId: string, hoursAfterInactive
     await setAutoDeleteHours(guildId, Math.round(hoursAfterInactive * 3600));
     return (
         `Auto-delete threshold set: a user's macro channel is removed ${hoursAfterInactive}h after they go inactive. ` +
-        "Remember this only takes effect while the AUTO_DELETE_ENABLED flag is on (`/bh-admin flags`)."
+        "Remember this only takes effect while the AUTO_DELETE_ENABLED flag is on (`/admin flags`)."
     );
 }

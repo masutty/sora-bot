@@ -217,7 +217,7 @@ export async function getGuildDataSummary(guildIds: string[]): Promise<StaleGuil
     }));
 }
 
-/** Deletes entire guilds' BiomeHunt data (users, macro channels, quotas, badges, etc - all cascade off bh_guilds). Returns how many guild rows were removed. */
+/** Deletes entire guilds' hunting data (users, macro channels, quotas, badges, etc - all cascade off bh_guilds). Returns how many guild rows were removed. */
 export async function deleteGuildData(guildIds: string[]): Promise<number> {
     if (guildIds.length === 0) return 0;
     const result = await query(`DELETE FROM bh_guilds WHERE guild_id = ANY($1)`, [guildIds]);

@@ -72,7 +72,7 @@ ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0;
 
 /* Flower lives on the user, not the macro channel - it must survive soft-delete/reset-channel
    (which only drop the bh_user_macro_channels row), so a user keeps the same Flower across
-   channel resets and only a real reroll (/bh reroll, /bh-owner reroll-flower) changes it. */
+   channel resets and only a real reroll (/bh reroll, /owner reroll-flower) changes it. */
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS flower VARCHAR(32);
 
 CREATE TABLE IF NOT EXISTS bh_user_macro_channels (
@@ -251,7 +251,7 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS last_seen_in_server_at TIMES
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
- * event, which used to cascade away the vote AND its ballots too: /bh-admin review-voting <id> would
+ * event, which used to cascade away the vote AND its ballots too: /admin review-voting <id> would
  * then say "No vote with that id.", and the rejected-find stats derivable from the ballot rows
  * were gone. Now nullable with ON DELETE SET NULL: denying still deletes the event, but the vote
  * and its ballots survive with event_id = NULL - applyOutcome (biome-vote.service.ts) skips any
@@ -273,7 +273,7 @@ CREATE INDEX IF NOT EXISTS bh_biome_votes_open ON bh_biome_votes(status, closes_
  * One row per (vote, voter) - the primary key IS the "one vote per user, no changing" rule (a
  * second INSERT for the same pair is rejected outright by ON CONFLICT DO NOTHING in the
  * repository, never overwritten). user_id is the voter's raw Discord id, not bh_users.id -
- * a voter doesn't need a BiomeHunt profile to vote.
+ * a voter doesn't need a hunter profile to vote.
  */
 CREATE TABLE IF NOT EXISTS bh_biome_vote_ballots (
     vote_id    TEXT NOT NULL REFERENCES bh_biome_votes(id) ON DELETE CASCADE,
@@ -322,7 +322,7 @@ CREATE TABLE IF NOT EXISTS bh_guild_flags (
  * a backfill that turned AUTO_DELETE_ENABLED ON for every guild with an old non-null value, and a
  * reset that turned it OFF for every guild. Auto-delete once deleted real users' macro channels.
  * Both are long done and were removed; flags change only through an admin action
- * (/bh-admin flags or ez-setup). migrations.test.ts enforces this.
+ * (/admin flags or ez-setup). migrations.test.ts enforces this.
  */
 UPDATE bh_guilds SET delete_inactive_after_s = 86400 WHERE delete_inactive_after_s IS NULL;
 ALTER TABLE bh_guilds ALTER COLUMN delete_inactive_after_s SET DEFAULT 86400;
@@ -363,7 +363,7 @@ CREATE TABLE IF NOT EXISTS bh_network_pings (
     PRIMARY KEY (guild_id, biome)
 );
 
-/* Network Ban - bot owner only, Network-wide. No FK: a banned guild may have no BiomeHunt data at all. */
+/* Network Ban - bot owner only, Network-wide. No FK: a banned guild may have no hunting data at all. */
 CREATE TABLE IF NOT EXISTS bh_network_bans (
     kind       VARCHAR(5) NOT NULL,     /* guild | user */
     target_id  VARCHAR(20) NOT NULL,
@@ -386,7 +386,7 @@ CREATE TABLE IF NOT EXISTS bh_network_exclusions (
  * One row per Network Post. status: pending | publishing | published | discarded. origin_* and
  * invite_url are a render snapshot taken at find time - every Mirror (and its single edit at vote
  * close) is built from this row, never re-derived. No FK on origin_guild_id: the post outlives the
- * guild's BiomeHunt data (the alert history points at it).
+ * guild's hunting data (the alert history points at it).
  */
 CREATE TABLE IF NOT EXISTS bh_network_posts (
     id                TEXT PRIMARY KEY,
@@ -446,7 +446,7 @@ CREATE TABLE IF NOT EXISTS bh_network_alerts (
 CREATE INDEX IF NOT EXISTS bh_network_alerts_guild ON bh_network_alerts(guild_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS bh_network_alerts_user ON bh_network_alerts(discord_user_id, created_at DESC);
 
-/* A "/bh-owner simulate-biome network_relays:true" test post - shown as a test, no ping, no vote. */
+/* A "/owner simulate-biome network_relays:true" test post - shown as a test, no ping, no vote. */
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS simulated BOOLEAN NOT NULL DEFAULT FALSE;
 /* The only Member Servers a test post goes to (the ids given in network_relays) - NULL on real posts, which go to every member. */
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS relay_guild_ids TEXT[];
@@ -462,7 +462,7 @@ ALTER TABLE bh_network_guilds ADD COLUMN IF NOT EXISTS last_activity_check DATE;
 /* Biome registry                               */
 /* ───────────────────────────────────────────── */
 
-/* Every recognized biome - managed by the bot owner with /bh-owner biome, seeded on boot from
+/* Every recognized biome - managed by the bot owner with /owner biome, seeded on boot from
    DEFAULT_BIOMES (constants/biomes.constants.ts). Never deleted: a retired biome is disabled, so
    old finds keep their label/color/category. */
 CREATE TABLE IF NOT EXISTS bh_biomes (

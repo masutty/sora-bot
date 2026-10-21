@@ -35,7 +35,7 @@ const ANSI_TEXT_CHOICES = [NO_COLOR_CHOICE, ...ANSI_TEXT_COLORS.map((c) => ({ na
 const ANSI_BACKGROUND_CHOICES = [NO_COLOR_CHOICE, ...ANSI_BACKGROUND_COLORS.map((c) => ({ name: c.name, value: c.slug }))];
 
 /** Where a biome's ANSI style shows - its name inside the `ansi` codeblocks of these screens. */
-const ANSI_WHERE = "in /bh profile, /bh-stats and session-end reports";
+const ANSI_WHERE = "in /bh profile, /stats and session-end reports";
 
 /** The fields `add` and `edit` share - on `edit` none is required and only the given ones change. */
 function addSharedBiomeOptions(s: SlashCommandSubcommandBuilder, required: boolean): SlashCommandSubcommandBuilder {
@@ -80,7 +80,7 @@ function addSharedBiomeOptions(s: SlashCommandSubcommandBuilder, required: boole
         .addStringOption((o) => o.setName("badge_emoji").setDescription(`The badge's emoji - unicode or custom${removable}`));
 }
 
-/** `/bh-owner biome ...` - the bot owner's runtime biome registry (see `bh_biomes`). */
+/** `/owner biome ...` - the bot owner's runtime biome registry (see `bh_biomes`). */
 export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder): SlashCommandSubcommandGroupBuilder {
     return g
         .setName("biome")
@@ -127,15 +127,13 @@ export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder)
         )
         .addSubcommand((s) => s.setName("list").setDescription("Lists every registered biome."))
         .addSubcommand((s) =>
-            s.setName("export").setDescription("Downloads every biome as a JSON file - for /bh-owner biome import on another bot."),
+            s.setName("export").setDescription("Downloads every biome as a JSON file - for /owner biome import on another bot."),
         )
         .addSubcommand((s) =>
             s
                 .setName("import")
-                .setDescription("Applies a file from /bh-owner biome export - shows what changes and asks first.")
-                .addAttachmentOption((o) =>
-                    o.setName("file").setDescription("The .json file /bh-owner biome export made").setRequired(true),
-                )
+                .setDescription("Applies a file from /owner biome export - shows what changes and asks first.")
+                .addAttachmentOption((o) => o.setName("file").setDescription("The .json file /owner biome export made").setRequired(true))
                 .addStringOption((o) =>
                     o
                         .setName("mode")
@@ -148,7 +146,7 @@ export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder)
         );
 }
 
-/** Autocomplete for the `biome` option of `/bh-owner biome edit|disable|enable`. */
+/** Autocomplete for the `biome` option of `/owner biome edit|disable|enable`. */
 export async function respondBiomeAdminAutocomplete(interaction: AutocompleteInteraction, typed: string): Promise<void> {
     const sub = interaction.options.getSubcommand(false);
     const which = sub === "disable" ? "enabled" : sub === "enable" ? "disabled" : "all";
@@ -171,11 +169,11 @@ function enabledNotes(e: BiomeEntry, detectionName: string): string[] {
     if (detectionName.trim().split(/\s+/).length > MAX_BIOME_NAME_WORDS)
         notes.push(`Macro text is read on up to ${MAX_BIOME_NAME_WORDS} words - a longer name won't be detected.`);
     if (e.category === "rare") notes.push(NETWORK_NOTE);
-    notes.push("Test it with `/bh-owner simulate-biome`.");
+    notes.push("Test it with `/owner simulate-biome`.");
     return notes;
 }
 
-/** `/bh-owner biome <sub>` - the caller already deferred ephemerally. */
+/** `/owner biome <sub>` - the caller already deferred ephemerally. */
 export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void> {
     const args = ctx.args;
     switch (args.getSubcommand()) {
@@ -242,7 +240,7 @@ async function runBiomeExport(ctx: CommandContext): Promise<void> {
     const file = exportCurrentBiomes(ctx.client.user?.tag ?? null);
     const name = `biomes-${file.exportedAt.slice(0, 10)}.json`;
     await ctx.reply({
-        content: `Exported **${file.biomes.length}** biomes. Apply them on another bot with \`/bh-owner biome import\`.`,
+        content: `Exported **${file.biomes.length}** biomes. Apply them on another bot with \`/owner biome import\`.`,
         files: [new AttachmentBuilder(Buffer.from(JSON.stringify(file, null, 4)), { name })],
         allowedMentions: NO_PINGS,
     });
@@ -263,7 +261,7 @@ function importFields(plan: BiomeImportPlan, mirror: boolean): Array<{ label: st
     return fields;
 }
 
-/** Slash only (see bh-owner's `subcommandModes`) - a prefix call has no attachment option to read. */
+/** Slash only (see owner's `subcommandModes`) - a prefix call has no attachment option to read. */
 async function runBiomeImport(ctx: CommandContext): Promise<void> {
     if (ctx.raw.kind !== "slash") throw new BiomeHuntError("Import only works as a slash command.");
     const attachment = ctx.raw.interaction.options.getAttachment("file", true);

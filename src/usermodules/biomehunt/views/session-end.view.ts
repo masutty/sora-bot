@@ -9,7 +9,7 @@ function addDivider(container: ContainerBuilder): void {
 
 const ANSI_RESET = "\u001b[0m";
 
-/** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - set with `/bh-owner biome add|edit ansi_color:`. */
+/** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - set with `/owner biome add|edit ansi_color:`. */
 function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
 }

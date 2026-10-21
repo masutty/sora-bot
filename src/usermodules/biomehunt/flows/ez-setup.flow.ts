@@ -101,7 +101,7 @@ export interface EzSetupContext {
 
 function stepContainer(title: string, description: string): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    container.addTextDisplayComponents((td) => td.setContent(`## bh-admin setup: ${title}`));
+    container.addTextDisplayComponents((td) => td.setContent(`## admin setup: ${title}`));
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     container.addTextDisplayComponents((td) => td.setContent(description));
     return container;
@@ -842,7 +842,7 @@ async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<Vie
 
     summary
         .setAccentColor(readiness.ready ? 0x57f287 : 0xed4245)
-        .spliceComponents(0, 1, new TextDisplayBuilder().setContent("## bh-admin setup: Complete"))
+        .spliceComponents(0, 1, new TextDisplayBuilder().setContent("## admin setup: Complete"))
         .spliceComponents(
             1,
             0,
@@ -865,7 +865,7 @@ async function buildSummary(ctx: EzSetupContext, deps: EzSetupDeps): Promise<Vie
 // ─── Driver ──────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * `bh-admin setup`'s guided wizard - welcome, categories, activity roles, thresholds, auto-delete,
+ * `admin setup`'s guided wizard - welcome, categories, activity roles, thresholds, auto-delete,
  * live counter, quota reward roles, badge roles, then biome forwards (`forwardListView`), ending in a `showConfig`/`isGuildReady` summary.
  */
 export function ezSetupFlow(

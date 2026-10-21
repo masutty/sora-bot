@@ -125,7 +125,7 @@ function deleteNote(mode: QuotaRoleMode, holders: number): string {
 }
 
 /**
- * `/bh-admin quotas`: the server's quotas as a list, an editor per quota, and the daily check time.
+ * `/admin quotas`: the server's quotas as a list, an editor per quota, and the daily check time.
  * Every change saves at once. Stored modes stay `F` / `RW`; the UI says Daily reward / Live role.
  */
 export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, QuotasInput> {

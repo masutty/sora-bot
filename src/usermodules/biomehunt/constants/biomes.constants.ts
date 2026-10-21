@@ -42,7 +42,7 @@ export interface BiomeEntry extends BiomeMeta {
 
 /**
  * The biomes the bot shipped with - only a SEED now. The live list is the `bh_biomes` table,
- * managed by the bot owner with `/bh-owner biome ...` (see repository/biomes.repository.ts): on
+ * managed by the bot owner with `/owner biome ...` (see repository/biomes.repository.ts): on
  * boot every key here that's missing from the table is inserted, and rows already there are never
  * overwritten. To add/edit a biome, use the command - editing an entry here does nothing on a
  * database that already has it.
@@ -232,7 +232,7 @@ function defaultEntries(): BiomeEntry[] {
  * SINGLE SOURCE OF TRUTH for every recognized biome at runtime - recognition, display name,
  * category grouping, forward color/icon/flavor text and session-end ANSI color all read from it.
  * Starts as `DEFAULT_BIOMES` (so tests and the first moments of boot work without a database) and
- * is replaced by `loadBiomeRegistry` on boot and after every `/bh-owner biome` change. Anything not
+ * is replaced by `loadBiomeRegistry` on boot and after every `/owner biome` change. Anything not
  * in it falls back to a generic Title Case display name, no category, the default accent color, no
  * icon and no ANSI color.
  */

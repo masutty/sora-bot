@@ -173,10 +173,10 @@ function editorRows(e: BiomeEntry, kit: RenderKit) {
 }
 
 /**
- * `/bh-owner biome list`: every registered biome as one `ansi` table per category, plus a category
+ * `/owner biome list`: every registered biome as one `ansi` table per category, plus a category
  * select then a biome select (two steps, so no select passes Discord's 25 options) that opens that
  * biome's full card, with Back to the table. The card edits the biome in place - every change goes
- * through `/bh-owner biome edit`'s own validation (a bad value is answered privately and changes
+ * through `/owner biome edit`'s own validation (a bad value is answered privately and changes
  * nothing). Always reads the live registry.
  */
 export function biomeListView(deps: BiomeAdminDeps = defaultBiomeAdminDeps()): ViewDefinition<BiomeListState, void, void> {

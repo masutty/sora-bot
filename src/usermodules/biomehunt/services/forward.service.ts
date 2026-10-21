@@ -65,13 +65,13 @@ export async function checkAndForward(
 }
 
 /**
- * The core of `checkAndForward`, factored out so `/bh-owner simulate-biome` can drive the exact
+ * The core of `checkAndForward`, factored out so `/owner simulate-biome` can drive the exact
  * same forward+vote pipeline for a synthetic event - it has no source message to derive a jump
  * link from, so it supplies its own (a link to the invoking message, or the channel). Sends the
  * live forward (if configured) right away and schedules the delayed forward (if configured) -
  * the two are independent, a biome can have either or both.
  *
- * A dry run (`eventId === null`, only `/bh-owner simulate-biome` does that) must bother no one and
+ * A dry run (`eventId === null`, only `/owner simulate-biome` does that) must bother no one and
  * change nothing: neither message pings anyone and no vote is opened (no vote/ballot rows).
  */
 export async function forwardBiome(
@@ -234,7 +234,7 @@ export interface DelayedForwardJob {
     eventId: number | null;
     /** The live forward's vote, if it opened one - a fake/denied outcome cancels the delayed send. */
     voteId: string | null;
-    /** A `/bh-owner simulate-biome` dry run - sent without pinging anyone. */
+    /** A `/owner simulate-biome` dry run - sent without pinging anyone. */
     dryRun: boolean;
 }
 

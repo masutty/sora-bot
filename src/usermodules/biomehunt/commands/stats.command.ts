@@ -21,8 +21,8 @@ import {
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { loadQuotaDayReport } from "../services/quota.service";
-import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/bh-stats.view";
 import { quotaStatsView } from "../views/quota-report.view";
+import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/stats.view";
 import { buildGuildStatsContainer, getUserListPage } from "../views/stats-builders";
 
 const ANSI_RESET = "\u001b[0m";
@@ -123,7 +123,7 @@ async function runBiomesStats(ctx: CommandContext, guildId: string): Promise<voi
 async function runUserBiomesStats(guildId: string, target: User, send: (payload: StatsPayload) => Promise<Message>): Promise<void> {
     const user = await getUserByDiscordId(guildId, target.id);
     if (!user) {
-        await send(EmbedFormatter.info(`<@${target.id}> has no BiomeHunt profile in this server.`));
+        await send(EmbedFormatter.info(`<@${target.id}> has no hunter profile in this server.`));
         return;
     }
     const container = await buildUserBiomesContainer(target.id, user.id);
@@ -201,7 +201,7 @@ async function runSessionsStats(ctx: CommandContext, guildId: string): Promise<v
 async function runUserSessionsStats(guildId: string, target: User, send: (payload: StatsPayload) => Promise<Message>): Promise<void> {
     const user = await getUserByDiscordId(guildId, target.id);
     if (!user) {
-        await send(EmbedFormatter.info(`<@${target.id}> has no BiomeHunt profile in this server.`));
+        await send(EmbedFormatter.info(`<@${target.id}> has no hunter profile in this server.`));
         return;
     }
     const container = await buildUserSessionsContainer(guildId, target.id, user.id);
@@ -221,7 +221,7 @@ async function runUsersStats(ctx: CommandContext, guildId: string): Promise<void
 }
 
 /**
- * Members who left the Discord server keep their BiomeHunt profile, but shouldn't pad the "not yet"
+ * Members who left the Discord server keep their hunter profile, but shouldn't pad the "not yet"
  * list - so the report only counts members the guild still has (needs the GuildMembers intent).
  */
 async function runQuotasStats(ctx: CommandContext, guild: Guild): Promise<void> {
@@ -241,8 +241,8 @@ async function runQuotasStats(ctx: CommandContext, guild: Guild): Promise<void> 
 // ─── Command ────────────────────────────────────────────────────────────────
 
 export default defineCommand({
-    name: "bh-stats",
-    description: "Guild-wide (or per-user) BiomeHunt stats - biomes, sessions, and member activity.",
+    name: "stats",
+    description: "Server-wide (or per-user) hunting stats - biomes, sessions, and member activity.",
     category: CommandCategory.ADMIN,
     showOnHelp: true,
     guildOnly: true,

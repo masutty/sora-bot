@@ -4,7 +4,7 @@ import { NO_PINGS, unix } from "@/utils/format";
 import type { TestCase } from "../../registry";
 
 /**
- * Candidate layouts for how `/bh-stats quotas` lists members and separates who hit the target from
+ * Candidate layouts for how `/stats quotas` lists members and separates who hit the target from
  * who didn't. Fake data only; names are bold text standing in for the real `<@id>` mention pill.
  */
 const TARGET = 5 * 3600;
@@ -104,7 +104,7 @@ function buildCard(layout: Layout): ContainerBuilder {
 }
 
 export default {
-    description: "Candidate layouts for the /bh-stats quotas member list and its hit / not yet separation - fake data.",
+    description: "Candidate layouts for the /stats quotas member list and its hit / not yet separation - fake data.",
     view() {
         return defineView<{ layout: string }, void, void>({
             name: "tests.quota-layouts",

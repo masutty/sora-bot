@@ -113,7 +113,7 @@ const emptyDraft = (): ForwardsAllDraft => ({ channelId: null, lateChannelId: nu
 const draftDelay = (d: ForwardsAllDraft) => (d.lateChannelId ? (d.delayS ?? DEFAULT_DELAY_S) : d.delayS);
 
 /**
- * `/bh-admin forwarding`: where each biome find gets posted, right away and (rare only) after a delay.
+ * `/admin forwarding`: where each biome find gets posted, right away and (rare only) after a delay.
  * A tab per category, an editor per biome whose selects save on change, and "Set for all" for a category.
  */
 export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, void, ForwardsInput> {

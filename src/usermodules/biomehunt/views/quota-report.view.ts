@@ -71,7 +71,7 @@ export function buildQuotaDayContainer(report: QuotaDayReport, label: string, ro
 
     const role = report.roles[roleIndex];
     if (!role) {
-        container.addTextDisplayComponents((td) => td.setContent("-# No quota roles configured - create one with `/bh-admin quotas`."));
+        container.addTextDisplayComponents((td) => td.setContent("-# No quota roles configured - create one with `/admin quotas`."));
         return container;
     }
 
@@ -104,7 +104,7 @@ interface QuotaStatsState extends QuotaStatsInput {
 const DAY_LABELS: Record<QuotaDay, string> = { yesterday: "Yesterday", today: "Today" };
 
 /**
- * `/bh-stats quotas`: one quota role at a time (a select picks it when there's more than one), its
+ * `/stats quotas`: one quota role at a time (a select picks it when there's more than one), its
  * members as one paginated list, and `< Yesterday` / `Today >` to switch days. Both days are loaded
  * upfront; switching the day or the role goes back to page 1.
  */

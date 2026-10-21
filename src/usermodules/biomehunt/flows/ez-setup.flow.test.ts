@@ -244,6 +244,6 @@ test("biomehunt.ez-setup: Skip on the forwards step (the last one) finishes with
 
     await fake.emit(fake.click("skip", OWNER));
     expect(await resultP).toBe("finished");
-    expect(text(fake.lastPayload())).toContain("bh-admin setup: Complete");
+    expect(text(fake.lastPayload())).toContain("admin setup: Complete");
     expect(text(fake.lastPayload())).toContain("Setup finished");
 });

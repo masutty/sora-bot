@@ -2,7 +2,7 @@ import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { openMemberAdmin, resolveTargetMember } from "../views/member-admin.open";
 
-/** Right-click a user, then Apps, then "Manage member": the same panel as `/bh-admin member`. */
+/** Right-click a user, then Apps, then "Manage member": the same panel as `/admin member`. */
 export default defineCommand({
     name: "Manage member",
     description: "Manage one member: profile, biomes, badges, sessions, channel.",

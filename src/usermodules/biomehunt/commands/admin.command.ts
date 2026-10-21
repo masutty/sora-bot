@@ -38,8 +38,8 @@ function requireBadge(slug: string | null): Badge {
 }
 
 export default defineCommand({
-    name: "bh-admin",
-    description: "Admin commands for biome hunt module.",
+    name: "admin",
+    description: "Biome hunting admin commands.",
     category: CommandCategory.ADMIN,
     showOnHelp: true,
     adminOnly: true,

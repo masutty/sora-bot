@@ -17,7 +17,7 @@ import { VoteStatus } from "../types";
 import { localVoteVerdict, voteOutcomeLine } from "./vote-outcome";
 
 export interface VoteRenderInfo {
-    /** Short random code, shown on the message so it can be referenced (e.g. `/bh-admin review-voting`). */
+    /** Short random code, shown on the message so it can be referenced (e.g. `/admin review-voting`). */
     voteId: string;
     status: VoteStatus;
     closesAt: Date;
@@ -73,7 +73,7 @@ export function forwardMentions(roleId: string | null, dryRun: boolean): Message
  */
 export interface ForwardBadges {
     delayed?: boolean;
-    /** A `/bh-owner simulate-biome` dry run - also gets a "simulated" banner on top. */
+    /** A `/owner simulate-biome` dry run - also gets a "simulated" banner on top. */
     simulated?: boolean;
     /** A Network Mirror - relayed from another server in the Network. */
     network?: boolean;
@@ -307,7 +307,7 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
 const TEST_COLOR = 0x4e5058;
 
 /**
- * The test post `/bh-admin forwarding` sends from "Send a test": the biome's card with a test line on
+ * The test post `/admin forwarding` sends from "Send a test": the biome's card with a test line on
  * top, so it can't pass as a find. Sent with no mentions allowed - the role shows, nobody is pinged.
  */
 export function buildTestForwardPost(biome: string, roleId: string | null, adminId: string): ViewPayload {
@@ -328,7 +328,7 @@ export function buildTestForwardPost(biome: string, roleId: string | null, admin
         container.addTextDisplayComponents((td) => td.setContent(heading));
     }
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents((td) => td.setContent(`-# Sent by <@${adminId}> from /bh-admin forwarding. Nobody was pinged.`));
+    container.addTextDisplayComponents((td) => td.setContent(`-# Sent by <@${adminId}> from /admin forwarding. Nobody was pinged.`));
 
     return { components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
 }

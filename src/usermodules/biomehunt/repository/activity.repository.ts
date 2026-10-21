@@ -87,7 +87,7 @@ export async function getActiveSecondsBetween(userId: number, start: Date, end: 
 
 /**
  * `getActiveSecondsBetween` for every non-paused user of a guild at once - one query instead of one
- * per member, for `/bh-stats quotas`. Users with no activity in the range are included with 0.
+ * per member, for `/stats quotas`. Users with no activity in the range are included with 0.
  *
  * The `FILTER (WHERE s.id IS NOT NULL)` matters: for a user with no session in the range the LEFT
  * JOIN yields NULL session times, and Postgres' LEAST/GREATEST skip NULLs - so the clip would
