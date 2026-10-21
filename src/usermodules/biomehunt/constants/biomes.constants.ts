@@ -19,12 +19,12 @@ export interface BiomeMeta {
     /** Optional icon shown next to the biome name on its forward notification. Unset = no image. */
     iconUrl?: string;
     /** Raw ANSI escape prefix (e.g. `"\u001b[1;33m"`) used to color this biome's name in the
-     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in services/activity-session-report.service.ts).
+     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in services/activity.service.ts).
      * Unset = no color (terminal default). Discord's `ansi` codeblock only renders bold(1) plus
      * 8 foreground (30-37) and 8 background (40-47) codes - see `!test embed/ansi-colors`. */
     ansiColor?: string;
     /** How long the biome lasts, for biomes with a fixed duration (admin events, mostly). While it
-     * runs, its finder can't go idle - see activity-grace.service.ts. Unset = not timed. */
+     * runs, its finder can't go idle - see activity.service.ts. Unset = not timed. */
     durationS?: number;
     /** Finding this biome earns a permanent profile badge (and the guild's badge role, if set). */
     hasBadge?: boolean;
@@ -42,7 +42,7 @@ export interface BiomeEntry extends BiomeMeta {
 
 /**
  * The biomes the bot shipped with - only a SEED now. The live list is the `bh_biomes` table,
- * managed by the bot owner with `/bh-owner biome ...` (see repository/biomes.repository.ts): on
+ * managed by the bot owner with `/owner biome ...` (see repository/biomes.repository.ts): on
  * boot every key here that's missing from the table is inserted, and rows already there are never
  * overwritten. To add/edit a biome, use the command - editing an entry here does nothing on a
  * database that already has it.
@@ -232,7 +232,7 @@ function defaultEntries(): BiomeEntry[] {
  * SINGLE SOURCE OF TRUTH for every recognized biome at runtime - recognition, display name,
  * category grouping, forward color/icon/flavor text and session-end ANSI color all read from it.
  * Starts as `DEFAULT_BIOMES` (so tests and the first moments of boot work without a database) and
- * is replaced by `loadBiomeRegistry` on boot and after every `/bh-owner biome` change. Anything not
+ * is replaced by `loadBiomeRegistry` on boot and after every `/owner biome` change. Anything not
  * in it falls back to a generic Title Case display name, no category, the default accent color, no
  * icon and no ANSI color.
  */

@@ -13,7 +13,7 @@ import {
 import { insertBiome, loadBiomeRegistry, setBiomeEnabled, updateBiome } from "../repository/biomes.repository";
 import { type BiomeCategory, BiomeHuntError } from "../types";
 
-/** Typed into `flavor_text`/`icon_url` on `/bh-owner biome edit` to remove the value; also the "no color" choice of `ansi_text`/`ansi_background`. */
+/** Typed into `flavor_text`/`icon_url` on `/owner biome edit` to remove the value; also the "no color" choice of `ansi_text`/`ansi_background`. */
 export const CLEAR_VALUE = "none";
 
 const MAX_KEY_LENGTH = 40;
@@ -165,9 +165,9 @@ export async function addBiome(input: AddBiomeInput, deps: BiomeAdminDeps = defa
     };
 
     const existing = getBiomeMeta(key);
-    if (existing) throw new BiomeHuntError(`\`${key}\` already exists (${existing.label}) - use \`/bh-owner biome edit\` to change it.`);
+    if (existing) throw new BiomeHuntError(`\`${key}\` already exists (${existing.label}) - use \`/owner biome edit\` to change it.`);
     if (!(await deps.insertBiome(key, meta)))
-        throw new BiomeHuntError(`\`${key}\` already exists - use \`/bh-owner biome edit\` to change it.`);
+        throw new BiomeHuntError(`\`${key}\` already exists - use \`/owner biome edit\` to change it.`);
     await deps.reloadRegistry();
     return { ...meta, key, enabled: true };
 }
@@ -213,7 +213,7 @@ export function formatDurationInput(seconds: number): string {
 
 function requireBiome(raw: string): BiomeEntry {
     const entry = getBiomeMeta(normalizeBiomeName(raw));
-    if (!entry) throw new BiomeHuntError(`\`${raw}\` is not a registered biome - see \`/bh-owner biome list\`.`);
+    if (!entry) throw new BiomeHuntError(`\`${raw}\` is not a registered biome - see \`/owner biome list\`.`);
     return entry;
 }
 

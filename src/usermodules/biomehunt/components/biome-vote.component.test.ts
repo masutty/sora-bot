@@ -30,6 +30,7 @@ function fakeDeps(overrides: Partial<BiomeVoteComponentDeps> = {}): BiomeVoteCom
     return {
         castBallot: async () => ({ kind: "ok" }),
         adminDecide: async () => ({ kind: "ok", status: VoteStatus.ADMIN_CONFIRMED }),
+        ownerIds: () => ["owner"],
         ...overrides,
     };
 }
@@ -171,13 +172,52 @@ test("castBallot 'finder' followUps ephemeral \"You can't vote on your own find.
     expect(followUps).toEqual([EPHEMERAL("You can't vote on your own find.")]);
 });
 
-test("castBallot 'already_voted' followUps ephemeral \"You already voted.\"", async () => {
-    const component = biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind: "already_voted" }) }));
+test("castBallot 'unchanged' followUps ephemeral \"You already voted.\"", async () => {
+    const component = biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind: "unchanged" }) }));
     const { interaction, followUps } = fakeInteraction();
 
     await component.handle(interaction as never, ["vote1", "real"], client);
 
     expect(followUps).toEqual([EPHEMERAL("You already voted.")]);
+});
+
+test("castBallot 'changed' and 'change_locked' each followUp their own ephemeral answer", async () => {
+    const changed = fakeInteraction();
+    await biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind: "changed" }) })).handle(
+        changed.interaction as never,
+        ["vote1", "fake"],
+        client,
+    );
+    expect(changed.followUps).toEqual([EPHEMERAL("Vote changed to **Fake**. You can't change it again.")]);
+
+    const locked = fakeInteraction();
+    await biomeVoteComponent(fakeDeps({ castBallot: async () => ({ kind: "change_locked" }) })).handle(
+        locked.interaction as never,
+        ["vote1", "real"],
+        client,
+    );
+    expect(locked.followUps).toEqual([EPHEMERAL("You already changed your vote once - it can't change again.")]);
+});
+
+test("a bot owner's click decides the vote like an admin's, even without Administrator", async () => {
+    const calls: string[] = [];
+    const component = biomeVoteComponent(
+        fakeDeps({
+            castBallot: async () => {
+                calls.push("castBallot");
+                return { kind: "ok" };
+            },
+            adminDecide: async () => {
+                calls.push("adminDecide");
+                return { kind: "ok", status: VoteStatus.ADMIN_DENIED };
+            },
+        }),
+    );
+    const { interaction } = fakeInteraction({ userId: "owner" });
+
+    await component.handle(interaction as never, ["vote1", "fake"], client);
+
+    expect(calls).toEqual(["adminDecide"]);
 });
 
 test("castBallot 'not_found' followUps ephemeral \"This vote is no longer available.\"", async () => {

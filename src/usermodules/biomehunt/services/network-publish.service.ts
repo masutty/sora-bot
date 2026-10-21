@@ -1,5 +1,6 @@
 import type { Client, MessageCreateOptions } from "discord.js";
 import { MessageFlags } from "discord.js";
+import { requireSnowflake } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
@@ -27,12 +28,53 @@ import {
 import { settings } from "../settings";
 import { BiomeHuntError, type NetworkGuildRow, type NetworkPostRow, NetworkStatus } from "../types";
 import { buildMirrorContainer, serverNameLink } from "../views/network-mirror.view";
+import { getVoteWindowMs } from "./biome-vote.service";
 import { type EligibilityReport, getNetworkBiomes, loadEligibility } from "./network-eligibility.service";
-import { type PrivateServerLink, parsePrivateServerLink } from "./network-link";
-import { requireSnowflake } from "./network-membership.service";
 import { notifyOwners } from "./owner-dm.service";
 
 const logger = new Logger("biomehunt.services.network-publish");
+
+const ROBLOX_HOSTS = new Set(["roblox.com", "www.roblox.com"]);
+
+/** Codes and place ids are plain tokens - anything else (markdown, brackets, spaces) is refused, never escaped. */
+const CODE_RE = /^[\w-]{1,128}$/;
+const PLACE_ID_RE = /^\d{1,20}$/;
+
+export interface PrivateServerLink {
+    /** The private server's identity - also what deduplication compares. */
+    code: string;
+    /** A clean link rebuilt from the validated parts only - the macro's own text never reaches another server. */
+    url: string;
+}
+
+/**
+ * The private server behind a macro's server link, or `null` if the link doesn't lead to one - the
+ * Network only publishes finds you can actually join. Accepts the two shapes Roblox hands out
+ * (https only): `roblox.com/share?code=…&type=Server` and `roblox.com/games/<placeId>/…?privateServerLinkCode=…`.
+ */
+export function parsePrivateServerLink(link: string | null): PrivateServerLink | null {
+    if (!link) return null;
+    let url: URL;
+    try {
+        url = new URL(link);
+    } catch {
+        return null;
+    }
+    if (url.protocol !== "https:" || !ROBLOX_HOSTS.has(url.hostname.toLowerCase())) return null;
+
+    if (url.pathname === "/share") {
+        const code = url.searchParams.get("code");
+        if (!code || !CODE_RE.test(code) || url.searchParams.get("type")?.toLowerCase() !== "server") return null;
+        return { code, url: `https://www.roblox.com/share?code=${code}&type=Server` };
+    }
+
+    const placeId = url.pathname.split("/")[2];
+    const code = url.searchParams.get("privateServerLinkCode");
+    if (url.pathname.startsWith("/games/") && placeId && PLACE_ID_RE.test(placeId) && code && CODE_RE.test(code)) {
+        return { code, url: `https://www.roblox.com/games/${placeId}?privateServerLinkCode=${code}` };
+    }
+    return null;
+}
 
 /** Everything scheduling and publishing would otherwise call on the DB or Discord, injected so tests touch neither. */
 export interface NetworkPublishDeps {
@@ -59,6 +101,8 @@ export interface NetworkPublishDeps {
     sendMirror: (channelId: string, payload: MessageCreateOptions) => Promise<{ channelId: string; messageId: string } | null>;
     /** The send order - random in production, so the same server isn't always the last to get it. */
     shuffle: <T>(items: T[]) => T[];
+    /** The Network vote's current duration (`getVoteWindowMs("network")`). */
+    voteWindowMs: () => Promise<number>;
     now: () => Date;
 }
 
@@ -85,6 +129,7 @@ export function defaultNetworkPublishDeps(client: Client): NetworkPublishDeps {
         insertNetworkMirror,
         sendMirror: (channelId, payload) => sendMirror(client, channelId, payload),
         shuffle: shuffleInPlace,
+        voteWindowMs: () => getVoteWindowMs("network"),
         now: () => new Date(),
     };
 }
@@ -291,7 +336,7 @@ async function publishOne(post: NetworkPostRow, deps: NetworkPublishDeps): Promi
     }
 
     const publishedAt = deps.now();
-    await deps.markNetworkPostPublished(post.id, publishedAt, new Date(publishedAt.getTime() + settings.network.voteWindowMs));
+    await deps.markNetworkPostPublished(post.id, publishedAt, new Date(publishedAt.getTime() + (await deps.voteWindowMs())));
 }
 
 async function sendOneMirror(
@@ -333,7 +378,7 @@ async function sendOneMirror(
 async function finalizeStalePublishing(deps: NetworkPublishDeps): Promise<void> {
     const now = deps.now();
     for (const post of await deps.getStalePublishingPosts(new Date(now.getTime() - settings.network.publishStaleMs))) {
-        await deps.markNetworkPostPublished(post.id, now, new Date(now.getTime() + settings.network.voteWindowMs));
+        await deps.markNetworkPostPublished(post.id, now, new Date(now.getTime() + (await deps.voteWindowMs())));
         logger.warn(`Network Post ${post.id} was stuck publishing - finalized`);
     }
 }
@@ -361,7 +406,7 @@ export type SimulatedScheduleResult =
     | { kind: "skipped"; reason: string };
 
 /**
- * `/bh-owner simulate-biome network_relays:<guild ids>` - relays a simulated rare find to ONLY those
+ * `/owner simulate-biome network_relays:<guild ids>` - relays a simulated rare find to ONLY those
  * Member Servers, through the real pipeline (local post + home advantage, Worker, fan-out), so the
  * owner can test it end to end between test servers without touching anyone else. Ids that can't
  * receive Network posts (not a member, no Network channel, the origin itself) are ignored and

@@ -14,9 +14,10 @@ import {
 import type { ViewPayload } from "@/define";
 import { formatBiomeName, getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
+import { localVoteVerdict, voteOutcomeLine } from "./vote-outcome";
 
 export interface VoteRenderInfo {
-    /** Short random code, shown on the message so it can be referenced (e.g. `/bh-admin review-voting`). */
+    /** Short random code, shown on the message so it can be referenced (e.g. `/admin review-voting`). */
     voteId: string;
     status: VoteStatus;
     closesAt: Date;
@@ -72,7 +73,7 @@ export function forwardMentions(roleId: string | null, dryRun: boolean): Message
  */
 export interface ForwardBadges {
     delayed?: boolean;
-    /** A `/bh-owner simulate-biome` dry run - also gets a "simulated" banner on top. */
+    /** A `/owner simulate-biome` dry run - also gets a "simulated" banner on top. */
     simulated?: boolean;
     /** A Network Mirror - relayed from another server in the Network. */
     network?: boolean;
@@ -185,30 +186,16 @@ function buildLinkButtonsRow(
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
-/** Main line of the vote block - one per `VoteStatus`. Community outcomes show the ballots as `✅ n` `❌ n` chips. */
+/** Main line of the vote block: the question while open, then the shared outcome line (see vote-outcome.ts). */
 function voteStatusLine(vote: VoteRenderInfo): string {
-    const tally = ` \`✅ ${vote.tally?.real ?? 0}\` \`❌ ${vote.tally?.fake ?? 0}\``;
-
-    switch (vote.status) {
-        case VoteStatus.OPEN:
-            return `**Is this biome real?** · ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
-        case VoteStatus.NO_VOTES:
-            return "*Vote expired with no votes*";
-        case VoteStatus.TIE:
-            return `⚖️ Tied vote${tally}`;
-        case VoteStatus.COMMUNITY_REAL:
-            return `✅ Marked as real by community voting${tally}`;
-        case VoteStatus.COMMUNITY_FAKE:
-            return `❌ Marked as fake by community voting${tally}`;
-        case VoteStatus.ADMIN_CONFIRMED:
-            return `✅ Marked as real by <@${vote.decidedByUserId}>`;
-        case VoteStatus.ADMIN_DENIED:
-            return `❌ Marked as fake by <@${vote.decidedByUserId}>`;
-        default: {
-            const exhaustive: never = vote.status;
-            throw new Error(`Unhandled vote status: ${exhaustive}`);
-        }
+    if (vote.status === VoteStatus.OPEN) {
+        return `**Is this biome real?** · ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
     }
+    return voteOutcomeLine({
+        verdict: localVoteVerdict(vote.status),
+        tally: vote.tally ?? { real: 0, fake: 0 },
+        decidedBy: vote.decidedByUserId,
+    });
 }
 
 function epochOf(date: Date): number {
@@ -320,7 +307,7 @@ export function buildForwardContainer(params: ForwardContainerParams): Container
 const TEST_COLOR = 0x4e5058;
 
 /**
- * The test post `/bh-admin forwarding` sends from "Send a test": the biome's card with a test line on
+ * The test post `/admin forwarding` sends from "Send a test": the biome's card with a test line on
  * top, so it can't pass as a find. Sent with no mentions allowed - the role shows, nobody is pinged.
  */
 export function buildTestForwardPost(biome: string, roleId: string | null, adminId: string): ViewPayload {
@@ -341,7 +328,7 @@ export function buildTestForwardPost(biome: string, roleId: string | null, admin
         container.addTextDisplayComponents((td) => td.setContent(heading));
     }
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents((td) => td.setContent(`-# Sent by <@${adminId}> from /bh-admin forwarding. Nobody was pinged.`));
+    container.addTextDisplayComponents((td) => td.setContent(`-# Sent by <@${adminId}> from /admin forwarding. Nobody was pinged.`));
 
     return { components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } };
 }

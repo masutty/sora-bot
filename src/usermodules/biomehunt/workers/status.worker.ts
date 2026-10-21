@@ -5,18 +5,10 @@ import { Logger } from "@/utils/logging";
 import { recordTickStats } from "@/utils/metrics";
 import { grantUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
-import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
-import { enqueueRoleJob } from "../repository/role-jobs.repository";
-import {
-    deleteMacroChannelOnly,
-    deleteUserCascade,
-    getUsersForStatusSweep,
-    resetActivityState,
-    updateUserStatus,
-} from "../repository/users.repository";
-import { effectiveLastActivity } from "../services/activity-grace.service";
-import { reportSessionEnd } from "../services/activity-session-report.service";
-import { evaluateRollingRewards, runFixedRewardSweep } from "../services/reward.service";
+import { getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState } from "../repository/users.repository";
+import { effectiveLastActivity, reportSessionEnd, transitionUser } from "../services/activity.service";
+import { evaluateRollingRewards, runFixedRewardSweep } from "../services/quota.service";
 import { settings } from "../settings";
 import type { ActivityStatus } from "../types";
 
@@ -25,26 +17,6 @@ const logger = new Logger("biomehunt.workers.status");
 /** True once a member has been inactive for the full delete delay, counted from the end of their last session. */
 export function shouldAutoDelete(secondsSinceSessionEnd: number, inactiveS: number, deleteAfterS: number): boolean {
     return secondsSinceSessionEnd > inactiveS + deleteAfterS;
-}
-
-export async function transitionUser(userId: number, guildId: string, newStatus: ActivityStatus): Promise<void> {
-    await updateUserStatus(userId, newStatus);
-
-    const roles = await getGuildRoles(guildId);
-    const roleForStatus: Record<ActivityStatus, string | null> = {
-        active: roles.active,
-        idle: roles.idle,
-        inactive: roles.inactive,
-    };
-
-    const addRoleId = roleForStatus[newStatus];
-    if (addRoleId) await enqueueRoleJob(guildId, userId, addRoleId, "add");
-
-    for (const status of Object.keys(roleForStatus) as ActivityStatus[]) {
-        if (status === newStatus) continue;
-        const removeRoleId = roleForStatus[status];
-        if (removeRoleId) await enqueueRoleJob(guildId, userId, removeRoleId, "remove");
-    }
 }
 
 /** Idle and inactive thresholds count from the end of the session: last activity plus the session gap. */

@@ -57,6 +57,15 @@ function primitive<T>(name: string, kind: Primitive, value: T | null, supplied: 
     return null;
 }
 
+const SNOWFLAKE_RE = /^\d{17,20}$/;
+
+/** For ids taken as text (e.g. a server the bot can't resolve) - refuses anything that can't be a Discord guild/user/channel id. */
+export function requireSnowflake(raw: string): string {
+    const id = raw.trim();
+    if (!SNOWFLAKE_RE.test(id)) throw new UserFacingError(`\`${raw}\` is not a Discord id.`);
+    return id;
+}
+
 /**
  * Reads a slash option's raw value and checks its kind here - discord.js's typed getters throw a
  * TypeError on e.g. getNumber() of an integer option, which prefix (number types alike) would never

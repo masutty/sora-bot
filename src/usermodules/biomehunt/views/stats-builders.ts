@@ -75,7 +75,7 @@ function addSpacer(container: ContainerBuilder): void {
 const ANSI_RESET = "\u001b[0m";
 
 /** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - same treatment as the session-end
- * report's biome breakdown (see `ansiBiomeLine` in services/activity-session-report.service.ts). */
+ * report's biome breakdown (see `ansiBiomeLine` in services/activity.service.ts). */
 function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
 }
@@ -247,7 +247,7 @@ export function buildSessionsTabContainer(
         return container;
     }
 
-    // While active, `sessions[0]` (newest-first) IS the current burst - activity-ingest.service keeps
+    // While active, `sessions[0]` (newest-first) IS the current burst - activity.service keeps
     // extending its ended_at/duration_seconds live on every incoming message, it's not "finished"
     // yet. Called out separately instead of listed as just another completed entry.
     const ongoing = user.current_status === "active" ? sessions[0] : null;

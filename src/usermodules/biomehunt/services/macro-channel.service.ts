@@ -66,7 +66,7 @@ export async function provisionMacroChannel(
 
     let webhook: Webhook;
     try {
-        webhook = await channel.createWebhook({ name: "BiomeHunt Tracker" });
+        webhook = await channel.createWebhook({ name: "Biome Hunt Tracker" });
     } catch (err) {
         await channel.delete().catch(() => {});
         logger.error(err instanceof Error ? err : new Error(String(err)));
@@ -201,7 +201,7 @@ async function findOrCreateCategory(guild: Guild, guildConfig: GuildConfigRow) {
         throw new BiomeHuntError("There's no space available for a new macro channel right now. Please contact an administrator.");
     }
 
-    const newCategory = await guild.channels.create({ name: "BiomeHunt Macros", type: ChannelType.GuildCategory });
+    const newCategory = await guild.channels.create({ name: "Biome Hunting Macros", type: ChannelType.GuildCategory });
     await insertCategory(guild.id, newCategory.id);
     return newCategory;
 }

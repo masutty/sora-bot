@@ -34,7 +34,7 @@ function makeVote(overrides: Partial<BiomeVoteRow> = {}): BiomeVoteRow {
 }
 
 function makeBallot(userId: string, choice: VoteChoice): BiomeVoteBallotRow {
-    return { vote_id: VOTE_ID, user_id: userId, choice, created_at: new Date() };
+    return { vote_id: VOTE_ID, user_id: userId, choice, changed: false, created_at: new Date() };
 }
 
 function fakeDeps(
@@ -120,7 +120,7 @@ test("biomehunt.vote-review: Confirm calls adminDecide(REAL) and redraws as admi
     await fake.emit(fake.click("confirm", ADMIN));
 
     expect(calls).toEqual([[ADMIN, VoteChoice.REAL]]);
-    expect(text(fake.lastPayload())).toContain(`Ruled real by <@${ADMIN}>`);
+    expect(text(fake.lastPayload())).toContain(`Marked as real by <@${ADMIN}>`);
 });
 
 test("biomehunt.vote-review: Deny calls adminDecide(FAKE) and redraws as admin-denied", async () => {
@@ -138,7 +138,7 @@ test("biomehunt.vote-review: Deny calls adminDecide(FAKE) and redraws as admin-d
     await fake.emit(fake.click("deny", ADMIN));
 
     expect(calls).toEqual([[ADMIN, VoteChoice.FAKE]]);
-    expect(text(fake.lastPayload())).toContain(`Ruled fake by <@${ADMIN}>`);
+    expect(text(fake.lastPayload())).toContain(`Marked as fake by <@${ADMIN}>`);
 });
 
 test('biomehunt.vote-review: a CAS miss notifies "This vote was already decided." without changing the screen', async () => {

@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
-import type { QuotaDayReport, QuotaMember } from "../services/quota-report.service";
-import { hitCount } from "../services/quota-report.service";
+import { hitCount, type QuotaDayReport, type QuotaMember } from "../services/quota.service";
 import type { QuotaRoleRow } from "../types";
 import { buildQuotaDayContainer, quotaPageCount, quotaStatsView } from "./quota-report.view";
 

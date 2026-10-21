@@ -10,7 +10,7 @@ import { BiomeHuntError } from "../types";
  * Draws a random Flower key. Rolls each rarity in RARITY_CHANCE order (rarest first); the first
  * one that hits picks uniformly among its flowers. If none hit, falls back to a common flower.
  * Independent draw every time - a Reroll can land the same Flower again on purpose (see
- * `/bh reroll` in bh.command.ts and `/bh-owner reroll-flower` in bh-owner.command.ts).
+ * `/bh reroll` in bh.command.ts and `/owner reroll-flower` in owner.command.ts).
  */
 export function drawRandomFlower(): string {
     for (const { rarity, chance } of RARITY_CHANCE) {
@@ -29,7 +29,7 @@ export function drawRandomFlower(): string {
  * `force-setup` must never re-roll it), otherwise a freshly drawn one. Returns `null` if the edit
  * itself failed (permissions, rate limit, channel gone mid-flight, etc) - callers then persist
  * nothing, rather than lying about a Flower that was never actually applied. Only `/bh reroll` and
- * `/bh-owner reroll-flower` are allowed to change a Flower once one is set - this never does.
+ * `/owner reroll-flower` are allowed to change a Flower once one is set - this never does.
  */
 export async function ensureFlower(
     webhook: { edit: (opts: { name: string; avatar: Buffer }) => Promise<unknown> },
@@ -49,7 +49,7 @@ export async function ensureFlower(
 /**
  * Applies a SPECIFIC Flower to a user's EXISTING macro webhook (name+avatar) and persists it -
  * the actual rate-limited Discord API call. Used both by `rerollFlower` (draws one and
- * applies it immediately - the `/bh-owner reroll-flower` path) and by `/bh reroll`'s
+ * applies it immediately - the `/owner reroll-flower` path) and by `/bh reroll`'s
  * roll-again/apply-now flow (which draws - and lets the user re-draw - several times client-side
  * before ever calling this, so the webhook itself only gets edited once per session instead of
  * once per draw). Throws BiomeHuntError on any precondition failure (no macro channel,
@@ -74,7 +74,7 @@ export async function applyFlowerToWebhook(client: BotClient, userId: number, fl
     await setUserFlower(userId, flower);
 }
 
-/** Draws a new Flower and applies it immediately - the bot-owner path (`/bh-owner reroll-flower`),
+/** Draws a new Flower and applies it immediately - the bot-owner path (`/owner reroll-flower`),
  * which has no roll-again preview step. */
 export async function rerollFlower(client: BotClient, userId: number): Promise<{ flower: string }> {
     const flower = drawRandomFlower();

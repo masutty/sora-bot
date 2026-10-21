@@ -1,7 +1,7 @@
 import { ActionRowBuilder, type ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
 import { defineView, paginationHandlers, paginationRow, type ViewDefinition, type ViewPayload } from "@/define";
 import { unix } from "@/utils/format";
-import { hitCount, type QuotaDayReport, type QuotaMember } from "../services/quota-report.service";
+import { hitCount, type QuotaDayReport, type QuotaMember } from "../services/quota.service";
 
 /** Members per page - with a mention and a time each, far under Discord's 4000-character text limit. */
 export const QUOTA_MEMBERS_PER_PAGE = 20;
@@ -71,7 +71,7 @@ export function buildQuotaDayContainer(report: QuotaDayReport, label: string, ro
 
     const role = report.roles[roleIndex];
     if (!role) {
-        container.addTextDisplayComponents((td) => td.setContent("-# No quota roles configured - create one with `/bh-admin quotas`."));
+        container.addTextDisplayComponents((td) => td.setContent("-# No quota roles configured - create one with `/admin quotas`."));
         return container;
     }
 
@@ -104,7 +104,7 @@ interface QuotaStatsState extends QuotaStatsInput {
 const DAY_LABELS: Record<QuotaDay, string> = { yesterday: "Yesterday", today: "Today" };
 
 /**
- * `/bh-stats quotas`: one quota role at a time (a select picks it when there's more than one), its
+ * `/stats quotas`: one quota role at a time (a select picks it when there's more than one), its
  * members as one paginated list, and `< Yesterday` / `Today >` to switch days. Both days are loaded
  * upfront; switching the day or the role goes back to page 1.
  */

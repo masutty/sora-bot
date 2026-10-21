@@ -9,7 +9,7 @@ function addDivider(container: ContainerBuilder): void {
 
 const ANSI_RESET = "\u001b[0m";
 
-/** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - set with `/bh-owner biome add|edit ansi_color:`. */
+/** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - set with `/owner biome add|edit ansi_color:`. */
 function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
 }
@@ -24,7 +24,7 @@ export interface SessionEndTotals {
 
 /** Builds the "Session Ended" report Container - a pure builder (no interactive View) so it can be
  * previewed with fake data (see `tests/embed/session-end.ts`) without a real session in the DB.
- * `reportSessionEnd` (`services/activity-session-report.service.ts`) is the only caller in prod. */
+ * `reportSessionEnd` (`services/activity.service.ts`) is the only caller in prod. */
 export function buildSessionEndContainer(
     session: ActivitySessionRow,
     biomes: Array<{ biome: string; count: number }>,

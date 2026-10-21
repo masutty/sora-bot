@@ -223,12 +223,3 @@ export async function excludeMember(guildId: string, discordUserId: string, admi
 export async function includeMember(guildId: string, discordUserId: string, deps: MembershipDeps): Promise<boolean> {
     return deps.removeNetworkExclusion(guildId, discordUserId);
 }
-
-const SNOWFLAKE_RE = /^\d{17,20}$/;
-
-/** Owner commands take raw ids as text - refuse anything that can't be a Discord guild/user/channel id. */
-export function requireSnowflake(raw: string): string {
-    const id = raw.trim();
-    if (!SNOWFLAKE_RE.test(id)) throw new BiomeHuntError(`\`${raw}\` is not a Discord id.`);
-    return id;
-}

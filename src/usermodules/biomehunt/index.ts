@@ -1,12 +1,14 @@
 import { defineCog } from "@/define";
 import { Logger } from "@/utils/logging";
+import _admin from "./commands/admin.command";
 import _bh from "./commands/bh.command";
-import _bhAdmin from "./commands/bh-admin.command";
-import _bhOwner from "./commands/bh-owner.command";
-import _bhStats from "./commands/bh-stats.command";
 import _manageMember from "./commands/manage-member.command";
 import _network from "./commands/network.command";
 import _networkAdmin from "./commands/network-admin.command";
+import _owner from "./commands/owner.command";
+import _profile from "./commands/profile.command";
+import _reroll from "./commands/reroll.command";
+import _stats from "./commands/stats.command";
 import { biomeVoteComponent } from "./components/biome-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
@@ -14,7 +16,7 @@ import { networkVoteComponent } from "./components/network-vote.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
-import { processIncomingMessage } from "./services/activity-ingest.service";
+import { processIncomingMessage } from "./services/activity.service";
 import { counterWorker } from "./workers/counter.worker";
 import { networkDailyWorker } from "./workers/network-daily.worker";
 import { networkPublishWorker } from "./workers/network-publish.worker";
@@ -30,7 +32,7 @@ export default defineCog({
     description: "Tracks macro-driven activity, enforces quotas, and automates roles.",
     authors: [{ name: "masutty", id: 188851299255713792n }],
 
-    commands: [_bh, _bhAdmin, _bhOwner, _bhStats, _manageMember, _network, _networkAdmin],
+    commands: [_bh, _admin, _owner, _stats, _profile, _reroll, _manageMember, _network, _networkAdmin],
 
     migrations: [BIOMEHUNT_SCHEMA],
 
@@ -56,6 +58,6 @@ export default defineCog({
         logger.info("Loading channel index...");
         await loadChannelIndex();
 
-        logger.info("BiomeHunt ready.");
+        logger.info("Biome Hunt ready.");
     },
 });

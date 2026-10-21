@@ -69,7 +69,7 @@ const SCENARIOS: Record<string, Scenario> = {
         vote: { status: VoteStatus.ADMIN_DENIED, voteCount: 1, tally: { real: 0, fake: 1 } },
     },
     delayed: { label: "Delayed forward", description: "Sent to the delayed channel (⏳ + ?)", badges: { delayed: true } },
-    simulated: { label: "Simulated (dry run)", description: "/bh-owner simulate-biome - banner + 🧪", badges: { simulated: true } },
+    simulated: { label: "Simulated (dry run)", description: "/owner simulate-biome - banner + 🧪", badges: { simulated: true } },
     first: { label: "First find ever", description: "Their first, and the server's first", firstFind: true },
     "no-link": { label: "No private server link", description: "Macro didn't send a server link", noServerLink: true },
 };

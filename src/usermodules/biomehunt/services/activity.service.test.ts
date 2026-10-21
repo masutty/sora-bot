@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
-import { effectiveLastActivity, NO_GRACE, nextActivityGrace } from "./activity-grace.service";
+import { effectiveLastActivity, NO_GRACE, nextActivityGrace } from "./activity.service";
 
 const MIN = 60_000;
 const t0 = new Date("2026-10-17T12:00:00Z");

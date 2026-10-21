@@ -87,7 +87,7 @@ function flagsContainer(state: FlagsState, kit: RenderKit): ContainerBuilder {
 }
 
 /**
- * `/bh-admin flags`: the guild's flags, five per page, each with a Turn on / Turn off button.
+ * `/admin flags`: the guild's flags, five per page, each with a Turn on / Turn off button.
  * A click asks for confirmation on the same message (mobile misclicks); confirming saves the flag
  * and returns to the same page with the button flipped.
  */

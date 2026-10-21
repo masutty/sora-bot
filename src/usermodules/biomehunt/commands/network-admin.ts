@@ -7,7 +7,7 @@ import {
     type SlashCommandSubcommandBuilder,
     type SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
-import { type CommandContext, confirm, paginate } from "@/define";
+import { type CommandContext, confirm, paginate, requireSnowflake } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs } from "../repository/delayed-forwards.repository";
@@ -22,7 +22,6 @@ import {
     defaultMembershipDeps,
     forceIntoNetwork,
     removeFromNetwork,
-    requireSnowflake,
     unbanFromNetwork,
 } from "../services/network-membership.service";
 import { defaultNetworkPublishDeps, scheduleSimulatedNetworkPost } from "../services/network-publish.service";
@@ -300,7 +299,7 @@ async function runLookup(ctx: CommandContext): Promise<void> {
 const SIMULATED_SERVER_LINK = "https://www.roblox.com/share?code=SIMULATED&type=Server";
 
 /**
- * `/bh-owner simulate-biome network:true` - sends one simulated Mirror (marked, no ping, no vote) to
+ * `/owner simulate-biome network:true` - sends one simulated Mirror (marked, no ping, no vote) to
  * the invoking guild's own Network channel, to check the layout without bothering any other server.
  */
 export async function runSimulateNetworkMirror(ctx: CommandContext, guild: Guild, biome: string): Promise<void> {
@@ -330,7 +329,7 @@ export async function runSimulateNetworkMirror(ctx: CommandContext, guild: Guild
 const idList = (ids: string[]) => ids.map((id) => `\`${id}\``).join(", ");
 
 /**
- * `/bh-owner simulate-biome network_relays:<guild ids>` - relays the simulated find to ONLY those
+ * `/owner simulate-biome network_relays:<guild ids>` - relays the simulated find to ONLY those
  * Network servers (see `scheduleSimulatedNetworkPost`): as a test when `dry`, as a real Network
  * Post (pings, vote) otherwise. Returns the line added to the reply.
  */

@@ -75,7 +75,7 @@ suffix convention still applies inside it.
   another module's `views/`). Never `commands/`.
 - `services/` → `repository/`, `constants/`, other `services/`, and a pure (non-interactive)
   message builder exported from `views/` — never a `defineView` screen itself — reused outside a
-  View session, e.g. `services/activity-session-report.service.ts` → `views/session-end.view.ts`.
+  View session, e.g. `services/activity.service.ts` → `views/session-end.view.ts`.
 - `workers/` → `services/`, `repository/`.
 - `components/` → `services/`, `repository/`, `constants/` - same as `workers/`, never a
   `commands/` module or an interactive View (a persistent component's own state lives in the DB,
@@ -127,7 +127,7 @@ subcommand, and `modes`/`subcommandModes`. After `run` returns or throws: a thro
   (a user who left, a garbage mention) throws, so a bad target is never mistaken for "not given"
   (which would e.g. show the invoker's own profile by accident).
   On prefix, args are positional (the last one greedy) or named as `name:value` in any order
-  (`!bh-owner simulate-biome user:@x biome:GLITCHED`); leftover positional tokens fill the args
+  (`!owner simulate-biome user:@x biome:GLITCHED`); leftover positional tokens fill the args
   not given by name. A named value is one token — quote it for spaces (`note:"two words"`).
 - **`ctx.reply`/`ctx.defer`/`ctx.editReply`/`ctx.replyUsage`** — replying is stateful:
   the 1st `reply()` becomes the command's response (or fills the `defer()`ed one); later
@@ -564,7 +564,7 @@ services, repositories, Views — prints it automatically, with the command path
 guild when known. Nothing is passed around; existing log calls need no change:
 
 ```
-info  [core.commands] (ref=xv6qvdt2 !bh-stats users u=masutty(1888…) g=1289…): invoked
+info  [core.commands] (ref=xv6qvdt2 !stats users u=masutty(1888…) g=1289…): invoked
 info  [core.commands] (ref=xv6qvdt2 …): replied in 812ms
 info  [core.view.run] (ref=xv6qvdt2.2:tab:active …): click tab:active
 info  [core.view]     (ref=xv6qvdt2.4:next …): view biomehunt.stats-users closed: expired after 95410ms
@@ -584,7 +584,7 @@ info  [core.commands] (ref=xv6qvdt2 …): ok in 96230ms
 - **Workers, cog events and persistent components are traced the same way**, each with its own
   `command` so a log line still says what kind of entry point it was:
   `worker:<cog>.<name>` (§5, one trace per tick), `event:<cog>.<event>` (a cog's `events` handler —
-  e.g. the webhook `messageCreate` that drives BiomeHunt's macro parsing — one trace per firing,
+  e.g. the webhook `messageCreate` that drives Biome Hunt's macro parsing — one trace per firing,
   with user/guild attached whenever the event's own arguments expose them), and
   `component:<prefix>` (§6, one trace per click, with the clicking user/guild attached). All three
   are wrapped by the framework itself (the cog loader, and the component router) — a module never

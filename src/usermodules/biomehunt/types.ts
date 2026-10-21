@@ -61,7 +61,7 @@ export interface UserRow {
     discord_user_id: string;
     current_status: ActivityStatus;
     last_activity_at: Date | null;
-    /** Active at least until this, because a timed biome started (see activity-grace.service.ts). */
+    /** Active at least until this, because a timed biome started (see activity.service.ts). */
     activity_grace_until: Date | null;
     /** The timed biome that set `activity_grace_until` - its Ended clears the grace. */
     activity_grace_biome: string | null;
@@ -70,7 +70,7 @@ export interface UserRow {
     seeds: number;
     xp: number;
     /** Sticks to the user, not the macro channel - survives soft-delete/reset-channel. Only
-     * `/bh reroll` and `/bh-owner reroll-flower` are allowed to change it once set. */
+     * `/bh reroll` and `/owner reroll-flower` are allowed to change it once set. */
     flower: string | null;
 }
 
@@ -158,7 +158,7 @@ export interface BiomeDelayedForwardRow extends BiomeForwardRow {
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later
- * via `/bh-admin review-voting`, re-editing the forward message again with the new outcome.
+ * via `/admin review-voting`, re-editing the forward message again with the new outcome.
  * `NO_VOTES` and `TIE` are distinct: 0×0 is "no votes", not a tie - a tie requires at least one
  * vote on each side.
  */
@@ -209,9 +209,11 @@ export interface BiomeVoteRow {
 
 export interface BiomeVoteBallotRow {
     vote_id: string;
-    /** Raw Discord user id (not `bh_users.id`) - a voter need not have a BiomeHunt profile. */
+    /** Raw Discord user id (not `bh_users.id`) - a voter need not have a hunter profile. */
     user_id: string;
     choice: VoteChoice;
+    /** True once the voter switched their choice - they can't switch again. */
+    changed: boolean;
     created_at: Date;
 }
 
@@ -281,6 +283,12 @@ export interface NetworkPingRow {
 }
 
 export type NetworkPostStatus = "pending" | "publishing" | "published" | "discarded";
+/**
+ * What a ballot click did: a first vote, a switch to the other choice (allowed once), the same
+ * choice again (nothing to do), a second switch (refused), or nothing because the vote closed.
+ */
+export type BallotWriteResult = "inserted" | "changed" | "unchanged" | "change_locked" | "closed";
+
 export type NetworkVoteStatus = "open" | "real" | "fake" | "inconclusive";
 
 /** A Network Post (`bh_network_posts`) - see the migration for the render-snapshot rule. */
@@ -305,6 +313,8 @@ export interface NetworkPostRow {
     vote_status: NetworkVoteStatus;
     vote_closes_at: Date | null;
     vote_closed_by: string | null;
+    /** The bot owner who decided the vote with a click - `null` when the ballots decided it. */
+    vote_decided_by: string | null;
     created_at: Date;
 }
 
@@ -322,6 +332,8 @@ export interface NetworkBallotRow {
     discord_user_id: string;
     guild_id: string;
     choice: VoteChoice;
+    /** True once the voter switched their choice - they can't switch again. */
+    changed: boolean;
     created_at: Date;
 }
 

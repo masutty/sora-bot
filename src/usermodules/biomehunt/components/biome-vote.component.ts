@@ -1,5 +1,6 @@
 import type { GuildMember } from "discord.js";
 import { MessageFlags, PermissionFlagsBits } from "discord.js";
+import { config } from "@/config";
 import { defineComponent } from "@/define";
 import { adminDecide, castBallot } from "../services/biome-vote.service";
 import { VoteChoice } from "../types";
@@ -11,17 +12,18 @@ import { VoteChoice } from "../types";
 export interface BiomeVoteComponentDeps {
     castBallot: typeof castBallot;
     adminDecide: typeof adminDecide;
+    ownerIds: () => readonly string[];
 }
 
 export function defaultBiomeVoteComponentDeps(): BiomeVoteComponentDeps {
-    return { castBallot, adminDecide };
+    return { castBallot, adminDecide, ownerIds: () => config.bot.ownerIds };
 }
 
 const NO_LONGER_AVAILABLE = "This vote is no longer available.";
 
 /**
- * `biomehunt:vote:<voteId>:<real|fake>` - a click from an admin (Administrator permission) decides
- * the vote immediately and closes it; anyone else casts a community ballot.
+ * `biomehunt:vote:<voteId>:<real|fake>` - a click from an admin (Administrator permission) or a bot
+ * owner decides the vote immediately and closes it; anyone else casts a community ballot.
  *
  * `deferUpdate()` runs FIRST, before any DB/Discord work - Discord gives an interaction only 3s to
  * be acknowledged, and `castBallot`/`adminDecide` can take longer than that (a DB round-trip plus
@@ -53,7 +55,7 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
             const member = interaction.member as GuildMember | null;
             const isAdmin = member?.permissions.has(PermissionFlagsBits.Administrator) ?? false;
 
-            if (isAdmin) {
+            if (isAdmin || deps.ownerIds().includes(interaction.user.id)) {
                 const result = await deps.adminDecide(client, voteId, interaction.user.id, choice);
                 switch (result.kind) {
                     case "not_found":
@@ -79,8 +81,20 @@ export function biomeVoteComponent(deps: BiomeVoteComponentDeps = defaultBiomeVo
                 case "finder":
                     await interaction.followUp({ content: "You can't vote on your own find.", flags: MessageFlags.Ephemeral });
                     return;
-                case "already_voted":
+                case "changed":
+                    await interaction.followUp({
+                        content: `Vote changed to **${choice === VoteChoice.REAL ? "Real" : "Fake"}**. You can't change it again.`,
+                        flags: MessageFlags.Ephemeral,
+                    });
+                    return;
+                case "unchanged":
                     await interaction.followUp({ content: "You already voted.", flags: MessageFlags.Ephemeral });
+                    return;
+                case "change_locked":
+                    await interaction.followUp({
+                        content: "You already changed your vote once - it can't change again.",
+                        flags: MessageFlags.Ephemeral,
+                    });
                     return;
                 case "ok":
                     return;

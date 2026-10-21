@@ -1,5 +1,6 @@
 import { query } from "@/database/connection";
 import type {
+    BallotWriteResult,
     NetworkAlertKind,
     NetworkAlertRow,
     NetworkBallotRow,
@@ -8,6 +9,7 @@ import type {
     NetworkVoteStatus,
     VoteChoice,
 } from "../types";
+import { ballotWriteResult } from "./votes.repository";
 
 export interface InsertNetworkPostParams {
     id: string;
@@ -111,34 +113,32 @@ export async function getNetworkMirrors(postId: string): Promise<NetworkMirrorRo
     return result.rows;
 }
 
-export type InsertNetworkBallotResult = "inserted" | "already_voted" | "closed";
-
 /**
- * One ballot, atomically conditioned on the post's vote still being open (same pattern as
- * `insertBallot` in votes.repository.ts). The (post, user) primary key is "one vote per person -
- * the server you clicked in first counts".
+ * One ballot, atomically conditioned on the post's vote still being open - same switch-once rule
+ * as `insertBallot` in votes.repository.ts. The (post, user) primary key is one vote per person;
+ * `guild_id` stays the server of the first click.
  */
 export async function insertNetworkBallot(
     postId: string,
     discordUserId: string,
     guildId: string,
     choice: VoteChoice,
-): Promise<InsertNetworkBallotResult> {
-    const result = await query<{ inserted: boolean; still_open: boolean }>(
-        `WITH ins AS (
+): Promise<BallotWriteResult> {
+    const result = await query<{ inserted: boolean | null; still_open: boolean; previous: VoteChoice | null }>(
+        `WITH up AS (
              INSERT INTO bh_network_ballots (post_id, discord_user_id, guild_id, choice)
              SELECT $1, $2, $3, $4
              WHERE EXISTS (SELECT 1 FROM bh_network_posts WHERE id = $1 AND status IN ('publishing', 'published') AND vote_status = 'open')
-             ON CONFLICT (post_id, discord_user_id) DO NOTHING
-             RETURNING 1
+             ON CONFLICT (post_id, discord_user_id) DO UPDATE SET choice = EXCLUDED.choice, changed = TRUE
+                 WHERE bh_network_ballots.choice <> EXCLUDED.choice AND NOT bh_network_ballots.changed
+             RETURNING (xmax = 0) AS inserted
          )
-         SELECT EXISTS(SELECT 1 FROM ins) AS inserted,
-                EXISTS(SELECT 1 FROM bh_network_posts WHERE id = $1 AND status IN ('publishing', 'published') AND vote_status = 'open') AS still_open`,
+         SELECT (SELECT inserted FROM up) AS inserted,
+                EXISTS(SELECT 1 FROM bh_network_posts WHERE id = $1 AND status IN ('publishing', 'published') AND vote_status = 'open') AS still_open,
+                (SELECT choice FROM bh_network_ballots WHERE post_id = $1 AND discord_user_id = $2) AS previous`,
         [postId, discordUserId, guildId, choice],
     );
-    const row = result.rows[0];
-    if (row?.inserted) return "inserted";
-    return row?.still_open ? "already_voted" : "closed";
+    return ballotWriteResult(result.rows[0], choice);
 }
 
 export async function getNetworkBallots(postId: string): Promise<NetworkBallotRow[]> {
@@ -155,12 +155,18 @@ export async function getDueOpenNetworkVotes(now: Date): Promise<NetworkPostRow[
 }
 
 /** Compare-and-set close: `null` means it was already closed (the worker and an owner raced) - apply nothing. */
-export async function closeNetworkVoteRow(id: string, status: NetworkVoteStatus, closedBy: string | null): Promise<NetworkPostRow | null> {
+/** `decidedBy` is the bot owner who decided it with a click - `null` when the ballots decided it. */
+export async function closeNetworkVoteRow(
+    id: string,
+    status: NetworkVoteStatus,
+    closedBy: string | null,
+    decidedBy: string | null = null,
+): Promise<NetworkPostRow | null> {
     const result = await query<NetworkPostRow>(
-        `UPDATE bh_network_posts SET vote_status = $2, vote_closed_by = $3
+        `UPDATE bh_network_posts SET vote_status = $2, vote_closed_by = $3, vote_decided_by = $4
          WHERE id = $1 AND status = 'published' AND vote_status = 'open'
          RETURNING *`,
-        [id, status, closedBy],
+        [id, status, closedBy, decidedBy],
     );
     return result.rows[0] ?? null;
 }

@@ -273,7 +273,7 @@ const tabPages = (s: MemberAdminState) => {
 };
 
 /**
- * `/bh-admin member`: everything an admin does to one member. Opens on the member's profile with an
+ * `/admin member`: everything an admin does to one member. Opens on the member's profile with an
  * Admin box, and tabs for Biomes, Badges and Sessions; a member with no profile gets the setup buttons.
  */
 export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): ViewDefinition<MemberAdminState, void, MemberAdminInput> {

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { fakeMember } from "@/core/command/fakes";
 import type { CommandArgs, CommandContext } from "@/define";
 import { UserFacingError } from "@/define";
-import bhAdmin from "../commands/bh-admin.command";
+import bhAdmin from "../commands/admin.command";
 import manageMember from "../commands/manage-member.command";
 import { openMemberAdmin, resolveTargetMember } from "./member-admin.open";
 

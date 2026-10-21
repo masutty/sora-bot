@@ -24,8 +24,7 @@ function voteStates(adminId: string): Array<Omit<VoteRenderInfo, "voteId" | "clo
 }
 
 export default {
-    description:
-        "BiomeHunt's rare-biome forward in every community-vote state (open, no votes, tie, community real/fake, admin confirmed/denied).",
+    description: "The rare-biome forward in every community-vote state (open, no votes, tie, community real/fake, admin confirmed/denied).",
     pages(client: BotClient): TestPayload[] {
         const adminId = client.user?.id ?? "0";
         return voteStates(adminId).map((vote) => {

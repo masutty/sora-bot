@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { ContainerBuilder } from "discord.js";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
 import type { ActivityStatus, UserRow } from "../types";
-import { type UsersStatsInput, usersStatsView } from "./bh-stats.view";
+import { type UsersStatsInput, usersStatsView } from "./stats.view";
 
 const OWNER = "owner";
 

@@ -1,6 +1,6 @@
 import type { Guild, GuildMember } from "discord.js";
 import { SlashCommandBuilder } from "discord.js";
-import { defineCommand } from "@/define";
+import { defineCommand, type GuildCommandContext } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply } from "@/utils/format";
 import { getBalance } from "../services/economy.service";
@@ -10,9 +10,27 @@ import { buildBalanceReply } from "../views/balance.view";
 import { openProfileView } from "../views/profile.view";
 import { openRerollView } from "../views/reroll.view";
 
+export const PROFILE_DESCRIPTION = "View your hunt profile, or someone else's.";
+export const PROFILE_USER_DESCRIPTION = "Whose profile to view (defaults to yourself)";
+export const REROLL_DESCRIPTION = "Reroll your Flower for 50 Seeds.";
+
+/** `/bh profile` and its `/profile` alias. */
+export async function runProfile(ctx: GuildCommandContext): Promise<void> {
+    // Supplied-but-unresolvable user -> framework error; omitted -> your own profile.
+    const target = (await ctx.args.getMember("user")) ?? ctx.member;
+    await ctx.defer();
+    await openProfileView(ctx, ctx.guild.id, target);
+}
+
+/** `/bh reroll` and its `/reroll` alias. */
+export async function runReroll(ctx: GuildCommandContext): Promise<void> {
+    await ctx.defer();
+    await openRerollView(ctx, ctx.client, ctx.guild.id, ctx.user.id);
+}
+
 export default defineCommand({
     name: "bh",
-    description: "User commands for biome hunt module",
+    description: "Biome hunting commands.",
     category: CommandCategory.UTILITY,
     showOnHelp: true,
     guildOnly: true,
@@ -22,10 +40,10 @@ export default defineCommand({
         .addSubcommand((sub) =>
             sub
                 .setName("profile")
-                .setDescription("View your hunt profile, or someone else's.")
-                .addUserOption((o) => o.setName("user").setDescription("Whose profile to view (defaults to yourself)")),
+                .setDescription(PROFILE_DESCRIPTION)
+                .addUserOption((o) => o.setName("user").setDescription(PROFILE_USER_DESCRIPTION)),
         )
-        .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds."))
+        .addSubcommand((sub) => sub.setName("reroll").setDescription(REROLL_DESCRIPTION))
         .addSubcommand((sub) =>
             sub
                 .setName("balance")
@@ -39,10 +57,7 @@ export default defineCommand({
         const sub = ctx.args.getSubcommand();
 
         if (sub === "profile") {
-            // Supplied-but-unresolvable user -> framework error; omitted -> your own profile.
-            const target = (await ctx.args.getMember("user")) ?? ctx.member;
-            await ctx.defer();
-            await openProfileView(ctx, ctx.guild.id, target);
+            await runProfile(ctx);
             return;
         }
 
@@ -55,8 +70,7 @@ export default defineCommand({
         }
 
         if (sub === "reroll") {
-            await ctx.defer();
-            await openRerollView(ctx, ctx.client, ctx.guild.id, ctx.user.id);
+            await runReroll(ctx);
             return;
         }
 

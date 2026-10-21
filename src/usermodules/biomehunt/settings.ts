@@ -1,5 +1,5 @@
 /**
- * BiomeHunt tunables - how the module *behaves* (timing, limits), never what the game *is*
+ * Biome Hunt tunables - how the module *behaves* (timing, limits), never what the game *is*
  * (that lives in constants/). Changing a value here must never change a game rule.
  * Framework-wide UI defaults (view/confirm timeouts) belong in `@/config`, not here.
  */
@@ -14,11 +14,11 @@ export const settings = {
         networkDailyTickMs: 60 * 60 * 1000,
     },
     votes: {
-        /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it. */
+        /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it - until an owner sets another (`/owner vote-duration`). */
         windowMs: 60_000,
     },
     delayedForward: {
-        /** The only delays `/bh-admin forwarding` offers - past 60s a delayed ping loses its point. */
+        /** The only delays `/admin forwarding` offers - past 60s a delayed ping loses its point. */
         delayChoicesS: [5, 10, 15, 20, 25, 30, 45, 60],
     },
     network: {
@@ -36,10 +36,8 @@ export const settings = {
         publishConcurrency: 10,
         /** Same user + same biome from another server inside this window is Multi Macro; same private server is a duplicate. */
         dedupWindowMs: 2 * 60_000,
-        /** How long a Network vote stays open, counted from the last Mirror sent. */
+        /** How long a Network vote stays open, counted from the last Mirror sent - until an owner sets another (`/owner vote-duration`). */
         voteWindowMs: 60_000,
-        /** Servers that must reach a decided (non-tied) vote for the result to count - fewer is inconclusive. */
-        minDecidedServers: 2,
         /** Daily activity checks in a row below the minimum before the owner is alerted. */
         lowActivityChecksToAlert: 2,
         /** UTC hour the daily Multi Macro digest DM goes out. */

@@ -7,8 +7,7 @@ import { EmbedFormatter, formatTime } from "@/utils/format";
 import { QUOTA_PRESETS } from "../constants/quota-presets.constants";
 import { getOrCreateGuildConfig, updateQuotaEvalHour } from "../repository/guilds.repository";
 import { countQuotaRoleHolders, deleteQuotaRole, getQuotaRolesForGuild, upsertQuotaRole } from "../repository/quota-roles.repository";
-import { forceQuotaEval } from "../services/quota.service";
-import { hitCount, loadQuotaDayReport } from "../services/quota-report.service";
+import { forceQuotaEval, hitCount, loadQuotaDayReport } from "../services/quota.service";
 import type { QuotaRoleMode, QuotaRoleRow } from "../types";
 import { type QuotaStatsInput, quotaStatsView } from "./quota-report.view";
 import { QUOTAS_PER_PAGE, quotaPages, renderQuotas } from "./quotas.screens";
@@ -126,7 +125,7 @@ function deleteNote(mode: QuotaRoleMode, holders: number): string {
 }
 
 /**
- * `/bh-admin quotas`: the server's quotas as a list, an editor per quota, and the daily check time.
+ * `/admin quotas`: the server's quotas as a list, an editor per quota, and the daily check time.
  * Every change saves at once. Stored modes stay `F` / `RW`; the UI says Daily reward / Live role.
  */
 export function quotasView(deps: QuotasDeps): ViewDefinition<QuotasState, void, QuotasInput> {

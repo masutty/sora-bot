@@ -9,7 +9,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
-import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota-report.service";
+import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota.service";
 import { settings } from "../settings";
 import {
     buildBadgesTabContainer,
@@ -55,7 +55,7 @@ async function getQuotaRewardSummaryLines(guildId: string, userId: number, quota
 }
 
 /** Loads everything the Profile view's tabs render from, once upfront - `null` if the user has no
- * BiomeHunt profile in this guild. Warns if the DB round-trip is slow (see settings.diagnostics.slowProfileLoadMs). */
+ * hunter profile in this guild. Warns if the DB round-trip is slow (see settings.diagnostics.slowProfileLoadMs). */
 export async function loadProfileData(guildId: string, discordUserId: string): Promise<ProfileData | null> {
     const start = Date.now();
     const user = await getUserByDiscordId(guildId, discordUserId);

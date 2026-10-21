@@ -13,10 +13,10 @@ const post: MirrorPost = {
     server_link: "https://www.roblox.com/share?code=abc&type=Server",
 };
 
-const board = { servers: { real: 2, fake: 1 }, people: { real: 5, fake: 2 } };
+const board = { real: 5, fake: 2 };
 
-test("formatScoreboard: servers first, people in parentheses", () => {
-    expect(formatScoreboard(board)).toBe("✅ Real **2** servers (5) · ❌ Fake **1** server (2)");
+test("formatScoreboard: one count per side, in people", () => {
+    expect(formatScoreboard(board)).toBe("✅ Real **5** · ❌ Fake **2**");
 });
 
 test("buildMirrorContainer: an open vote shows the origin, both links and Real/Fake for this post", () => {
@@ -32,13 +32,21 @@ test("buildMirrorContainer: an open vote shows the origin, both links and Real/F
 test("buildMirrorContainer: a closed vote drops the buttons and shows the result with the scoreboard", () => {
     const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "fake", scoreboard: board } }));
     expect(out).not.toContain("net-vote");
-    expect(out).toContain("❌ Marked as fake by the Network `✅ 2` `❌ 1`");
-    expect(out).toContain("-# Each server counts once · 7 people voted");
+    expect(out).toContain("❌ Marked as fake by the Network `✅ 5` `❌ 2`");
+    expect(out).not.toContain("Each server counts once");
 });
 
-test("buildMirrorContainer: inconclusive says not enough servers decided", () => {
-    const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "inconclusive", scoreboard: board } }));
-    expect(out).toContain("Not enough servers decided");
+test("buildMirrorContainer: inconclusive is a tie, or no votes at all - worded like a local vote", () => {
+    const tie = json(buildMirrorContainer({ post, roleId: null, vote: { status: "inconclusive", scoreboard: { real: 2, fake: 2 } } }));
+    expect(tie).toContain("⚖️ Tied vote `✅ 2` `❌ 2`");
+    const none = json(buildMirrorContainer({ post, roleId: null, vote: { status: "inconclusive", scoreboard: { real: 0, fake: 0 } } }));
+    expect(none).toContain("*Vote expired with no votes*");
+});
+
+test("buildMirrorContainer: a vote the bot owner decided names them, without chips", () => {
+    const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "real", scoreboard: board, decidedBy: "owner" } }));
+    expect(out).toContain("✅ Marked as real by <@owner>");
+    expect(out).not.toContain("`✅ 5`");
 });
 
 test("buildMirrorContainer: a simulated Mirror is marked, has no vote and no invite button when there is no invite", () => {
@@ -78,11 +86,6 @@ test("buildMirrorContainer: the open vote is just the question, like the local f
 test("buildMirrorContainer: the vote id rides on the byline, like the local forward card", () => {
     const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "open" } }));
     expect(out).toContain("-# From [Sol Hunters](https://discord.gg/solhunters) · Vote `p1`");
-});
-
-test("buildMirrorContainer: inconclusive shows the server chips too", () => {
-    const out = json(buildMirrorContainer({ post, roleId: null, vote: { status: "inconclusive", scoreboard: board } }));
-    expect(out).toContain("⚖️ Not enough servers decided `✅ 2` `❌ 1`");
 });
 
 test("buildMirrorContainer: a home Mirror (the origin's own find) carries the Home badge and never pings", () => {

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { BiomeDelayedForwardRow, BiomeForwardRow, UserRow } from "../types";
 import { BiomeHuntError } from "../types";
-import { resolveSimulateBiomeTarget, type SimulateBiomeDeps } from "./bh-owner.command";
+import { resolveSimulateBiomeTarget, type SimulateBiomeDeps } from "./owner.command";
 
 function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
     return {

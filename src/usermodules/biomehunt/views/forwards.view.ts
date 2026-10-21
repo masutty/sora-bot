@@ -6,7 +6,7 @@ import { formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs, removeDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { getNetworkGuild } from "../repository/network.repository";
-import { setDelayedForward } from "../services/delayed-forward.service";
+import { setDelayedForward } from "../services/forward.service";
 import { type BiomeCategory, type BiomeDelayedForwardRow, type BiomeForwardRow, NetworkStatus } from "../types";
 import { buildTestForwardPost } from "./forward-post.view";
 import {
@@ -113,7 +113,7 @@ const emptyDraft = (): ForwardsAllDraft => ({ channelId: null, lateChannelId: nu
 const draftDelay = (d: ForwardsAllDraft) => (d.lateChannelId ? (d.delayS ?? DEFAULT_DELAY_S) : d.delayS);
 
 /**
- * `/bh-admin forwarding`: where each biome find gets posted, right away and (rare only) after a delay.
+ * `/admin forwarding`: where each biome find gets posted, right away and (rare only) after a delay.
  * A tab per category, an editor per biome whose selects save on change, and "Set for all" for a category.
  */
 export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, void, ForwardsInput> {

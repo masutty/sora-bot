@@ -1,8 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
-import type { InsertBallotResult } from "../repository/votes.repository";
-import type { BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
+import type { BallotWriteResult, BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
 import { adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps } from "./biome-vote.service";
 
@@ -73,12 +72,18 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         },
         getVoteById: async (id) => votes.get(id) ?? null,
         getOpenVotesPastClose: async (now) => [...votes.values()].filter((v) => v.status === VoteStatus.OPEN && v.closes_at <= now),
-        insertBallot: async (voteId, userId, choice): Promise<InsertBallotResult> => {
+        insertBallot: async (voteId, userId, choice): Promise<BallotWriteResult> => {
             const vote = votes.get(voteId);
             if (!vote || vote.status !== VoteStatus.OPEN) return "closed";
             const list = ballots.get(voteId) ?? [];
-            if (list.some((b) => b.user_id === userId)) return "already_voted";
-            list.push({ vote_id: voteId, user_id: userId, choice, created_at: new Date() });
+            const existing = list.find((b) => b.user_id === userId);
+            if (existing) {
+                if (existing.choice === choice) return "unchanged";
+                if (existing.changed) return "change_locked";
+                Object.assign(existing, { choice, changed: true });
+                return "changed";
+            }
+            list.push({ vote_id: voteId, user_id: userId, choice, changed: false, created_at: new Date() });
             ballots.set(voteId, list);
             return "inserted";
         },
@@ -165,7 +170,7 @@ async function seedOpenVote(deps: VoteServiceDeps, overrides: Partial<Parameters
             serverLink: null,
             jumpLink: "https://discord.com/channels/g/c/m",
             findCount: 3,
-            now: new Date("2026-01-01T00:00:00Z"),
+            closesAt: new Date("2026-01-01T00:01:00Z"),
             ...overrides,
         },
         deps,
@@ -204,9 +209,9 @@ test("resolveVote: a single fake vote -> community_fake", () => {
 
 // ─── openVote ───────────────────────────────────────────────────────────────────────────────────
 
-test("openVote persists a row with status open, closes_at = now + windowMs, and the render inputs", async () => {
+test("openVote persists a row with status open, the closes_at it was given, and the render inputs", async () => {
     const { deps, votes } = createFakeDeps();
-    const now = new Date("2026-01-01T00:00:00Z");
+    const closesAt = new Date("2026-01-01T00:02:00Z");
 
     const row = await openVote(
         {
@@ -221,13 +226,13 @@ test("openVote persists a row with status open, closes_at = now + windowMs, and 
             serverLink: "https://discord.gg/x",
             jumpLink: "https://discord.com/channels/g/c/orig",
             findCount: 2,
-            now,
+            closesAt,
         },
         deps,
     );
 
     expect(row.status).toBe(VoteStatus.OPEN);
-    expect(row.closes_at.getTime()).toBe(now.getTime() + 60_000);
+    expect(row.closes_at).toEqual(closesAt);
     expect(row.role_id).toBe("role1");
     expect(row.server_link).toBe("https://discord.gg/x");
     expect(row.jump_link).toBe("https://discord.com/channels/g/c/orig");
@@ -247,16 +252,16 @@ test("castBallot rejects the finder voting on their own find", async () => {
     expect(result).toEqual({ kind: "finder" });
 });
 
-test("castBallot rejects a duplicate vote - no changing an existing ballot", async () => {
+test("castBallot lets a voter switch to the other choice once, then locks it - a repeat of the same choice changes nothing", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
     const { client } = fakeClient();
 
-    const first = await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps);
-    const second = await castBallot(client, vote.id, "voter-1", VoteChoice.FAKE, deps);
-
-    expect(first).toEqual({ kind: "ok" });
-    expect(second).toEqual({ kind: "already_voted" });
+    expect(await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "ok" });
+    expect(await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "unchanged" });
+    expect(await castBallot(client, vote.id, "voter-1", VoteChoice.FAKE, deps)).toEqual({ kind: "changed" });
+    expect(await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "change_locked" });
+    expect(await deps.getBallotsForVote(vote.id)).toEqual([expect.objectContaining({ choice: VoteChoice.FAKE, changed: true })]);
 });
 
 test("castBallot rejects a vote that no longer exists, and one that's already closed", async () => {
@@ -505,7 +510,8 @@ test("closeDueVotes renders the tally from a ballot read taken AFTER the close c
         const ballots = await originalGetBallots(voteId);
         // A second ballot lands in the split second between the pre-close read (call 1, used to
         // decide the resolved status) and the post-close read (call 2, used for the display).
-        if (call === 2) return [...ballots, { vote_id: voteId, user_id: "voter-2", choice: VoteChoice.REAL, created_at: new Date() }];
+        if (call === 2)
+            return [...ballots, { vote_id: voteId, user_id: "voter-2", choice: VoteChoice.REAL, changed: false, created_at: new Date() }];
         return ballots;
     };
 
@@ -567,7 +573,7 @@ test("reward is granted exactly once even if the vote is somehow closed twice", 
     const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
-    // A later admin re-confirmation (e.g. `/bh-admin review-voting`) must not double-grant.
+    // A later admin re-confirmation (e.g. `/admin review-voting`) must not double-grant.
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
 
     expect(calls.grantBiomeReward).toHaveLength(1);

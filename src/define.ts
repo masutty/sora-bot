@@ -2,7 +2,7 @@ import type { CommandContext, GuildCommandContext } from "./core/command/command
 import type { Cog, CommandDefinition, CommandDefinitionBase } from "./types";
 
 // The framework's public surface - modules import from "@/define", never from "@/core/*" directly.
-export type { CommandArgs } from "./core/command/command-args";
+export { type CommandArgs, requireSnowflake } from "./core/command/command-args";
 export type { CommandContext, GuildCommandContext, ReplyOptions, ReplyPayload } from "./core/command/command-context";
 export { buildHelpContainer } from "./core/command/command-usage";
 export type { PrefixArgs } from "./core/command/prefix-args";
