@@ -1,15 +1,24 @@
 import { expect, test } from "bun:test";
 import type { Client } from "discord.js";
-import type { BiomeDelayedForwardRow, BiomeForwardRow } from "../types";
-import type { DelayedForwardJob } from "./delayed-forward.service";
-import { checkAndForward, type ForwardServiceDeps, forwardBiome } from "./forward.service";
+import { type BiomeDelayedForwardRow, type BiomeForwardRow, BiomeHuntError, type BiomeVoteRow, VoteStatus } from "../types";
+import { FORWARD_INFO_PREFIX } from "../views/forward-post.view";
+import {
+    checkAndForward,
+    type DelayedForwardDeps,
+    type DelayedForwardJob,
+    type ForwardServiceDeps,
+    forwardBiome,
+    scheduleDelayedForward,
+    sendDelayedForward,
+    setDelayedForward,
+} from "./forward.service";
 
 /** An in-memory `ForwardServiceDeps` - never touches the DB. `openVote` just records its params. */
 function createFakeDeps(
     forward: BiomeForwardRow | null = { guild_id: "g1", biome: "GLITCHED", channel_id: "forward-channel", role_id: null },
     delayed: BiomeDelayedForwardRow | null = null,
 ) {
-    const openVoteCalls: Array<{ jumpLink: string; channelId: string; messageId: string }> = [];
+    const openVoteCalls: Array<{ jumpLink: string; channelId: string; messageId: string; closesAt: Date }> = [];
     const scheduled: DelayedForwardJob[] = [];
     const deps: ForwardServiceDeps = {
         getForwardConfig: async () => forward,
@@ -22,6 +31,7 @@ function createFakeDeps(
             openVoteCalls.push(params);
             return params as never;
         },
+        voteWindowMs: async () => 120_000,
         scheduleDelayedForward: (job) => {
             scheduled.push(job);
         },
@@ -77,6 +87,27 @@ test("forwardBiome (the refactored core) accepts an arbitrary jump link instead 
 
     expect(openVoteCalls).toHaveLength(1);
     expect(openVoteCalls[0].jumpLink).toBe("https://discord.com/channels/guild1/some-channel");
+});
+
+test("forwardBiome: the vote closes after the configured local duration - the same moment the post shows", async () => {
+    const { deps, openVoteCalls } = createFakeDeps();
+    const sent: unknown[] = [];
+    const before = Date.now();
+
+    await forwardBiome(
+        fakeClient(sent),
+        "guild1",
+        42,
+        { biome: "GLITCHED", macroType: "simulated", eventType: "started", eventTimestamp: new Date(), serverLink: null },
+        10,
+        "https://discord.com/channels/guild1/some-channel",
+        deps,
+    );
+
+    const closesAt = openVoteCalls[0].closesAt.getTime();
+    expect(closesAt).toBeGreaterThanOrEqual(before + 120_000);
+    expect(closesAt).toBeLessThanOrEqual(Date.now() + 120_000);
+    expect(JSON.stringify(sent[0])).toContain(`<t:${Math.floor(closesAt / 1000)}:R>`);
 });
 
 test("forwardBiome does nothing for a non-'started' event, a null biome, or when no forward is configured - same guards as before the refactor", async () => {
@@ -187,4 +218,86 @@ test("forwardBiome: the live forward card carries the biome's flavor text", asyn
     const sent: unknown[] = [];
     await forwardBiome(fakeClient(sent), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
     expect(JSON.stringify(sent[0])).toContain("Unexpected error occurred. [Code 404]");
+});
+
+function job(client: Client, overrides: Partial<DelayedForwardJob> = {}): DelayedForwardJob {
+    return {
+        client,
+        guildId: "g1",
+        config: { guild_id: "g1", biome: "GLITCHED", channel_id: "delayed-channel", role_id: "public-role", delay_s: 30 },
+        biome: "GLITCHED",
+        serverLink: null,
+        jumpLink: "https://discord.com/channels/g1/c/m",
+        stats: { finderDiscordId: "finder-1", findCount: 1, serverFindCount: 1, lastSeenInServerAt: null },
+        eventId: 10,
+        voteId: "vote0001",
+        dryRun: false,
+        ...overrides,
+    };
+}
+
+function fakeDeps(opts: { eventExists?: boolean; voteStatus?: VoteStatus | null } = {}) {
+    const scheduledMs: number[] = [];
+    const deps: DelayedForwardDeps = {
+        eventExists: async () => opts.eventExists ?? true,
+        getVoteById: async () => (opts.voteStatus ? ({ status: opts.voteStatus } as BiomeVoteRow) : null),
+        schedule: (_fn, ms) => {
+            scheduledMs.push(ms);
+        },
+    };
+    return { deps, scheduledMs };
+}
+
+test("scheduleDelayedForward waits the configured delay, in ms", () => {
+    const { deps, scheduledMs } = fakeDeps();
+    scheduleDelayedForward(job(fakeClient()), deps);
+    expect(scheduledMs).toEqual([30_000]);
+});
+
+test("sendDelayedForward sends when the find is still valid (vote open, event present)", async () => {
+    const sent: unknown[] = [];
+    const client = fakeClient(sent);
+    await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
+    expect(sent).toHaveLength(1);
+    expect(JSON.stringify(sent[0])).toContain(`${FORWARD_INFO_PREFIX}:1:0`);
+    expect(JSON.stringify(sent[0])).not.toContain("SIMULATED");
+    expect(JSON.stringify(sent[0])).toContain("<@&public-role>");
+});
+
+test("sendDelayedForward is cancelled when the event was deleted during the delay (admin deny / fake vote)", async () => {
+    const sent: unknown[] = [];
+    const client = fakeClient(sent);
+    await sendDelayedForward(job(client), fakeDeps({ eventExists: false }).deps);
+    expect(sent).toHaveLength(0);
+});
+
+test("sendDelayedForward is cancelled on a fake/denied vote even with no event (dry-run simulation)", async () => {
+    for (const status of [VoteStatus.COMMUNITY_FAKE, VoteStatus.ADMIN_DENIED]) {
+        const sent: unknown[] = [];
+        const client = fakeClient(sent);
+        await sendDelayedForward(job(client, { eventId: null }), fakeDeps({ voteStatus: status }).deps);
+        expect(sent).toHaveLength(0);
+    }
+});
+
+test("sendDelayedForward dry run: sent with no pings", async () => {
+    const sent: unknown[] = [];
+    const client = fakeClient(sent);
+    await sendDelayedForward(job(client, { eventId: null, voteId: null, dryRun: true }), fakeDeps().deps);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ allowedMentions: { parse: [] } });
+    expect(JSON.stringify(sent[0])).toContain("SIMULATED FORWARD - TESTING ONLY");
+});
+
+test("sendDelayedForward: the delayed card carries the biome's flavor text too", async () => {
+    const sent: unknown[] = [];
+    const client = fakeClient(sent);
+    await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
+    expect(JSON.stringify(sent[0])).toContain("Unexpected error occurred. [Code 404]");
+});
+
+test("setDelayedForward rejects a non-rare biome before touching the DB", async () => {
+    await expect(setDelayedForward("g1", "HELL", "delayed-channel", null, 30)).rejects.toThrow(
+        new BiomeHuntError("Delayed forwards are only for rare biomes."),
+    );
 });

@@ -2,7 +2,7 @@ import { ActionRowBuilder, type ButtonBuilder, ButtonStyle, ContainerBuilder, Me
 import { paginationRow, type RenderKit, type ViewRender } from "@/define";
 import { formatTime, NO_PINGS } from "@/utils/format";
 import { QUOTA_PRESETS } from "../constants/quota-presets.constants";
-import { quotaDayWindow } from "../services/quota-report.service";
+import { quotaDayWindow } from "../services/quota.service";
 import type { QuotaRoleRow } from "../types";
 import type { QuotasScreen, QuotasState } from "./quotas.view";
 

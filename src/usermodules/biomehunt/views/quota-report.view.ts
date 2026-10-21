@@ -1,7 +1,7 @@
 import { ActionRowBuilder, type ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
 import { defineView, paginationHandlers, paginationRow, type ViewDefinition, type ViewPayload } from "@/define";
 import { unix } from "@/utils/format";
-import { hitCount, type QuotaDayReport, type QuotaMember } from "../services/quota-report.service";
+import { hitCount, type QuotaDayReport, type QuotaMember } from "../services/quota.service";
 
 /** Members per page - with a mention and a time each, far under Discord's 4000-character text limit. */
 export const QUOTA_MEMBERS_PER_PAGE = 20;

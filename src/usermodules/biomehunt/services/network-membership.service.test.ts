@@ -10,7 +10,6 @@ import {
     type MembershipDeps,
     notifyStaff,
     precheckJoin,
-    requireSnowflake,
     submitJoinRequest,
 } from "./network-membership.service";
 
@@ -217,12 +216,6 @@ test("decideJoinRequest: approving a guild banned while its request was pending 
     const { deps, rows } = createFakeDeps({ rows: [fakeRow({ status: NetworkStatus.PENDING })], banned: [["guild", "g1"]] });
     expect(await decideJoinRequest("g1", "o1", true, deps)).toBe("banned");
     expect(rows.get("g1")?.status).toBe(NetworkStatus.NONE);
-});
-
-test("requireSnowflake accepts Discord ids only", () => {
-    expect(() => requireSnowflake("not-an-id")).toThrow(BiomeHuntError);
-    expect(() => requireSnowflake("123")).toThrow(BiomeHuntError);
-    expect(requireSnowflake(" 188851299255713792 ")).toBe("188851299255713792");
 });
 
 test("decideJoinRequest: only an approval that actually admits the server welcomes it to the Network", async () => {

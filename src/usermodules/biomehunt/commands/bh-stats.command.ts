@@ -20,7 +20,7 @@ import {
     getUserLongestSessionRank,
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
-import { loadQuotaDayReport } from "../services/quota-report.service";
+import { loadQuotaDayReport } from "../services/quota.service";
 import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/bh-stats.view";
 import { quotaStatsView } from "../views/quota-report.view";
 import { buildGuildStatsContainer, getUserListPage } from "../views/stats-builders";

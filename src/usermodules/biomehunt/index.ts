@@ -14,7 +14,7 @@ import { networkVoteComponent } from "./components/network-vote.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
-import { processIncomingMessage } from "./services/activity-ingest.service";
+import { processIncomingMessage } from "./services/activity.service";
 import { counterWorker } from "./workers/counter.worker";
 import { networkDailyWorker } from "./workers/network-daily.worker";
 import { networkPublishWorker } from "./workers/network-publish.worker";

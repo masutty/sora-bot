@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SlashCommandBuilder } from "discord.js";
-import { type CommandArgs, prefixArgs, slashArgs } from "./command-args";
+import { type CommandArgs, prefixArgs, requireSnowflake, slashArgs } from "./command-args";
 import { fakeClient, fakeGuild, fakeInteraction, fakeMember, fakeUser } from "./fakes";
 import { deriveSchema, deriveSubcommandSchema, PrefixArgs } from "./prefix-args";
 import { UserFacingError } from "./user-facing-error";
@@ -161,4 +161,10 @@ describe("prefix name:value args", () => {
         );
         expect(prefix(["set", "count:5"]).getInteger("count")).toBe(5);
     });
+});
+
+test("requireSnowflake accepts Discord ids only", () => {
+    expect(() => requireSnowflake("not-an-id")).toThrow(UserFacingError);
+    expect(() => requireSnowflake("123")).toThrow(UserFacingError);
+    expect(requireSnowflake(" 188851299255713792 ")).toBe("188851299255713792");
 });

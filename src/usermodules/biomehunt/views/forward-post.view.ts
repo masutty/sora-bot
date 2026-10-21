@@ -14,6 +14,7 @@ import {
 import type { ViewPayload } from "@/define";
 import { formatBiomeName, getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBiomeName } from "../constants/biomes.constants";
 import { VoteStatus } from "../types";
+import { localVoteVerdict, voteOutcomeLine } from "./vote-outcome";
 
 export interface VoteRenderInfo {
     /** Short random code, shown on the message so it can be referenced (e.g. `/bh-admin review-voting`). */
@@ -185,30 +186,16 @@ function buildLinkButtonsRow(
     return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
-/** Main line of the vote block - one per `VoteStatus`. Community outcomes show the ballots as `✅ n` `❌ n` chips. */
+/** Main line of the vote block: the question while open, then the shared outcome line (see vote-outcome.ts). */
 function voteStatusLine(vote: VoteRenderInfo): string {
-    const tally = ` \`✅ ${vote.tally?.real ?? 0}\` \`❌ ${vote.tally?.fake ?? 0}\``;
-
-    switch (vote.status) {
-        case VoteStatus.OPEN:
-            return `**Is this biome real?** · ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
-        case VoteStatus.NO_VOTES:
-            return "*Vote expired with no votes*";
-        case VoteStatus.TIE:
-            return `⚖️ Tied vote${tally}`;
-        case VoteStatus.COMMUNITY_REAL:
-            return `✅ Marked as real by community voting${tally}`;
-        case VoteStatus.COMMUNITY_FAKE:
-            return `❌ Marked as fake by community voting${tally}`;
-        case VoteStatus.ADMIN_CONFIRMED:
-            return `✅ Marked as real by <@${vote.decidedByUserId}>`;
-        case VoteStatus.ADMIN_DENIED:
-            return `❌ Marked as fake by <@${vote.decidedByUserId}>`;
-        default: {
-            const exhaustive: never = vote.status;
-            throw new Error(`Unhandled vote status: ${exhaustive}`);
-        }
+    if (vote.status === VoteStatus.OPEN) {
+        return `**Is this biome real?** · ${vote.voteCount} vote${vote.voteCount === 1 ? "" : "s"} · voting closes <t:${epochOf(vote.closesAt)}:R>\n-# Administrators can immediately decide this vote`;
     }
+    return voteOutcomeLine({
+        verdict: localVoteVerdict(vote.status),
+        tally: vote.tally ?? { real: 0, fake: 0 },
+        decidedBy: vote.decidedByUserId,
+    });
 }
 
 function epochOf(date: Date): number {

@@ -12,6 +12,7 @@ import {
 import type { EligibilityFacts, EligibilityGap } from "./network-eligibility.service";
 import {
     type NetworkPublishDeps,
+    parsePrivateServerLink,
     parseRelayGuildIds,
     publishDuePosts,
     type ScheduleInput,
@@ -114,6 +115,7 @@ function createFakeDeps(opts: FakeOptions = {}) {
                 vote_status: p.simulated ? "inconclusive" : "open",
                 vote_closes_at: null,
                 vote_closed_by: null,
+                vote_decided_by: null,
                 created_at: clock,
             };
             posts.set(row.id, row);
@@ -154,6 +156,7 @@ function createFakeDeps(opts: FakeOptions = {}) {
             return { channelId, messageId: `m-${channelId}` };
         },
         shuffle: (items) => [...items].reverse(),
+        voteWindowMs: async () => 60_000,
         now: () => clock,
     };
     return {
@@ -334,6 +337,7 @@ test("publishDuePosts: a post left in 'publishing' by a crash is finalized so it
         vote_status: "open" as const,
         vote_closes_at: null,
         vote_closed_by: null,
+        vote_decided_by: null,
         created_at: new Date(T0.getTime() - 3 * 60_000),
     };
     const { deps, posts } = createFakeDeps({ posts: [stuck] });
@@ -460,4 +464,41 @@ test("publishDuePosts: a real test relay from a forced origin that fails the che
     await publishDuePosts(deps);
     expect(posts.get("p1")?.status).toBe("published");
     expect(calls.sent.map((s) => s.channelId)).toEqual(["net-gB"]);
+});
+
+test("parsePrivateServerLink: a share link of type Server yields its code", () => {
+    expect(parsePrivateServerLink("https://www.roblox.com/share?code=abc123DEF&type=Server")?.code).toBe("abc123DEF");
+    expect(parsePrivateServerLink("https://roblox.com/share?type=server&code=xyz")?.code).toBe("xyz");
+});
+
+test("parsePrivateServerLink: a game link with privateServerLinkCode yields that code", () => {
+    expect(parsePrivateServerLink("https://www.roblox.com/games/15532962292/Sols-RNG?privateServerLinkCode=12345678")?.code).toBe(
+        "12345678",
+    );
+});
+
+test("parsePrivateServerLink: anything that does not lead to a private server is null", () => {
+    expect(parsePrivateServerLink(null)).toBeNull();
+    expect(parsePrivateServerLink("https://www.roblox.com/games/15532962292/Sols-RNG")).toBeNull();
+    expect(parsePrivateServerLink("https://www.roblox.com/share?code=abc&type=ExperienceDetails")).toBeNull();
+    expect(parsePrivateServerLink("https://roblox.com.evil.example/share?code=abc&type=Server")).toBeNull();
+    expect(parsePrivateServerLink("http://www.roblox.com/share?code=abc&type=Server")).toBeNull();
+    expect(parsePrivateServerLink("not a url")).toBeNull();
+});
+
+test("parsePrivateServerLink: rebuilds a clean link from the validated parts only", () => {
+    expect(parsePrivateServerLink("https://www.roblox.com/share?code=abc_1-2&type=Server&x=*evil*")).toEqual({
+        code: "abc_1-2",
+        url: "https://www.roblox.com/share?code=abc_1-2&type=Server",
+    });
+    expect(parsePrivateServerLink("https://roblox.com/games/15532962292/Sols-RNG?privateServerLinkCode=123")).toEqual({
+        code: "123",
+        url: "https://www.roblox.com/games/15532962292?privateServerLinkCode=123",
+    });
+});
+
+test("parsePrivateServerLink: a code or place id with markdown or odd characters is refused", () => {
+    expect(parsePrivateServerLink("https://www.roblox.com/share?code=a*b)&type=Server")).toBeNull();
+    expect(parsePrivateServerLink("https://www.roblox.com/games/12)3/x?privateServerLinkCode=1")).toBeNull();
+    expect(parsePrivateServerLink(`https://www.roblox.com/share?code=${"a".repeat(129)}&type=Server`)).toBeNull();
 });

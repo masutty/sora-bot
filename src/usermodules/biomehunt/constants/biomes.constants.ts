@@ -19,12 +19,12 @@ export interface BiomeMeta {
     /** Optional icon shown next to the biome name on its forward notification. Unset = no image. */
     iconUrl?: string;
     /** Raw ANSI escape prefix (e.g. `"\u001b[1;33m"`) used to color this biome's name in the
-     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in services/activity-session-report.service.ts).
+     * session-end report's `ansi` codeblock (see `ansiBiomeLine` in services/activity.service.ts).
      * Unset = no color (terminal default). Discord's `ansi` codeblock only renders bold(1) plus
      * 8 foreground (30-37) and 8 background (40-47) codes - see `!test embed/ansi-colors`. */
     ansiColor?: string;
     /** How long the biome lasts, for biomes with a fixed duration (admin events, mostly). While it
-     * runs, its finder can't go idle - see activity-grace.service.ts. Unset = not timed. */
+     * runs, its finder can't go idle - see activity.service.ts. Unset = not timed. */
     durationS?: number;
     /** Finding this biome earns a permanent profile badge (and the guild's badge role, if set). */
     hasBadge?: boolean;

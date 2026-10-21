@@ -75,7 +75,7 @@ suffix convention still applies inside it.
   another module's `views/`). Never `commands/`.
 - `services/` → `repository/`, `constants/`, other `services/`, and a pure (non-interactive)
   message builder exported from `views/` — never a `defineView` screen itself — reused outside a
-  View session, e.g. `services/activity-session-report.service.ts` → `views/session-end.view.ts`.
+  View session, e.g. `services/activity.service.ts` → `views/session-end.view.ts`.
 - `workers/` → `services/`, `repository/`.
 - `components/` → `services/`, `repository/`, `constants/` - same as `workers/`, never a
   `commands/` module or an interactive View (a persistent component's own state lives in the DB,

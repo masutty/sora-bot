@@ -421,7 +421,7 @@ CREATE TABLE IF NOT EXISTS bh_network_mirrors (
     PRIMARY KEY (post_id, guild_id)
 );
 
-/* One ballot per person per Network Post (the PK) - guild_id is the server it was clicked in, which is the server it counts for. */
+/* One ballot per person per Network Post (the PK) - guild_id is the server it was clicked in (shown in lookups, not weighed). */
 CREATE TABLE IF NOT EXISTS bh_network_ballots (
     post_id         TEXT NOT NULL REFERENCES bh_network_posts(id) ON DELETE CASCADE,
     discord_user_id VARCHAR(20) NOT NULL,
@@ -479,7 +479,7 @@ CREATE TABLE IF NOT EXISTS bh_biomes (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-/* How long a timed biome lasts - while it runs, its finder can't go idle (see activity-grace.service.ts). NULL = not timed. */
+/* How long a timed biome lasts - while it runs, its finder can't go idle (see activity.service.ts). NULL = not timed. */
 ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS duration_s INTEGER;
 
 /* Badges (see badges.constants.ts): a biome with has_badge gives a profile badge, keyed by the biome. */
@@ -505,6 +505,20 @@ ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS activity_grace_biome VARCHAR(40);
 
 /* Daily rewards (mode F) are always a 24h window - fixes rows stored with another window. */
 UPDATE bh_quota_roles SET quota_window_hours = 24 WHERE mode = 'F' AND quota_window_hours <> 24;
+
+/* A voter can switch their ballot once - changed marks that they did, so a second switch is refused. */
+ALTER TABLE bh_biome_vote_ballots ADD COLUMN IF NOT EXISTS changed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bh_network_ballots ADD COLUMN IF NOT EXISTS changed BOOLEAN NOT NULL DEFAULT FALSE;
+
+/* Bot-wide settings an owner changes at runtime (vote durations) - one row per key, read through a cache. */
+CREATE TABLE IF NOT EXISTS bh_bot_settings (
+    key        VARCHAR(60) PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+/* The bot owner who decided a Network vote with a click - NULL when the ballots decided it. */
+ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS vote_decided_by VARCHAR(20);
 
 /* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
 CREATE TABLE IF NOT EXISTS bh_data_migrations (

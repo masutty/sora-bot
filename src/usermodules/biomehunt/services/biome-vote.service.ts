@@ -5,12 +5,13 @@ import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
 import { getBiomeMeta } from "../constants/biomes.constants";
 import { deleteEventById } from "../repository/activity.repository";
+import { getBotSetting, setBotSetting } from "../repository/bot-settings.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
 import { closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote } from "../repository/votes.repository";
 import { settings } from "../settings";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
-import { VoteChoice, VoteStatus } from "../types";
+import { BiomeHuntError, VoteChoice, VoteStatus } from "../types";
 import { buildForwardContainer, type VoteRenderInfo } from "../views/forward-post.view";
 import { grantBiomeReward, revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
 
@@ -50,6 +51,32 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         revokeOrphanedBadges,
         deleteEventById,
     };
+}
+
+/** `local` is the rare-biome vote on a server's forward post; `network` is the vote on the Network Mirrors. */
+export type VoteKind = "local" | "network";
+
+const VOTE_WINDOW_KEY: Record<VoteKind, string> = { local: "vote_window_s.local", network: "vote_window_s.network" };
+const VOTE_KIND_LABEL: Record<VoteKind, string> = { local: "Local", network: "Network" };
+export const VOTE_WINDOW_MIN_S = 30;
+export const VOTE_WINDOW_MAX_S = 600;
+
+/** How long a new vote of `kind` stays open - what an owner set with `/bh-owner vote-duration`, else the settings default. */
+export async function getVoteWindowMs(kind: VoteKind): Promise<number> {
+    const seconds = Number(await getBotSetting(VOTE_WINDOW_KEY[kind]));
+    if (seconds > 0) return seconds * 1000;
+    return kind === "local" ? settings.votes.windowMs : settings.network.voteWindowMs;
+}
+
+/** `/bh-owner vote-duration` - `seconds` of `null` only shows the current duration. Votes already open keep their deadline. */
+export async function setVoteWindow(kind: VoteKind, seconds: number | null): Promise<string> {
+    const label = VOTE_KIND_LABEL[kind];
+    if (seconds === null) return `${label} votes stay open for **${(await getVoteWindowMs(kind)) / 1000}s**.`;
+    if (!Number.isInteger(seconds) || seconds < VOTE_WINDOW_MIN_S || seconds > VOTE_WINDOW_MAX_S) {
+        throw new BiomeHuntError(`The duration must be between ${VOTE_WINDOW_MIN_S} and ${VOTE_WINDOW_MAX_S} seconds.`);
+    }
+    await setBotSetting(VOTE_WINDOW_KEY[kind], String(seconds));
+    return `${label} votes now stay open for **${seconds}s**. Votes already open keep their deadline.`;
 }
 
 /** Short random code for a new vote - same shape as a trace `ref` (8 lowercase base36 chars), not sequential so it can't be guessed. */
@@ -124,13 +151,11 @@ export interface OpenVoteParams {
     finderDiscordId?: string | null;
     serverFindCount?: number | null;
     lastSeenInServerAt?: Date | null;
-    /** Injectable for tests - defaults to now. */
-    now?: Date;
+    /** When it closes - the same moment the forward post already shows. */
+    closesAt: Date;
 }
 
 export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = defaultVoteServiceDeps()): Promise<BiomeVoteRow> {
-    const now = params.now ?? new Date();
-    const closesAt = new Date(now.getTime() + settings.votes.windowMs);
     return deps.insertVote({
         id: params.voteId,
         guildId: params.guildId,
@@ -146,7 +171,7 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
         finderDiscordId: params.finderDiscordId ?? null,
         serverFindCount: params.serverFindCount ?? null,
         lastSeenInServerAt: params.lastSeenInServerAt ?? null,
-        closesAt,
+        closesAt: params.closesAt,
     });
 }
 
@@ -233,12 +258,20 @@ async function refreshVoteMessage(client: BotClient, vote: BiomeVoteRow, render:
     await message.edit({ components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: NO_PINGS }).catch(() => {});
 }
 
-export type CastBallotResult = { kind: "ok" } | { kind: "not_found" } | { kind: "closed" } | { kind: "finder" } | { kind: "already_voted" };
+export type CastBallotResult =
+    | { kind: "ok" }
+    | { kind: "changed" }
+    | { kind: "unchanged" }
+    | { kind: "change_locked" }
+    | { kind: "not_found" }
+    | { kind: "closed" }
+    | { kind: "finder" };
 
 /**
- * Casts one community ballot. Rejects the finder voting on their own find, a duplicate vote (no
- * changing an existing one), and a vote that's already closed. On success, re-edits the forward
- * message with the new (still-hidden) tally count.
+ * Casts one community ballot. Rejects the finder voting on their own find and a vote that's
+ * already closed; a voter can switch to the other choice once, then it's locked. A first ballot
+ * re-edits the forward message with the new (still-hidden) tally count - a switch leaves the
+ * count as it was, so it doesn't.
  */
 export async function castBallot(
     client: BotClient,
@@ -257,9 +290,8 @@ export async function castBallot(
     // Atomic: the INSERT itself is conditioned on the vote still being open, closing the race
     // window between the `getVoteById` read above and this write (a `closeDueVotes`/`adminDecide`
     // closing the vote in between yields "closed" here, not a recorded ballot on a dead vote).
-    const insertResult = await deps.insertBallot(voteId, discordUserId, choice);
-    if (insertResult === "already_voted") return { kind: "already_voted" };
-    if (insertResult === "closed") return { kind: "closed" };
+    const written = await deps.insertBallot(voteId, discordUserId, choice);
+    if (written !== "inserted") return { kind: written };
 
     // Re-read the vote right before rendering - it may have closed in the tiny window between the
     // insert above and this refresh (an admin decision, or the closing worker). Rendering the

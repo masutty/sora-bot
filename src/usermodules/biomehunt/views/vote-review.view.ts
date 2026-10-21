@@ -8,6 +8,7 @@ import { getBallotsForVote, getVoteById } from "../repository/votes.repository";
 import { type AdminDecideResult, adminDecide } from "../services/biome-vote.service";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { BiomeHuntError, VoteChoice, VoteStatus } from "../types";
+import { localVoteVerdict, voteOutcomeLine } from "./vote-outcome";
 
 /**
  * Everything the View needs that would otherwise be a DB/Discord call, injected so its tests never
@@ -50,34 +51,15 @@ function tallyOf(ballots: BiomeVoteBallotRow[]): { real: number; fake: number } 
     return { real, fake: ballots.length - real };
 }
 
-/** One line per `VoteStatus` - same English wording as `forward-post.view.ts`'s `voteStatusLine`,
- * minus the emoji (this is an admin utility screen, not the public forward) and NEVER hiding the
- * tally while open - the whole point of `review` is showing an admin the real/fake split before
- * the vote has even closed, so they can override early if they want to. */
+/** The vote's state - the shared outcome line once closed (see vote-outcome.ts), and while open the
+ * live split, NEVER hidden here: the whole point of `review` is showing an admin the real/fake split
+ * before the vote has even closed, so they can override early if they want to. */
 function voteStateLine(vote: BiomeVoteRow, tally: { real: number; fake: number }): string {
-    const { real, fake } = tally;
-    switch (vote.status) {
-        case VoteStatus.OPEN: {
-            const epoch = Math.floor(vote.closes_at.getTime() / 1000);
-            return `Open - ${real}/${fake} so far, closes <t:${epoch}:R>.`;
-        }
-        case VoteStatus.NO_VOTES:
-            return "*Vote expired with no votes*";
-        case VoteStatus.TIE:
-            return `Tied vote (${real}/${fake})`;
-        case VoteStatus.COMMUNITY_REAL:
-            return `✅ Ruled real via voting (${real}/${fake})`;
-        case VoteStatus.COMMUNITY_FAKE:
-            return `❌ Ruled fake via voting (${real}/${fake})`;
-        case VoteStatus.ADMIN_CONFIRMED:
-            return `✅ Ruled real by <@${vote.decided_by}>`;
-        case VoteStatus.ADMIN_DENIED:
-            return `❌ Ruled fake by <@${vote.decided_by}>`;
-        default: {
-            const exhaustive: never = vote.status;
-            throw new Error(`Unhandled vote status: ${exhaustive}`);
-        }
+    if (vote.status === VoteStatus.OPEN) {
+        const epoch = Math.floor(vote.closes_at.getTime() / 1000);
+        return `Open - ${tally.real}/${tally.fake} so far, closes <t:${epoch}:R>.`;
     }
+    return voteOutcomeLine({ verdict: localVoteVerdict(vote.status), tally, decidedBy: vote.decided_by });
 }
 
 /** `<@id>, <@id>, ...` for one side of the ballot list, or `*none*` - `NO_PINGS` on the payload

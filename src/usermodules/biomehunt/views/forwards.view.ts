@@ -6,7 +6,7 @@ import { formatBiomeName } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs, removeDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { getNetworkGuild } from "../repository/network.repository";
-import { setDelayedForward } from "../services/delayed-forward.service";
+import { setDelayedForward } from "../services/forward.service";
 import { type BiomeCategory, type BiomeDelayedForwardRow, type BiomeForwardRow, NetworkStatus } from "../types";
 import { buildTestForwardPost } from "./forward-post.view";
 import {

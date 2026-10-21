@@ -7,7 +7,7 @@ import {
     type SlashCommandSubcommandBuilder,
     type SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
-import { type CommandContext, confirm, paginate } from "@/define";
+import { type CommandContext, confirm, paginate, requireSnowflake } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getDelayedForwardConfigs } from "../repository/delayed-forwards.repository";
@@ -22,7 +22,6 @@ import {
     defaultMembershipDeps,
     forceIntoNetwork,
     removeFromNetwork,
-    requireSnowflake,
     unbanFromNetwork,
 } from "../services/network-membership.service";
 import { defaultNetworkPublishDeps, scheduleSimulatedNetworkPost } from "../services/network-publish.service";

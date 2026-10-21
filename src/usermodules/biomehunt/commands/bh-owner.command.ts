@@ -23,6 +23,7 @@ import { getForwardConfig } from "../repository/forwards.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
 import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
+import { setVoteWindow, VOTE_WINDOW_MAX_S, VOTE_WINDOW_MIN_S, type VoteKind } from "../services/biome-vote.service";
 import { rerollFlower } from "../services/flower.service";
 import { forwardBiome } from "../services/forward.service";
 import { parseRelayGuildIds } from "../services/network-publish.service";
@@ -116,6 +117,25 @@ export default defineCommand({
                         ),
                 ),
         )
+        .addSubcommand((s) =>
+            s
+                .setName("vote-duration")
+                .setDescription("Shows or sets how long new votes stay open - for every server.")
+                .addStringOption((o) =>
+                    o
+                        .setName("type")
+                        .setDescription("Which vote")
+                        .setRequired(true)
+                        .addChoices({ name: "Local (forward post)", value: "local" }, { name: "Network (Mirrors)", value: "network" }),
+                )
+                .addIntegerOption((o) =>
+                    o
+                        .setName("seconds")
+                        .setDescription("New duration (omit to see the current one)")
+                        .setMinValue(VOTE_WINDOW_MIN_S)
+                        .setMaxValue(VOTE_WINDOW_MAX_S),
+                ),
+        )
         .addSubcommandGroup(biomeAdminSubcommandGroup),
 
     async executeAutocomplete(interaction) {
@@ -165,6 +185,14 @@ export default defineCommand({
 
         if (sub === "simulate-biome") {
             await runSimulateBiome(ctx);
+            return;
+        }
+
+        if (sub === "vote-duration") {
+            const type = ctx.args.getString("type", true);
+            // Prefix invocations don't enforce the slash option's choices.
+            if (type !== "local" && type !== "network") throw new BiomeHuntError("`type` must be local or network.");
+            await reply(EmbedFormatter.success(await setVoteWindow(type satisfies VoteKind, ctx.args.getInteger("seconds"))));
             return;
         }
 
@@ -356,7 +384,7 @@ export async function resolveSimulateBiomeTarget(
  * `dry` (default true) bothers no one and changes nothing: no event is inserted, the forward
  * messages (live and delayed) ping nobody, and no community vote is opened (no vote/ballot rows) -
  * so the user's biome count, Seeds, XP and badges never change. With `dry:false` it inserts a
- * REAL `bh_activity_events` row (same insert as `activity-ingest.service.ts`) with the same
+ * REAL `bh_activity_events` row (same insert as `activity.service.ts`) with the same
  * consequences as an actual find: it counts in stats, a non-rare biome is rewarded right away, and
  * a rare one is rewarded (or its event deleted) through the normal vote/review flow.
  */

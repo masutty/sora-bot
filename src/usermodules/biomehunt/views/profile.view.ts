@@ -9,7 +9,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
-import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota-report.service";
+import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota.service";
 import { settings } from "../settings";
 import {
     buildBadgesTabContainer,

@@ -11,6 +11,7 @@ import {
 import { getBiomeColor, getBiomeIconUrl, spoofBiomeName } from "../constants/biomes.constants";
 import type { NetworkPostRow, NetworkVoteStatus } from "../types";
 import { type ForwardBadges, flavorLine, forwardBadgeEmojis, forwardInfoButton } from "./forward-post.view";
+import { type VoteTally, voteOutcomeLine } from "./vote-outcome";
 
 /** Customid prefix of the Real/Fake buttons on a Mirror - routed by `network-vote.component.ts`. */
 export const NETWORK_VOTE_PREFIX = "biomehunt:net-vote";
@@ -18,17 +19,15 @@ export const NETWORK_VOTE_PREFIX = "biomehunt:net-vote";
 /** The post fields a Mirror is built from - its render snapshot, never re-derived. */
 export type MirrorPost = Pick<NetworkPostRow, "id" | "biome" | "origin_name" | "origin_icon_url" | "invite_url" | "server_link">;
 
-export interface Scoreboard {
-    /** Servers whose members' majority went each way (ties abstain). */
-    servers: { real: number; fake: number };
-    /** Every ballot, across all servers. */
-    people: { real: number; fake: number };
-}
+/** Every ballot cast on a Network vote - one per person, from any Member Server. */
+export type Scoreboard = VoteTally;
 
 export interface MirrorVoteInfo {
     status: NetworkVoteStatus;
     /** Shown once the vote is closed. */
     scoreboard?: Scoreboard;
+    /** The bot owner who decided it with a click - unset when the ballots decided it. */
+    decidedBy?: string | null;
 }
 
 export interface MirrorParams {
@@ -44,11 +43,9 @@ export interface MirrorParams {
     flavorText?: string | null;
 }
 
-const plural = (n: number, word: string) => `**${n}** ${word}${n === 1 ? "" : "s"}`;
-
 /** The private scoreboard a voter gets after clicking (the Mirror itself is only edited at close). */
 export function formatScoreboard(s: Scoreboard): string {
-    return `✅ Real ${plural(s.servers.real, "server")} (${s.people.real}) · ❌ Fake ${plural(s.servers.fake, "server")} (${s.people.fake})`;
+    return `✅ Real **${s.real}** · ❌ Fake **${s.fake}**`;
 }
 
 /**
@@ -65,19 +62,12 @@ export function serverNameLink(name: string, inviteUrl: string | null): string {
     return `[${safe}](${inviteUrl})`;
 }
 
-const OUTCOME_LINE: Record<Exclude<NetworkVoteStatus, "open">, string> = {
-    real: "✅ Marked as real by the Network",
-    fake: "❌ Marked as fake by the Network",
-    inconclusive: "⚖️ Not enough servers decided",
-};
-
-/** The vote block's text, in the local forward card's style: the question while open, then the outcome with the server chips. */
+/** The vote block's text: the question while open, then the shared outcome line (see vote-outcome.ts). */
 function voteLine(vote: MirrorVoteInfo): string {
     if (vote.status === "open") return "**Is this biome real?**";
-    const board = vote.scoreboard ?? { servers: { real: 0, fake: 0 }, people: { real: 0, fake: 0 } };
-    const chips = ` \`✅ ${board.servers.real}\` \`❌ ${board.servers.fake}\``;
-    const people = board.people.real + board.people.fake;
-    return `${OUTCOME_LINE[vote.status]}${chips}\n-# Each server counts once · ${people} ${people === 1 ? "person" : "people"} voted`;
+    const tally = vote.scoreboard ?? { real: 0, fake: 0 };
+    const verdict = vote.status !== "inconclusive" ? vote.status : tally.real + tally.fake === 0 ? "no_votes" : "tie";
+    return voteOutcomeLine({ verdict, tally, decidedBy: vote.decidedBy, voters: "the Network" });
 }
 
 function section(text: string, thumbnailUrl: string | null | undefined): SectionBuilder | TextDisplayBuilder {

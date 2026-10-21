@@ -18,9 +18,16 @@ import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { getEnabledCategories, getGuildRoles, getOrCreateGuildConfig, isGuildReady } from "../repository/guilds.repository";
 import { getQuotaRolesForGuild } from "../repository/quota-roles.repository";
-import { setActivityThresholds, setAutoDeleteThreshold } from "../services/activity.service";
 import { setBadges } from "../services/badge.service";
-import { addCategory, disableCounter, setCounterChannel, setRoles, showConfig } from "../services/guild-config.service";
+import {
+    addCategory,
+    disableCounter,
+    setActivityThresholds,
+    setAutoDeleteThreshold,
+    setCounterChannel,
+    setRoles,
+    showConfig,
+} from "../services/guild-config.service";
 import { createQuota, removeQuotaRole } from "../services/quota.service";
 import type { Badge, QuotaRoleMode, QuotaRoleRow } from "../types";
 import { type ForwardListDeps, forwardListView } from "../views/forward-list.view";

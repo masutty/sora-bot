@@ -16,7 +16,7 @@ import type { TestCase } from "../../registry";
 const FAKE_ROLE_ID = "1";
 const FAKE_INVITE = "https://discord.gg/discord-developers";
 const FAKE_SERVER_LINK = "https://www.roblox.com/share?code=PREVIEW&type=Server";
-const BOARD = { servers: { real: 3, fake: 1 }, people: { real: 11, fake: 2 } };
+const BOARD = { real: 11, fake: 2 };
 
 interface Scenario {
     label: string;
@@ -39,12 +39,12 @@ const SCENARIOS: Record<string, Scenario> = {
     fake: {
         label: "Vote - fake",
         description: "The Network voted it fake",
-        vote: { status: "fake", scoreboard: { servers: { real: 0, fake: 2 }, people: { real: 1, fake: 6 } } },
+        vote: { status: "fake", scoreboard: { real: 1, fake: 6 } },
     },
     inconclusive: {
         label: "Vote - inconclusive",
-        description: "Fewer than 2 servers decided",
-        vote: { status: "inconclusive", scoreboard: { servers: { real: 1, fake: 0 }, people: { real: 2, fake: 0 } } },
+        description: "The votes tied",
+        vote: { status: "inconclusive", scoreboard: { real: 2, fake: 2 } },
     },
     "no-invite": { label: "Origin without invite", description: "Name shows as plain text", vote: { status: "open" }, noInvite: true },
     home: {
