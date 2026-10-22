@@ -68,6 +68,19 @@ grep "ref=xv6qvdt2" logs/combined-*.log
 
 Format details, and how workers, events and components are traced: [`src/core/README.md` §8](../src/core/README.md#8-logging--traceability).
 
+### Live log feed
+
+`/bot log live [destination] [filter] [level]` (owner only) streams the bot's logs into a message that updates itself. It runs for 60 seconds, and each **+30s** click extends it, up to 14 minutes in total. **Stop** ends it early. Only one feed exists at a time: starting a new one closes the previous one. A reload, a shutdown or a SIGTERM also closes it.
+
+- **destination**: `ephemeral` (slash default), `dm` (prefix default) or `channel` (posts in the current channel). `ephemeral` does not work with the prefix command.
+- **filter**: namespaces separated by commas, matched by segment prefix. `biomehunt,core` shows only those. `-core.view` hides one. Empty means everything.
+- **level**: minimum level to show, default `info`. The feed reads from a buffer of the last 1000 entries, so it also shows what happened just before the command.
+
+The arguments can be given in any order, for example `!bot log live biomehunt debug`.
+
+> [!IMPORTANT]
+> In `channel` mode, secrets, user and server IDs, and IP addresses are masked with `█` because other people can read the message. `ephemeral` and `dm` show the raw text.
+
 ## Before deploying
 
 ```bash

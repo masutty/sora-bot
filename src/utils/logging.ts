@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
+import { BufferTransport, logBuffer } from "./log-buffer";
 import { currentTrace, formatTrace, type TraceContext } from "./trace";
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
@@ -12,7 +13,7 @@ const { combine, timestamp, printf, colorize, errors } = winston.format;
  * noisy stuff" (macro/biome parsing traces) - console at `debug` shows the former without the
  * latter; bump to `verbose` to see everything.
  */
-const customLevels = {
+export const customLevels = {
     levels: { error: 0, warn: 1, info: 2, debug: 3, verbose: 4 },
     colors: { error: "red", warn: "yellow", info: "green", debug: "blue", verbose: "gray" },
 };
@@ -41,7 +42,7 @@ const logFormat = printf(({ level, message, timestamp, namespace, stack, trace: 
 // Shared, colorize-free base - safe to reuse across transports since it never adds ANSI codes.
 const commonFormat = combine(errors({ stack: true }), timestamp({ format: "YYYY-MM-DD HH:mm:ss" }));
 
-const plainFormat = combine(commonFormat, logFormat);
+export const plainFormat = combine(commonFormat, logFormat);
 
 /**
  * Valid levels this app actually uses - restricts what `setLogLevel` accepts so a typo can't
@@ -87,6 +88,10 @@ const shared = winston.createLogger({
         // shows up here, only in the rotated file below.
         consoleTransport,
         combinedFileTransport,
+
+        // In-memory tail for the owner-only `/bot log live` feed - no own level, so it sees
+        // whatever `shared.level` lets through (same lines as the combined file).
+        new BufferTransport(logBuffer, { format: plainFormat }),
 
         // Errors only, same rotation - a quick "did anything critical happen" check without
         // wading through debug noise. Deliberately not exposed to `setLogLevel` - this file's
