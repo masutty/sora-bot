@@ -2,6 +2,7 @@ import { ContainerBuilder, MessageFlags, OAuth2Scopes, PermissionFlagsBits, Sepa
 import { config } from "@/config";
 import type { BotClient } from "@/core/bot-client";
 import { hotReloadBot, unloadCog } from "@/core/cog-loader";
+import type { CommandContext } from "@/core/command/command-context";
 import { registerSlashCommands } from "@/core/command/command-handler";
 import { getPoolStats, query } from "@/database/connection";
 import { defineCommand } from "@/define";
@@ -9,6 +10,9 @@ import { CommandCategory } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
 import { getLogLevels, LOG_LEVELS, Logger, type LogLevel, setLogLevel } from "@/utils/logging";
 import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
+import { classifyLiveArgs, type Destination, parseFilter } from "../live-feed/filter";
+import { type FeedSurface, liveFeed } from "../live-feed/live-feed";
+import type { FeedPayload } from "../live-feed/render";
 import { addUserSubcommands, runUserSubcommand, USER_SUBCOMMANDS } from "./bot-user";
 
 const logger = new Logger("admin.commands.bot");
@@ -63,7 +67,29 @@ export default defineCommand({
                                     ),
                             ),
                     )
-                    .addSubcommand((s) => s.setName("show").setDescription("Show the current console/file log levels.")),
+                    .addSubcommand((s) => s.setName("show").setDescription("Show the current console/file log levels."))
+                    .addSubcommand((s) =>
+                        s
+                            .setName("live")
+                            .setDescription("Stream the bot's logs into a self-updating message for a short while.")
+                            .addStringOption((o) =>
+                                o
+                                    .setName("destination")
+                                    .setDescription("Where to post the feed (default: ephemeral for slash, DM for prefix)")
+                                    .addChoices(
+                                        { name: "Ephemeral", value: "ephemeral" },
+                                        { name: "DM", value: "dm" },
+                                        { name: "Channel", value: "channel" },
+                                    ),
+                            )
+                            .addStringOption((o) => o.setName("filter").setDescription("Namespaces, comma-separated; -x excludes"))
+                            .addStringOption((o) =>
+                                o
+                                    .setName("level")
+                                    .setDescription("Minimum level to show (default: info)")
+                                    .addChoices(...LOG_LEVELS.map((l) => ({ name: l, value: l }))),
+                            ),
+                    ),
             )
             .addSubcommand((sub) =>
                 sub.setName("reload").setDescription("Hot reloads the entire bot - picks up code changes in any file, no restart needed."),
@@ -103,7 +129,7 @@ export default defineCommand({
 
         if (ctx.mode === "prefix") logger.info(`Executing ${routeKey} command...`);
 
-        // Bot-wide user moderation (ban/unban/info/note/notes) - own replies, outside the string pipeline below.
+        // Bot-wide user moderation (ban/unban/info/note/notes/unnote) - own replies, outside the string pipeline below.
         if (!group && sub && USER_SUBCOMMANDS.has(sub)) {
             await runUserSubcommand(ctx, sub);
             return;
@@ -113,6 +139,11 @@ export default defineCommand({
         // the generic string -> EmbedFormatter pipeline used by the rest of the subcommands.
         if (routeKey === "status") {
             await ctx.reply({ flags: MessageFlags.IsComponentsV2, components: [buildStatusContainer(ctx.client)] }, { ephemeral: true });
+            return;
+        }
+
+        if (routeKey === "log-live") {
+            await runLogLive(ctx);
             return;
         }
 
@@ -169,6 +200,7 @@ async function runSubcommand(sub: string, { name, level, target }: SubcommandArg
         }
 
         case "reload": {
+            await liveFeed.endActive("bot reload");
             const failures = await hotReloadBot(client);
             const summary = `Bot reloaded: ${client.cogs.size} cog(s), ${client.commands.size} command(s).`;
             // hotReloadBot doesn't abort the whole reload if ONE cog fails (same resilience as
@@ -188,6 +220,7 @@ async function runSubcommand(sub: string, { name, level, target }: SubcommandArg
         }
 
         case "shutdown":
+            await liveFeed.endActive("bot shutdown");
             setTimeout(() => process.emit("SIGTERM"), 500);
             return "Shutting down... 👋";
 
@@ -258,6 +291,86 @@ async function runSubcommand(sub: string, { name, level, target }: SubcommandArg
         default:
             throw new Error(`Unknown subcommand: ${sub}`);
     }
+}
+
+// ─── Live log feed ──────────────────────────────────────────────────────────────
+
+// Outside the string pipeline: the feed is ComponentsV2 and lives in a message the controller keeps editing.
+async function runLogLive(ctx: CommandContext): Promise<void> {
+    const args = classifyLiveArgs([ctx.args.getString("destination"), ctx.args.getString("filter"), ctx.args.getString("level")]);
+    const destination: Destination = args.destination ?? (ctx.mode === "slash" ? "ephemeral" : "dm");
+
+    if (destination === "ephemeral" && ctx.mode === "prefix") {
+        await ctx.reply(EmbedFormatter.error("Ephemeral only works with the slash command."));
+        return;
+    }
+
+    // Closing a previous feed or opening a DM can outlast Discord's 3 s window, so claim the interaction first.
+    // Every reply below (ephemeral feed, ack, error) then fills this deferred response.
+    if (ctx.mode === "slash") await ctx.defer({ ephemeral: true });
+
+    try {
+        await liveFeed.start({
+            surface: buildFeedSurface(ctx, destination),
+            destination,
+            filter: parseFilter(args.filter),
+            level: args.level ?? "info",
+            // The 14 min ceiling counts from the invocation, not from when the feed message is finally sent.
+            startedAt: ctx.createdTimestamp,
+        });
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)));
+        const msg =
+            err instanceof DmSendError
+                ? "Couldn't DM you - are your DMs open?"
+                : `Couldn't start the live feed: ${err instanceof Error ? err.message : String(err)}`;
+        await ctx.reply(EmbedFormatter.error(msg), { ephemeral: true });
+        return;
+    }
+
+    // The feed message is separate from the slash response; acknowledge so the interaction doesn't hang.
+    if (ctx.mode === "slash" && destination !== "ephemeral") {
+        await ctx.reply(EmbedFormatter.success(destination === "dm" ? "Live feed sent to your DMs." : "Live feed started."), {
+            ephemeral: true,
+        });
+    }
+}
+
+/** The DM itself failed to send (as opposed to any other start failure). */
+class DmSendError extends Error {}
+
+type EditableMessage = { edit(payload: FeedPayload): Promise<unknown> };
+
+function buildFeedSurface(ctx: CommandContext, destination: Destination): FeedSurface {
+    if (destination === "ephemeral") {
+        return {
+            send: async (payload) => void (await ctx.reply(payload, { ephemeral: true })),
+            edit: async (payload) => void (await ctx.editReply(payload)),
+        };
+    }
+
+    // DM and channel: a separate message, kept as the handle `edit` works on.
+    let message: EditableMessage | null = null;
+    return {
+        async send(payload) {
+            if (destination === "dm") {
+                try {
+                    message = await ctx.user.send(payload);
+                } catch (err) {
+                    throw new DmSendError(err instanceof Error ? err.message : String(err), { cause: err });
+                }
+                return;
+            }
+            const channel = (ctx.raw.kind === "slash" ? ctx.raw.interaction.channel : ctx.raw.message.channel) as {
+                send?: (payload: FeedPayload) => Promise<EditableMessage>;
+            } | null;
+            if (!channel?.send) throw new Error("Can't post the live feed in this channel.");
+            message = await channel.send(payload);
+        },
+        async edit(payload) {
+            await message?.edit(payload);
+        },
+    };
 }
 
 // ─── Status (ComponentsV2) ──────────────────────────────────────────────────────

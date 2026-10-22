@@ -135,8 +135,10 @@ export async function unloadCog(client: BotClient, cogName: string): Promise<voi
 
 // Files with live state that CANNOT be reinstantiated out from under whoever already holds a
 // reference to them: the open connection pool (database/connection), the log transports holding
-// open file handles and the running event-loop histogram (utils/logging, utils/metrics), and the
-// client class itself (never reinstantiated, only exists for `instanceof` consistency).
+// open file handles and the running event-loop histogram (utils/logging, utils/metrics), the
+// in-memory log ring buffer the logging transport writes into (utils/log-buffer - a new instance
+// would split the writer and its readers onto different buffers), and the client class itself
+// (never reinstantiated, only exists for `instanceof` consistency).
 // Left out of hotReloadBot's cache clear - everything else under `src/` is reset.
 //
 // RELATIVE path on purpose, never the `@/...` alias - `tsc-alias` (which rewrites aliases to
@@ -147,6 +149,7 @@ export async function unloadCog(client: BotClient, cogName: string): Promise<voi
 const HOT_RELOAD_KEEP_ALIVE = [
     require.resolve("../config"),
     require.resolve("../database/connection"),
+    require.resolve("../utils/log-buffer"),
     require.resolve("../utils/logging"),
     require.resolve("../utils/metrics"),
     require.resolve("./bot-client"),
