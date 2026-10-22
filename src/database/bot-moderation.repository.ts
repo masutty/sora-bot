@@ -80,6 +80,12 @@ export async function insertBotNote(discordUserId: string, note: string, authorI
     return result.rows[0];
 }
 
+/** The deleted note, or `null` if no note has that id. */
+export async function deleteBotNote(id: number): Promise<BotNoteRow | null> {
+    const result = await query<BotNoteRow>(`DELETE FROM bot_user_notes WHERE id = $1 RETURNING *`, [id]);
+    return result.rows[0] ?? null;
+}
+
 /** Newest first. */
 export async function getBotNotes(discordUserId: string, limit: number): Promise<BotNoteRow[]> {
     const result = await query<BotNoteRow>(`SELECT * FROM bot_user_notes WHERE discord_user_id = $1 ORDER BY created_at DESC LIMIT $2`, [

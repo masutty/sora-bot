@@ -1,13 +1,13 @@
 import { MessageFlags, type SlashCommandBuilder, type User } from "discord.js";
 import { banFromBot, unbanFromBot } from "@/core/moderation/bot-ban";
 import { cachedBan } from "@/core/moderation/bot-ban-cache";
-import { getBotNotes, getBotPunishments, insertBotNote } from "@/database/bot-moderation.repository";
+import { deleteBotNote, getBotNotes, getBotPunishments, insertBotNote } from "@/database/bot-moderation.repository";
 import { type CommandContext, tabs, UserFacingError, type ViewPayload } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { type AccountInfo, buildAccountContainer, buildNotesContainer, buildPunishmentsContainer } from "../views/bot-user.view";
 
 /** The `/bot` subcommands about one user - bot-wide moderation, not any server's. */
-export const USER_SUBCOMMANDS = new Set(["ban", "unban", "info", "note", "notes"]);
+export const USER_SUBCOMMANDS = new Set(["ban", "unban", "info", "note", "notes", "unnote"]);
 
 const HISTORY_LIMIT = 15;
 const NOTES_LIMIT = 15;
@@ -48,6 +48,12 @@ export function addUserSubcommands<T extends Pick<SlashCommandBuilder, "addSubco
                 .setName("notes")
                 .setDescription("A user's private notes.")
                 .addUserOption((o) => o.setName("user").setDescription("User").setRequired(true)),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("unnote")
+                .setDescription("Delete a private note by its id (shown in /bot notes).")
+                .addIntegerOption((o) => o.setName("id").setDescription("Note id").setRequired(true).setMinValue(1)),
         );
     return builder;
 }
@@ -64,8 +70,21 @@ async function requireUser(ctx: CommandContext): Promise<User> {
     return user;
 }
 
-/** `/bot ban|unban|info|note|notes <user>` - the caller already checked it's a bot owner. */
+/** `/bot ban|unban|info|note|notes <user>` and `/bot unnote <id>` - the caller already checked it's a bot owner. */
 export async function runUserSubcommand(ctx: CommandContext, sub: string): Promise<void> {
+    // The only one keyed by note id, not by user.
+    if (sub === "unnote") {
+        const id = ctx.args.getInteger("id", true);
+        await ctx.defer({ ephemeral: true });
+        const note = await deleteBotNote(id);
+        await ctx.reply(
+            note
+                ? EmbedFormatter.success(`Note \`#${note.id}\` removed from <@${note.discord_user_id}>.`)
+                : EmbedFormatter.info(`No note \`#${id}\`.`),
+        );
+        return;
+    }
+
     const user = await requireUser(ctx);
     await ctx.defer({ ephemeral: true });
 
