@@ -39,6 +39,7 @@ Without these the bot won't start (`Missing required env var: ...`).
 | `DEFAULT_QUIP_JOKE_LEVEL` | `0` | Tone of generic error messages: `0` serious ... `3` jokiest |
 | `DEV_ALLOW_ARGS_AS_FLAGS` | `false` | **Experimental.** Accepts `--name value` / `--name=value` in prefix commands |
 | `ENCRYPTION_KEY` | — | Key used by `src/utils/crypto.ts` |
+| `BADGE_TRACKER_MAX_BADGES` | `200` | Most Roblox badges the badge tracker stores across all servers |
 
 > [!WARNING]
 > Changing `ENCRYPTION_KEY` makes any data already encrypted with the previous key unreadable.
