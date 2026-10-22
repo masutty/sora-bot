@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { MessageFlags } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
-import { type AwardPostInput, buildAwardPost, buildDeletedPost, resolveDescription } from "./award-post";
+import { type AwardPostInput, buildAwardPost, buildDeletedPost, buildTestPost, resolveDescription, TEST_LINE } from "./award-post";
 
 const base: AwardPostInput = {
     badgeId: "2124445684",
@@ -12,6 +12,7 @@ const base: AwardPostInput = {
     total: 48216,
     window: { kind: "interval", minutes: 5 },
     pingRoleId: "ROLE",
+    accentColor: null,
 };
 
 // biome-ignore lint/suspicious/noExplicitAny: inspecting raw JSON
@@ -46,6 +47,34 @@ test("buildAwardPost: exact text, flags, accent", () => {
     );
     expect(first(post).type).toBe(9);
     expect(post.allowedMentions).toEqual({ parse: [], roles: ["ROLE"] });
+});
+
+test("buildAwardPost: the Subscription's color replaces the default", () => {
+    expect(container(buildAwardPost({ ...base, accentColor: 0x7cf5ff })).accent_color).toBe(0x7cf5ff);
+});
+
+test("buildTestPost: marked as a test, +1 award, never pings, keeps the color", () => {
+    const post = buildTestPost(
+        {
+            guild_id: "g",
+            badge_id: "2124445684",
+            ping_role_id: "ROLE",
+            custom_description: null,
+            accent_color: 0x7cf5ff,
+            name: "Glitch Hunter",
+            description: "Roblox text.",
+            icon_url: null,
+            awarded_count: "48216",
+            deleted: false,
+        },
+        5,
+    );
+    const json = container(post);
+    expect(json.accent_color).toBe(0x7cf5ff);
+    expect(json.components[0].content).toBe(
+        `${TEST_LINE}\n## [Glitch Hunter](https://www.roblox.com/badges/2124445684)\n-# Roblox text.\n**+1** award in the last 5 minutes\n48,216 total`,
+    );
+    expect(post.allowedMentions).toEqual({ parse: [], roles: [] });
 });
 
 test("buildAwardPost: singular award and minute", () => {

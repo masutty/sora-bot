@@ -168,11 +168,29 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
                     total: badge.awardedCount,
                     window: outcome.window,
                     pingRoleId: sub.ping_role_id && deps.roleExists(sub.guild_id, sub.ping_role_id) ? sub.ping_role_id : null,
+                    accentColor: sub.accent_color,
                 }),
             );
         }
     }
     return { kind: "done", checked };
+}
+
+/** Sends to a cached channel and maps the Discord errors the poller acts on. */
+export async function sendPost(client: BotClient, channelId: string, payload: MessageCreateOptions): Promise<SendResult> {
+    const channel = client.channels.cache.get(channelId);
+    if (!channel?.isTextBased() || !("send" in channel)) return "unknown_channel";
+    try {
+        await channel.send(payload);
+        return "sent";
+    } catch (err) {
+        if (err instanceof DiscordAPIError) {
+            if (err.code === 10003) return "unknown_channel";
+            if (err.code === 50001 || err.code === 50013) return "forbidden";
+        }
+        logger.error(`Failed to send to channel ${channelId}`, { error: err instanceof Error ? err.message : String(err) });
+        return "failed";
+    }
 }
 
 export function defaultPollerDeps(client: BotClient, intervalMs: number): PollerDeps {
@@ -183,21 +201,7 @@ export function defaultPollerDeps(client: BotClient, intervalMs: number): Poller
         intervalMs,
         postStatus: (guildId, channelId) => postStatus(client, guildId, channelId),
         roleExists: (guildId, roleId) => roleExists(client, guildId, roleId),
-        send: async (channelId, payload) => {
-            const channel = client.channels.cache.get(channelId);
-            if (!channel?.isTextBased() || !("send" in channel)) return "unknown_channel";
-            try {
-                await channel.send(payload);
-                return "sent";
-            } catch (err) {
-                if (err instanceof DiscordAPIError) {
-                    if (err.code === 10003) return "unknown_channel";
-                    if (err.code === 50001 || err.code === 50013) return "forbidden";
-                }
-                logger.error(`Failed to send to channel ${channelId}`, { error: err instanceof Error ? err.message : String(err) });
-                return "failed";
-            }
-        },
+        send: (channelId, payload) => sendPost(client, channelId, payload),
         repo: {
             getAllFanoutRows,
             getBadges: badgesRepo.getBadges,

@@ -9,10 +9,12 @@ import {
 } from "discord.js";
 import { paginationRow, type RenderKit, type ViewRender } from "@/define";
 import { type FormattedReply, NO_PINGS } from "@/utils/format";
+import { formatHexColor } from "../services/color";
 import type { PostStatus } from "../services/post-status";
 import type { TrackerOverview } from "../services/tracker-config.service";
 import { settings } from "../settings";
 import type { GuildBadgeRow } from "../types";
+import { AWARD_COLOR } from "./award-post";
 import type { TrackerViewState } from "./settings.view";
 
 const BADGES_PER_PAGE = settings.ui.badgesPerPage;
@@ -138,7 +140,8 @@ function previewScreen(s: TrackerViewState, kit: RenderKit): Parts {
 function editorScreen(s: TrackerViewState, kit: RenderKit): Parts {
     const badge = s.overview.badges.find((b) => b.badge_id === s.badgeId);
     if (!badge) return overviewScreen(s, kit);
-    const { container, divider } = newContainer();
+    // The editor wears the badge's card color, so a new color shows right away.
+    const { container, divider } = newContainer(badge.deleted ? undefined : (badge.accent_color ?? AWARD_COLOR));
     const idLine = badge.deleted ? `-# ID ${badge.badge_id}` : `-# ID ${badge.badge_id} · ${robloxLink(badge.badge_id)}`;
     const content = [`## ${badge.name}`, awarded(badge.awarded_count), idLine].filter(Boolean).join("\n");
     const iconUrl = badge.icon_url;
@@ -159,6 +162,12 @@ function editorScreen(s: TrackerViewState, kit: RenderKit): Parts {
             section
                 .addTextDisplayComponents((td) => td.setContent(`**Description**${custom ? " (custom)" : ""}\n${shown}`))
                 .setButtonAccessory(kit.button("editDescription", (b) => b.setLabel("Edit").setStyle(ButtonStyle.Secondary))),
+        );
+        const color = badge.accent_color === null ? `Default (${formatHexColor(AWARD_COLOR)})` : formatHexColor(badge.accent_color);
+        container.addSectionComponents((section) =>
+            section
+                .addTextDisplayComponents((td) => td.setContent(`**Color**\n${color}`))
+                .setButtonAccessory(kit.button("editColor", (b) => b.setLabel("Edit").setStyle(ButtonStyle.Secondary))),
         );
         container.addTextDisplayComponents((td) => td.setContent("**Ping role**"));
         container.addActionRowComponents(

@@ -2,10 +2,12 @@ import { ButtonStyle, type Guild } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { confirm, defineView, type HandlerContext, paginationHandlers, type ViewDefinition } from "@/define";
 import { EmbedFormatter } from "@/utils/format";
+import { formatHexColor } from "../services/color";
 import { canMention, type PostStatus, postStatus } from "../services/post-status";
 import { type BadgePreview, defaultTrackerConfig, type TrackerConfig, type TrackerOverview } from "../services/tracker-config.service";
 import { settings } from "../settings";
 import { BadgeTrackerError } from "../types";
+import { AWARD_COLOR } from "./award-post";
 import { badgePages, cut, renderTrackerSettings } from "./settings.screens";
 
 export { renderOverviewReadOnly, renderTrackerSettings } from "./settings.screens";
@@ -153,6 +155,29 @@ export function trackerSettingsView(deps: TrackerViewDeps): ViewDefinition<Track
         if (saved) await reload(c.state);
     };
 
+    const editColor = async (c: Ctx) => {
+        const badge = currentBadge(c.state);
+        if (!badge) return;
+        const values = await c.modal({
+            title: cut(`Color for ${badge.name}`, MODAL_TITLE_MAX),
+            fields: [
+                {
+                    key: "color",
+                    label: "Hex color (empty = default)",
+                    required: false,
+                    maxLength: 7,
+                    placeholder: formatHexColor(AWARD_COLOR),
+                    value: badge.accent_color === null ? "" : formatHexColor(badge.accent_color),
+                },
+            ],
+        });
+        if (!values) return;
+        const saved = await attempt(c, async () => {
+            await config.setColor(guildId, badge.badge_id, values.color);
+        });
+        if (saved) await reload(c.state);
+    };
+
     const remove = async (c: Ctx) => {
         const badge = currentBadge(c.state);
         if (!badge) return;
@@ -228,6 +253,7 @@ export function trackerSettingsView(deps: TrackerViewDeps): ViewDefinition<Track
                 if (saved) await reload(c.state);
             },
             editDescription,
+            editColor,
             remove,
             back: (c) => {
                 Object.assign(c.state, { badgeId: null, screen: "overview" });

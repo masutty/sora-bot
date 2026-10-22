@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { ChannelType } from "discord.js";
 import type { GuildCommandContext } from "@/define";
 import { NO_PINGS } from "@/utils/format";
+import type { SendResult } from "../services/poller.service";
 import type { BadgePreview, TrackerConfig, TrackerOverview } from "../services/tracker-config.service";
+import type { GuildBadgeRow } from "../types";
+import { TEST_LINE } from "../views/award-post";
 import { type BadgeTrackerDeps, buildBadgeTrackerOptions, runBadgeTracker } from "./badgetracker.command";
 
 describe("buildBadgeTrackerOptions", () => {
@@ -10,7 +13,7 @@ describe("buildBadgeTrackerOptions", () => {
     const sub = (name: string) => json.options?.find((o) => o.name === name) as { options?: Record<string, unknown>[] } | undefined;
     const flags = (name: string) => sub(name)?.options?.map((o) => [o.name, o.required ?? false]);
 
-    test("has the 8 subcommands", () => {
+    test("has the 10 subcommands", () => {
         expect(json.options?.map((o) => o.name)).toEqual([
             "settings",
             "add",
@@ -19,6 +22,8 @@ describe("buildBadgeTrackerOptions", () => {
             "channel",
             "role",
             "description",
+            "color",
+            "test",
             "interval",
         ]);
     });
@@ -58,8 +63,17 @@ describe("buildBadgeTrackerOptions", () => {
 
 const overview: TrackerOverview = { channelId: "c1", intervalMinutes: 5, badges: [] };
 
-function setup(opts: { sub: string; args?: Record<string, unknown>; status?: string; mentionable?: boolean }) {
+function setup(opts: {
+    sub: string;
+    args?: Record<string, unknown>;
+    status?: string;
+    mentionable?: boolean;
+    overview?: TrackerOverview;
+    sendResult?: SendResult;
+}) {
     const calls: unknown[][] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: fake send payloads are inspected loosely
+    const sends: any[][] = [];
     const config: TrackerConfig = {
         previewBadge: async (...a) => {
             calls.push(["previewBadge", ...a]);
@@ -79,16 +93,24 @@ function setup(opts: { sub: string; args?: Record<string, unknown>; status?: str
             calls.push(["setDescription", ...a]);
             return "Winner";
         },
+        setColor: async (...a) => {
+            calls.push(["setColor", ...a]);
+            return "Winner";
+        },
         setIntervalMinutes: async (...a) => void calls.push(["setIntervalMinutes", ...a]),
         getOverview: async (...a) => {
             calls.push(["getOverview", ...a]);
-            return overview;
+            return opts.overview ?? overview;
         },
     };
     const deps: BadgeTrackerDeps = {
         config,
         postStatus: () => (opts.status ?? "ok") as ReturnType<BadgeTrackerDeps["postStatus"]>,
         canMention: () => opts.mentionable ?? true,
+        send: async (channelId, payload) => {
+            sends.push([channelId, payload]);
+            return opts.sendResult ?? "sent";
+        },
     };
     // biome-ignore lint/suspicious/noExplicitAny: fake reply payloads are inspected loosely
     const replies: any[] = [];
@@ -109,7 +131,7 @@ function setup(opts: { sub: string; args?: Record<string, unknown>; status?: str
         reply: async (p: unknown) => void replies.push(p),
         open: async (...x: unknown[]) => void opened.push(x),
     } as unknown as GuildCommandContext;
-    return { ctx, deps, calls, replies, opened, defers };
+    return { ctx, deps, calls, replies, opened, defers, sends };
 }
 
 const text = (p: unknown) => JSON.stringify(p);
@@ -222,5 +244,109 @@ describe("runBadgeTracker", () => {
         await runBadgeTracker(t.ctx, t.deps);
         expect(t.calls).toEqual([["setIntervalMinutes", 10]]);
         expect(text(t.replies[0])).toContain("Badges are checked every 10 minutes.");
+    });
+});
+
+const row = (id: string, over: Partial<GuildBadgeRow> = {}): GuildBadgeRow => ({
+    guild_id: "g1",
+    badge_id: id,
+    ping_role_id: "r1",
+    custom_description: null,
+    accent_color: null,
+    name: `Badge ${id}`,
+    description: "",
+    icon_url: null,
+    awarded_count: "10",
+    deleted: false,
+    ...over,
+});
+
+// biome-ignore lint/suspicious/noExplicitAny: inspecting raw JSON
+const postJson = (payload: any) => payload.components[0].toJSON();
+
+async function rejects(p: Promise<unknown>): Promise<string> {
+    try {
+        await p;
+    } catch (e) {
+        return (e as Error).message;
+    }
+    throw new Error("expected rejection");
+}
+
+describe("color", () => {
+    test("sets a hex and says which color", async () => {
+        const t = setup({ sub: "color", args: { id: "1", hex: "#7cf5ff" } });
+        await runBadgeTracker(t.ctx, t.deps);
+        expect(t.calls).toContainEqual(["setColor", "g1", "1", "#7cf5ff"]);
+        expect(text(t.replies[0])).toContain("Winner uses #7CF5FF.");
+        expect(t.replies[0].allowedMentions).toEqual(NO_PINGS);
+    });
+
+    test("without a hex resets to the default", async () => {
+        const t = setup({ sub: "color", args: { id: "1" } });
+        await runBadgeTracker(t.ctx, t.deps);
+        expect(t.calls).toContainEqual(["setColor", "g1", "1", null]);
+        expect(text(t.replies[0])).toContain("Winner uses the default color.");
+    });
+});
+
+describe("test", () => {
+    const withBadges = (badges: GuildBadgeRow[], channelId: string | null = "c1"): TrackerOverview => ({
+        channelId,
+        intervalMinutes: 5,
+        badges,
+    });
+
+    test("sends one marked, ping-free card per live badge, in its own color", async () => {
+        const t = setup({
+            sub: "test",
+            overview: withBadges([row("1", { accent_color: 0x7cf5ff }), row("2"), row("3", { deleted: true })]),
+        });
+        await runBadgeTracker(t.ctx, t.deps);
+        expect(t.sends.map(([ch]) => ch)).toEqual(["c1", "c1"]);
+        for (const [, payload] of t.sends) {
+            const content: string = postJson(payload).components[0].content;
+            expect(content.startsWith(TEST_LINE)).toBe(true);
+            expect(content).not.toContain("<@&");
+            expect(payload.allowedMentions).toEqual({ parse: [], roles: [] });
+        }
+        expect(postJson(t.sends[0]?.[1]).accent_color).toBe(0x7cf5ff);
+        expect(text(t.replies[0])).toContain("Sent 2 test posts to <#c1>.");
+        expect(t.replies[0].allowedMentions).toEqual(NO_PINGS);
+    });
+
+    test("with an id sends only that badge", async () => {
+        const t = setup({ sub: "test", args: { id: "2" }, overview: withBadges([row("1"), row("2")]) });
+        await runBadgeTracker(t.ctx, t.deps);
+        expect(t.sends).toHaveLength(1);
+        expect(text(t.replies[0])).toContain("Sent a test post for **Badge 2** to <#c1>.");
+    });
+
+    test("stops at the first failed send and says so", async () => {
+        const t = setup({ sub: "test", sendResult: "forbidden", overview: withBadges([row("1"), row("2")]) });
+        await runBadgeTracker(t.ctx, t.deps);
+        expect(t.sends).toHaveLength(1);
+        expect(text(t.replies[0])).toContain("Sent 0 of 2 test posts to <#c1>. I couldn't send the rest.");
+    });
+
+    test("refuses without a channel, without permission, with nothing to test, or a deleted/untracked id", async () => {
+        const cases: [Parameters<typeof setup>[0], string][] = [
+            [{ sub: "test", overview: withBadges([row("1")], null) }, "Pick a channel first with `/badgetracker channel`."],
+            [
+                { sub: "test", status: "no_permission", overview: withBadges([row("1")]) },
+                "I can't post in <#c1>. Give me permission to send messages there first.",
+            ],
+            [{ sub: "test", overview: withBadges([]) }, "There are no badges to test. Add one first."],
+            [
+                { sub: "test", args: { id: "1" }, overview: withBadges([row("1", { deleted: true })]) },
+                "**Badge 1** was deleted on Roblox, so there's nothing to test.",
+            ],
+            [{ sub: "test", args: { id: "9" }, overview: withBadges([row("1")]) }, "This server doesn't track a badge with ID `9`."],
+        ];
+        for (const [opts, message] of cases) {
+            const t = setup(opts);
+            expect(await rejects(runBadgeTracker(t.ctx, t.deps))).toBe(message);
+            expect(t.sends).toHaveLength(0);
+        }
     });
 });

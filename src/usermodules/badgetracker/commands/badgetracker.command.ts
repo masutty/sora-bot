@@ -1,9 +1,15 @@
+import type { MessageCreateOptions } from "discord.js";
 import { ChannelType, SlashCommandBuilder } from "discord.js";
 import { defineCommand, type GuildCommandContext } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
+import { parseBadgeInput } from "../services/badge-input";
+import { formatHexColor, parseHexColor } from "../services/color";
+import { type SendResult, sendPost } from "../services/poller.service";
 import { canMention, type PostStatus, postStatus } from "../services/post-status";
 import { defaultTrackerConfig, type TrackerConfig } from "../services/tracker-config.service";
+import { BadgeTrackerError } from "../types";
+import { buildTestPost } from "../views/award-post";
 import { defaultTrackerViewDeps, renderOverviewReadOnly, trackerSettingsView } from "../views/settings.view";
 
 /** What the command needs that would otherwise be a DB/Discord call, injected so its tests never hit any of them. */
@@ -11,6 +17,7 @@ export interface BadgeTrackerDeps {
     config: TrackerConfig;
     postStatus(channelId: string | null): PostStatus;
     canMention(roleId: string): boolean;
+    send(channelId: string, payload: MessageCreateOptions): Promise<SendResult>;
 }
 
 export function defaultBadgeTrackerDeps(ctx: GuildCommandContext): BadgeTrackerDeps {
@@ -18,6 +25,7 @@ export function defaultBadgeTrackerDeps(ctx: GuildCommandContext): BadgeTrackerD
         config: defaultTrackerConfig(),
         postStatus: (channelId) => postStatus(ctx.client, ctx.guild.id, channelId),
         canMention: (roleId) => canMention(ctx.guild, roleId),
+        send: (channelId, payload) => sendPost(ctx.client, channelId, payload),
     };
 }
 
@@ -68,6 +76,21 @@ export function buildBadgeTrackerOptions() {
         )
         .addSubcommand((s) =>
             s
+                .setName("color")
+                .setDescription("Set or reset the card color for a badge.")
+                .addStringOption((o) => o.setName("id").setDescription("Badge ID or roblox.com/badges link").setRequired(true))
+                .addStringOption((o) =>
+                    o.setName("hex").setDescription("Hex color like #7CF5FF (leave empty for the default)").setMaxLength(7),
+                ),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("test")
+                .setDescription("Post a test card for each tracked badge, without pings.")
+                .addStringOption((o) => o.setName("id").setDescription("Only this badge (ID or roblox.com/badges link)")),
+        )
+        .addSubcommand((s) =>
+            s
                 .setName("interval")
                 .setDescription("Set how often badges are checked.")
                 .addIntegerOption((o) =>
@@ -86,6 +109,39 @@ function cannotPing(roleId: string): FormattedReply {
         ...EmbedFormatter.error(`I can't ping <@&${roleId}>. Make it mentionable or give me the Mention Everyone permission.`),
         allowedMentions: NO_PINGS,
     };
+}
+
+/** `/badgetracker test`: one test card per badge (or just `rawId`), sent one at a time, never pinging. */
+async function sendTests(guildId: string, rawId: string | null, deps: BadgeTrackerDeps): Promise<FormattedReply> {
+    const overview = await deps.config.getOverview(guildId);
+    const { channelId } = overview;
+    if (!channelId) throw new BadgeTrackerError("Pick a channel first with `/badgetracker channel`.");
+    if (deps.postStatus(channelId) !== "ok") {
+        throw new BadgeTrackerError(`I can't post in <#${channelId}>. Give me permission to send messages there first.`);
+    }
+
+    let rows = overview.badges.filter((b) => !b.deleted);
+    if (rawId !== null) {
+        const id = parseBadgeInput(rawId);
+        if (id === null) throw new BadgeTrackerError("That isn't a badge ID or a roblox.com/badges link.");
+        const row = overview.badges.find((b) => b.badge_id === id);
+        if (!row) throw new BadgeTrackerError(`This server doesn't track a badge with ID \`${id}\`.`);
+        if (row.deleted) throw new BadgeTrackerError(`**${row.name}** was deleted on Roblox, so there's nothing to test.`);
+        rows = [row];
+    }
+    if (rows.length === 0) throw new BadgeTrackerError("There are no badges to test. Add one first.");
+
+    let sent = 0;
+    for (const row of rows) {
+        if ((await deps.send(channelId, buildTestPost(row, overview.intervalMinutes))) !== "sent") break;
+        sent++;
+    }
+    if (sent < rows.length) {
+        return quietSuccess(`Sent ${sent} of ${rows.length} test posts to <#${channelId}>. I couldn't send the rest.`);
+    }
+    return quietSuccess(
+        rows.length === 1 ? `Sent a test post for **${rows[0]?.name}** to <#${channelId}>.` : `Sent ${sent} test posts to <#${channelId}>.`,
+    );
 }
 
 export async function runBadgeTracker(ctx: GuildCommandContext, deps: BadgeTrackerDeps): Promise<void> {
@@ -153,6 +209,18 @@ export async function runBadgeTracker(ctx: GuildCommandContext, deps: BadgeTrack
             await ctx.reply(
                 quietSuccess(text === null ? `${name} uses the Roblox description again.` : `Description for ${name} updated.`),
             );
+            return;
+        }
+        case "color": {
+            const hex = ctx.args.getString("hex");
+            const name = await config.setColor(guildId, ctx.args.getString("id", true), hex);
+            // setColor already refused a bad hex, so this only tells "set" from "reset".
+            const color = hex?.trim() ? parseHexColor(hex) : null;
+            await ctx.reply(quietSuccess(color === null ? `${name} uses the default color.` : `${name} uses ${formatHexColor(color)}.`));
+            return;
+        }
+        case "test": {
+            await ctx.reply(await sendTests(guildId, ctx.args.getString("id"), deps));
             return;
         }
         case "interval": {
