@@ -19,7 +19,7 @@ export async function removeSubscription(guildId: string, badgeId: string): Prom
 
 export async function getGuildBadges(guildId: string): Promise<GuildBadgeRow[]> {
     const result = await query<GuildBadgeRow>(
-        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description,
+        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description, s.accent_color,
                 b.name, b.description, b.icon_url, b.awarded_count, b.deleted
          FROM bt_subscriptions s
          JOIN bt_badges b ON b.badge_id = s.badge_id
@@ -53,9 +53,18 @@ export async function setCustomDescription(guildId: string, badgeId: string, tex
     return (result.rowCount ?? 0) > 0;
 }
 
+export async function setAccentColor(guildId: string, badgeId: string, color: number | null): Promise<boolean> {
+    const result = await query(`UPDATE bt_subscriptions SET accent_color = $3 WHERE guild_id = $1 AND badge_id = $2`, [
+        guildId,
+        badgeId,
+        color,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+}
+
 export async function getAllFanoutRows(): Promise<FanoutRow[]> {
     const result = await query<FanoutRow>(
-        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description, g.channel_id
+        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description, s.accent_color, g.channel_id
          FROM bt_subscriptions s
          LEFT JOIN bt_guilds g ON g.guild_id = s.guild_id`,
     );
@@ -64,7 +73,7 @@ export async function getAllFanoutRows(): Promise<FanoutRow[]> {
 
 export async function getFanoutRowsForBadge(badgeId: string): Promise<FanoutRow[]> {
     const result = await query<FanoutRow>(
-        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description, g.channel_id
+        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description, s.accent_color, g.channel_id
          FROM bt_subscriptions s
          LEFT JOIN bt_guilds g ON g.guild_id = s.guild_id
          WHERE s.badge_id = $1`,

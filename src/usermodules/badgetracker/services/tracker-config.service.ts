@@ -5,6 +5,7 @@ import * as subscriptions from "../repository/subscriptions.repository";
 import { settings } from "../settings";
 import { BadgeTrackerError, type GuildBadgeRow, type RobloxBadge } from "../types";
 import { parseBadgeInput } from "./badge-input";
+import { parseHexColor } from "./color";
 import { createRobloxClient, type RobloxClient } from "./roblox.client";
 
 export interface BadgePreview {
@@ -32,6 +33,7 @@ export interface TrackerConfigDeps {
         removeSubscription: typeof subscriptions.removeSubscription;
         setPingRole: typeof subscriptions.setPingRole;
         setCustomDescription: typeof subscriptions.setCustomDescription;
+        setAccentColor: typeof subscriptions.setAccentColor;
         getTrackerChannel: typeof guilds.getTrackerChannel;
         setTrackerChannel: typeof guilds.setTrackerChannel;
         getTrackerSettings: typeof settingsRepo.getTrackerSettings;
@@ -46,6 +48,8 @@ export interface TrackerConfig {
     setChannel(guildId: string, channelId: string | null): Promise<void>;
     setPingRole(guildId: string, rawInput: string, roleId: string | null): Promise<string>;
     setDescription(guildId: string, rawInput: string, text: string | null): Promise<string>;
+    /** `hex` empty or null resets to the default color. */
+    setColor(guildId: string, rawInput: string, hex: string | null): Promise<string>;
     setIntervalMinutes(minutes: number): Promise<void>;
     getOverview(guildId: string): Promise<TrackerOverview>;
 }
@@ -126,6 +130,15 @@ export function createTrackerConfig(deps: TrackerConfigDeps): TrackerConfig {
             return row.name;
         },
 
+        async setColor(guildId, rawInput, hex) {
+            const row = await requireSubscription(guildId, rawInput);
+            const trimmed = hex?.trim() ?? "";
+            const color = trimmed === "" ? null : parseHexColor(trimmed);
+            if (trimmed !== "" && color === null) throw new BadgeTrackerError("Colors are hex codes like `#7CF5FF`.");
+            await repo.setAccentColor(guildId, row.badge_id, color);
+            return row.name;
+        },
+
         async setIntervalMinutes(minutes) {
             const { minMinutes, maxMinutes } = settings.interval;
             if (!Number.isInteger(minutes) || minutes < minMinutes || minutes > maxMinutes) {
@@ -160,6 +173,7 @@ export function defaultTrackerConfig(): TrackerConfig {
             removeSubscription: subscriptions.removeSubscription,
             setPingRole: subscriptions.setPingRole,
             setCustomDescription: subscriptions.setCustomDescription,
+            setAccentColor: subscriptions.setAccentColor,
             getTrackerChannel: guilds.getTrackerChannel,
             setTrackerChannel: guilds.setTrackerChannel,
             getTrackerSettings: settingsRepo.getTrackerSettings,

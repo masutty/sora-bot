@@ -23,7 +23,15 @@ function badge(id: string, over: Partial<BadgeRow> = {}): BadgeRow {
 }
 
 function sub(guild: string, badgeId: string, over: Partial<FanoutRow> = {}): FanoutRow {
-    return { guild_id: guild, badge_id: badgeId, ping_role_id: null, custom_description: null, channel_id: `ch-${guild}`, ...over };
+    return {
+        guild_id: guild,
+        badge_id: badgeId,
+        ping_role_id: null,
+        custom_description: null,
+        accent_color: null,
+        channel_id: `ch-${guild}`,
+        ...over,
+    };
 }
 
 interface Setup {

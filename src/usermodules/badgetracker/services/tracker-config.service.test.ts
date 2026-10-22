@@ -16,6 +16,7 @@ function guildRow(id: string, over: Partial<GuildBadgeRow> = {}): GuildBadgeRow 
         badge_id: id,
         ping_role_id: null,
         custom_description: null,
+        accent_color: null,
         name: `Stored ${id}`,
         description: "d",
         icon_url: null,
@@ -45,6 +46,7 @@ function make(setup: Setup = {}) {
         upserts: [] as unknown[],
         intervals: [] as number[],
         descriptions: [] as (string | null)[],
+        colors: [] as (number | null)[],
     };
     const deps: TrackerConfigDeps = {
         now: () => NOW,
@@ -90,6 +92,10 @@ function make(setup: Setup = {}) {
             async setCustomDescription(_g, id, text) {
                 log.descriptions.push(text);
                 calls.push(`desc:${id}`);
+                return true;
+            },
+            async setAccentColor(_g, _id, color) {
+                log.colors.push(color);
                 return true;
             },
             async getTrackerChannel() {
@@ -259,6 +265,32 @@ describe("existing subscriptions", () => {
         expect(err.message).toBe("Descriptions can be up to 300 characters.");
         await t.svc.setDescription(G, "42", "a".repeat(300));
         expect(t.log.descriptions).toHaveLength(1);
+    });
+
+    test("setColor stores the hex as an integer and returns the name", async () => {
+        const t = make({ subs: [guildRow("42")] });
+        expect(await t.svc.setColor(G, "42", "#7CF5FF")).toBe("Stored 42");
+        expect(t.log.colors).toEqual([0x7cf5ff]);
+    });
+
+    test("setColor with empty or null resets to the default", async () => {
+        const t = make({ subs: [guildRow("42")] });
+        await t.svc.setColor(G, "42", "  ");
+        await t.svc.setColor(G, "42", null);
+        expect(t.log.colors).toEqual([null, null]);
+    });
+
+    test("setColor rejects a bad hex without saving", async () => {
+        const t = make({ subs: [guildRow("42")] });
+        const err = await rejection(t.svc.setColor(G, "42", "red"));
+        expect(err.message).toBe("Colors are hex codes like `#7CF5FF`.");
+        expect(t.log.colors).toEqual([]);
+    });
+
+    test("setColor on an untracked badge throws not-tracked", async () => {
+        const t = make();
+        const err = await rejection(t.svc.setColor(G, "42", "#7CF5FF"));
+        expect(err.message).toBe("This server doesn't track a badge with ID `42`.");
     });
 });
 

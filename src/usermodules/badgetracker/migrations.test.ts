@@ -12,3 +12,9 @@ test("every CREATE statement is idempotent", () => {
     expect(creates.length).toBeGreaterThanOrEqual(5);
     for (const stmt of creates) expect(stmt).toMatch(/IF NOT EXISTS/i);
 });
+
+test("every ADD COLUMN is idempotent", () => {
+    const adds = BADGE_TRACKER_SCHEMA.match(/ADD\s+COLUMN\b[^;]*/gi) ?? [];
+    expect(adds.length).toBeGreaterThanOrEqual(1);
+    for (const stmt of adds) expect(stmt).toMatch(/ADD\s+COLUMN\s+IF NOT EXISTS/i);
+});

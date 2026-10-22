@@ -10,8 +10,9 @@ import {
 import { NO_PINGS } from "@/utils/format";
 import type { CheckWindow } from "../services/award-delta";
 import { settings } from "../settings";
+import type { GuildBadgeRow } from "../types";
 
-const AWARD_COLOR = 0x3ba55d;
+export const AWARD_COLOR = 0x3ba55d;
 const DELETED_COLOR = 0xda373c;
 
 export interface AwardPostInput {
@@ -23,6 +24,10 @@ export interface AwardPostInput {
     total: number;
     window: CheckWindow;
     pingRoleId: string | null;
+    /** The Subscription's own accent; `null` = {@link AWARD_COLOR}. */
+    accentColor: number | null;
+    /** A test post from `/badgetracker test`: marked as such on the first line. */
+    test?: boolean;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -57,6 +62,7 @@ function card(text: string, iconUrl: string | null, color: number): ContainerBui
 
 export function buildAwardPost(input: AwardPostInput): MessageCreateOptions {
     const lines: string[] = [];
+    if (input.test) lines.push(TEST_LINE);
     if (input.pingRoleId) lines.push(`<@&${input.pingRoleId}>`);
     lines.push(`## [${escapeMarkdown(input.name)}](https://www.roblox.com/badges/${input.badgeId})`);
     if (input.description) {
@@ -70,10 +76,28 @@ export function buildAwardPost(input: AwardPostInput): MessageCreateOptions {
     lines.push(`${fmt(input.total)} total`);
 
     return {
-        components: [card(lines.join("\n"), input.iconUrl, AWARD_COLOR)],
+        components: [card(lines.join("\n"), input.iconUrl, input.accentColor ?? AWARD_COLOR)],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [], roles: input.pingRoleId ? [input.pingRoleId] : [] },
     };
+}
+
+export const TEST_LINE = "**🧪 Test - not a real award**";
+
+/** What a Subscription's post looks like, with +1 award and never a ping. */
+export function buildTestPost(row: GuildBadgeRow, intervalMinutes: number): MessageCreateOptions {
+    return buildAwardPost({
+        badgeId: row.badge_id,
+        name: row.name,
+        description: resolveDescription(row.custom_description, row.description),
+        iconUrl: row.icon_url,
+        delta: 1,
+        total: row.awarded_count === null ? 1 : Number(row.awarded_count),
+        window: { kind: "interval", minutes: intervalMinutes },
+        pingRoleId: null,
+        accentColor: row.accent_color,
+        test: true,
+    });
 }
 
 export function buildDeletedPost(input: { name: string; lastCount: number | null; iconUrl: string | null }): MessageCreateOptions {

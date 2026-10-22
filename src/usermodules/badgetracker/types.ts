@@ -23,6 +23,8 @@ export interface SubscriptionRow {
     badge_id: string;
     ping_role_id: string | null;
     custom_description: string | null;
+    /** Card accent as a 0xRRGGBB integer; `null` = the default green. */
+    accent_color: number | null;
 }
 
 export interface FanoutRow extends SubscriptionRow {

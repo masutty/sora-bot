@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS bt_subscriptions (
     PRIMARY KEY (guild_id, badge_id)
 );
 
+ALTER TABLE bt_subscriptions ADD COLUMN IF NOT EXISTS accent_color INTEGER;
+
 CREATE INDEX IF NOT EXISTS bt_subscriptions_badge_idx ON bt_subscriptions (badge_id);
 
 CREATE TABLE IF NOT EXISTS bt_settings (

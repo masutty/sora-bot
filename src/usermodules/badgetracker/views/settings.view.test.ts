@@ -53,6 +53,7 @@ const badge = (id: string, name: string, extra: Partial<GuildBadgeRow> = {}): Gu
     badge_id: id,
     ping_role_id: null,
     custom_description: null,
+    accent_color: null,
     name,
     description: "Found the world.",
     icon_url: null,
@@ -111,6 +112,13 @@ function fakeDeps(setup: Setup = {}) {
         setDescription: async (_g, raw, desc) => {
             calls.push(["setDescription", raw, desc]);
             data.badges = data.badges.map((b) => (b.badge_id === raw ? { ...b, custom_description: desc } : b));
+            return "";
+        },
+        setColor: async (_g, raw, hex) => {
+            calls.push(["setColor", raw, hex]);
+            if (hex && !/^#?[0-9a-f]{6}$/i.test(hex.trim())) throw new BadgeTrackerError("Colors are hex codes like `#7CF5FF`.");
+            const color = hex?.trim() ? Number.parseInt(hex.trim().replace("#", ""), 16) : null;
+            data.badges = data.badges.map((b) => (b.badge_id === raw ? { ...b, accent_color: color } : b));
             return "";
         },
         setIntervalMinutes: async (minutes) => {
@@ -331,6 +339,26 @@ test("the description modal title is cut to 45 characters", async () => {
     await fake.emit(fake.click("edit:0", OWNER));
     await submitForm(fake, "editDescription", { description: "x" });
     expect(fake.modals.at(-1)?.spec.title.length).toBeLessThanOrEqual(45);
+});
+
+test("the editor shows the default color and saves a new one", async () => {
+    const { fake, calls } = await open({ badges: [badge("1", "A")] });
+    await fake.emit(fake.click("edit:0", OWNER));
+    expect(text(fake.lastPayload())).toContain("**Color**\nDefault (#3BA55D)");
+    await submitForm(fake, "editColor", { color: "#7cf5ff" });
+    const spec = fake.modals.at(-1)?.spec;
+    expect(spec?.title).toBe("Color for A");
+    expect(spec?.fields[0]).toMatchObject({ key: "color", label: "Hex color (empty = default)", value: "", placeholder: "#3BA55D" });
+    expect(calls).toEqual([["setColor", "1", "#7cf5ff"]]);
+    expect(text(fake.lastPayload())).toContain("**Color**\n#7CF5FF");
+});
+
+test("a bad color is refused and nothing changes", async () => {
+    const { fake } = await open({ badges: [badge("1", "A", { accent_color: 0x112233 })] });
+    await fake.emit(fake.click("edit:0", OWNER));
+    await submitForm(fake, "editColor", { color: "red" });
+    expect(fake.notifies.at(-1)?.content).toBe("Colors are hex codes like `#7CF5FF`.");
+    expect(text(fake.lastPayload())).toContain("**Color**\n#112233");
 });
 
 test("remove: confirm then back to the overview without the badge", async () => {
