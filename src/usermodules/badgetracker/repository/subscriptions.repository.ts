@@ -61,3 +61,14 @@ export async function getAllFanoutRows(): Promise<FanoutRow[]> {
     );
     return result.rows;
 }
+
+export async function getFanoutRowsForBadge(badgeId: string): Promise<FanoutRow[]> {
+    const result = await query<FanoutRow>(
+        `SELECT s.guild_id, s.badge_id, s.ping_role_id, s.custom_description, g.channel_id
+         FROM bt_subscriptions s
+         LEFT JOIN bt_guilds g ON g.guild_id = s.guild_id
+         WHERE s.badge_id = $1`,
+        [badgeId],
+    );
+    return result.rows;
+}

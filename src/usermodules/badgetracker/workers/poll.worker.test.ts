@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RoundResult } from "../services/poller.service";
 import type { TrackerSettingsRow } from "../types";
-import { createPollTick } from "./poll.worker";
+import { createBackgroundRunner, createPollTick } from "./poll.worker";
 
 function make(over: { lastRoundAt?: Date | null; intervalMinutes?: number; results?: RoundResult[] } = {}) {
     let nowMs = Date.parse("2026-10-22T12:00:00Z");
@@ -136,5 +136,46 @@ describe("createPollTick", () => {
         await expect(tick()).rejects.toThrow("boom");
         fail = false;
         await expect(tick()).resolves.toBeUndefined();
+    });
+});
+
+describe("createBackgroundRunner", () => {
+    test("does not wait for the tick and skips while one is still running", async () => {
+        let release: () => void = () => {};
+        let started = 0;
+        const run = createBackgroundRunner(
+            () => {
+                started++;
+                return new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+            },
+            () => {},
+        );
+        expect(run()).toBeUndefined();
+        run();
+        expect(started).toBe(1);
+        release();
+        await new Promise((r) => setTimeout(r, 0));
+        run();
+        expect(started).toBe(2);
+    });
+
+    test("reports a failing tick and keeps running", async () => {
+        const errors: unknown[] = [];
+        let calls = 0;
+        const run = createBackgroundRunner(
+            async () => {
+                calls++;
+                throw new Error("boom");
+            },
+            (e) => errors.push(e),
+        );
+        run();
+        await new Promise((r) => setTimeout(r, 0));
+        run();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(calls).toBe(2);
+        expect(errors.length).toBe(2);
     });
 });

@@ -1,5 +1,6 @@
 import type { BotClient } from "@/core/bot-client";
 import { defineWorker } from "@/define";
+import { Logger } from "@/utils/logging";
 import { getTrackerSettings, setLastRoundAt } from "../repository/settings.repository";
 import { defaultPollerDeps, type RoundResult, runRound } from "../services/poller.service";
 import { settings } from "../settings";
@@ -42,19 +43,41 @@ export function createPollTick(deps: PollTickDeps): () => Promise<void> {
     };
 }
 
-let tick: (() => Promise<void>) | null = null;
+const logger = new Logger("badge-tracker.poll");
+
+/**
+ * Wraps a tick so it runs in the background: a round can outlast the worker tick, and awaiting it
+ * would trigger the scheduler's slow-tick warning on every round. Skips while a previous tick runs.
+ */
+export function createBackgroundRunner(tick: () => Promise<void>, onError: (err: unknown) => void): () => void {
+    let inFlight = false;
+    return () => {
+        if (inFlight) return;
+        inFlight = true;
+        tick()
+            .catch(onError)
+            .finally(() => {
+                inFlight = false;
+            });
+    };
+}
+
+let runner: (() => void) | null = null;
 
 export const pollWorker = defineWorker({
     name: "poll",
     intervalMs: settings.workers.pollTickMs,
     runOnStart: true,
     async run(client: BotClient) {
-        tick ??= createPollTick({
-            now: () => new Date(),
-            getSettings: getTrackerSettings,
-            setLastRoundAt,
-            runRound: (ms) => runRound(defaultPollerDeps(client, ms)),
-        });
-        await tick();
+        runner ??= createBackgroundRunner(
+            createPollTick({
+                now: () => new Date(),
+                getSettings: getTrackerSettings,
+                setLastRoundAt,
+                runRound: (ms) => runRound(defaultPollerDeps(client, ms)),
+            }),
+            (err) => logger.error("Poll tick failed", { error: err instanceof Error ? err.message : String(err) }),
+        );
+        runner();
     },
 });

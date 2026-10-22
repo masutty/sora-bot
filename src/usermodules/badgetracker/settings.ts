@@ -1,3 +1,9 @@
+/** Positive integer from an env string; anything else (unset, empty, NaN, zero, negative, fractional) gives the fallback. */
+export function parsePositiveInt(raw: string | undefined, fallback: number): number {
+    const n = Number(raw);
+    return raw !== undefined && raw.trim() !== "" && Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
 /** Badge Tracker tunables - timing, limits and Roblox request behaviour. */
 export const settings = {
     workers: {
@@ -32,7 +38,7 @@ export const settings = {
     },
     limits: {
         perGuild: 25,
-        global: Number(process.env.BADGE_TRACKER_MAX_BADGES ?? 200),
+        global: parsePositiveInt(process.env.BADGE_TRACKER_MAX_BADGES, 200),
         descriptionMax: 300,
     },
     deletedAfterNotFound: 2,

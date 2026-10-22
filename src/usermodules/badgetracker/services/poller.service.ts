@@ -2,8 +2,8 @@ import { DiscordAPIError, type MessageCreateOptions } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
 import * as badgesRepo from "../repository/badges.repository";
-import { setTrackerChannel } from "../repository/guilds.repository";
-import { getAllFanoutRows } from "../repository/subscriptions.repository";
+import { clearTrackerChannelIf } from "../repository/guilds.repository";
+import { getAllFanoutRows, getFanoutRowsForBadge } from "../repository/subscriptions.repository";
 import { settings } from "../settings";
 import type { BadgeRow, FanoutRow } from "../types";
 import { buildAwardPost, buildDeletedPost, resolveDescription } from "../views/award-post";
@@ -28,7 +28,8 @@ export interface PollerDeps {
         "getBadges" | "recordCheck" | "updateBadgeMeta" | "clearBaselines" | "incrementNotFound" | "markDeleted"
     > & {
         getAllFanoutRows(): Promise<FanoutRow[]>;
-        setTrackerChannel(guildId: string, channelId: string | null): Promise<void>;
+        getFanoutRowsForBadge(badgeId: string): Promise<FanoutRow[]>;
+        clearTrackerChannelIf(guildId: string, channelId: string): Promise<void>;
     };
 }
 
@@ -46,7 +47,7 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
         if (status === undefined) {
             status = deps.postStatus(row.guild_id, row.channel_id);
             statusByGuild.set(row.guild_id, status);
-            if (status === "channel_missing") await repo.setTrackerChannel(row.guild_id, null);
+            if (status === "channel_missing" && row.channel_id) await repo.clearTrackerChannelIf(row.guild_id, row.channel_id);
         }
         if (status !== "ok") continue;
         const list = liveSubs.get(row.badge_id);
@@ -60,6 +61,10 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
         const row = rowsById.get(id);
         if (row && !row.deleted) live.push(row);
     }
+    // Oldest check first (never-checked first), so a rate-limited round does not always starve the same tail badges.
+    live.sort(
+        (a, b) => (a.last_checked_at?.getTime() ?? Number.NEGATIVE_INFINITY) - (b.last_checked_at?.getTime() ?? Number.NEGATIVE_INFINITY),
+    );
     await repo.clearBaselines(live.map((b) => b.badge_id));
 
     const now = deps.now();
@@ -75,11 +80,28 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
 
     async function sendTo(sub: FanoutRow, payload: MessageCreateOptions): Promise<void> {
         if (deadGuilds.has(sub.guild_id) || !sub.channel_id) return;
-        const result = await deps.send(sub.channel_id, payload);
-        if (result === "unknown_channel" && !deadGuilds.has(sub.guild_id)) {
+        // Permissions and the channel can change mid-round, so check again right before sending.
+        const status = deps.postStatus(sub.guild_id, sub.channel_id);
+        if (status !== "ok") {
             deadGuilds.add(sub.guild_id);
-            await repo.setTrackerChannel(sub.guild_id, null);
+            if (status === "channel_missing") await repo.clearTrackerChannelIf(sub.guild_id, sub.channel_id);
+            return;
         }
+        const result = await deps.send(sub.channel_id, payload);
+        if (result === "forbidden") {
+            deadGuilds.add(sub.guild_id);
+        } else if (result === "unknown_channel") {
+            deadGuilds.add(sub.guild_id);
+            await repo.clearTrackerChannelIf(sub.guild_id, sub.channel_id);
+        } else if (result === "failed") {
+            logger.warn(`Post to guild ${sub.guild_id} failed`, { channelId: sub.channel_id });
+        }
+    }
+
+    /** Re-reads the Badge's Subscriptions so changes made during the round apply; only servers that can still post stay. */
+    async function freshSubs(badgeId: string): Promise<FanoutRow[]> {
+        const rows = await repo.getFanoutRowsForBadge(badgeId);
+        return rows.filter((r) => deps.postStatus(r.guild_id, r.channel_id) === "ok");
     }
 
     async function fanOut(subs: FanoutRow[], payloadFor: (sub: FanoutRow) => MessageCreateOptions): Promise<void> {
@@ -92,7 +114,6 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
     for (const [index, row] of live.entries()) {
         if (index > 0) await deps.sleep(spacingMs);
         const id = row.badge_id;
-        const subs = liveSubs.get(id) ?? [];
         const fetched = await deps.roblox.fetchBadge(id);
         checked++;
 
@@ -107,6 +128,7 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
             const streak = await repo.incrementNotFound(id);
             if (streak >= settings.deletedAfterNotFound) {
                 await repo.markDeleted(id);
+                const subs = await freshSubs(id);
                 const payload = buildDeletedPost({
                     name: row.name,
                     lastCount: row.awarded_count === null ? null : Number(row.awarded_count),
@@ -135,6 +157,7 @@ export async function runRound(deps: PollerDeps): Promise<RoundResult> {
         await repo.recordCheck(id, badge.awardedCount, now);
 
         if (outcome.kind === "post") {
+            const subs = await freshSubs(id);
             await fanOut(subs, (sub) =>
                 buildAwardPost({
                     badgeId: id,
@@ -183,7 +206,8 @@ export function defaultPollerDeps(client: BotClient, intervalMs: number): Poller
             clearBaselines: badgesRepo.clearBaselines,
             incrementNotFound: badgesRepo.incrementNotFound,
             markDeleted: badgesRepo.markDeleted,
-            setTrackerChannel,
+            getFanoutRowsForBadge,
+            clearTrackerChannelIf,
         },
     };
 }

@@ -12,3 +12,8 @@ export async function setTrackerChannel(guildId: string, channelId: string | nul
         [guildId, channelId],
     );
 }
+
+/** Clears the Tracking Channel only while it still equals `channelId`, so a newly set channel survives a stale clear. */
+export async function clearTrackerChannelIf(guildId: string, channelId: string): Promise<void> {
+    await query(`UPDATE bt_guilds SET channel_id = NULL WHERE guild_id = $1 AND channel_id = $2`, [guildId, channelId]);
+}

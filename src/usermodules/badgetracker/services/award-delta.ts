@@ -16,7 +16,9 @@ export function evaluateCheck(
 ): CheckOutcome {
     if (prev.awardedCount === null || prev.lastCheckedAt === null) return { kind: "baseline" };
     const gap = now.getTime() - prev.lastCheckedAt.getTime();
-    if (gap >= settings.gap.maxMs) return { kind: "baseline" };
+    // Long intervals stretch the normal gap, so the silent-refresh threshold never drops below the interval window.
+    const silentGapMs = Math.max(settings.gap.maxMs, intervalMs * settings.gap.intervalSlack);
+    if (gap >= silentGapMs) return { kind: "baseline" };
     if (current < prev.awardedCount) return { kind: "decreased" };
     if (current === prev.awardedCount) return { kind: "unchanged" };
     const window: CheckWindow =

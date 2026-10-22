@@ -39,3 +39,10 @@ test("an increase after a longer gap posts with a since window", () => {
         window: { kind: "since", at: ago(1_800_000) },
     });
 });
+
+test("a long interval widens the silent-refresh threshold", () => {
+    const H = 3_600_000;
+    const prev = { awardedCount: 100, lastCheckedAt: ago(H) };
+    expect(evaluateCheck(prev, 103, T, H)).toEqual({ kind: "post", delta: 3, window: { kind: "interval", minutes: 60 } });
+    expect(evaluateCheck({ awardedCount: 100, lastCheckedAt: ago(5_400_001) }, 103, T, H)).toEqual({ kind: "baseline" });
+});

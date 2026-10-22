@@ -88,3 +88,10 @@ test("buildDeletedPost", () => {
     expect(post.allowedMentions).toEqual(NO_PINGS);
     expect(text(buildDeletedPost({ name: "X", lastCount: null, iconUrl: "https://i" }))).not.toContain("Last count");
 });
+
+test("buildAwardPost: CRLF and blank description lines give no empty quote lines", () => {
+    const post = buildAwardPost({ ...base, description: "a\r\n\r\nb" });
+    expect(text(post)).toContain("-# a\n-# b\n");
+    expect(text(post)).not.toContain("-# \n");
+    expect(text(post)).not.toContain("\r");
+});

@@ -59,7 +59,13 @@ export function buildAwardPost(input: AwardPostInput): MessageCreateOptions {
     const lines: string[] = [];
     if (input.pingRoleId) lines.push(`<@&${input.pingRoleId}>`);
     lines.push(`## [${escapeMarkdown(input.name)}](https://www.roblox.com/badges/${input.badgeId})`);
-    if (input.description) lines.push(...input.description.split("\n").map((l) => `-# ${l}`));
+    if (input.description) {
+        const descLines = input.description
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0);
+        lines.push(...descLines.map((l) => `-# ${l}`));
+    }
     lines.push(`**+${fmt(input.delta)}** ${input.delta === 1 ? "award" : "awards"} ${windowText(input.window)}`);
     lines.push(`${fmt(input.total)} total`);
 

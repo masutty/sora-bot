@@ -48,6 +48,7 @@ function make(setup: Setup) {
         baselines: [] as string[][],
         iconCalls: [] as string[][],
         channelsCleared: [] as string[],
+        clearCalls: [] as [string, string][],
         deleted: [] as string[],
     };
     const deps: PollerDeps = {
@@ -80,6 +81,7 @@ function make(setup: Setup) {
         },
         repo: {
             getAllFanoutRows: async () => setup.rows,
+            getFanoutRowsForBadge: async (id) => setup.rows.filter((r) => r.badge_id === id),
             getBadges: async (ids) => ids.map((i) => badges.get(i)).filter((b): b is BadgeRow => !!b),
             recordCheck: async (id, count) => {
                 log.checks.push([id, count]);
@@ -98,8 +100,9 @@ function make(setup: Setup) {
             markDeleted: async (id) => {
                 log.deleted.push(id);
             },
-            setTrackerChannel: async (g) => {
+            clearTrackerChannelIf: async (g, ch) => {
                 log.channelsCleared.push(g);
+                log.clearCalls.push([g, ch]);
             },
         },
     };
@@ -143,6 +146,7 @@ describe("runRound", () => {
         });
         await runRound(deps);
         expect(log.channelsCleared).toEqual(["A"]);
+        expect(log.clearCalls).toEqual([["A", "ch-A"]]);
         expect(log.sent.map((s) => s.channelId)).toEqual(["ch-B"]);
     });
 
@@ -254,5 +258,85 @@ describe("runRound", () => {
         await runRound(deps);
         expect(log.channelsCleared).toEqual(["A"]);
         expect(log.sent.length).toBe(1);
+    });
+
+    test("unknown_channel clears only the channel id from the snapshot", async () => {
+        const { deps, log } = make({
+            rows: [sub("A", "1")],
+            fetches: { "1": ok("1", 110) },
+            sendResult: () => "unknown_channel",
+        });
+        await runRound(deps);
+        expect(log.clearCalls).toEqual([["A", "ch-A"]]);
+    });
+
+    test("forbidden stops further sends to that guild this round", async () => {
+        const { deps, log } = make({
+            rows: [sub("A", "1"), sub("A", "2"), sub("B", "1"), sub("B", "2")],
+            fetches: { "1": ok("1", 110), "2": ok("2", 110) },
+            sendResult: (ch) => (ch === "ch-A" ? "forbidden" : "sent"),
+        });
+        await runRound(deps);
+        expect(log.sent.map((s) => s.channelId).sort()).toEqual(["ch-A", "ch-B", "ch-B"]);
+    });
+
+    test("a failed send is logged and other guilds are still served", async () => {
+        const { deps, log } = make({
+            rows: [sub("A", "1"), sub("B", "1")],
+            fetches: { "1": ok("1", 110) },
+            sendResult: (ch) => (ch === "ch-A" ? "failed" : "sent"),
+        });
+        const result = await runRound(deps);
+        expect(result).toEqual({ kind: "done", checked: 1 });
+        expect(log.sent.map((s) => s.channelId).sort()).toEqual(["ch-A", "ch-B"]);
+    });
+
+    test("skips a send when the guild status flips to no_permission mid-round", async () => {
+        const statuses: Record<string, PostStatus> = {};
+        const { deps, log } = make({ rows: [sub("A", "1")], fetches: { "1": ok("1", 110) }, statuses });
+        const fetchBadge = deps.roblox.fetchBadge;
+        deps.roblox.fetchBadge = async (id) => {
+            statuses.A = "no_permission";
+            return fetchBadge(id);
+        };
+        await runRound(deps);
+        expect(log.sent).toEqual([]);
+    });
+
+    test("a subscription removed mid-round gets no post", async () => {
+        const rows = [sub("A", "1"), sub("B", "1")];
+        const { deps, log } = make({ rows, fetches: { "1": ok("1", 110) } });
+        const fetchBadge = deps.roblox.fetchBadge;
+        deps.roblox.fetchBadge = async (id) => {
+            rows.splice(0, 1);
+            return fetchBadge(id);
+        };
+        await runRound(deps);
+        expect(log.sent.map((s) => s.channelId)).toEqual(["ch-B"]);
+    });
+
+    test("a ping role cleared mid-round is not pinged", async () => {
+        const rows = [sub("A", "1", { ping_role_id: "roleA" })];
+        const { deps, log } = make({ rows, fetches: { "1": ok("1", 110) } });
+        const fetchBadge = deps.roblox.fetchBadge;
+        deps.roblox.fetchBadge = async (id) => {
+            rows[0] = sub("A", "1");
+            return fetchBadge(id);
+        };
+        await runRound(deps);
+        expect(text(log.sent[0]?.payload as MessageCreateOptions)).not.toContain("roleA");
+    });
+
+    test("fetches the least recently checked badges first", async () => {
+        const { deps, log } = make({
+            rows: [sub("A", "1"), sub("A", "2"), sub("A", "3")],
+            badges: [
+                badge("1", { last_checked_at: new Date(NOW.getTime() - 1000) }),
+                badge("2", { last_checked_at: null }),
+                badge("3", { last_checked_at: new Date(NOW.getTime() - 900_000) }),
+            ],
+        });
+        await runRound(deps);
+        expect(log.fetched).toEqual(["2", "3", "1"]);
     });
 });
