@@ -195,8 +195,9 @@ async function sendLiveForward(
         flavorText: getBiomeMeta(biome)?.flavorText,
     });
 
+    let sent: Message | undefined;
     try {
-        const sent = await channel.send({
+        sent = await channel.send({
             components: [container],
             flags: MessageFlags.IsComponentsV2,
             allowedMentions: forwardMentions(forward.role_id, dryRun),
@@ -220,7 +221,8 @@ async function sendLiveForward(
         return voteId;
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome });
-        await deps.log(client, guildId, forwardFailure(biome, stats.finderDiscordId ?? null, forward.channel_id, err));
+        // Only a failed send is a forward problem; a vote that failed to open after it is not.
+        if (!sent) await deps.log(client, guildId, forwardFailure(biome, stats.finderDiscordId ?? null, forward.channel_id, err));
         return null;
     }
 }

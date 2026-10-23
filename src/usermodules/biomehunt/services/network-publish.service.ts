@@ -156,21 +156,32 @@ export interface MirrorTarget {
     biome: string;
 }
 
+async function logMirrorFailure(client: Client, channelId: string, target: MirrorTarget, reason: string): Promise<void> {
+    await guildLog(client as BotClient, target.guildId, {
+        kind: "warning",
+        title: "⚠️ Couldn't post a Network find",
+        body: `**${formatBiomeName(target.biome)}** from the Network wasn't posted in <#${channelId}>: ${reason}.`,
+        dedupKey: `mirror:${target.guildId}`,
+    });
+}
+
 async function sendMirror(client: Client, channelId: string, payload: MessageCreateOptions, target: MirrorTarget) {
     try {
         const channel = await client.channels.fetch(channelId);
-        if (!channel || channel.isDMBased() || !channel.isTextBased()) return null;
+        if (!channel) {
+            await logMirrorFailure(client, channelId, target, "the channel no longer exists");
+            return null;
+        }
+        if (channel.isDMBased() || !channel.isTextBased()) {
+            await logMirrorFailure(client, channelId, target, "it isn't a text channel");
+            return null;
+        }
         const sent = await channel.send(payload);
         clearLogDedup(target.guildId, `mirror:${target.guildId}`);
         return { channelId: sent.channelId, messageId: sent.id };
     } catch (err) {
         logger.warn(`Could not send a Network Mirror to channel ${channelId}`, { error: err instanceof Error ? err.message : String(err) });
-        await guildLog(client as BotClient, target.guildId, {
-            kind: "warning",
-            title: "⚠️ Couldn't post a Network Mirror",
-            body: `**${formatBiomeName(target.biome)}** from the Network wasn't posted in <#${channelId}>: ${describeDiscordError(err)}.`,
-            dedupKey: `mirror:${target.guildId}`,
-        });
+        await logMirrorFailure(client, channelId, target, describeDiscordError(err));
         return null;
     }
 }

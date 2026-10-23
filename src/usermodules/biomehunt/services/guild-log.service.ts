@@ -97,7 +97,7 @@ export function describeDiscordError(err: unknown, override: Partial<Record<numb
             }[code];
         if (text) return text;
     }
-    return err instanceof Error ? err.message : String(err);
+    return "Discord returned an error";
 }
 
 /** The settings screen's "Send a test": posts straight away and, unlike `guildLog`, tells the admin when it can't. */

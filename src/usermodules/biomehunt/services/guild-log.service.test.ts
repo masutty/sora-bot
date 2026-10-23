@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { clearLogDedup, type GuildLogDeps, guildLog, sendLogTest } from "./guild-log.service";
+import { clearLogDedup, describeDiscordError, type GuildLogDeps, guildLog, sendLogTest } from "./guild-log.service";
 
 const GUILD = "g1";
 
@@ -77,4 +77,13 @@ test("sendLogTest posts the test message and reports failures", async () => {
     expect(await sendLogTest({} as never, GUILD, deps)).toBe("Test posted in <#c1>.");
     expect(json(sent[0])).toContain("**🧪 Test**\\nLog posts will show up here.");
     await expect(sendLogTest({} as never, GUILD, fakeDeps({ failSend: true }).deps)).rejects.toThrow();
+});
+
+test("describeDiscordError maps known codes and hides raw messages", () => {
+    expect(describeDiscordError(Object.assign(new Error("x"), { code: 50013 }))).toContain("Send Messages");
+    expect(describeDiscordError(Object.assign(new Error("x"), { code: 10003 }))).toBe("the channel no longer exists");
+    expect(describeDiscordError(Object.assign(new Error("x"), { code: 50013 }), { 50013: "it's above the bot's highest role" })).toBe(
+        "it's above the bot's highest role",
+    );
+    expect(describeDiscordError(new Error("SELECT * FROM secrets failed"))).toBe("Discord returned an error");
 });

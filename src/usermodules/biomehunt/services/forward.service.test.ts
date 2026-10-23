@@ -333,6 +333,19 @@ test("forward send failure logs a warning once", async () => {
     expect(posted[0]).toContain("<#forward-channel>");
 });
 
+test("forward: a vote that fails to open after a good send logs no forward warning", async () => {
+    const logged: unknown[] = [];
+    const { deps } = createFakeDeps();
+    deps.openVote = async () => {
+        throw new Error("insert failed");
+    };
+    deps.log = async (_c, _g, entry) => {
+        logged.push(entry);
+    };
+    await forwardBiome(fakeClient(), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+    expect(logged).toHaveLength(0);
+});
+
 test("setDelayedForward rejects a non-rare biome before touching the DB", async () => {
     await expect(setDelayedForward("g1", "HELL", "delayed-channel", null, 30)).rejects.toThrow(
         new BiomeHuntError("Delayed forwards are only for rare biomes."),
