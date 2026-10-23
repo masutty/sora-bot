@@ -141,6 +141,21 @@ export async function getBiomeCountsInRange(userId: number, start: Date, end: Da
     return result.rows.map((r) => ({ biome: r.biome, count: Number(r.count) }));
 }
 
+/** One session by id, only if its user belongs to the guild - with the owner's Discord id. */
+export async function getSessionInGuild(
+    guildId: string,
+    sessionId: number,
+): Promise<(ActivitySessionRow & { discord_user_id: string }) | null> {
+    const result = await query<ActivitySessionRow & { discord_user_id: string }>(
+        `SELECT s.*, u.discord_user_id
+         FROM bh_activity_sessions s
+         JOIN bh_users u ON u.id = s.user_id
+         WHERE s.id = $1 AND u.guild_id = $2`,
+        [sessionId, guildId],
+    );
+    return result.rows[0] ?? null;
+}
+
 export async function getRecentSessions(userId: number, limit: number): Promise<ActivitySessionRow[]> {
     const result = await query<ActivitySessionRow>(
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT $2`,

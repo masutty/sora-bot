@@ -9,6 +9,7 @@ import { BiomeHuntError } from "../types";
 import { buildBalanceReply } from "../views/balance.view";
 import { openProfileView } from "../views/profile.view";
 import { openRerollView } from "../views/reroll.view";
+import { openSessionView } from "../views/session.view";
 
 export const PROFILE_DESCRIPTION = "View your hunt profile, or someone else's.";
 export const PROFILE_USER_DESCRIPTION = "Whose profile to view (defaults to yourself)";
@@ -66,6 +67,12 @@ export default defineCommand({
             const target = (await ctx.args.getMember("user")) ?? ctx.member;
             const balance = await getBalance(ctx.guild.id, target.id);
             await ctx.reply(buildBalanceReply(target.id, target.id === ctx.user.id, balance));
+            return;
+        }
+
+        if (sub === "session") {
+            await ctx.defer();
+            await openSessionView(ctx, ctx.guild.id, ctx.args.getInteger("id", true));
             return;
         }
 
