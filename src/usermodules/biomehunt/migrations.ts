@@ -522,6 +522,10 @@ CREATE TABLE IF NOT EXISTS bh_bot_settings (
 /* The bot owner who decided a Network vote with a click - NULL when the ballots decided it. */
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS vote_decided_by VARCHAR(20);
 
+/* Rare count in the macro channel name: the badges the bot applied, and when it last renamed the channel. */
+ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_badges TEXT NOT NULL DEFAULT '';
+ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_renamed_at TIMESTAMPTZ;
+
 /* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
 CREATE TABLE IF NOT EXISTS bh_data_migrations (
     name       VARCHAR(80) PRIMARY KEY,

@@ -12,10 +12,12 @@ import {
     getMacroChannelByUserId,
     lookupChannel,
     registerChannel,
+    setNameBadges,
     setUserFlower,
 } from "../repository/users.repository";
 import type { GuildConfigRow } from "../types";
 import { BiomeHuntError } from "../types";
+import { initialChannelName } from "./channel-name.service";
 import { ensureFlower } from "./flower.service";
 import { clearLogDedup, describeDiscordError, guildLog } from "./guild-log.service";
 
@@ -69,10 +71,16 @@ export async function provisionMacroChannel(
     const guildConfig = await getOrCreateGuildConfig(guild.id);
     const category = await findOrCreateCategory(guild, guildConfig);
 
+    const { name, badges } = await initialChannelName(
+        await isFlagEnabled(guild.id, "RARE_COUNT_IN_CHANNEL_NAME"),
+        user.id,
+        member.user.username,
+    );
+
     let channel: TextChannel;
     try {
         channel = await guild.channels.create({
-            name: macroChannelName(member.user.username),
+            name,
             type: ChannelType.GuildText,
             parent: category.id,
             permissionOverwrites: buildMacroChannelOverwrites(category, member),
@@ -98,6 +106,7 @@ export async function provisionMacroChannel(
 
     try {
         await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url));
+        if (badges) await setNameBadges(user.id, badges);
     } catch (err) {
         await webhook.delete().catch(() => {});
         await channel.delete().catch(() => {});
@@ -165,8 +174,13 @@ export async function adoptMacroChannel(
         throw new BiomeHuntError("That webhook wasn't found on the given channel - double check the URL and channel.");
     }
 
+    const { name, badges } = await initialChannelName(
+        await isFlagEnabled(guild.id, "RARE_COUNT_IN_CHANNEL_NAME"),
+        user.id,
+        member.user.username,
+    );
     try {
-        await channel.setName(macroChannelName(member.user.username));
+        await channel.setName(name);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)));
         throw new BiomeHuntError("Failed to rename the channel - check my permissions there and try again.");
@@ -177,6 +191,7 @@ export async function adoptMacroChannel(
     if (flower && !user.flower) await setUserFlower(user.id, flower);
 
     await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl));
+    if (badges) await setNameBadges(user.id, badges);
     registerChannel(channel.id, { userId: user.id, guildId: guild.id, webhookId });
 
     return { channelId: channel.id, webhookUrl };

@@ -19,7 +19,8 @@ export type FlagName =
     | "AUTO_DELETE_ENABLED"
     | "EXPERIMENT_WEBHOOK_FLOWERS"
     | "EXPERIMENT_BIOME_ECONOMY"
-    | "REPORT_FAKE_FINDS";
+    | "REPORT_FAKE_FINDS"
+    | "RARE_COUNT_IN_CHANNEL_NAME";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
@@ -84,6 +85,8 @@ export interface UserMacroChannelRow {
     webhook_id: string;
     webhook_url: string;
     created_at: Date;
+    name_badges: string;
+    name_renamed_at: Date | null;
 }
 
 export interface ActivityEventRow {
