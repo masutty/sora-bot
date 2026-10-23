@@ -4,6 +4,7 @@ import { Logger } from "@/utils/logging";
 import type { BallotWriteResult, BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
 import { adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps } from "./biome-vote.service";
+import type { RevertedRewards } from "./fake-find.service";
 import type { GuildLogEntry } from "./guild-log.service";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         revertBiomeRewards: [] as Array<{ userId: number; eventIds: number[] }>,
         revokeOrphanedBadges: [] as Array<{ guildId: string; userId: number }>,
         logged: [] as GuildLogEntry[],
+        reported: [] as Array<{ status: VoteStatus; reverted: RevertedRewards }>,
     };
 
     const deps: VoteServiceDeps = {
@@ -61,6 +63,7 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
                 finder_discord_id: params.finderDiscordId,
                 server_find_count: params.serverFindCount,
                 last_seen_in_server_at: params.lastSeenInServerAt,
+                fake_reported_at: null,
                 status: VoteStatus.OPEN,
                 decided_by: null,
                 closes_at: params.closesAt,
@@ -116,6 +119,9 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         },
         log: async (_client, _guildId, entry) => {
             calls.logged.push(entry);
+        },
+        reportFakeFind: async (_client, vote, reverted) => {
+            calls.reported.push({ status: vote.status, reverted });
         },
     };
 
@@ -612,4 +618,20 @@ test("admin deny after a community_real resolution reverts the granted reward", 
     await adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps);
 
     expect(calls.revertBiomeRewards).toHaveLength(1);
+});
+
+test("a fake close and an admin deny report what was reverted; a real close reports nothing", async () => {
+    const { deps, calls } = createFakeDeps();
+    const fake = await seedOpenVote(deps);
+    await deps.insertBallot(fake.id, "voter-1", VoteChoice.FAKE);
+    const { client } = fakeClient();
+    await closeDueVotes(client, new Date(fake.closes_at.getTime() + 1), deps);
+    expect(calls.reported).toEqual([{ status: VoteStatus.COMMUNITY_FAKE, reverted: { seedsReverted: 0, xpReverted: 0, revoked: [] } }]);
+
+    const real = await seedOpenVote(deps, { voteId: "vote0002", eventId: 11 });
+    await adminDecide(client, real.id, "admin-1", VoteChoice.REAL, deps);
+    expect(calls.reported).toHaveLength(1);
+    await adminDecide(client, real.id, "admin-1", VoteChoice.FAKE, deps);
+    expect(calls.reported).toHaveLength(2);
+    expect(calls.reported[1].status).toBe(VoteStatus.ADMIN_DENIED);
 });

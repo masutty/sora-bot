@@ -24,6 +24,7 @@ function makeVote(overrides: Partial<BiomeVoteRow> = {}): BiomeVoteRow {
         finder_discord_id: null,
         server_find_count: null,
         last_seen_in_server_at: null,
+        fake_reported_at: null,
         status: VoteStatus.OPEN,
         decided_by: null,
         closes_at: new Date(Date.now() + 60_000),

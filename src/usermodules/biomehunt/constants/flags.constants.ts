@@ -17,6 +17,10 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
         description: "Posts a session summary (duration + biome breakdown) in the member's macro channel when their session ends.",
         default: false,
     },
+    REPORT_FAKE_FINDS: {
+        description: "Posts in the member's macro channel when one of their rare finds is voted fake or denied.",
+        default: false,
+    },
     PING_ON_QUOTA_MET: {
         description: "Posts in the member's macro channel the moment they newly meet a quota role's target.",
         default: false,

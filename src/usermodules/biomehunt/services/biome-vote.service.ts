@@ -13,6 +13,7 @@ import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { BiomeHuntError, VoteChoice, VoteStatus } from "../types";
 import { buildForwardContainer, type VoteRenderInfo } from "../views/forward-post.view";
 import { grantBiomeReward, revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
+import { type RevertedRewards, reportFakeFind } from "./fake-find.service";
 import { guildLog } from "./guild-log.service";
 
 const logger = new Logger("biomehunt.services.biome-vote");
@@ -35,6 +36,8 @@ export interface VoteServiceDeps {
     revokeOrphanedBadges: typeof revokeOrphanedBadges;
     /** Posts a problem to the server's log channel. */
     log: typeof guildLog;
+    /** Tells the finder (and the log channel) that a find was ruled fake. */
+    reportFakeFind: typeof reportFakeFind;
 }
 
 export function defaultVoteServiceDeps(): VoteServiceDeps {
@@ -51,6 +54,7 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         revertBiomeRewards,
         revokeOrphanedBadges,
         log: guildLog,
+        reportFakeFind,
     };
 }
 
@@ -182,27 +186,30 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
  * must never double-grant); `admin_denied`/`community_fake` revert whatever was granted (safe/no-op
  * if nothing was) - the event is kept but stops counting, and its ledger row is dropped so a later
  * confirm grants again. `no_votes`/`tie` do nothing - the event is kept for a possible later admin review.
+ * Returns what a fake/denied outcome took back, `null` for any other outcome.
  *
  * A `null` `event_id` (the event was removed some other way - `bh_biome_votes.event_id` is
  * `ON DELETE SET NULL`) short-circuits everything: there's no event left to credit or debit.
  */
-async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<RevertedRewards | null> {
     const eventId = vote.event_id;
-    if (eventId === null) return;
+    if (eventId === null) return null;
 
     if (vote.status === VoteStatus.COMMUNITY_REAL || vote.status === VoteStatus.ADMIN_CONFIRMED) {
         const existing = await deps.getRewardsByEventIds([eventId]);
         if (existing.length === 0) {
             await deps.grantBiomeReward(vote.guild_id, vote.finder_user_id, eventId, vote.biome);
         }
-        return;
+        return null;
     }
 
     if (vote.status === VoteStatus.ADMIN_DENIED || vote.status === VoteStatus.COMMUNITY_FAKE) {
         // The event stays (it only stops counting); revertBiomeRewards also drops its ledger row.
-        const { badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [eventId]);
-        await deps.revokeOrphanedBadges(vote.guild_id, vote.finder_user_id, badgeCandidates);
+        const { seedsReverted, xpReverted, badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [eventId]);
+        const revoked = await deps.revokeOrphanedBadges(vote.guild_id, vote.finder_user_id, badgeCandidates);
+        return { seedsReverted, xpReverted, revoked };
     }
+    return null;
 }
 
 /**
@@ -210,11 +217,12 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
  * close has ALREADY committed, so a failure here must never look like the vote itself failed to
  * close: it did, just without its grant/revert applied yet. The log line names `/admin review-voting`
  * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
- * itself idempotent).
+ * itself idempotent). A fake/denied outcome that applied is then reported (see `reportFakeFind`).
  */
 async function applyOutcomeSafely(client: BotClient, vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
     try {
-        await applyOutcome(vote, deps);
+        const reverted = await applyOutcome(vote, deps);
+        if (reverted) await deps.reportFakeFind(client, vote, reverted);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,

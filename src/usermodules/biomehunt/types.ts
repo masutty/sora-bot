@@ -18,7 +18,8 @@ export type FlagName =
     | "CLEAR_PROFILE_ON_AUTODELETE"
     | "AUTO_DELETE_ENABLED"
     | "EXPERIMENT_WEBHOOK_FLOWERS"
-    | "EXPERIMENT_BIOME_ECONOMY";
+    | "EXPERIMENT_BIOME_ECONOMY"
+    | "REPORT_FAKE_FINDS";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
@@ -201,6 +202,8 @@ export interface BiomeVoteRow {
     finder_discord_id: string | null;
     server_find_count: number | null;
     last_seen_in_server_at: Date | null;
+    /** When a fake-find report was sent for this vote - the once-per-vote guard. */
+    fake_reported_at: Date | null;
     status: VoteStatus;
     /** Discord id of the deciding admin - set only for admin_confirmed/admin_denied. */
     decided_by: string | null;

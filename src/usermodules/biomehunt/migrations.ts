@@ -249,6 +249,7 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS finder_discord_id VARCHAR(20);
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_find_count INTEGER;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS last_seen_in_server_at TIMESTAMPTZ;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS fake_reported_at TIMESTAMPTZ;
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
