@@ -47,6 +47,12 @@ export default defineCommand({
         .addSubcommand((sub) => sub.setName("reroll").setDescription(REROLL_DESCRIPTION))
         .addSubcommand((sub) =>
             sub
+                .setName("session")
+                .setDescription("Inspect one macro session.")
+                .addIntegerOption((o) => o.setName("id").setDescription("Session id").setRequired(true).setMinValue(1)),
+        )
+        .addSubcommand((sub) =>
+            sub
                 .setName("balance")
                 .setDescription("View your Seeds and level, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),

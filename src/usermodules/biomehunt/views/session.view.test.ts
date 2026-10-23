@@ -96,15 +96,17 @@ test("back button only when opened from a tab", async () => {
 });
 
 test("unknown or other-guild id shows the error", async () => {
-    const replies: Array<Pick<ViewPayload, "components">> = [];
+    const replies: Array<Pick<ViewPayload, "components"> & { allowedMentions?: unknown }> = [];
     const opened: unknown[] = [];
     const ctx = {
-        reply: async (r: Pick<ViewPayload, "components">) => void replies.push(r),
+        reply: async (r: (typeof replies)[number]) => void replies.push(r),
         open: async (...a: unknown[]) => void opened.push(a),
     };
     await openSessionView(ctx as never, "other-guild", 7);
     expect(opened).toHaveLength(0);
     expect(text(replies[0] as Pick<ViewPayload, "components">)).toContain("No session `#7` on this server.");
+
+    expect(replies[0]?.allowedMentions).toEqual({ parse: [] });
 
     await openSessionView(ctx as never, "g1", 7);
     expect(opened).toHaveLength(1);

@@ -128,3 +128,15 @@ test("getRareFinds maps int8 ids and counts to numbers, with and without a vote"
     expect(finds[1]?.eventId).toBe(43);
     expect(finds[1]?.vote).toBeNull();
 });
+
+test("getSessionInGuild scopes the session to the guild through its user", async () => {
+    nextRows = [{ id: 7, user_id: 1, discord_user_id: "u1" }];
+    const row = await repo.getSessionInGuild("g1", 7);
+    expect(row?.discord_user_id).toBe("u1");
+    expect(sent[0]).toContain("JOIN bh_users");
+    expect(sent[0]).toContain("u.guild_id = $2");
+    expect(sentParams).toEqual([7, "g1"]);
+
+    nextRows = [];
+    expect(await repo.getSessionInGuild("g2", 7)).toBeNull();
+});
