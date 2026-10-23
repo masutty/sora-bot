@@ -81,6 +81,25 @@ export async function guildLog(
     }
 }
 
+/**
+ * One plain reason for a failed Discord call, for a log body. `override` replaces the wording of a
+ * code for callers where it means something else (e.g. 50013 on a role is the role hierarchy).
+ */
+export function describeDiscordError(err: unknown, override: Partial<Record<number, string>> = {}): string {
+    const code = typeof err === "object" && err !== null ? (err as { code?: unknown }).code : undefined;
+    if (typeof code === "number") {
+        const text =
+            override[code] ??
+            {
+                50013: "the bot is missing **Send Messages** there",
+                50001: "the bot can't see that channel",
+                10003: "the channel no longer exists",
+            }[code];
+        if (text) return text;
+    }
+    return err instanceof Error ? err.message : String(err);
+}
+
 /** The settings screen's "Send a test": posts straight away and, unlike `guildLog`, tells the admin when it can't. */
 export async function sendLogTest(client: BotClient, guildId: string, deps: GuildLogDeps = defaultGuildLogDeps(client)): Promise<string> {
     const channelId = await deps.getLogChannelId(guildId);

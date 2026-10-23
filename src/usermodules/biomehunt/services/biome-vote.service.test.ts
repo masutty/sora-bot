@@ -4,6 +4,7 @@ import { Logger } from "@/utils/logging";
 import type { BallotWriteResult, BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
 import { adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps } from "./biome-vote.service";
+import type { GuildLogEntry } from "./guild-log.service";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         grantBiomeReward: [] as Array<{ guildId: string; userId: number; eventId: number; biome: string }>,
         revertBiomeRewards: [] as Array<{ userId: number; eventIds: number[] }>,
         revokeOrphanedBadges: [] as Array<{ guildId: string; userId: number }>,
+        logged: [] as GuildLogEntry[],
     };
 
     const deps: VoteServiceDeps = {
@@ -111,6 +113,9 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         revokeOrphanedBadges: async (guildId, userId) => {
             calls.revokeOrphanedBadges.push({ guildId, userId });
             return [];
+        },
+        log: async (_client, _guildId, entry) => {
+            calls.logged.push(entry);
         },
     };
 
@@ -528,6 +533,27 @@ test("applyOutcome failing after the close already committed is logged with the 
         const logged = logError.mock.calls.map((c) => JSON.stringify(c)).join("\n");
         expect(logged).toContain(vote.id);
         expect(logged).toContain("review");
+    } finally {
+        logError.mockRestore();
+    }
+});
+
+test("vote outcome failure logs an error with the review command", async () => {
+    const logError = spyOn(Logger.prototype, "error").mockImplementation(() => {});
+    try {
+        const { deps, calls } = createFakeDeps();
+        const vote = await seedOpenVote(deps);
+        deps.revertBiomeRewards = async () => {
+            throw new Error("db unreachable");
+        };
+        const { client } = fakeClient();
+
+        await adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps);
+
+        expect(calls.logged).toHaveLength(1);
+        expect(calls.logged[0].kind).toBe("error");
+        expect(calls.logged[0].title).toBe("🛑 Something broke");
+        expect(calls.logged[0].body).toContain(`/admin review-voting ${vote.id}`);
     } finally {
         logError.mockRestore();
     }

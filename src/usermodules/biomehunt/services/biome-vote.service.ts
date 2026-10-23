@@ -3,7 +3,7 @@ import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
-import { getBiomeMeta } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getBotSetting, setBotSetting } from "../repository/bot-settings.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
@@ -13,6 +13,7 @@ import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { BiomeHuntError, VoteChoice, VoteStatus } from "../types";
 import { buildForwardContainer, type VoteRenderInfo } from "../views/forward-post.view";
 import { grantBiomeReward, revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
+import { guildLog } from "./guild-log.service";
 
 const logger = new Logger("biomehunt.services.biome-vote");
 
@@ -32,6 +33,8 @@ export interface VoteServiceDeps {
     grantBiomeReward: typeof grantBiomeReward;
     revertBiomeRewards: typeof revertBiomeRewards;
     revokeOrphanedBadges: typeof revokeOrphanedBadges;
+    /** Posts a problem to the server's log channel. */
+    log: typeof guildLog;
 }
 
 export function defaultVoteServiceDeps(): VoteServiceDeps {
@@ -47,6 +50,7 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         grantBiomeReward,
         revertBiomeRewards,
         revokeOrphanedBadges,
+        log: guildLog,
     };
 }
 
@@ -208,13 +212,19 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
  * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
  * itself idempotent).
  */
-async function applyOutcomeSafely(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+async function applyOutcomeSafely(client: BotClient, vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
     try {
         await applyOutcome(vote, deps);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,
             note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /admin review-voting ${vote.id}`,
+        });
+        const from = vote.finder_discord_id ? ` from <@${vote.finder_discord_id}>` : "";
+        await deps.log(client, vote.guild_id, {
+            kind: "error",
+            title: "🛑 Something broke",
+            body: `**${formatBiomeName(vote.biome)}**${from}: the vote closed as ${vote.status} but its rewards weren't updated. Run \`/admin review-voting ${vote.id}\` to apply them.`,
         });
     }
 }
@@ -328,7 +338,7 @@ export async function adminDecide(
     const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);
     if (!closed) return { kind: "already_decided" };
 
-    await applyOutcomeSafely(closed, deps);
+    await applyOutcomeSafely(client, closed, deps);
 
     // Read AFTER the close committed - any ballot racing the close is now either reflected here
     // (it landed before the commit) or cleanly rejected by insertBallot's own atomicity (after).
@@ -360,7 +370,7 @@ export async function closeDueVotes(
             const closed = await deps.closeVote(vote.id, VoteStatus.OPEN, status, null);
             if (!closed) continue; // an admin already decided it - don't apply this outcome too
 
-            await applyOutcomeSafely(closed, deps);
+            await applyOutcomeSafely(client, closed, deps);
 
             // Read AFTER the close committed, not the pre-close snapshot used to pick `status` -
             // a ballot racing the close is now either reflected here (it landed before the commit)

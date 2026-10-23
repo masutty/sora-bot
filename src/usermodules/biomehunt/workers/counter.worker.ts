@@ -4,6 +4,7 @@ import { defineWorker } from "@/define";
 import { Logger } from "@/utils/logging";
 import { getGuildsWithCounterEnabled, setCounterMessageId } from "../repository/guilds.repository";
 import { getGuildUserCounts } from "../repository/users.repository";
+import { clearLogDedup, describeDiscordError, guildLog } from "../services/guild-log.service";
 import { settings } from "../settings";
 import type { GuildConfigRow } from "../types";
 
@@ -68,8 +69,15 @@ async function tick(client: BotClient): Promise<void> {
         try {
             logger.debug(`Updating counter for guild ${guildConfig.guild_id}`);
             await updateCounterForGuild(client, guildConfig);
+            clearLogDedup(guildConfig.guild_id, "counter");
         } catch (err) {
             logger.error(err instanceof Error ? err : new Error(String(err)), { guild: guildConfig.guild_id });
+            await guildLog(client, guildConfig.guild_id, {
+                kind: "warning",
+                title: "⚠️ Couldn't update the live counter",
+                body: `The counter in <#${guildConfig.counter_channel_id}> wasn't updated: ${describeDiscordError(err)}.`,
+                dedupKey: "counter",
+            });
         }
     }
 }
