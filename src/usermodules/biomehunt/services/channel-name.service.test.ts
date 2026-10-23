@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
 import { initialChannelName, rareBadgeString, wantedChannelName } from "./channel-name.service";
 
 describe("rareBadgeString", () => {
@@ -66,5 +67,15 @@ describe("initialChannelName", () => {
             },
         };
         expect(await initialChannelName(true, 7, "masutty", deps)).toEqual({ name: "・masutty", badges: "" });
+    });
+});
+
+describe("custom badge emoji", () => {
+    afterEach(() => resetBiomeRegistry());
+
+    test("a custom emoji falls back to the default in the name and the strip list", () => {
+        setBiomeRegistry(getAllBiomes().map((b) => (b.key === "GLITCHED" ? { ...b, badgeEmoji: "<:glitch:123456>" } : b)));
+        expect(rareBadgeString([{ biome: "GLITCHED", count: 2 }])).toBe("🏅2");
+        expect(wantedChannelName("🏅2・x", "", "🏅3")).toBe("🏅3・x");
     });
 });

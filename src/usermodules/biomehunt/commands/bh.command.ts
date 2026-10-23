@@ -90,6 +90,7 @@ export default defineCommand({
         }
 
         if (sub === "rare-finds") {
+            // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
             const target = (await ctx.args.getMember("user")) ?? ctx.member;
             await ctx.defer();
             await openRareFindsView(ctx, ctx.guild.id, target);

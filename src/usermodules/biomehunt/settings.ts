@@ -15,8 +15,8 @@ export const settings = {
         channelNameTickMs: 60_000,
     },
     channelName: {
-        /** Discord allows 2 renames per channel per 10 minutes - one per 5 keeps well under it. */
-        minRenameGapMs: 5 * 60_000,
+        /** Discord allows 2 renames per channel per 10 minutes - one per 6 keeps a margin under it. */
+        minRenameGapMs: 6 * 60_000,
         /** Renames across all servers in one tick, so turning the flag on in a big server never bursts. */
         maxRenamesPerTick: 5,
     },

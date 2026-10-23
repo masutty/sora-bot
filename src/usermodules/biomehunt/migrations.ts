@@ -526,6 +526,8 @@ ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS vote_decided_by VARCHAR(20
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_badges TEXT NOT NULL DEFAULT '';
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_renamed_at TIMESTAMPTZ;
 
+CREATE INDEX IF NOT EXISTS bh_biome_votes_event ON bh_biome_votes(event_id, created_at DESC);
+
 /* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
 CREATE TABLE IF NOT EXISTS bh_data_migrations (
     name       VARCHAR(80) PRIMARY KEY,

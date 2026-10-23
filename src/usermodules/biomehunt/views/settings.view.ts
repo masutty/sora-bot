@@ -318,7 +318,7 @@ export function settingsView(deps: SettingsDeps): ViewDefinition<SettingsState, 
             reset: async (c) => {
                 const values = await c.modal({
                     title: "Reset all settings",
-                    text: "Activity times, status roles, macro channel categories, auto-delete and the live counter and the log channel go back to their defaults. Members, channels and forwards stay.",
+                    text: "Activity times, status roles, macro channel categories, auto-delete, the live counter and the log channel go back to their defaults. Members, channels and forwards stay.",
                     fields: [{ key: "confirm", label: "Type reset to confirm", placeholder: "reset", required: true, maxLength: 10 }],
                 });
                 if (!values) return;

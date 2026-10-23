@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
 import { type RareFind, VoteStatus } from "../types";
 import { badgeEmojis, findsInSession, formatFindLine, forwardLink, macroLink } from "./rare-finds.service";
 
@@ -41,4 +42,14 @@ test("formatFindLine joins time, biome, result and links", () => {
         "<t:1767261600:t> · 🔥 **Glitched** · ✅ Real\n-# [Macro message](https://j/1) · [Forward](https://discord.com/channels/g/fc/fm)",
     );
     expect(formatFindLine("g", find("GLITCHED", { macroMessageId: null }))).toBe("<t:1767261600:t> · 🔥 **Glitched**");
+});
+
+test("badgeEmojis plain mode swaps a custom emoji for the default", () => {
+    setBiomeRegistry(getAllBiomes().map((b) => (b.key === "GLITCHED" ? { ...b, badgeEmoji: "<:glitch:123456>" } : b)));
+    try {
+        expect(badgeEmojis([find("GLITCHED")])).toBe("<:glitch:123456>");
+        expect(badgeEmojis([find("GLITCHED")], true)).toBe("🏅");
+    } finally {
+        resetBiomeRegistry();
+    }
 });

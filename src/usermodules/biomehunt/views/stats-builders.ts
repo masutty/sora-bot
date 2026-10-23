@@ -247,7 +247,7 @@ export function sessionsOnPage(data: ProfileData, page: number): ActivitySession
 
 /** Select-option label of a session: `#<id> · <duration> · <emojis>`, cut to Discord's 100 characters. */
 export function sessionOptionLabel(s: ActivitySessionRow, finds: RareFind[]): string {
-    const emojis = badgeEmojis(findsInSession(finds, s));
+    const emojis = badgeEmojis(findsInSession(finds, s), true);
     let label = "";
     for (const ch of `#${s.id} · ${formatTime(s.duration_seconds)}${emojis ? ` · ${emojis}` : ""}`) {
         if (label.length + ch.length > 100) break;

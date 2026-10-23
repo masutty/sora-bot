@@ -104,9 +104,9 @@ describe("channel name tick", () => {
         expect(stored).toEqual([{ userId: 1, badges: "🔥1" }]);
     });
 
-    test("waits 5 minutes between renames of one channel", async () => {
-        const recent = candidate(1, { renamedAt: new Date(NOW - 4 * MIN) });
-        const old = candidate(2, { renamedAt: new Date(NOW - 5 * MIN) });
+    test("waits 6 minutes between renames of one channel", async () => {
+        const recent = candidate(1, { renamedAt: new Date(NOW - 5 * MIN) });
+        const old = candidate(2, { renamedAt: new Date(NOW - 6 * MIN) });
         const { tick, renames } = setup([recent, old]);
         await tick();
         expect(renames.map((r) => r.channelId)).toEqual(["c2"]);

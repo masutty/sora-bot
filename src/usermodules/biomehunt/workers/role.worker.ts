@@ -43,6 +43,8 @@ async function handleJobFailure(
 
 /** The log post for a role the worker gave up on. */
 async function logRoleFailure(client: BotClient, job: RoleJobRow, err: unknown, discordUserId?: string): Promise<void> {
+    // The member left the server (Unknown Member) - nothing an admin can fix.
+    if ((err as { code?: unknown } | null)?.code === 10007) return;
     const member = discordUserId ? ` for <@${discordUserId}>` : "";
     const reason = describeDiscordError(err, { 50013: "it's above the bot's highest role", 10011: "the role no longer exists" });
     await guildLog(client, job.guild_id, {

@@ -1,4 +1,4 @@
-import { DEFAULT_BADGE_EMOJI } from "../constants/badges.constants";
+import { DEFAULT_BADGE_EMOJI, plainBadgeEmoji } from "../constants/badges.constants";
 import { getAllBiomes } from "../constants/biomes.constants";
 import { getClosedRareCounts } from "../repository/users.repository";
 import { macroChannelName } from "./macro-channel.service";
@@ -13,7 +13,7 @@ export function rareBadgeString(counts: RareCounts): string {
     const byBiome = new Map(counts.map((c) => [c.biome, c.count]));
     return getAllBiomes()
         .filter((b) => (byBiome.get(b.key) ?? 0) > 0)
-        .map((b) => `${b.badgeEmoji || DEFAULT_BADGE_EMOJI}${byBiome.get(b.key)}`)
+        .map((b) => `${plainBadgeEmoji(b.badgeEmoji)}${byBiome.get(b.key)}`)
         .join("");
 }
 
@@ -24,7 +24,7 @@ function stripBadgeTokens(name: string): string {
             DEFAULT_BADGE_EMOJI,
             ...getAllBiomes()
                 .filter((b) => b.category === "rare")
-                .map((b) => b.badgeEmoji || DEFAULT_BADGE_EMOJI),
+                .map((b) => plainBadgeEmoji(b.badgeEmoji)),
         ]),
     ];
     let rest = name;

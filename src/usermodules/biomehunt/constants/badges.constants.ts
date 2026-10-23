@@ -16,6 +16,11 @@ export const DELETED_BADGE: Badge = "DELETED";
 /** A biome badge's emoji when its biome sets none (`BiomeMeta.badgeEmoji`). */
 export const DEFAULT_BADGE_EMOJI = "🏅";
 
+/** A badge emoji for plain text (channel names, select labels) - a custom `<:name:id>` emoji doesn't render or round-trip there, so it falls back to the default. */
+export function plainBadgeEmoji(emoji: string | null | undefined): string {
+    return !emoji || /^<a?:/.test(emoji) ? DEFAULT_BADGE_EMOJI : emoji;
+}
+
 const DELETED_META: BadgeMeta = {
     slug: "deleted",
     emoji: "💀",

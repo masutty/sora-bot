@@ -30,12 +30,17 @@ export async function insertEventIfNew(
     return result.rows[0]?.id ?? null;
 }
 
+/** BIGSERIAL ids come back from pg as strings - session ids are numbers everywhere else. */
+function sessionRow<T extends ActivitySessionRow>(r: T): T {
+    return { ...r, id: Number(r.id), user_id: Number(r.user_id) };
+}
+
 export async function getLatestSession(client: PoolClient, userId: number): Promise<ActivitySessionRow | null> {
     const result = await client.query<ActivitySessionRow>(
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
         [userId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? sessionRow(result.rows[0]) : null;
 }
 
 export async function openNewSession(client: PoolClient, userId: number, at: Date): Promise<ActivitySessionRow> {
@@ -45,7 +50,7 @@ export async function openNewSession(client: PoolClient, userId: number, at: Dat
          RETURNING *`,
         [userId, at],
     );
-    return result.rows[0];
+    return sessionRow(result.rows[0]);
 }
 
 export async function extendSession(client: PoolClient, sessionId: number, at: Date): Promise<ActivitySessionRow> {
@@ -56,7 +61,7 @@ export async function extendSession(client: PoolClient, sessionId: number, at: D
          RETURNING *`,
         [sessionId, at],
     );
-    return result.rows[0];
+    return sessionRow(result.rows[0]);
 }
 
 /**
@@ -124,7 +129,7 @@ export async function getLatestSessionForUser(userId: number): Promise<ActivityS
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
         [userId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? sessionRow(result.rows[0]) : null;
 }
 
 /** Same as `getBiomeCounts`, but scoped to a single session's time range - used for the session-end report. */
@@ -153,7 +158,7 @@ export async function getSessionInGuild(
          WHERE s.id = $1 AND u.guild_id = $2`,
         [sessionId, guildId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? sessionRow(result.rows[0]) : null;
 }
 
 /** A user's sessions overlapping [from, to], newest first - one query for grouping a list of finds. */
@@ -170,7 +175,7 @@ export async function getRecentSessions(userId: number, limit: number): Promise<
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT $2`,
         [userId, limit],
     );
-    return result.rows;
+    return result.rows.map(sessionRow);
 }
 
 /** How many sessions a user has recorded. */
@@ -207,9 +212,9 @@ export async function decrementBiomeEvents(userId: number, biome: string, amount
     const result = await query<{ id: number }>(
         `DELETE FROM bh_activity_events
          WHERE id IN (
-             SELECT id FROM bh_activity_events
-             WHERE user_id = $1 AND biome = $2 AND event_type = 'started'
-             ORDER BY received_at DESC
+             SELECT e.id FROM bh_activity_events e
+             WHERE e.user_id = $1 AND e.biome = $2 AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
+             ORDER BY e.received_at DESC
              LIMIT $3
          )
          RETURNING id`,
@@ -411,7 +416,7 @@ export async function getLongestSessions(guildId: string, limit: number): Promis
         [guildId, limit],
     );
     return result.rows.map((r) => ({
-        id: r.id,
+        id: Number(r.id),
         discordUserId: r.discord_user_id,
         started_at: r.started_at,
         ended_at: r.ended_at,

@@ -28,12 +28,13 @@ let buildSessionContainer: View["buildSessionContainer"];
 let sessionView: View["sessionView"];
 let openSessionView: View["openSessionView"];
 let openSessionFromTab: View["openSessionFromTab"];
+let findsQuote: View["findsQuote"];
 afterAll(() => {
     mock.module("../repository/activity.repository", () => realRepo);
     mock.module("../services/rare-finds.service", () => realFinds);
 });
 beforeAll(async () => {
-    ({ buildSessionContainer, sessionView, openSessionView, openSessionFromTab } = await import("./session.view"));
+    ({ buildSessionContainer, sessionView, openSessionView, openSessionFromTab, findsQuote } = await import("./session.view"));
 });
 
 const session: ActivitySessionRow = {
@@ -146,4 +147,15 @@ test("openSessionFromTab: ignores ids off the page, notifies on a missing sessio
     expect(JSON.stringify(fake.lastPayload().components)).toContain(":back");
     await fake.emit(fake.click("back", "owner"));
     expect(JSON.stringify(fake.lastPayload().components)).toContain("sessions:2");
+});
+
+test("findsQuote keeps the Rare finds text under the limit and ends with the remainder", () => {
+    const finds = Array.from({ length: 60 }, (_, i) => ({ biome: `B${i}-${"x".repeat(80)}`, eventId: i }) as unknown as RareFind);
+    const quote = findsQuote("g1", finds);
+    expect(quote.length).toBeLessThan(3600);
+    const last = quote.split("\n").at(-1) ?? "";
+    expect(last).toMatch(/^> …and \d+ more$/);
+    const shown = quote.split("\n").filter((l) => l.startsWith("> <t:")).length;
+    expect(shown + Number(/\d+/.exec(last)?.[0])).toBe(60);
+    expect(findsQuote("g1", finds.slice(0, 2))).not.toContain("more");
 });

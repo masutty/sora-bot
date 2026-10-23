@@ -140,3 +140,17 @@ test("getSessionInGuild scopes the session to the guild through its user", async
     nextRows = [];
     expect(await repo.getSessionInGuild("g2", 7)).toBeNull();
 });
+
+test("session queries return numeric ids from the string BIGSERIAL rows", async () => {
+    const row = { id: "14", user_id: "3", started_at: new Date(), ended_at: new Date(), duration_seconds: 5 };
+    nextRows = [row];
+    expect((await repo.getRecentSessions(3, 10))[0]).toMatchObject({ id: 14, user_id: 3 });
+    expect((await repo.getSessionInGuild("g", 14))?.id).toBe(14);
+    expect((await repo.getLatestSessionForUser(3))?.id).toBe(14);
+    expect((await repo.getLongestSessions("g", 5))[0].id).toBe(14);
+});
+
+test("decrementBiomeEvents only removes counted (non-fake) finds", async () => {
+    await repo.decrementBiomeEvents(1, "GLITCHED", 1);
+    expect(sent[0]).toContain(repo.NOT_FAKE_SQL);
+});
