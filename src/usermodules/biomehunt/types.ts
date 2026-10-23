@@ -349,3 +349,25 @@ export interface NetworkAlertRow {
     notified: boolean;
     created_at: Date;
 }
+
+/** One rare-biome find with its newest local vote - fake finds included (the history lists them on purpose). */
+export interface RareFind {
+    /** `null` for an old Deny, when the event was deleted with the vote. */
+    eventId: number | null;
+    biome: string;
+    /** `received_at`, or the vote's `created_at` when the event is gone. */
+    at: Date;
+    /** The event's Discord message id - `null` for `adm-` ids and gone events. */
+    macroMessageId: string | null;
+    macroChannelId: string | null;
+    vote: {
+        id: string;
+        status: VoteStatus;
+        decidedBy: string | null;
+        channelId: string;
+        messageId: string;
+        jumpLink: string;
+        real: number;
+        fake: number;
+    } | null;
+}

@@ -1,0 +1,60 @@
+import { unix } from "@/utils/format";
+import { DEFAULT_BADGE_EMOJI } from "../constants/badges.constants";
+import { formatBiomeName, getAllBiomes, getBiomeMeta, getBiomesByCategory } from "../constants/biomes.constants";
+import { getRareFinds } from "../repository/activity.repository";
+import { type ActivitySessionRow, type RareFind, VoteStatus } from "../types";
+import { findResultLabel } from "../views/vote-outcome";
+
+/** Every rare find of a user, newest first - fake ones included. */
+export function loadRareFinds(userId: number): Promise<RareFind[]> {
+    return getRareFinds(userId, getBiomesByCategory("rare"));
+}
+
+/** True when the find's newest vote ruled it fake (community or admin). */
+export function isFake(f: RareFind): boolean {
+    return f.vote?.status === VoteStatus.COMMUNITY_FAKE || f.vote?.status === VoteStatus.ADMIN_DENIED;
+}
+
+/** The finds that happened during a session, bounds included. */
+export function findsInSession(finds: RareFind[], s: Pick<ActivitySessionRow, "started_at" | "ended_at">): RareFind[] {
+    const from = s.started_at.getTime();
+    const to = s.ended_at.getTime();
+    return finds.filter((f) => f.at.getTime() >= from && f.at.getTime() <= to);
+}
+
+const emojiOf = (biome: string) => getBiomeMeta(biome)?.badgeEmoji || DEFAULT_BADGE_EMOJI;
+
+/** Badge emojis of the non-fake finds in registry order: repeats joined, biomes space-separated. */
+export function badgeEmojis(finds: RareFind[]): string {
+    const counts = new Map<string, number>();
+    for (const f of finds) if (!isFake(f)) counts.set(f.biome, (counts.get(f.biome) ?? 0) + 1);
+    const keys = getAllBiomes().map((b) => b.key);
+    const rank = (b: string) => (keys.includes(b) ? keys.indexOf(b) : keys.length);
+    return [...counts.keys()]
+        .sort((a, b) => rank(a) - rank(b))
+        .map((biome) => emojiOf(biome).repeat(counts.get(biome) ?? 0))
+        .join(" ");
+}
+
+/** Link to the macro's own message - the vote's `jump_link`, else built from the event and the macro channel. */
+export function macroLink(guildId: string, f: RareFind): string | null {
+    if (f.vote?.jumpLink) return f.vote.jumpLink;
+    if (!f.macroChannelId || !f.macroMessageId || f.macroMessageId.startsWith("adm-")) return null;
+    return `https://discord.com/channels/${guildId}/${f.macroChannelId}/${f.macroMessageId}`;
+}
+
+/** Link to the forward post - absent when the find had no vote. */
+export function forwardLink(guildId: string, f: RareFind): string | null {
+    return f.vote ? `https://discord.com/channels/${guildId}/${f.vote.channelId}/${f.vote.messageId}` : null;
+}
+
+/** One find as `<time> · <emoji> **<Biome>** · <result>` plus a subtext line with its links. */
+export function formatFindLine(guildId: string, f: RareFind): string {
+    const head = [`<t:${unix(f.at)}:t>`, `${emojiOf(f.biome)} **${formatBiomeName(f.biome)}**`, findResultLabel(f.vote)]
+        .filter(Boolean)
+        .join(" · ");
+    const macro = macroLink(guildId, f);
+    const forward = forwardLink(guildId, f);
+    const links = [macro && `[Macro message](${macro})`, forward && `[Forward](${forward})`].filter(Boolean);
+    return links.length ? `${head}\n-# ${links.join(" · ")}` : head;
+}

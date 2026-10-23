@@ -1,7 +1,7 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
 import { newTraceRef } from "@/utils/trace";
-import type { ActivitySessionRow } from "../types";
+import type { ActivitySessionRow, RareFind, VoteStatus } from "../types";
 
 /**
  * SQL predicate over an events alias `e`: true unless the event's newest vote ruled it fake
@@ -410,4 +410,73 @@ export async function getUserLongestSessionRank(
         [guildId, longestSeconds],
     );
     return { rank: Number(result.rows[0].rank), totalSessions: Number(result.rows[0].total), longestSeconds };
+}
+
+interface RareFindRow {
+    event_id: number | null;
+    biome: string;
+    at: Date;
+    macro_message_id: string | null;
+    macro_channel_id: string | null;
+    vote_id: string | null;
+    status: VoteStatus | null;
+    decided_by: string | null;
+    vote_channel_id: string | null;
+    vote_message_id: string | null;
+    jump_link: string | null;
+    real: string | number | null;
+    fake: string | number | null;
+}
+
+/**
+ * A user's rare finds, newest first: every rare `started` event with its newest vote, plus the
+ * votes of old Denies whose event is gone (`event_id IS NULL`). Fake finds are NOT filtered -
+ * the history lists them; callers decide visibility.
+ */
+export async function getRareFinds(userId: number, rareBiomes: string[]): Promise<RareFind[]> {
+    const result = await query<RareFindRow>(
+        `SELECT e.id AS event_id, e.biome, e.received_at AS at,
+                CASE WHEN e.discord_message_id LIKE 'adm-%' THEN NULL ELSE e.discord_message_id END AS macro_message_id,
+                mc.channel_id AS macro_channel_id,
+                v.id AS vote_id, v.status, v.decided_by, v.channel_id AS vote_channel_id, v.message_id AS vote_message_id, v.jump_link,
+                COALESCE(b.real, 0) AS real, COALESCE(b.fake, 0) AS fake
+         FROM bh_activity_events e
+         LEFT JOIN bh_user_macro_channels mc ON mc.user_id = e.user_id
+         LEFT JOIN LATERAL (
+             SELECT * FROM bh_biome_votes v WHERE v.event_id = e.id ORDER BY v.created_at DESC LIMIT 1
+         ) v ON TRUE
+         LEFT JOIN LATERAL (
+             SELECT COUNT(*) FILTER (WHERE choice = 'real') AS real, COUNT(*) FILTER (WHERE choice = 'fake') AS fake
+             FROM bh_biome_vote_ballots WHERE vote_id = v.id
+         ) b ON TRUE
+         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome = ANY($2)
+         UNION ALL
+         SELECT NULL, v.biome, v.created_at, NULL, NULL,
+                v.id, v.status, v.decided_by, v.channel_id, v.message_id, v.jump_link,
+                (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'real'),
+                (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'fake')
+         FROM bh_biome_votes v
+         WHERE v.event_id IS NULL AND v.finder_user_id = $1 AND v.biome = ANY($2)
+         ORDER BY at DESC`,
+        [userId, rareBiomes],
+    );
+    return result.rows.map((r) => ({
+        eventId: r.event_id,
+        biome: r.biome,
+        at: r.at,
+        macroMessageId: r.macro_message_id,
+        macroChannelId: r.macro_channel_id,
+        vote: r.vote_id
+            ? {
+                  id: r.vote_id,
+                  status: r.status as VoteStatus,
+                  decidedBy: r.decided_by,
+                  channelId: r.vote_channel_id as string,
+                  messageId: r.vote_message_id as string,
+                  jumpLink: r.jump_link as string,
+                  real: Number(r.real ?? 0),
+                  fake: Number(r.fake ?? 0),
+              }
+            : null,
+    }));
 }
