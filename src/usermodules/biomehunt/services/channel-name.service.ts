@@ -17,13 +17,32 @@ export function rareBadgeString(counts: RareCounts): string {
         .join("");
 }
 
+/** The name minus a leading run of badge tokens (`<rare badge emoji><digits>`) - what a rename left behind when its badges were never stored. */
+function stripBadgeTokens(name: string): string {
+    const emojis = [
+        ...new Set([
+            DEFAULT_BADGE_EMOJI,
+            ...getAllBiomes()
+                .filter((b) => b.category === "rare")
+                .map((b) => b.badgeEmoji || DEFAULT_BADGE_EMOJI),
+        ]),
+    ];
+    let rest = name;
+    for (;;) {
+        const emoji = emojis.find((e) => rest.startsWith(e));
+        const digits = emoji ? /^[0-9]+/.exec(rest.slice(emoji.length))?.[0] : undefined;
+        if (!emoji || !digits) return rest;
+        rest = rest.slice(emoji.length + digits.length);
+    }
+}
+
 /**
  * The name a macro channel should have: `badges` + its base. The base is the current name minus the
- * stored badges prefix; a name that doesn't start with them (an admin rename) is kept whole. The
- * base is cut to fit 100 characters, the badges never.
+ * stored badges prefix; a name that doesn't start with them (an admin rename) keeps its text, minus
+ * any leading badge tokens a half-saved rename left. The base is cut to fit 100 characters, the badges never.
  */
 export function wantedChannelName(current: string, storedBadges: string, badges: string): string {
-    const base = storedBadges && current.startsWith(storedBadges) ? current.slice(storedBadges.length) : current;
+    const base = storedBadges && current.startsWith(storedBadges) ? current.slice(storedBadges.length) : stripBadgeTokens(current);
     const room = Math.max(0, MAX_NAME_LENGTH - badges.length);
     return `${badges}${Array.from(base).reduce((out, ch) => (out.length + ch.length <= room ? out + ch : out), "")}`;
 }

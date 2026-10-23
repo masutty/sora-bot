@@ -18,6 +18,8 @@ export interface ChannelNameDeps {
     /** The cached channel - null when the server or the channel isn't in the cache. */
     getChannel(guildId: string, channelId: string): { name: string; setName(name: string): Promise<unknown> } | null;
     canManageChannels(guildId: string): boolean;
+    /** Manage Channels on this one channel (its own overwrites included). */
+    canManageChannel(guildId: string, channelId: string): boolean;
     /** Tells the server's log channel the renames fail. */
     warn(guildId: string): Promise<void>;
     clearWarn(guildId: string): void;
@@ -28,13 +30,19 @@ const isMissingPermission = (err: unknown) => typeof err === "object" && err !==
 /** Builds the tick. The servers the bot can't rename in are kept in memory, so a restart tries them once more. */
 export function createChannelNameTick(deps: ChannelNameDeps): () => Promise<void> {
     const noPermission = new Set<string>();
+    /** Channels whose own permissions refused a rename while the server's allowed it. */
+    const channelDenied = new Map<string, string>();
+    /** When each channel was last tried, so a failing one waits the gap too. */
+    const attemptedAt = new Map<string, number>();
     const { minRenameGapMs, maxRenamesPerTick } = settings.channelName;
 
     return async () => {
         for (const guildId of [...noPermission]) {
             if (!deps.canManageChannels(guildId)) continue;
             noPermission.delete(guildId);
-            deps.clearWarn(guildId);
+        }
+        for (const [channelId, guildId] of [...channelDenied]) {
+            if (deps.canManageChannel(guildId, channelId)) channelDenied.delete(channelId);
         }
 
         const candidates = await deps.getCandidates();
@@ -44,8 +52,10 @@ export function createChannelNameTick(deps: ChannelNameDeps): () => Promise<void
 
         for (const c of candidates) {
             if (renamed >= maxRenamesPerTick) break;
-            if (noPermission.has(c.guildId)) continue;
+            if (noPermission.has(c.guildId) || channelDenied.has(c.channelId)) continue;
             if (c.renamedAt && now - c.renamedAt.getTime() < minRenameGapMs) continue;
+            const attempted = attemptedAt.get(c.channelId);
+            if (attempted !== undefined && now - attempted < minRenameGapMs) continue;
 
             const channel = deps.getChannel(c.guildId, c.channelId);
             if (!channel) continue;
@@ -55,13 +65,15 @@ export function createChannelNameTick(deps: ChannelNameDeps): () => Promise<void
             if (wanted === channel.name) continue;
 
             renamed++;
+            attemptedAt.set(c.channelId, now);
             try {
                 await channel.setName(wanted);
                 await deps.setNameBadges(c.userId, badges);
-                if (noPermission.delete(c.guildId)) deps.clearWarn(c.guildId);
+                deps.clearWarn(c.guildId);
             } catch (err) {
                 if (isMissingPermission(err)) {
-                    noPermission.add(c.guildId);
+                    if (deps.canManageChannels(c.guildId)) channelDenied.set(c.channelId, c.guildId);
+                    else noPermission.add(c.guildId);
                     await deps.warn(c.guildId);
                 } else {
                     logger.error(err instanceof Error ? err : new Error(String(err)), { guild: c.guildId, channel: c.channelId });
@@ -83,6 +95,11 @@ function defaultDeps(client: BotClient): ChannelNameDeps {
         },
         canManageChannels: (guildId) =>
             client.guilds.cache.get(guildId)?.members.me?.permissions.has(PermissionFlagsBits.ManageChannels) ?? false,
+        canManageChannel: (guildId, channelId) => {
+            const guild = client.guilds.cache.get(guildId);
+            const channel = guild?.channels.cache.get(channelId);
+            return (guild?.members.me && channel?.permissionsFor(guild.members.me)?.has(PermissionFlagsBits.ManageChannels)) ?? false;
+        },
         warn: (guildId) =>
             guildLog(client, guildId, {
                 kind: "warning",

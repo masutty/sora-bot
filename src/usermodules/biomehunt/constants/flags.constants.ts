@@ -21,11 +21,6 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
         description: "Posts in the member's macro channel when one of their rare finds is voted fake or denied.",
         default: false,
     },
-    RARE_COUNT_IN_CHANNEL_NAME: {
-        description:
-            "Puts each member's rare finds in their macro channel name, like `🔥3🌸1・masutty`. Changes show up within a few minutes.",
-        default: false,
-    },
     PING_ON_QUOTA_MET: {
         description: "Posts in the member's macro channel the moment they newly meet a quota role's target.",
         default: false,
@@ -47,6 +42,11 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
     EXPERIMENT_BIOME_ECONOMY: {
         on: "finding biomes earns Seeds and XP (shown on the profile), and Seeds can be spent (e.g. a paid Flower reroll).",
         off: "biome badges still work, but no Seeds/XP are earned or shown.",
+        default: false,
+    },
+    RARE_COUNT_IN_CHANNEL_NAME: {
+        description:
+            "Puts each member's rare finds in their macro channel name, like `🔥3🌸1・masutty`. Changes show up within a few minutes.",
         default: false,
     },
 };

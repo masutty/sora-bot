@@ -87,15 +87,23 @@ test("flags: renders the header, key + default and the right button per state", 
 test("flags menu no longer lists the two auto-delete flags", async () => {
     const { fake } = await open();
     expect(MENU_FLAGS).toEqual(ALL_FLAGS.filter((f) => f !== "AUTO_DELETE_ENABLED" && f !== "CLEAR_PROFILE_ON_AUTODELETE"));
-    expect(toggleCount(fake.lastPayload())).toBe(MENU_FLAGS.length);
+    expect(toggleCount(fake.lastPayload())).toBe(FLAGS_PER_PAGE);
+    await fake.emit(fake.click("next", OWNER));
+    expect(toggleCount(fake.lastPayload())).toBe(MENU_FLAGS.length - FLAGS_PER_PAGE);
+    await fake.emit(fake.click("first", OWNER));
     expect(text(fake.lastPayload())).not.toContain("AUTO_DELETE_ENABLED");
     expect(text(fake.lastPayload())).not.toContain("CLEAR_PROFILE_ON_AUTODELETE");
 });
 
-test("flags: paginates MENU_FLAGS - no pagination row while they fit one page", async () => {
+test("flags: paginates MENU_FLAGS - the flags past the first page are on page 2", async () => {
     const { fake } = await open();
-    expect(MENU_FLAGS.length).toBeLessThanOrEqual(FLAGS_PER_PAGE);
-    expect(() => comp(fake.lastPayload(), "jump")).toThrow();
+    expect(MENU_FLAGS.length).toBe(FLAGS_PER_PAGE + 1);
+    expect(toggleCount(fake.lastPayload())).toBe(FLAGS_PER_PAGE);
+    expect(comp(fake.lastPayload(), "jump")).toMatchObject({ label: "1 / 2" });
+    expect(() => comp(fake.lastPayload(), "toggle:RARE_COUNT_IN_CHANNEL_NAME")).toThrow();
+    await fake.emit(fake.click("next", OWNER));
+    expect(toggleCount(fake.lastPayload())).toBe(1);
+    expect(comp(fake.lastPayload(), "toggle:RARE_COUNT_IN_CHANNEL_NAME")).toMatchObject({ label: "Turn on" });
 });
 
 test("flags: a flag that explains both states shows On/Off subtext lines", async () => {

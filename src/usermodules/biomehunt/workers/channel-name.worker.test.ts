@@ -16,14 +16,18 @@ const candidate = (n: number, over: Partial<Candidate> = {}): Candidate => ({
     ...over,
 });
 
-function setup(candidates: Candidate[], opts: { missing?: string[]; denied?: string[]; canManage?: () => boolean } = {}) {
+function setup(
+    candidates: Candidate[],
+    opts: { missing?: string[]; denied?: string[]; failing?: string[]; canManage?: () => boolean; canManageChannel?: () => boolean } = {},
+) {
+    const clock = { now: NOW };
     const names = new Map(candidates.map((c) => [c.channelId, `${c.nameBadges}・u${c.userId}`]));
     const renames: Array<{ channelId: string; name: string }> = [];
     const stored: Array<{ userId: number; badges: string }> = [];
     const warned: string[] = [];
     const cleared: string[] = [];
     const deps: ChannelNameDeps = {
-        now: () => NOW,
+        now: () => clock.now,
         getCandidates: async () => candidates,
         getCounts: async (ids) => new Map(ids.map((id) => [id, [{ biome: "GLITCHED", count: 1 }]])),
         setNameBadges: async (userId, badges) => void stored.push({ userId, badges }),
@@ -33,18 +37,60 @@ function setup(candidates: Candidate[], opts: { missing?: string[]; denied?: str
                 : {
                       name: names.get(channelId) ?? "",
                       setName: async (name) => {
+                          if (opts.failing?.includes(channelId)) throw new Error("boom");
                           if (opts.denied?.includes(channelId)) throw Object.assign(new Error("Missing Permissions"), { code: 50013 });
                           renames.push({ channelId, name });
                       },
                   },
         canManageChannels: () => opts.canManage?.() ?? true,
+        canManageChannel: () => opts.canManageChannel?.() ?? true,
         warn: async (guildId) => void warned.push(guildId),
         clearWarn: (guildId) => void cleared.push(guildId),
     };
-    return { tick: createChannelNameTick(deps), renames, stored, warned, cleared };
+    return { clock, tick: createChannelNameTick(deps), renames, stored, warned, cleared };
 }
 
 describe("channel name tick", () => {
+    test("a channel whose rename fails waits the gap, and the others still get renamed", async () => {
+        const { tick, renames, clock } = setup(
+            [1, 2, 3, 4, 5, 6].map((n) => candidate(n)),
+            { failing: ["c1"] },
+        );
+        await tick();
+        expect(renames.map((r) => r.channelId)).toEqual(["c2", "c3", "c4", "c5"]);
+        await tick();
+        expect(renames.map((r) => r.channelId)).toContain("c6");
+        expect(renames.filter((r) => r.channelId === "c1")).toHaveLength(0);
+        clock.now += 5 * MIN;
+        await tick();
+        // c1 is tried again only after the gap (it fails again, so still no rename).
+        expect(renames.filter((r) => r.channelId === "c1")).toHaveLength(0);
+    });
+
+    test("a channel-level 50013 skips that channel, keeps the log warning once and renames the rest", async () => {
+        let channelOk = false;
+        const denied = ["c1"];
+        const { tick, renames, warned, cleared, clock } = setup([candidate(1), candidate(2)], {
+            denied,
+            canManageChannel: () => channelOk,
+        });
+        await tick();
+        expect(warned).toEqual(["g1"]);
+        expect(renames.map((r) => r.channelId)).toEqual(["c2"]);
+        clock.now += 10 * MIN;
+        await tick();
+        await tick();
+        expect(warned).toEqual(["g1"]);
+        expect(renames.filter((r) => r.channelId === "c1")).toHaveLength(0);
+        // The warning dedup is cleared only by a successful rename in the server.
+        expect(cleared).toContain("g1");
+        channelOk = true;
+        denied.length = 0;
+        clock.now += 10 * MIN;
+        await tick();
+        expect(renames.map((r) => r.channelId)).toContain("c1");
+    });
+
     test("renames at most 5 per tick", async () => {
         const { tick, renames } = setup([1, 2, 3, 4, 5, 6, 7].map((n) => candidate(n)));
         await tick();

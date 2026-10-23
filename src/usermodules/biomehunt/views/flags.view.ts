@@ -16,7 +16,7 @@ import { setGuildFlag } from "../repository/flags.repository";
 import type { FlagName } from "../types";
 
 /** Flags per page - each takes a line, a button and up to two description lines. */
-export const FLAGS_PER_PAGE = 6;
+export const FLAGS_PER_PAGE = 5;
 
 /** What the View needs that would otherwise be a DB write, injected so its tests never hit it. */
 export interface FlagsDeps {
@@ -87,7 +87,7 @@ function flagsContainer(state: FlagsState, kit: RenderKit): ContainerBuilder {
 }
 
 /**
- * `/admin flags`: the guild's flags, six per page, each with a Turn on / Turn off button.
+ * `/admin flags`: the guild's flags, five per page, each with a Turn on / Turn off button.
  * A click asks for confirmation on the same message (mobile misclicks); confirming saves the flag
  * and returns to the same page with the button flipped.
  */

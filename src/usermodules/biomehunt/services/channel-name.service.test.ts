@@ -31,6 +31,12 @@ describe("wantedChannelName", () => {
         expect(wantedChannelName("admin-name", "🔥3", "🔥4")).toBe("🔥4admin-name");
     });
 
+    test("stale stored badges never double", () => {
+        expect(wantedChannelName("🔥4・x", "🔥3", "🔥4")).toBe("🔥4・x");
+        expect(wantedChannelName("🔥4🌸1・x", "🔥3", "🔥4🌸1")).toBe("🔥4🌸1・x");
+        expect(wantedChannelName("🔥4・x", "", "🔥5")).toBe("🔥5・x");
+    });
+
     test("cuts the base, never the badges", () => {
         const name = wantedChannelName(`・${"a".repeat(95)}`, "", "🔥12");
         expect(name.length).toBe(100);
