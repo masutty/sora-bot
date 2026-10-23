@@ -13,11 +13,11 @@ const find = (biome: string, over: Partial<RareFind> = {}, status?: VoteStatus):
     ...over,
 });
 
-test("badgeEmojis groups repeats, orders by registry and skips fakes", () => {
+test("badgeEmojis groups repeats, orders by registry, skips fakes and biomes with no badge emoji", () => {
     const finds = [find("SINGULARITY"), find("GLITCHED"), find("GLITCHED"), find("GLITCHED", {}, VoteStatus.COMMUNITY_FAKE)];
-    expect(badgeEmojis(finds)).toBe("🔥🔥 🏅");
+    expect(badgeEmojis(finds)).toBe("🔥🔥");
     expect(badgeEmojis([find("GLITCHED", {}, VoteStatus.ADMIN_DENIED)])).toBe("");
-    expect(badgeEmojis([find("MYSTERY"), find("GLITCHED")])).toBe("🔥 🏅");
+    expect(badgeEmojis([find("MYSTERY"), find("GLITCHED")])).toBe("🔥");
 });
 
 test("findsInSession includes both boundaries", () => {
@@ -44,11 +44,11 @@ test("formatFindLine joins time, biome, result and links", () => {
     expect(formatFindLine("g", find("GLITCHED", { macroMessageId: null }))).toBe("<t:1767261600:t> · 🔥 **Glitched**");
 });
 
-test("badgeEmojis plain mode swaps a custom emoji for the default", () => {
+test("badgeEmojis plain mode leaves out a custom emoji", () => {
     setBiomeRegistry(getAllBiomes().map((b) => (b.key === "GLITCHED" ? { ...b, badgeEmoji: "<:glitch:123456>" } : b)));
     try {
         expect(badgeEmojis([find("GLITCHED")])).toBe("<:glitch:123456>");
-        expect(badgeEmojis([find("GLITCHED")], true)).toBe("🏅");
+        expect(badgeEmojis([find("GLITCHED")], true)).toBe("");
     } finally {
         resetBiomeRegistry();
     }
