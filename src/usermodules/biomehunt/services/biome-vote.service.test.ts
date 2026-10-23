@@ -635,3 +635,16 @@ test("a fake close and an admin deny report what was reverted; a real close repo
     expect(calls.reported).toHaveLength(2);
     expect(calls.reported[1].status).toBe(VoteStatus.ADMIN_DENIED);
 });
+
+test("a failing fake-find report is not logged as an outcome failure", async () => {
+    const { deps, calls } = createFakeDeps();
+    deps.reportFakeFind = async () => {
+        throw new Error("boom");
+    };
+    const vote = await seedOpenVote(deps);
+    const { client } = fakeClient();
+    const logSpy = spyOn(Logger.prototype, "error").mockImplementation(() => {});
+    await expect(adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps)).rejects.toThrow("boom");
+    expect(calls.logged).toHaveLength(0);
+    logSpy.mockRestore();
+});

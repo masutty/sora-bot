@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { type BiomeVoteBallotRow, type BiomeVoteRow, VoteChoice, VoteStatus } from "../types";
 import { type FakeFindDeps, reportFakeFind } from "./fake-find.service";
@@ -30,7 +31,7 @@ function vote(overrides: Partial<BiomeVoteRow> = {}): BiomeVoteRow {
     };
 }
 
-function setup(opts: { flag?: boolean; macro?: boolean; ballots?: VoteChoice[] } = {}) {
+function setup(opts: { flag?: boolean; macro?: boolean; ballots?: VoteChoice[]; receivedAt?: Date; fetchFails?: boolean } = {}) {
     const reported = new Set<string>();
     const macroPosts: unknown[] = [];
     const logged: GuildLogEntry[] = [];
@@ -43,6 +44,7 @@ function setup(opts: { flag?: boolean; macro?: boolean; ballots?: VoteChoice[] }
         isFlagEnabled: async () => opts.flag ?? true,
         getMacroChannelByUserId: async () => (opts.macro === false ? null : ({ channel_id: "mc" } as never)),
         getUserById: async () => null,
+        getEventReceivedAt: async () => opts.receivedAt ?? null,
         getBallotsForVote: async () => (opts.ballots ?? []).map((choice) => ({ choice }) as BiomeVoteBallotRow),
         log: async (_c, _g, entry) => {
             logged.push(entry);
@@ -55,7 +57,14 @@ function setup(opts: { flag?: boolean; macro?: boolean; ballots?: VoteChoice[] }
             macroPosts.push(p);
         },
     };
-    const client = { channels: { fetch: async () => channel } } as unknown as BotClient;
+    const client = {
+        channels: {
+            fetch: async () => {
+                if (opts.fetchFails) throw new Error("Unknown Channel");
+                return channel;
+            },
+        },
+    } as unknown as BotClient;
     return { deps, client, macroPosts, logged };
 }
 
@@ -94,4 +103,33 @@ test("the tally counts real and fake ballots", async () => {
     const { deps, client, logged } = setup({ ballots: [VoteChoice.FAKE, VoteChoice.FAKE, VoteChoice.REAL] });
     await reportFakeFind(client, vote({ status: VoteStatus.COMMUNITY_FAKE, decided_by: null }), reverted, deps);
     expect(logged[0].body).toContain("`✅ 1` `❌ 2`");
+});
+
+test("the quote uses the event's received_at, not the vote's created_at", async () => {
+    const { deps, client, logged } = setup({ receivedAt: new Date("2026-03-01T00:00:00Z") });
+    await reportFakeFind(client, vote(), reverted, deps);
+    expect(logged[0].body).toContain("<t:1772323200:f>");
+    expect(logged[0].body).not.toContain("<t:1767225600:f>");
+});
+
+test("falls back to the vote's created_at when the event can't be read", async () => {
+    const { deps, client, logged } = setup();
+    await reportFakeFind(client, vote(), reverted, deps);
+    expect(logged[0].body).toContain("<t:1767225600:f>");
+});
+
+test("the macro post is a components v2 container with no pings", async () => {
+    const { deps, client, macroPosts } = setup();
+    await reportFakeFind(client, vote(), reverted, deps);
+    const post = macroPosts[0] as { flags: number; components: unknown[]; allowedMentions: unknown };
+    expect(post.flags).toBe(MessageFlags.IsComponentsV2);
+    expect(post.components).toHaveLength(1);
+    expect(post.allowedMentions).toEqual({ parse: [] });
+});
+
+test("a failing macro channel fetch with the flag on doesn't throw and still logs", async () => {
+    const { deps, client, macroPosts, logged } = setup({ fetchFails: true });
+    await reportFakeFind(client, vote(), reverted, deps);
+    expect(macroPosts).toHaveLength(0);
+    expect(logged).toHaveLength(1);
 });

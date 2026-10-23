@@ -2,6 +2,7 @@ import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
+import { getEventReceivedAt } from "../repository/activity.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getMacroChannelByUserId, getUserById } from "../repository/users.repository";
 import { getBallotsForVote, markFakeReported } from "../repository/votes.repository";
@@ -17,12 +18,13 @@ export interface FakeFindDeps {
     isFlagEnabled: typeof isFlagEnabled;
     getMacroChannelByUserId: typeof getMacroChannelByUserId;
     getUserById: typeof getUserById;
+    getEventReceivedAt: typeof getEventReceivedAt;
     getBallotsForVote: typeof getBallotsForVote;
     log: typeof guildLog;
 }
 
 export function defaultFakeFindDeps(): FakeFindDeps {
-    return { markFakeReported, isFlagEnabled, getMacroChannelByUserId, getUserById, getBallotsForVote, log: guildLog };
+    return { markFakeReported, isFlagEnabled, getMacroChannelByUserId, getUserById, getEventReceivedAt, getBallotsForVote, log: guildLog };
 }
 
 /** What `applyOutcome` took back from a fake or denied find. */
@@ -53,7 +55,7 @@ export async function reportFakeFind(
             audience: "member",
             biome: vote.biome,
             finderDiscordId,
-            at: vote.created_at,
+            at: (vote.event_id === null ? null : await deps.getEventReceivedAt(vote.event_id).catch(() => null)) ?? vote.created_at,
             status: vote.status,
             decidedBy: vote.decided_by,
             tally: { real, fake: ballots.length - real },
@@ -64,12 +66,18 @@ export async function reportFakeFind(
         };
 
         if (await deps.isFlagEnabled(vote.guild_id, "REPORT_FAKE_FINDS")) {
-            const macroChannel = await deps.getMacroChannelByUserId(vote.finder_user_id);
-            const channel = macroChannel ? await client.channels.fetch(macroChannel.channel_id).catch(() => null) : null;
-            if (channel && !channel.isDMBased() && channel.isTextBased()) {
-                await channel
-                    .send({ flags: MessageFlags.IsComponentsV2, components: [buildFakeFindContainer(input)], allowedMentions: NO_PINGS })
-                    .catch((err) => logger.warn("Could not post the fake-find report", { voteId: vote.id, error: String(err) }));
+            try {
+                const macroChannel = await deps.getMacroChannelByUserId(vote.finder_user_id);
+                const channel = macroChannel ? await client.channels.fetch(macroChannel.channel_id).catch(() => null) : null;
+                if (channel && !channel.isDMBased() && channel.isTextBased()) {
+                    await channel.send({
+                        flags: MessageFlags.IsComponentsV2,
+                        components: [buildFakeFindContainer(input)],
+                        allowedMentions: NO_PINGS,
+                    });
+                }
+            } catch (err) {
+                logger.warn("Could not post the fake-find report", { voteId: vote.id, error: String(err) });
             }
         }
 

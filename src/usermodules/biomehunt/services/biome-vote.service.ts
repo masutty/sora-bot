@@ -220,9 +220,9 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
  * itself idempotent). A fake/denied outcome that applied is then reported (see `reportFakeFind`).
  */
 async function applyOutcomeSafely(client: BotClient, vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+    let reverted: RevertedRewards | null = null;
     try {
-        const reverted = await applyOutcome(vote, deps);
-        if (reverted) await deps.reportFakeFind(client, vote, reverted);
+        reverted = await applyOutcome(vote, deps);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,
@@ -235,6 +235,8 @@ async function applyOutcomeSafely(client: BotClient, vote: BiomeVoteRow, deps: V
             body: `**${formatBiomeName(vote.biome)}**${from}: the vote closed as ${vote.status} but its rewards weren't updated. Run \`/admin review-voting ${vote.id}\` to apply them.`,
         });
     }
+    // Outside the try: a report failure is not an outcome failure (and `reportFakeFind` never throws).
+    if (reverted) await deps.reportFakeFind(client, vote, reverted);
 }
 
 /** Fetches the vote's own forward message, or `null` if the channel/message is gone (best-effort - a missing message never fails the caller). */

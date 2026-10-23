@@ -239,6 +239,12 @@ export async function eventExists(eventId: number): Promise<boolean> {
     return (result.rowCount ?? 0) > 0;
 }
 
+/** When the bot received the event (the find time), or `null` once it is gone. */
+export async function getEventReceivedAt(eventId: number): Promise<Date | null> {
+    const result = await query<{ received_at: Date }>(`SELECT received_at FROM bh_activity_events WHERE id = $1`, [eventId]);
+    return result.rows[0]?.received_at ?? null;
+}
+
 /**
  * Server-wide stats for one biome, shown on its forward: how many "started" finds the guild has
  * (the current find included, once inserted) and when the last one OTHER than `excludeEventId`
