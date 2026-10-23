@@ -8,6 +8,7 @@ import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
 import { buildBalanceReply } from "../views/balance.view";
 import { openProfileView } from "../views/profile.view";
+import { openRareFindsView } from "../views/rare-finds.view";
 import { openRerollView } from "../views/reroll.view";
 import { openSessionView } from "../views/session.view";
 
@@ -53,6 +54,12 @@ export default defineCommand({
         )
         .addSubcommand((sub) =>
             sub
+                .setName("rare-finds")
+                .setDescription("View a member's rare biome finds.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose rare finds to view (defaults to yourself)")),
+        )
+        .addSubcommand((sub) =>
+            sub
                 .setName("balance")
                 .setDescription("View your Seeds and level, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),
@@ -79,6 +86,13 @@ export default defineCommand({
         if (sub === "session") {
             await ctx.defer();
             await openSessionView(ctx, ctx.guild.id, ctx.args.getInteger("id", true));
+            return;
+        }
+
+        if (sub === "rare-finds") {
+            const target = (await ctx.args.getMember("user")) ?? ctx.member;
+            await ctx.defer();
+            await openRareFindsView(ctx, ctx.guild.id, target);
             return;
         }
 

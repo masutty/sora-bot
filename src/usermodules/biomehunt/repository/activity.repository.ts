@@ -156,6 +156,15 @@ export async function getSessionInGuild(
     return result.rows[0] ?? null;
 }
 
+/** A user's sessions overlapping [from, to], newest first - one query for grouping a list of finds. */
+export async function getSessionsCovering(userId: number, from: Date, to: Date): Promise<ActivitySessionRow[]> {
+    const result = await query<ActivitySessionRow>(
+        `SELECT * FROM bh_activity_sessions WHERE user_id = $1 AND started_at <= $3 AND ended_at >= $2 ORDER BY started_at DESC`,
+        [userId, from, to],
+    );
+    return result.rows.map((r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id) }));
+}
+
 export async function getRecentSessions(userId: number, limit: number): Promise<ActivitySessionRow[]> {
     const result = await query<ActivitySessionRow>(
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT $2`,
