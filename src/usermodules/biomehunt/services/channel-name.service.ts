@@ -8,12 +8,17 @@ const MAX_NAME_LENGTH = 100;
 
 export type RareCounts = Array<{ biome: string; count: number }>;
 
-/** `<emoji><count>` per rare biome with a count above 0, in registry order - `🔥3🌸1`. Empty when there is none. */
+/** A biome's configured badge emoji if a channel name can show it (unicode) - `null` when unset or custom (`<:x:id>`). */
+function channelBadgeEmoji(emoji: string | null | undefined): string | null {
+    return emoji && !/^<a?:/.test(emoji) ? emoji : null;
+}
+
+/** `<emoji><count>` per rare biome with a count above 0 and its own badge emoji, in registry order - `🔥3🌸1`. Empty when there is none. */
 export function rareBadgeString(counts: RareCounts): string {
     const byBiome = new Map(counts.map((c) => [c.biome, c.count]));
     return getAllBiomes()
-        .filter((b) => (byBiome.get(b.key) ?? 0) > 0)
-        .map((b) => `${plainBadgeEmoji(b.badgeEmoji)}${byBiome.get(b.key)}`)
+        .filter((b) => (byBiome.get(b.key) ?? 0) > 0 && channelBadgeEmoji(b.badgeEmoji))
+        .map((b) => `${channelBadgeEmoji(b.badgeEmoji)}${byBiome.get(b.key)}`)
         .join("");
 }
 

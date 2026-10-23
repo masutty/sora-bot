@@ -73,9 +73,15 @@ describe("initialChannelName", () => {
 describe("custom badge emoji", () => {
     afterEach(() => resetBiomeRegistry());
 
-    test("a custom emoji falls back to the default in the name and the strip list", () => {
+    test("a biome with a custom or no badge emoji is left out of the name, and old 🏅 tokens are still stripped", () => {
         setBiomeRegistry(getAllBiomes().map((b) => (b.key === "GLITCHED" ? { ...b, badgeEmoji: "<:glitch:123456>" } : b)));
-        expect(rareBadgeString([{ biome: "GLITCHED", count: 2 }])).toBe("🏅2");
-        expect(wantedChannelName("🏅2・x", "", "🏅3")).toBe("🏅3・x");
+        expect(rareBadgeString([{ biome: "GLITCHED", count: 2 }])).toBe("");
+        expect(
+            rareBadgeString([
+                { biome: "SINGULARITY", count: 1 },
+                { biome: "DREAMSPACE", count: 1 },
+            ]),
+        ).toBe("🌸1");
+        expect(wantedChannelName("🏅2・x", "", "")).toBe("・x");
     });
 });
