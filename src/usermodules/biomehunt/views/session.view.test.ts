@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, mock, test } from "bun:test";
-import { createFakeViewTransport, type ViewPayload } from "@/define";
+import { createFakeViewTransport, defineView, type ViewPayload } from "@/define";
 import * as realRepo from "../repository/activity.repository";
 import * as realFinds from "../services/rare-finds.service";
 import type { ActivitySessionRow, RareFind } from "../types";
@@ -27,12 +27,13 @@ type View = typeof import("./session.view");
 let buildSessionContainer: View["buildSessionContainer"];
 let sessionView: View["sessionView"];
 let openSessionView: View["openSessionView"];
+let openSessionFromTab: View["openSessionFromTab"];
 afterAll(() => {
     mock.module("../repository/activity.repository", () => realRepo);
     mock.module("../services/rare-finds.service", () => realFinds);
 });
 beforeAll(async () => {
-    ({ buildSessionContainer, sessionView, openSessionView } = await import("./session.view"));
+    ({ buildSessionContainer, sessionView, openSessionView, openSessionFromTab } = await import("./session.view"));
 });
 
 const session: ActivitySessionRow = {
@@ -110,4 +111,39 @@ test("unknown or other-guild id shows the error", async () => {
 
     await openSessionView(ctx as never, "g1", 7);
     expect(opened).toHaveLength(1);
+});
+
+test("openSessionFromTab: ignores ids off the page, notifies on a missing session, opens the child and leaves the tab as it was", async () => {
+    const loaded: number[] = [];
+    const deps = {
+        loadSessionInput: async (_g: string, id: number) => {
+            loaded.push(id);
+            return id === 7 ? input([]) : null;
+        },
+    };
+    const notes: string[] = [];
+    const notify = async (m: string) => void notes.push(m);
+    const host = defineView<{ tab: string; page: number }, void, void>({
+        name: "test.host",
+        initial: () => ({ tab: "sessions", page: 2 }),
+        render: (s, kit) => ({ components: [kit.row(kit.button("inspect", (b) => b.setLabel(`${s.tab}:${s.page}`)))] }),
+        on: { inspect: (c) => openSessionFromTab({ open: c.open, notify }, "g1", 7, [7, 8], deps) },
+    });
+    const fake = createFakeViewTransport();
+    void fake.run(host, undefined, "owner");
+    await fake.flush();
+
+    // Not on the page: nothing is loaded.
+    await openSessionFromTab({ open: async () => undefined, notify }, "g1", 99, [7, 8], deps);
+    expect(loaded).toEqual([]);
+
+    // Missing session: notifies.
+    await openSessionFromTab({ open: async () => undefined, notify }, "g1", 8, [7, 8], deps);
+    expect(notes).toEqual(["No session `#8` on this server."]);
+
+    // Found: opens the session view with a Back button; Back returns to the same tab and page.
+    await fake.emit(fake.click("inspect", "owner"));
+    expect(JSON.stringify(fake.lastPayload().components)).toContain(":back");
+    await fake.emit(fake.click("back", "owner"));
+    expect(JSON.stringify(fake.lastPayload().components)).toContain("sessions:2");
 });

@@ -1,5 +1,5 @@
 import { ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
-import { type CommandContext, defineView, type ViewDefinition, type ViewPayload } from "@/define";
+import { type CommandContext, defineView, type HandlerContext, type ViewDefinition, type ViewPayload } from "@/define";
 import { EmbedFormatter, formatCodeblock, formatTime, NO_PINGS, unix } from "@/utils/format";
 import { getBiomeCountsInRange, getSessionInGuild } from "../repository/activity.repository";
 import { findsInSession, formatFindLine, loadRareFinds } from "../services/rare-finds.service";
@@ -78,6 +78,26 @@ export async function loadSessionInput(guildId: string, sessionId: number): Prom
         getBiomeCountsInRange(session.user_id, session.started_at, session.ended_at),
     ]);
     return { guildId, session, discordUserId, finds: findsInSession(allFinds, session), biomes };
+}
+
+/**
+ * Opens a session picked from a Sessions tab as a child view. Does nothing for an id that is not on
+ * the current page; notifies when the session is gone. The tab's state is untouched, so it comes back as it was.
+ */
+export async function openSessionFromTab(
+    c: Pick<HandlerContext<never, never>, "open" | "notify">,
+    guildId: string,
+    sessionId: number,
+    pageSessionIds: number[],
+    deps: { loadSessionInput: typeof loadSessionInput } = { loadSessionInput },
+): Promise<void> {
+    if (!pageSessionIds.includes(sessionId)) return;
+    const input = await deps.loadSessionInput(guildId, sessionId);
+    if (!input) {
+        await c.notify(`No session \`#${sessionId}\` on this server.`);
+        return;
+    }
+    await c.open(sessionView({ back: true }), input);
 }
 
 /** Opens `sessionView` on a session, or replies with the not-found error. Used by `/bh session`. */

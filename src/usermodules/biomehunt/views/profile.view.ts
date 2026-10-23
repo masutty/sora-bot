@@ -12,8 +12,7 @@ import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users
 import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota.service";
 import { loadRareFinds } from "../services/rare-finds.service";
 import { settings } from "../settings";
-import { sessionPages, sessionsOnPage } from "./member-admin.screens";
-import { loadSessionInput, sessionView } from "./session.view";
+import { openSessionFromTab } from "./session.view";
 import {
     buildBadgesTabContainer,
     buildBiomesTabContainer,
@@ -23,6 +22,8 @@ import {
     inspectSessionRow,
     type ProfileData,
     RECENT_ACTIVITY_WINDOW_HOURS,
+    sessionPages,
+    sessionsOnPage,
 } from "./stats-builders";
 
 const logger = new Logger("biomehunt.views.profile");
@@ -155,24 +156,21 @@ export function profileView(member: GuildMember): ViewDefinition<ProfileState, v
             const container = buildTabContent(state, member);
             const slice = state.tab === "sessions" ? sessionsOnPage(state.data, state.page) : [];
             const pages = sessionPages(state.data);
-            const extraRows = [
-                ...(slice.length > 0 ? [inspectSessionRow(kit, slice, state.data.rareFinds)] : []),
-                ...(slice.length > 0 && pages > 1 ? [paginationRow(kit, state.page, pages)] : []),
-            ];
+            const extraRows =
+                slice.length > 0
+                    ? [inspectSessionRow(kit, slice, state.data.rareFinds), ...(pages > 1 ? [paginationRow(kit, state.page, pages)] : [])]
+                    : [];
             return { payload: { flags: MessageFlags.IsComponentsV2, components: [container] }, extraRows };
         },
         on: {
             ...paginationHandlers<ProfileState>({ pages: (s) => sessionPages(s.data) }),
-            inspectSession: async (c) => {
-                const id = Number(c.values[0]);
-                if (!sessionsOnPage(c.state.data, c.state.page).some((x) => x.id === id)) return;
-                const input = await loadSessionInput(c.state.data.user.guild_id, id);
-                if (!input) {
-                    await c.notify(`No session \`#${id}\` on this server.`);
-                    return;
-                }
-                await c.open(sessionView({ back: true }), input);
-            },
+            inspectSession: (c) =>
+                openSessionFromTab(
+                    c,
+                    c.state.data.user.guild_id,
+                    Number(c.values[0]),
+                    sessionsOnPage(c.state.data, c.state.page).map((x) => x.id),
+                ),
         },
         // Matches the old runProfileView: switching tabs always resets session pagination.
         onTabChange: (s) => {

@@ -234,6 +234,17 @@ export function buildBadgesTabContainer(member: GuildMember, data: ProfileData):
     return container;
 }
 
+/** The sessions the Sessions tab lists: the newest one is left out while it is still running. */
+export function completedSessions(data: ProfileData): ActivitySessionRow[] {
+    return data.user.current_status === "active" ? data.sessions.slice(1) : data.sessions;
+}
+
+export const sessionPages = (data: ProfileData) => Math.max(Math.ceil(completedSessions(data).length / SESSIONS_PER_PAGE), 1);
+
+export function sessionsOnPage(data: ProfileData, page: number): ActivitySessionRow[] {
+    return completedSessions(data).slice(page * SESSIONS_PER_PAGE, (page + 1) * SESSIONS_PER_PAGE);
+}
+
 /** Select-option label of a session: `#<id> · <duration> · <emojis>`, cut to Discord's 100 characters. */
 export function sessionOptionLabel(s: ActivitySessionRow, finds: RareFind[]): string {
     const emojis = badgeEmojis(findsInSession(finds, s));

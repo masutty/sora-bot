@@ -24,21 +24,11 @@ import {
     unpauseMember,
 } from "../services/member.service";
 import { BiomeHuntError } from "../types";
-import {
-    badgeOnPage,
-    badgePages,
-    biomeCount,
-    editableBiomes,
-    MEMBER_TABS,
-    plural,
-    renderMemberAdmin,
-    sessionPages,
-    sessionsOnPage,
-} from "./member-admin.screens";
+import { badgeOnPage, badgePages, biomeCount, editableBiomes, MEMBER_TABS, plural, renderMemberAdmin } from "./member-admin.screens";
 import { loadProfileData } from "./profile.view";
 import { canBotAssignRole } from "./role-check";
-import { loadSessionInput, sessionView } from "./session.view";
-import type { ProfileData } from "./stats-builders";
+import { openSessionFromTab } from "./session.view";
+import { type ProfileData, sessionPages, sessionsOnPage } from "./stats-builders";
 
 const RED = 0xda373c;
 
@@ -649,14 +639,13 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
 
             inspectSession: async (c) => {
                 const data = c.state.data;
-                const id = Number(c.values[0]);
-                if (!data || !sessionsOnPage(data, c.state.page).some((x) => x.id === id)) return;
-                const input = await loadSessionInput(data.user.guild_id, id);
-                if (!input) {
-                    await c.notify(`No session \`#${id}\` on this server.`);
-                    return;
-                }
-                await c.open(sessionView({ back: true }), input);
+                if (!data) return;
+                await openSessionFromTab(
+                    c,
+                    data.user.guild_id,
+                    Number(c.values[0]),
+                    sessionsOnPage(data, c.state.page).map((x) => x.id),
+                );
             },
             deleteSessions: deleteChosen,
             clearSessions: clearAll,
