@@ -27,6 +27,7 @@ import {
     buildBiomesTabContainer,
     buildProfileTabContainer,
     buildSessionsTabContainer,
+    inspectSessionRow,
     type ProfileData,
     SESSIONS_PER_PAGE,
 } from "./stats-builders";
@@ -211,6 +212,7 @@ function sessionRows(s: MemberAdminState, data: ProfileData, kit: RenderKit): Ac
             ),
         ) as unknown as ActionRowBuilder<ButtonBuilder>,
     );
+    rows.push(inspectSessionRow(kit, slice, data.rareFinds));
     if (pages > 1) rows.push(paginationRow(kit, s.page, pages));
     rows.push(buttonRow(kit.button("clearSessions", (b) => b.setLabel("Clear all").setStyle(ButtonStyle.Danger))));
     return rows;

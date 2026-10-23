@@ -1,4 +1,5 @@
-import { ContainerBuilder, type GuildMember, SeparatorSpacingSize } from "discord.js";
+import { type ActionRowBuilder, type ButtonBuilder, ContainerBuilder, type GuildMember, SeparatorSpacingSize } from "discord.js";
+import type { RenderKit } from "@/define";
 import { formatCodeblock, formatTime, unix } from "@/utils/format";
 import { getBadgeMeta } from "../constants/badges.constants";
 import {
@@ -13,7 +14,8 @@ import { getLevelForXp } from "../constants/levels.constants";
 import { getLeaderboard } from "../repository/activity.repository";
 import type { getUserBadges } from "../repository/badges.repository";
 import { getGuildUserCounts, getUsersByGuildStatus } from "../repository/users.repository";
-import type { ActivitySessionRow, ActivityStatus, BiomeCategory, UserRow } from "../types";
+import { badgeEmojis, findsInSession } from "../services/rare-finds.service";
+import type { ActivitySessionRow, ActivityStatus, BiomeCategory, RareFind, UserRow } from "../types";
 
 export const SESSIONS_PER_PAGE = 10;
 export const USERS_PER_PAGE = 10;
@@ -43,6 +45,8 @@ export interface ProfileData {
     quotaSummaryLines: string[];
     badges: Awaited<ReturnType<typeof getUserBadges>>;
     sessions: ActivitySessionRow[];
+    /** Every rare find of the user, fake ones included. */
+    rareFinds: RareFind[];
     flowersEnabled: boolean;
     economyEnabled: boolean;
 }
@@ -230,6 +234,28 @@ export function buildBadgesTabContainer(member: GuildMember, data: ProfileData):
     return container;
 }
 
+/** Select-option label of a session: `#<id> · <duration> · <emojis>`, cut to Discord's 100 characters. */
+export function sessionOptionLabel(s: ActivitySessionRow, finds: RareFind[]): string {
+    const emojis = badgeEmojis(findsInSession(finds, s));
+    let label = "";
+    for (const ch of `#${s.id} · ${formatTime(s.duration_seconds)}${emojis ? ` · ${emojis}` : ""}`) {
+        if (label.length + ch.length > 100) break;
+        label += ch;
+    }
+    return label;
+}
+
+/** The "Inspect a session" select over a page of sessions (key `inspectSession`, value = session id). */
+export function inspectSessionRow(kit: RenderKit, slice: ActivitySessionRow[], finds: RareFind[]): ActionRowBuilder<ButtonBuilder> {
+    return kit.row(
+        kit.stringSelect("inspectSession", (select) =>
+            select
+                .setPlaceholder("Inspect a session")
+                .addOptions(slice.map((x) => ({ label: sessionOptionLabel(x, finds), value: String(x.id) }))),
+        ),
+    ) as unknown as ActionRowBuilder<ButtonBuilder>;
+}
+
 /** Container version of buildHistoryEmbed's content, for the ComponentsV2 profile view - the
  * classic embed version stays as-is. */
 export function buildSessionsTabContainer(
@@ -266,7 +292,10 @@ export function buildSessionsTabContainer(
         lines.push(ongoing ? "*No completed sessions yet.*" : "No activity recorded yet.");
     } else {
         for (const session of slice) {
-            lines.push(`⏱️ \`#${session.id}\` · \`${formatTime(session.duration_seconds)}\` · ended <t:${unix(session.ended_at)}:R>`);
+            const emojis = badgeEmojis(findsInSession(data.rareFinds, session));
+            lines.push(
+                `⏱️ \`#${session.id}\` · \`${formatTime(session.duration_seconds)}\` · ended <t:${unix(session.ended_at)}:R>${emojis ? ` · ${emojis}` : ""}`,
+            );
         }
     }
     container.addTextDisplayComponents((td) => td.setContent(lines.join("\n")));

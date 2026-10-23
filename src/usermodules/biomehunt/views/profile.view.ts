@@ -1,6 +1,6 @@
 import type { ContainerBuilder, GuildMember } from "discord.js";
 import { MessageFlags } from "discord.js";
-import { type CommandContext, type ReplyOptions, tabs, type ViewDefinition } from "@/define";
+import { type CommandContext, paginationHandlers, paginationRow, type ReplyOptions, tabs, type ViewDefinition } from "@/define";
 import { EmbedFormatter, NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getRecentSessions } from "../repository/activity.repository";
@@ -10,16 +10,19 @@ import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
 import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota.service";
+import { loadRareFinds } from "../services/rare-finds.service";
 import { settings } from "../settings";
+import { sessionPages, sessionsOnPage } from "./member-admin.screens";
+import { loadSessionInput, sessionView } from "./session.view";
 import {
     buildBadgesTabContainer,
     buildBiomesTabContainer,
     buildProfileTabContainer,
     buildQuotasTabContainer,
     buildSessionsTabContainer,
+    inspectSessionRow,
     type ProfileData,
     RECENT_ACTIVITY_WINDOW_HOURS,
-    SESSIONS_PER_PAGE,
 } from "./stats-builders";
 
 const logger = new Logger("biomehunt.views.profile");
@@ -64,18 +67,29 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
     const guildConfig = await getOrCreateGuildConfig(guildId);
     const quotaDay = quotaDayWindow(guildConfig.quota_eval_hour_utc, new Date());
 
-    const [activeSeconds, activeSecondsToday, biomes, channel, quotaSummaryLines, badges, sessions, flowersEnabled, economyEnabled] =
-        await Promise.all([
-            getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
-            getActiveSecondsBetween(user.id, quotaDay.start, quotaDay.end),
-            getBiomeCounts(user.id),
-            getMacroChannelByUserId(user.id),
-            getQuotaRewardSummaryLines(guildId, user.id, quotaDay.end),
-            getUserBadges(user.id),
-            getRecentSessions(user.id, 100),
-            isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"),
-            isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"),
-        ]);
+    const [
+        activeSeconds,
+        activeSecondsToday,
+        biomes,
+        channel,
+        quotaSummaryLines,
+        badges,
+        sessions,
+        rareFinds,
+        flowersEnabled,
+        economyEnabled,
+    ] = await Promise.all([
+        getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
+        getActiveSecondsBetween(user.id, quotaDay.start, quotaDay.end),
+        getBiomeCounts(user.id),
+        getMacroChannelByUserId(user.id),
+        getQuotaRewardSummaryLines(guildId, user.id, quotaDay.end),
+        getUserBadges(user.id),
+        getRecentSessions(user.id, 100),
+        loadRareFinds(user.id),
+        isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"),
+        isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"),
+    ]);
 
     const elapsedMs = Date.now() - start;
     if (elapsedMs > settings.diagnostics.slowProfileLoadMs) {
@@ -94,6 +108,7 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
         quotaSummaryLines,
         badges,
         sessions,
+        rareFinds,
         flowersEnabled,
         economyEnabled,
     };
@@ -112,7 +127,8 @@ const TAB_LABELS: Record<ProfileTab, string> = {
 
 interface ProfileState {
     tab: string;
-    sessionPage: number;
+    /** The page of the Sessions tab. */
+    page: number;
     data: ProfileData;
 }
 
@@ -121,7 +137,7 @@ function buildTabContent(state: ProfileState, member: GuildMember): ContainerBui
     if (state.tab === "biomes") return buildBiomesTabContainer(member, data);
     if (state.tab === "badges") return buildBadgesTabContainer(member, data);
     if (state.tab === "quotas") return buildQuotasTabContainer(member, data);
-    if (state.tab === "sessions") return buildSessionsTabContainer(member, data, state.sessionPage);
+    if (state.tab === "sessions") return buildSessionsTabContainer(member, data, state.page);
     return buildProfileTabContainer(member, data);
 }
 
@@ -133,34 +149,34 @@ function buildTabContent(state: ProfileState, member: GuildMember): ContainerBui
 export function profileView(member: GuildMember): ViewDefinition<ProfileState, void, ProfileData> {
     return tabs<ProfileState, ProfileData>({
         name: "biomehunt.profile",
-        initial: (data) => ({ tab: "profile", sessionPage: 0, data }),
+        initial: (data) => ({ tab: "profile", page: 0, data }),
         tabs: TAB_ORDER.map((key) => ({ key, label: TAB_LABELS[key] })),
         renderTab: (state, kit) => {
             const container = buildTabContent(state, member);
-            const sessionsPages = state.tab === "sessions" ? Math.max(Math.ceil(state.data.sessions.length / SESSIONS_PER_PAGE), 1) : 1;
-            const extraRows =
-                state.tab === "sessions" && sessionsPages > 1
-                    ? [
-                          kit.row(
-                              kit.button("sessionsPrev", (b) => b.setEmoji("◀️").setDisabled(state.sessionPage === 0)),
-                              kit.button("sessionsNext", (b) => b.setEmoji("▶️").setDisabled(state.sessionPage >= sessionsPages - 1)),
-                          ),
-                      ]
-                    : [];
+            const slice = state.tab === "sessions" ? sessionsOnPage(state.data, state.page) : [];
+            const pages = sessionPages(state.data);
+            const extraRows = [
+                ...(slice.length > 0 ? [inspectSessionRow(kit, slice, state.data.rareFinds)] : []),
+                ...(slice.length > 0 && pages > 1 ? [paginationRow(kit, state.page, pages)] : []),
+            ];
             return { payload: { flags: MessageFlags.IsComponentsV2, components: [container] }, extraRows };
         },
         on: {
-            sessionsPrev: (c) => {
-                c.state.sessionPage = Math.max(0, c.state.sessionPage - 1);
-            },
-            sessionsNext: (c) => {
-                const pages = Math.max(Math.ceil(c.state.data.sessions.length / SESSIONS_PER_PAGE), 1);
-                c.state.sessionPage = Math.min(pages - 1, c.state.sessionPage + 1);
+            ...paginationHandlers<ProfileState>({ pages: (s) => sessionPages(s.data) }),
+            inspectSession: async (c) => {
+                const id = Number(c.values[0]);
+                if (!sessionsOnPage(c.state.data, c.state.page).some((x) => x.id === id)) return;
+                const input = await loadSessionInput(c.state.data.user.guild_id, id);
+                if (!input) {
+                    await c.notify(`No session \`#${id}\` on this server.`);
+                    return;
+                }
+                await c.open(sessionView({ back: true }), input);
             },
         },
         // Matches the old runProfileView: switching tabs always resets session pagination.
         onTabChange: (s) => {
-            s.sessionPage = 0;
+            s.page = 0;
         },
     });
 }

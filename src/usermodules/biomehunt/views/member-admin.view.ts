@@ -37,6 +37,7 @@ import {
 } from "./member-admin.screens";
 import { loadProfileData } from "./profile.view";
 import { canBotAssignRole } from "./role-check";
+import { loadSessionInput, sessionView } from "./session.view";
 import type { ProfileData } from "./stats-builders";
 
 const RED = 0xda373c;
@@ -646,6 +647,17 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
 
             ...Object.fromEntries(Array.from({ length: 5 }, (_, slot) => [`badge:${slot}`, badgeButton(slot)])),
 
+            inspectSession: async (c) => {
+                const data = c.state.data;
+                const id = Number(c.values[0]);
+                if (!data || !sessionsOnPage(data, c.state.page).some((x) => x.id === id)) return;
+                const input = await loadSessionInput(data.user.guild_id, id);
+                if (!input) {
+                    await c.notify(`No session \`#${id}\` on this server.`);
+                    return;
+                }
+                await c.open(sessionView({ back: true }), input);
+            },
             deleteSessions: deleteChosen,
             clearSessions: clearAll,
 
