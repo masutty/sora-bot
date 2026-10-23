@@ -97,6 +97,17 @@ export async function clearCounterChannel(guildId: string): Promise<void> {
     invalidate(guildId);
 }
 
+/** Sets the channel where the bot posts problems and fake finds. */
+export async function setLogChannel(guildId: string, channelId: string): Promise<void> {
+    await query(`UPDATE bh_guilds SET log_channel_id = $2, updated_at = NOW() WHERE guild_id = $1`, [guildId, channelId]);
+    invalidate(guildId);
+}
+
+export async function clearLogChannel(guildId: string): Promise<void> {
+    await query(`UPDATE bh_guilds SET log_channel_id = NULL, updated_at = NOW() WHERE guild_id = $1`, [guildId]);
+    invalidate(guildId);
+}
+
 export async function setCounterMessageId(guildId: string, messageId: string): Promise<void> {
     await query(`UPDATE bh_guilds SET counter_message_id = $2 WHERE guild_id = $1`, [guildId, messageId]);
     invalidate(guildId);
@@ -231,7 +242,7 @@ export async function resetGuildConfig(guildId: string): Promise<void> {
         `UPDATE bh_guilds
          SET session_gap_threshold_s = 1200, idle_threshold_s = 1800, inactive_threshold_s = 86400,
              auto_create_categories = FALSE, delete_inactive_after_s = 86400,
-             counter_channel_id = NULL, counter_message_id = NULL, updated_at = NOW()
+             counter_channel_id = NULL, counter_message_id = NULL, log_channel_id = NULL, updated_at = NOW()
          WHERE guild_id = $1`,
         [guildId],
     );

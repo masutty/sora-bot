@@ -36,6 +36,8 @@ export interface GuildConfigRow {
     delete_inactive_after_s: number;
     counter_channel_id: string | null;
     counter_message_id: string | null;
+    /** Channel where the bot posts problems and fake finds; null = off. */
+    log_channel_id: string | null;
     quota_eval_hour_utc: number;
     quota_last_evaluated_date: Date | null;
     created_at: Date;

@@ -55,6 +55,7 @@ function fakeGuildConfig(overrides: Partial<GuildConfigRow> = {}): GuildConfigRo
         delete_inactive_after_s: 86400,
         counter_channel_id: null,
         counter_message_id: null,
+        log_channel_id: null,
         quota_eval_hour_utc: 0,
         quota_last_evaluated_date: null,
         created_at: new Date(),

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
 
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_eval_hour_utc SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_last_evaluated_date DATE;
+ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS log_channel_id VARCHAR(20);
 
 /* Forwarding is now fully implicit (a biome forwards iff it has a configured channel) - no separate on/off switch. */
 ALTER TABLE bh_guilds DROP COLUMN IF EXISTS forwarding_enabled;

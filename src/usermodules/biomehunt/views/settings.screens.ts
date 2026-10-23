@@ -108,6 +108,8 @@ function overviewScreen(s: SettingsState, kit: RenderKit): Parts {
     addSetting(container, "Auto-delete", autoDeleteSummary(s), edit("edit:autodelete"));
     divider();
     addSetting(container, "Live counter", s.counterChannelId ? `In <#${s.counterChannelId}>` : "Off", edit("edit:counter"));
+    divider();
+    addSetting(container, "Log channel", s.logChannelId ? `Problems are posted in <#${s.logChannelId}>.` : "Off", edit("edit:logs"));
     return [
         container,
         new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -266,6 +268,33 @@ function counterScreen(s: SettingsState, kit: RenderKit): Parts {
     ];
 }
 
+function logsScreen(s: SettingsState, kit: RenderKit): Parts {
+    const { container } = newContainer();
+    container.addTextDisplayComponents((td) =>
+        td.setContent(
+            "## Log channel\nWhere the bot posts what went wrong on this server, and every fake find. Clear the select to turn it off.",
+        ),
+    );
+    container.addActionRowComponents(
+        kit.row(
+            kit.channelSelect("logs", (c) => {
+                c.setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+                    .setMinValues(0)
+                    .setMaxValues(1)
+                    .setPlaceholder("Pick a channel");
+                return s.logChannelId ? c.setDefaultChannels(s.logChannelId) : c;
+            }),
+        ),
+    );
+    return [
+        container,
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+            kit.button("logs:test", (b) => b.setLabel("Send a test")),
+            kit.button("back", (b) => b.setLabel("Back")),
+        ),
+    ];
+}
+
 function homeScreen(s: SettingsState, kit: RenderKit): Parts {
     return isReady(s) || s.showAll ? overviewScreen(s, kit) : notReadyScreen(kit);
 }
@@ -277,6 +306,7 @@ const SCREENS: Record<Screen, (s: SettingsState, kit: RenderKit) => Parts> = {
     autodelete: autoDeleteScreen,
     autodeleteWhat: autoDeleteWhatScreen,
     counter: counterScreen,
+    logs: logsScreen,
 };
 
 /** The whole message for the screen the state is on. */
