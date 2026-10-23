@@ -182,7 +182,7 @@ export interface BiomeVoteRow {
     /** Short random code (like a trace `ref`) - shown on the message, never sequential/guessable. */
     id: string;
     guild_id: string;
-    /** `null` once an admin denies (the event is deleted, ON DELETE SET NULL) - the vote/ballots survive; `applyOutcome` skips any grant/revert once this is null. */
+    /** `null` once the event is removed (ON DELETE SET NULL, e.g. an admin's count correction) - the vote/ballots survive; `applyOutcome` skips any grant/revert once this is null. */
     event_id: number | null;
     /** `bh_users.id` of the finder - barred from casting a community ballot on their own find (an admin can still decide it). */
     finder_user_id: number;

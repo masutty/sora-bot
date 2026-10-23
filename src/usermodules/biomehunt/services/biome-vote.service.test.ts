@@ -39,7 +39,6 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
     const calls = {
         grantBiomeReward: [] as Array<{ guildId: string; userId: number; eventId: number; biome: string }>,
         revertBiomeRewards: [] as Array<{ userId: number; eventIds: number[] }>,
-        deleteEventById: [] as number[],
         revokeOrphanedBadges: [] as Array<{ guildId: string; userId: number }>,
     };
 
@@ -112,14 +111,6 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         revokeOrphanedBadges: async (guildId, userId) => {
             calls.revokeOrphanedBadges.push({ guildId, userId });
             return [];
-        },
-        deleteEventById: async (eventId) => {
-            calls.deleteEventById.push(eventId);
-            // Mimics the real ON DELETE SET NULL: any vote row referencing this event loses the
-            // reference (rather than being deleted itself, or cascading its ballots away).
-            for (const [id, v] of votes) {
-                if (v.event_id === eventId) votes.set(id, { ...v, event_id: null });
-            }
         },
     };
 
@@ -340,7 +331,7 @@ test("an admin click inside the window decides immediately and closes the vote",
     expect(editCalls).toHaveLength(1);
 });
 
-test("adminDecide denying reverts any granted reward and deletes the event", async () => {
+test("admin deny reverts rewards but keeps the event", async () => {
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
     const { client } = fakeClient();
@@ -348,8 +339,8 @@ test("adminDecide denying reverts any granted reward and deletes the event", asy
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps); // grants first
     await adminDecide(client, vote.id, "admin-2", VoteChoice.FAKE, deps); // then overridden to deny
 
-    expect(calls.revertBiomeRewards).toHaveLength(1);
-    expect(calls.deleteEventById).toEqual([10]);
+    expect(calls.revertBiomeRewards).toEqual([{ userId: 1, eventIds: [10] }]);
+    expect((await deps.getVoteById(vote.id))?.event_id).toBe(10);
 });
 
 test("adminDecide on a not-found vote id reports not_found", async () => {
@@ -542,28 +533,32 @@ test("applyOutcome failing after the close already committed is logged with the 
     }
 });
 
-test("applyOutcome skips grant/revert once the event has already been deleted (event_id is null)", async () => {
+test("confirm after deny grants the reward again", async () => {
     const { deps, calls } = createFakeDeps();
     const vote = await seedOpenVote(deps);
     await deps.insertBallot(vote.id, "voter-1", VoteChoice.REAL);
     const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps); // grants
-    await adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps); // denies -> reverts + deletes event -> event_id becomes null
-
+    await adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps); // denies -> reverts, keeps the event
     expect(calls.grantBiomeReward).toHaveLength(1);
-    expect(calls.revertBiomeRewards).toHaveLength(1);
-    expect((await deps.getVoteById(vote.id))?.event_id).toBeNull();
 
-    calls.grantBiomeReward.length = 0;
-    calls.revertBiomeRewards.length = 0;
-    calls.deleteEventById.length = 0;
     await adminDecide(client, vote.id, "admin-2", VoteChoice.REAL, deps); // flip-flop back to confirmed
 
     expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.ADMIN_CONFIRMED);
-    expect(calls.grantBiomeReward).toHaveLength(0); // nothing to grant - the event is gone
+    expect(calls.grantBiomeReward).toHaveLength(2);
+});
+
+test("applyOutcome skips grant/revert when the event is already gone (event_id is null)", async () => {
+    const { deps, calls } = createFakeDeps();
+    const vote = await seedOpenVote(deps, { eventId: null });
+    const { client } = fakeClient();
+
+    await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
+    await adminDecide(client, vote.id, "admin-2", VoteChoice.FAKE, deps);
+
+    expect(calls.grantBiomeReward).toHaveLength(0);
     expect(calls.revertBiomeRewards).toHaveLength(0);
-    expect(calls.deleteEventById).toHaveLength(0);
 });
 
 test("reward is granted exactly once even if the vote is somehow closed twice", async () => {
@@ -591,5 +586,4 @@ test("admin deny after a community_real resolution reverts the granted reward", 
     await adminDecide(client, vote.id, "admin-1", VoteChoice.FAKE, deps);
 
     expect(calls.revertBiomeRewards).toHaveLength(1);
-    expect(calls.deleteEventById).toEqual([10]);
 });

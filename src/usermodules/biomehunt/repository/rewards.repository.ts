@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
 import type { Badge, BiomeRewardRow, UserRow } from "../types";
+import { NOT_FAKE_SQL } from "./activity.repository";
 
 export interface InsertRewardParams {
     eventId: number;
@@ -24,6 +25,12 @@ export async function getRewardsByEventIds(eventIds: number[]): Promise<BiomeRew
     if (eventIds.length === 0) return [];
     const result = await query<BiomeRewardRow>(`SELECT * FROM bh_biome_rewards WHERE event_id = ANY($1)`, [eventIds]);
     return result.rows;
+}
+
+/** Removes the ledger rows of these events - a reverted reward must stop counting, so a later confirm can grant it again. */
+export async function deleteRewardsByEventIds(eventIds: number[]): Promise<void> {
+    if (eventIds.length === 0) return;
+    await query(`DELETE FROM bh_biome_rewards WHERE event_id = ANY($1)`, [eventIds]);
 }
 
 /** How many ledger rows still credit this user with this specific badge - used to decide whether reverting one event should also revoke the badge (only if this drops to 0). */
@@ -56,7 +63,7 @@ export async function getUnrewardedEventsForUser(
         `SELECT e.id, e.biome
          FROM bh_activity_events e
          LEFT JOIN bh_biome_rewards r ON r.event_id = e.id
-         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome IS NOT NULL AND r.event_id IS NULL
+         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome IS NOT NULL AND r.event_id IS NULL AND ${NOT_FAKE_SQL}
            AND ($2::timestamptz IS NULL OR e.received_at >= $2)
            AND ($3::text[] IS NULL OR e.biome = ANY($3))
          ORDER BY e.received_at ASC`,

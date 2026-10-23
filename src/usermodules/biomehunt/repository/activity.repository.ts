@@ -3,6 +3,14 @@ import { query } from "@/database/connection";
 import { newTraceRef } from "@/utils/trace";
 import type { ActivitySessionRow } from "../types";
 
+/**
+ * SQL predicate over an events alias `e`: true unless the event's newest vote ruled it fake
+ * (`community_fake` / `admin_denied`). Fake finds stay stored but never count.
+ */
+export const NOT_FAKE_SQL = `NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id
+              AND v.status IN ('community_fake','admin_denied')
+              AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))`;
+
 export async function insertEventIfNew(
     client: PoolClient,
     userId: number,
@@ -122,11 +130,11 @@ export async function getLatestSessionForUser(userId: number): Promise<ActivityS
 /** Same as `getBiomeCounts`, but scoped to a single session's time range - used for the session-end report. */
 export async function getBiomeCountsInRange(userId: number, start: Date, end: Date): Promise<Array<{ biome: string; count: number }>> {
     const result = await query<{ biome: string; count: string }>(
-        `SELECT biome, COUNT(*) AS count
-         FROM bh_activity_events
-         WHERE user_id = $1 AND biome IS NOT NULL AND event_type = 'started'
-           AND received_at >= $2 AND received_at <= $3
-         GROUP BY biome
+        `SELECT e.biome, COUNT(*) AS count
+         FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+           AND e.received_at >= $2 AND e.received_at <= $3 AND ${NOT_FAKE_SQL}
+         GROUP BY e.biome
          ORDER BY count DESC`,
         [userId, start, end],
     );
@@ -210,12 +218,7 @@ export async function clearBiomeEvents(userId: number, biome: string): Promise<n
     return result.rows.map((r) => r.id);
 }
 
-/** Deletes a single event by id - used by the rare-biome vote check's Deny button, which needs the report to fully disappear (not just get relabeled). */
-export async function deleteEventById(eventId: number): Promise<void> {
-    await query(`DELETE FROM bh_activity_events WHERE id = $1`, [eventId]);
-}
-
-/** False once the event is gone - e.g. deleted by a fake/denied vote (`applyOutcome` in biome-vote.service.ts). */
+/** False once the event is gone - e.g. removed by an admin's biome-count correction. */
 export async function eventExists(eventId: number): Promise<boolean> {
     const result = await query(`SELECT 1 FROM bh_activity_events WHERE id = $1`, [eventId]);
     return (result.rowCount ?? 0) > 0;
@@ -236,7 +239,7 @@ export async function getGuildBiomeFindStats(
                 MAX(COALESCE(e.event_timestamp, e.received_at)) FILTER (WHERE e.id IS DISTINCT FROM $3) AS last_found_at
          FROM bh_activity_events e
          JOIN bh_users u ON u.id = e.user_id
-         WHERE u.guild_id = $1 AND e.biome = $2 AND e.event_type = 'started'`,
+         WHERE u.guild_id = $1 AND e.biome = $2 AND e.event_type = 'started' AND ${NOT_FAKE_SQL}`,
         [guildId, biome, excludeEventId],
     );
     const row = result.rows[0];
@@ -246,7 +249,8 @@ export async function getGuildBiomeFindStats(
 /** Total confirmed "started" finds of one specific biome for a user - "Personal find #N" on forwards. */
 export async function getBiomeCountForUser(userId: number, biome: string): Promise<number> {
     const result = await query<{ count: string }>(
-        `SELECT COUNT(*) AS count FROM bh_activity_events WHERE user_id = $1 AND biome = $2 AND event_type = 'started'`,
+        `SELECT COUNT(*) AS count FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.biome = $2 AND e.event_type = 'started' AND ${NOT_FAKE_SQL}`,
         [userId, biome],
     );
     return Number(result.rows[0]?.count ?? 0);
@@ -255,10 +259,10 @@ export async function getBiomeCountForUser(userId: number, biome: string): Promi
 /** Counts confirmed "started" events only — each biome session sends both a started and ended message, and counting both would double the total. */
 export async function getBiomeCounts(userId: number): Promise<Array<{ biome: string; count: number }>> {
     const result = await query<{ biome: string; count: string }>(
-        `SELECT biome, COUNT(*) AS count
-         FROM bh_activity_events
-         WHERE user_id = $1 AND biome IS NOT NULL AND event_type = 'started'
-         GROUP BY biome
+        `SELECT e.biome, COUNT(*) AS count
+         FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
+         GROUP BY e.biome
          ORDER BY count DESC`,
         [userId],
     );
@@ -297,7 +301,7 @@ export async function getGuildBiomeCounts(guildId: string): Promise<Array<{ biom
         `SELECT e.biome, COUNT(*) AS count
          FROM bh_activity_events e
          JOIN bh_users u ON u.id = e.user_id
-         WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+         WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
          GROUP BY e.biome
          ORDER BY count DESC`,
         [guildId],
@@ -314,7 +318,7 @@ export async function getBiomeTopContributors(guildId: string): Promise<Array<{ 
                     ROW_NUMBER() OVER (PARTITION BY e.biome ORDER BY COUNT(*) DESC) AS rn
              FROM bh_activity_events e
              JOIN bh_users u ON u.id = e.user_id
-             WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+             WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
              GROUP BY e.biome, u.discord_user_id
          ) ranked
          WHERE rn = 1

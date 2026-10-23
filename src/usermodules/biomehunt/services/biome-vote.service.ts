@@ -4,7 +4,6 @@ import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
 import { getBiomeMeta } from "../constants/biomes.constants";
-import { deleteEventById } from "../repository/activity.repository";
 import { getBotSetting, setBotSetting } from "../repository/bot-settings.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
@@ -33,7 +32,6 @@ export interface VoteServiceDeps {
     grantBiomeReward: typeof grantBiomeReward;
     revertBiomeRewards: typeof revertBiomeRewards;
     revokeOrphanedBadges: typeof revokeOrphanedBadges;
-    deleteEventById: typeof deleteEventById;
 }
 
 export function defaultVoteServiceDeps(): VoteServiceDeps {
@@ -49,7 +47,6 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         grantBiomeReward,
         revertBiomeRewards,
         revokeOrphanedBadges,
-        deleteEventById,
     };
 }
 
@@ -178,13 +175,12 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
 /**
  * Grants the outcome exactly once - `community_real`/`admin_confirmed` grant the reward only if
  * this event doesn't already have one (an admin later re-confirming, e.g. via `/admin review-voting`,
- * must never double-grant); `admin_denied` reverts whatever was granted (safe/no-op if nothing
- * was) and deletes the event, mirroring the existing admin-deny behavior. `no_votes`/`tie`/
- * `community_fake` do nothing - the event is kept for a possible later admin review.
+ * must never double-grant); `admin_denied`/`community_fake` revert whatever was granted (safe/no-op
+ * if nothing was) - the event is kept but stops counting, and its ledger row is dropped so a later
+ * confirm grants again. `no_votes`/`tie` do nothing - the event is kept for a possible later admin review.
  *
- * A `null` `event_id` (a PRIOR admin deny already deleted the event - `bh_biome_votes.event_id`
- * is `ON DELETE SET NULL`, not cascaded away) short-circuits everything: there's no event left to
- * credit or debit, so a later flip-flop (e.g. confirming after denying) is a pure status change.
+ * A `null` `event_id` (the event was removed some other way - `bh_biome_votes.event_id` is
+ * `ON DELETE SET NULL`) short-circuits everything: there's no event left to credit or debit.
  */
 async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
     const eventId = vote.event_id;
@@ -198,11 +194,9 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
         return;
     }
 
-    if (vote.status === VoteStatus.ADMIN_DENIED) {
-        // Must run BEFORE the event is deleted - revertBiomeRewards reads the ledger row, which
-        // would otherwise cascade away the moment the event itself is gone.
+    if (vote.status === VoteStatus.ADMIN_DENIED || vote.status === VoteStatus.COMMUNITY_FAKE) {
+        // The event stays (it only stops counting); revertBiomeRewards also drops its ledger row.
         const { badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [eventId]);
-        await deps.deleteEventById(eventId);
         await deps.revokeOrphanedBadges(vote.guild_id, vote.finder_user_id, badgeCandidates);
     }
 }
