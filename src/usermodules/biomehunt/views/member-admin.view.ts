@@ -24,20 +24,11 @@ import {
     unpauseMember,
 } from "../services/member.service";
 import { BiomeHuntError } from "../types";
-import {
-    badgeOnPage,
-    badgePages,
-    biomeCount,
-    editableBiomes,
-    MEMBER_TABS,
-    plural,
-    renderMemberAdmin,
-    sessionPages,
-    sessionsOnPage,
-} from "./member-admin.screens";
+import { badgeOnPage, badgePages, biomeCount, editableBiomes, MEMBER_TABS, plural, renderMemberAdmin } from "./member-admin.screens";
 import { loadProfileData } from "./profile.view";
 import { canBotAssignRole } from "./role-check";
-import type { ProfileData } from "./stats-builders";
+import { openSessionFromTab } from "./session.view";
+import { type ProfileData, sessionPages, sessionsOnPage } from "./stats-builders";
 
 const RED = 0xda373c;
 
@@ -646,6 +637,16 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
 
             ...Object.fromEntries(Array.from({ length: 5 }, (_, slot) => [`badge:${slot}`, badgeButton(slot)])),
 
+            inspectSession: async (c) => {
+                const data = c.state.data;
+                if (!data) return;
+                await openSessionFromTab(
+                    c,
+                    data.user.guild_id,
+                    Number(c.values[0]),
+                    sessionsOnPage(data, c.state.page).map((x) => x.id),
+                );
+            },
             deleteSessions: deleteChosen,
             clearSessions: clearAll,
 

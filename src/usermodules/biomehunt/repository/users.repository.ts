@@ -1,6 +1,8 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
+import { getBiomesByCategory } from "../constants/biomes.constants";
 import type { ActivityGrace, ActivityStatus, UserMacroChannelRow, UserRow } from "../types";
+import { NOT_FAKE_SQL } from "./activity.repository";
 
 export interface ChannelIndexEntry {
     userId: number;
@@ -161,6 +163,69 @@ export async function getGuildUserCounts(guildId: string): Promise<Record<Activi
     const counts: Record<ActivityStatus, number> = { active: 0, idle: 0, inactive: 0 };
     for (const row of result.rows) counts[row.current_status] = Number(row.count);
     return counts;
+}
+
+export interface ChannelNameCandidate {
+    userId: number;
+    guildId: string;
+    channelId: string;
+    nameBadges: string;
+    renamedAt: Date | null;
+    flagOn: boolean;
+}
+
+/** Macro channels whose name may need a rename: the flag is on for the server, or badges are still stored. Oldest rename first. */
+export async function getChannelNameCandidates(): Promise<ChannelNameCandidate[]> {
+    const result = await query<{
+        user_id: number;
+        guild_id: string;
+        channel_id: string;
+        name_badges: string;
+        name_renamed_at: Date | null;
+        flag_on: boolean;
+    }>(
+        `SELECT c.user_id, u.guild_id, c.channel_id, c.name_badges, c.name_renamed_at,
+                COALESCE(f.enabled, FALSE) AS flag_on
+         FROM bh_user_macro_channels c
+         JOIN bh_users u ON u.id = c.user_id
+         LEFT JOIN bh_guild_flags f ON f.guild_id = u.guild_id AND f.flag_name = 'RARE_COUNT_IN_CHANNEL_NAME'
+         WHERE COALESCE(f.enabled, FALSE) OR c.name_badges <> ''
+         ORDER BY c.name_renamed_at ASC NULLS FIRST`,
+    );
+    return result.rows.map((r) => ({
+        userId: r.user_id,
+        guildId: r.guild_id,
+        channelId: r.channel_id,
+        nameBadges: r.name_badges,
+        renamedAt: r.name_renamed_at,
+        flagOn: r.flag_on,
+    }));
+}
+
+/** Counted rare finds per user and biome, leaving out finds whose newest vote is still open (a find with no vote counts). */
+export async function getClosedRareCounts(userIds: number[]): Promise<Map<number, Array<{ biome: string; count: number }>>> {
+    const counts = new Map<number, Array<{ biome: string; count: number }>>();
+    if (userIds.length === 0) return counts;
+    const result = await query<{ user_id: number; biome: string; count: string }>(
+        `SELECT e.user_id, e.biome, COUNT(*) AS count
+         FROM bh_activity_events e
+         WHERE e.user_id = ANY($1) AND e.event_type = 'started' AND e.biome = ANY($2) AND ${NOT_FAKE_SQL}
+           AND NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id AND v.status = 'open'
+                 AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))
+         GROUP BY e.user_id, e.biome`,
+        [userIds, getBiomesByCategory("rare")],
+    );
+    for (const r of result.rows) {
+        const list = counts.get(r.user_id) ?? [];
+        list.push({ biome: r.biome, count: Number(r.count) });
+        counts.set(r.user_id, list);
+    }
+    return counts;
+}
+
+/** Stores the badges applied to a macro channel's name and stamps the rename time. */
+export async function setNameBadges(userId: number, badges: string): Promise<void> {
+    await query(`UPDATE bh_user_macro_channels SET name_badges = $2, name_renamed_at = NOW() WHERE user_id = $1`, [userId, badges]);
 }
 
 export async function createMacroChannel(

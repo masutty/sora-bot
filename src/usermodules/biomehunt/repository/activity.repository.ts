@@ -1,7 +1,15 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
 import { newTraceRef } from "@/utils/trace";
-import type { ActivitySessionRow } from "../types";
+import type { ActivitySessionRow, RareFind, VoteStatus } from "../types";
+
+/**
+ * SQL predicate over an events alias `e`: true unless the event's newest vote ruled it fake
+ * (`community_fake` / `admin_denied`). Fake finds stay stored but never count.
+ */
+export const NOT_FAKE_SQL = `NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id
+              AND v.status IN ('community_fake','admin_denied')
+              AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))`;
 
 export async function insertEventIfNew(
     client: PoolClient,
@@ -22,12 +30,17 @@ export async function insertEventIfNew(
     return result.rows[0]?.id ?? null;
 }
 
+/** BIGSERIAL ids come back from pg as strings - session ids are numbers everywhere else. */
+function sessionRow<T extends ActivitySessionRow>(r: T): T {
+    return { ...r, id: Number(r.id), user_id: Number(r.user_id) };
+}
+
 export async function getLatestSession(client: PoolClient, userId: number): Promise<ActivitySessionRow | null> {
     const result = await client.query<ActivitySessionRow>(
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
         [userId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? sessionRow(result.rows[0]) : null;
 }
 
 export async function openNewSession(client: PoolClient, userId: number, at: Date): Promise<ActivitySessionRow> {
@@ -37,7 +50,7 @@ export async function openNewSession(client: PoolClient, userId: number, at: Dat
          RETURNING *`,
         [userId, at],
     );
-    return result.rows[0];
+    return sessionRow(result.rows[0]);
 }
 
 export async function extendSession(client: PoolClient, sessionId: number, at: Date): Promise<ActivitySessionRow> {
@@ -48,7 +61,7 @@ export async function extendSession(client: PoolClient, sessionId: number, at: D
          RETURNING *`,
         [sessionId, at],
     );
-    return result.rows[0];
+    return sessionRow(result.rows[0]);
 }
 
 /**
@@ -116,21 +129,45 @@ export async function getLatestSessionForUser(userId: number): Promise<ActivityS
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1`,
         [userId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? sessionRow(result.rows[0]) : null;
 }
 
 /** Same as `getBiomeCounts`, but scoped to a single session's time range - used for the session-end report. */
 export async function getBiomeCountsInRange(userId: number, start: Date, end: Date): Promise<Array<{ biome: string; count: number }>> {
     const result = await query<{ biome: string; count: string }>(
-        `SELECT biome, COUNT(*) AS count
-         FROM bh_activity_events
-         WHERE user_id = $1 AND biome IS NOT NULL AND event_type = 'started'
-           AND received_at >= $2 AND received_at <= $3
-         GROUP BY biome
+        `SELECT e.biome, COUNT(*) AS count
+         FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+           AND e.received_at >= $2 AND e.received_at <= $3 AND ${NOT_FAKE_SQL}
+         GROUP BY e.biome
          ORDER BY count DESC`,
         [userId, start, end],
     );
     return result.rows.map((r) => ({ biome: r.biome, count: Number(r.count) }));
+}
+
+/** One session by id, only if its user belongs to the guild - with the owner's Discord id. */
+export async function getSessionInGuild(
+    guildId: string,
+    sessionId: number,
+): Promise<(ActivitySessionRow & { discord_user_id: string }) | null> {
+    const result = await query<ActivitySessionRow & { discord_user_id: string }>(
+        `SELECT s.*, u.discord_user_id
+         FROM bh_activity_sessions s
+         JOIN bh_users u ON u.id = s.user_id
+         WHERE s.id = $1 AND u.guild_id = $2`,
+        [sessionId, guildId],
+    );
+    return result.rows[0] ? sessionRow(result.rows[0]) : null;
+}
+
+/** A user's sessions overlapping [from, to], newest first - one query for grouping a list of finds. */
+export async function getSessionsCovering(userId: number, from: Date, to: Date): Promise<ActivitySessionRow[]> {
+    const result = await query<ActivitySessionRow>(
+        `SELECT * FROM bh_activity_sessions WHERE user_id = $1 AND started_at <= $3 AND ended_at >= $2 ORDER BY started_at DESC`,
+        [userId, from, to],
+    );
+    return result.rows.map((r) => ({ ...r, id: Number(r.id), user_id: Number(r.user_id) }));
 }
 
 export async function getRecentSessions(userId: number, limit: number): Promise<ActivitySessionRow[]> {
@@ -138,7 +175,7 @@ export async function getRecentSessions(userId: number, limit: number): Promise<
         `SELECT * FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT $2`,
         [userId, limit],
     );
-    return result.rows;
+    return result.rows.map(sessionRow);
 }
 
 /** How many sessions a user has recorded. */
@@ -175,9 +212,9 @@ export async function decrementBiomeEvents(userId: number, biome: string, amount
     const result = await query<{ id: number }>(
         `DELETE FROM bh_activity_events
          WHERE id IN (
-             SELECT id FROM bh_activity_events
-             WHERE user_id = $1 AND biome = $2 AND event_type = 'started'
-             ORDER BY received_at DESC
+             SELECT e.id FROM bh_activity_events e
+             WHERE e.user_id = $1 AND e.biome = $2 AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
+             ORDER BY e.received_at DESC
              LIMIT $3
          )
          RETURNING id`,
@@ -210,15 +247,16 @@ export async function clearBiomeEvents(userId: number, biome: string): Promise<n
     return result.rows.map((r) => r.id);
 }
 
-/** Deletes a single event by id - used by the rare-biome vote check's Deny button, which needs the report to fully disappear (not just get relabeled). */
-export async function deleteEventById(eventId: number): Promise<void> {
-    await query(`DELETE FROM bh_activity_events WHERE id = $1`, [eventId]);
-}
-
-/** False once the event is gone - e.g. deleted by a fake/denied vote (`applyOutcome` in biome-vote.service.ts). */
+/** False once the event is gone - e.g. removed by an admin's biome-count correction. */
 export async function eventExists(eventId: number): Promise<boolean> {
     const result = await query(`SELECT 1 FROM bh_activity_events WHERE id = $1`, [eventId]);
     return (result.rowCount ?? 0) > 0;
+}
+
+/** When the bot received the event (the find time), or `null` once it is gone. */
+export async function getEventReceivedAt(eventId: number): Promise<Date | null> {
+    const result = await query<{ received_at: Date }>(`SELECT received_at FROM bh_activity_events WHERE id = $1`, [eventId]);
+    return result.rows[0]?.received_at ?? null;
 }
 
 /**
@@ -236,7 +274,7 @@ export async function getGuildBiomeFindStats(
                 MAX(COALESCE(e.event_timestamp, e.received_at)) FILTER (WHERE e.id IS DISTINCT FROM $3) AS last_found_at
          FROM bh_activity_events e
          JOIN bh_users u ON u.id = e.user_id
-         WHERE u.guild_id = $1 AND e.biome = $2 AND e.event_type = 'started'`,
+         WHERE u.guild_id = $1 AND e.biome = $2 AND e.event_type = 'started' AND ${NOT_FAKE_SQL}`,
         [guildId, biome, excludeEventId],
     );
     const row = result.rows[0];
@@ -246,7 +284,8 @@ export async function getGuildBiomeFindStats(
 /** Total confirmed "started" finds of one specific biome for a user - "Personal find #N" on forwards. */
 export async function getBiomeCountForUser(userId: number, biome: string): Promise<number> {
     const result = await query<{ count: string }>(
-        `SELECT COUNT(*) AS count FROM bh_activity_events WHERE user_id = $1 AND biome = $2 AND event_type = 'started'`,
+        `SELECT COUNT(*) AS count FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.biome = $2 AND e.event_type = 'started' AND ${NOT_FAKE_SQL}`,
         [userId, biome],
     );
     return Number(result.rows[0]?.count ?? 0);
@@ -255,10 +294,10 @@ export async function getBiomeCountForUser(userId: number, biome: string): Promi
 /** Counts confirmed "started" events only — each biome session sends both a started and ended message, and counting both would double the total. */
 export async function getBiomeCounts(userId: number): Promise<Array<{ biome: string; count: number }>> {
     const result = await query<{ biome: string; count: string }>(
-        `SELECT biome, COUNT(*) AS count
-         FROM bh_activity_events
-         WHERE user_id = $1 AND biome IS NOT NULL AND event_type = 'started'
-         GROUP BY biome
+        `SELECT e.biome, COUNT(*) AS count
+         FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
+         GROUP BY e.biome
          ORDER BY count DESC`,
         [userId],
     );
@@ -297,7 +336,7 @@ export async function getGuildBiomeCounts(guildId: string): Promise<Array<{ biom
         `SELECT e.biome, COUNT(*) AS count
          FROM bh_activity_events e
          JOIN bh_users u ON u.id = e.user_id
-         WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+         WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
          GROUP BY e.biome
          ORDER BY count DESC`,
         [guildId],
@@ -314,7 +353,7 @@ export async function getBiomeTopContributors(guildId: string): Promise<Array<{ 
                     ROW_NUMBER() OVER (PARTITION BY e.biome ORDER BY COUNT(*) DESC) AS rn
              FROM bh_activity_events e
              JOIN bh_users u ON u.id = e.user_id
-             WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started'
+             WHERE u.guild_id = $1 AND e.biome IS NOT NULL AND e.event_type = 'started' AND ${NOT_FAKE_SQL}
              GROUP BY e.biome, u.discord_user_id
          ) ranked
          WHERE rn = 1
@@ -377,7 +416,7 @@ export async function getLongestSessions(guildId: string, limit: number): Promis
         [guildId, limit],
     );
     return result.rows.map((r) => ({
-        id: r.id,
+        id: Number(r.id),
         discordUserId: r.discord_user_id,
         started_at: r.started_at,
         ended_at: r.ended_at,
@@ -406,4 +445,73 @@ export async function getUserLongestSessionRank(
         [guildId, longestSeconds],
     );
     return { rank: Number(result.rows[0].rank), totalSessions: Number(result.rows[0].total), longestSeconds };
+}
+
+interface RareFindRow {
+    event_id: number | string | null;
+    biome: string;
+    at: Date;
+    macro_message_id: string | null;
+    macro_channel_id: string | null;
+    vote_id: string | null;
+    status: VoteStatus | null;
+    decided_by: string | null;
+    vote_channel_id: string | null;
+    vote_message_id: string | null;
+    jump_link: string | null;
+    real: string | number | null;
+    fake: string | number | null;
+}
+
+/**
+ * A user's rare finds, newest first: every rare `started` event with its newest vote, plus the
+ * votes of old Denies whose event is gone (`event_id IS NULL`). Fake finds are NOT filtered -
+ * the history lists them; callers decide visibility.
+ */
+export async function getRareFinds(userId: number, rareBiomes: string[]): Promise<RareFind[]> {
+    const result = await query<RareFindRow>(
+        `SELECT e.id AS event_id, e.biome, e.received_at AS at,
+                CASE WHEN e.discord_message_id LIKE 'adm-%' THEN NULL ELSE e.discord_message_id END AS macro_message_id,
+                mc.channel_id AS macro_channel_id,
+                v.id AS vote_id, v.status, v.decided_by, v.channel_id AS vote_channel_id, v.message_id AS vote_message_id, v.jump_link,
+                COALESCE(b.real, 0) AS real, COALESCE(b.fake, 0) AS fake
+         FROM bh_activity_events e
+         LEFT JOIN bh_user_macro_channels mc ON mc.user_id = e.user_id
+         LEFT JOIN LATERAL (
+             SELECT * FROM bh_biome_votes v WHERE v.event_id = e.id ORDER BY v.created_at DESC LIMIT 1
+         ) v ON TRUE
+         LEFT JOIN LATERAL (
+             SELECT COUNT(*) FILTER (WHERE choice = 'real') AS real, COUNT(*) FILTER (WHERE choice = 'fake') AS fake
+             FROM bh_biome_vote_ballots WHERE vote_id = v.id
+         ) b ON TRUE
+         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome = ANY($2)
+         UNION ALL
+         SELECT NULL, v.biome, v.created_at, NULL, NULL,
+                v.id, v.status, v.decided_by, v.channel_id, v.message_id, v.jump_link,
+                (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'real'),
+                (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'fake')
+         FROM bh_biome_votes v
+         WHERE v.event_id IS NULL AND v.finder_user_id = $1 AND v.biome = ANY($2)
+         ORDER BY at DESC`,
+        [userId, rareBiomes],
+    );
+    return result.rows.map((r) => ({
+        eventId: r.event_id === null ? null : Number(r.event_id),
+        biome: r.biome,
+        at: r.at,
+        macroMessageId: r.macro_message_id,
+        macroChannelId: r.macro_channel_id,
+        vote: r.vote_id
+            ? {
+                  id: r.vote_id,
+                  status: r.status as VoteStatus,
+                  decidedBy: r.decided_by,
+                  channelId: r.vote_channel_id as string,
+                  messageId: r.vote_message_id as string,
+                  jumpLink: r.jump_link as string,
+                  real: Number(r.real ?? 0),
+                  fake: Number(r.fake ?? 0),
+              }
+            : null,
+    }));
 }

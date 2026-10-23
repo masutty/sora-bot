@@ -12,6 +12,13 @@ export const settings = {
         networkPublishTickMs: 2_000,
         networkVoteCloseTickMs: 5_000,
         networkDailyTickMs: 60 * 60 * 1000,
+        channelNameTickMs: 60_000,
+    },
+    channelName: {
+        /** Discord allows 2 renames per channel per 10 minutes - one per 6 keeps a margin under it. */
+        minRenameGapMs: 6 * 60_000,
+        /** Renames across all servers in one tick, so turning the flag on in a big server never bursts. */
+        maxRenamesPerTick: 5,
     },
     votes: {
         /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it - until an owner sets another (`/owner vote-duration`). */

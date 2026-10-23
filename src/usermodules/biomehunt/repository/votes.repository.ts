@@ -99,6 +99,15 @@ export async function getBallotsForVote(voteId: string): Promise<BiomeVoteBallot
     return result.rows;
 }
 
+/** Marks the vote's fake-find report as sent - `true` only for the call that wins, so a report goes out once per vote. */
+export async function markFakeReported(voteId: string): Promise<boolean> {
+    const result = await query<{ id: string }>(
+        `UPDATE bh_biome_votes SET fake_reported_at = NOW() WHERE id = $1 AND fake_reported_at IS NULL RETURNING id`,
+        [voteId],
+    );
+    return result.rows.length > 0;
+}
+
 /**
  * Compare-and-set close: only actually closes the vote (and stamps `decided_at`) if its status is
  * STILL `expectedStatus` (whatever the caller read just before deciding) - `null` otherwise,

@@ -95,6 +95,7 @@ const profile = (over: Partial<ProfileData> = {}): ProfileData => ({
     quotaSummaryLines: [],
     badges: [{ user_id: 1, badge: "GLITCHED", awarded_at: new Date("2026-10-15T00:00:00Z") }],
     sessions: sessions(12),
+    rareFinds: [],
     flowersEnabled: false,
     economyEnabled: true,
     ...over,
@@ -326,6 +327,16 @@ test("delete sessions confirm has the quota note", async () => {
     expect(t).toContain("-# If these sessions are recent, deleting them may affect their quotas.");
     await fake.emit(fake.click("yes", OWNER));
     expect(calls).toEqual([["deleteSessions", [4821, 4820]]]);
+});
+
+test("inspect select sits next to delete select", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("tab:sessions", OWNER));
+    const keys = flatten(fake.lastPayload()).flatMap((c) => (c.custom_id ? [c.custom_id.split(":").pop()] : []));
+    expect(keys.indexOf("inspectSession")).toBe(keys.indexOf("deleteSessions") + 1);
+    const select = comp(fake.lastPayload(), "inspectSession");
+    expect(select.options).toHaveLength(10);
+    expect(select.options?.[0]).toMatchObject({ label: "#4821 · 2h 13m", value: "4821" });
 });
 
 test("clear all confirms with the total", async () => {

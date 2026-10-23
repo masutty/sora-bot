@@ -18,7 +18,9 @@ export type FlagName =
     | "CLEAR_PROFILE_ON_AUTODELETE"
     | "AUTO_DELETE_ENABLED"
     | "EXPERIMENT_WEBHOOK_FLOWERS"
-    | "EXPERIMENT_BIOME_ECONOMY";
+    | "EXPERIMENT_BIOME_ECONOMY"
+    | "REPORT_FAKE_FINDS"
+    | "RARE_COUNT_IN_CHANNEL_NAME";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).
@@ -36,6 +38,8 @@ export interface GuildConfigRow {
     delete_inactive_after_s: number;
     counter_channel_id: string | null;
     counter_message_id: string | null;
+    /** Channel where the bot posts problems and fake finds; null = off. */
+    log_channel_id: string | null;
     quota_eval_hour_utc: number;
     quota_last_evaluated_date: Date | null;
     created_at: Date;
@@ -81,6 +85,8 @@ export interface UserMacroChannelRow {
     webhook_id: string;
     webhook_url: string;
     created_at: Date;
+    name_badges: string;
+    name_renamed_at: Date | null;
 }
 
 export interface ActivityEventRow {
@@ -182,7 +188,7 @@ export interface BiomeVoteRow {
     /** Short random code (like a trace `ref`) - shown on the message, never sequential/guessable. */
     id: string;
     guild_id: string;
-    /** `null` once an admin denies (the event is deleted, ON DELETE SET NULL) - the vote/ballots survive; `applyOutcome` skips any grant/revert once this is null. */
+    /** `null` once the event is removed (ON DELETE SET NULL, e.g. an admin's count correction) - the vote/ballots survive; `applyOutcome` skips any grant/revert once this is null. */
     event_id: number | null;
     /** `bh_users.id` of the finder - barred from casting a community ballot on their own find (an admin can still decide it). */
     finder_user_id: number;
@@ -199,6 +205,8 @@ export interface BiomeVoteRow {
     finder_discord_id: string | null;
     server_find_count: number | null;
     last_seen_in_server_at: Date | null;
+    /** When a fake-find report was sent for this vote - the once-per-vote guard. */
+    fake_reported_at: Date | null;
     status: VoteStatus;
     /** Discord id of the deciding admin - set only for admin_confirmed/admin_denied. */
     decided_by: string | null;
@@ -348,4 +356,26 @@ export interface NetworkAlertRow {
     details: string;
     notified: boolean;
     created_at: Date;
+}
+
+/** One rare-biome find with its newest local vote - fake finds included (the history lists them on purpose). */
+export interface RareFind {
+    /** `null` for an old Deny, when the event was deleted with the vote. */
+    eventId: number | null;
+    biome: string;
+    /** `received_at`, or the vote's `created_at` when the event is gone. */
+    at: Date;
+    /** The event's Discord message id - `null` for `adm-` ids and gone events. */
+    macroMessageId: string | null;
+    macroChannelId: string | null;
+    vote: {
+        id: string;
+        status: VoteStatus;
+        decidedBy: string | null;
+        channelId: string;
+        messageId: string;
+        jumpLink: string;
+        real: number;
+        fake: number;
+    } | null;
 }

@@ -1,5 +1,6 @@
 import type { Client, Message } from "discord.js";
 import { MessageFlags } from "discord.js";
+import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
 import { formatBiomeName, getBiomeMeta, resolveBiomeSelector } from "../constants/biomes.constants";
 import { eventExists, getBiomeCountForUser, getGuildBiomeFindStats } from "../repository/activity.repository";
@@ -11,6 +12,7 @@ import { settings } from "../settings";
 import { type BiomeDelayedForwardRow, type BiomeForwardRow, BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
 import { buildForwardContainer, type ForwardFindStats, forwardMentions } from "../views/forward-post.view";
 import { getVoteWindowMs, newVoteId, openVote } from "./biome-vote.service";
+import { clearLogDedup, describeDiscordError, type GuildLogEntry, guildLog } from "./guild-log.service";
 
 const logger = new Logger("biomehunt.services.forward");
 
@@ -30,6 +32,22 @@ export interface ForwardServiceDeps {
     /** The local vote's current duration (`getVoteWindowMs("local")`). */
     voteWindowMs: () => Promise<number>;
     scheduleDelayedForward: typeof scheduleDelayedForward;
+    /** Posts a problem to the server's log channel. */
+    log: typeof logToGuild;
+}
+
+/** `guildLog` for the plain discord.js client the forward pipeline carries (it is the bot's client at runtime). */
+const logToGuild = (client: Client, guildId: string, entry: GuildLogEntry) => guildLog(client as BotClient, guildId, entry);
+
+/** The log post for a forward that couldn't be sent. */
+function forwardFailure(biome: string, finderDiscordId: string | null, channelId: string, err: unknown): GuildLogEntry {
+    const from = finderDiscordId ? ` from <@${finderDiscordId}>` : "";
+    return {
+        kind: "warning",
+        title: "⚠️ Couldn't post a forward",
+        body: `**${formatBiomeName(biome)}**${from} wasn't posted in <#${channelId}>: ${describeDiscordError(err)}.`,
+        dedupKey: `forward:${channelId}`,
+    };
 }
 
 export function defaultForwardServiceDeps(): ForwardServiceDeps {
@@ -43,6 +61,7 @@ export function defaultForwardServiceDeps(): ForwardServiceDeps {
         openVote,
         voteWindowMs: () => getVoteWindowMs("local"),
         scheduleDelayedForward,
+        log: logToGuild,
     };
 }
 
@@ -176,8 +195,9 @@ async function sendLiveForward(
         flavorText: getBiomeMeta(biome)?.flavorText,
     });
 
+    let sent: Message | undefined;
     try {
-        const sent = await channel.send({
+        sent = await channel.send({
             components: [container],
             flags: MessageFlags.IsComponentsV2,
             allowedMentions: forwardMentions(forward.role_id, dryRun),
@@ -197,9 +217,12 @@ async function sendLiveForward(
             ...stats,
             closesAt,
         });
+        clearLogDedup(guildId, `forward:${forward.channel_id}`);
         return voteId;
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId, biome });
+        // Only a failed send is a forward problem; a vote that failed to open after it is not.
+        if (!sent) await deps.log(client, guildId, forwardFailure(biome, stats.finderDiscordId ?? null, forward.channel_id, err));
         return null;
     }
 }
@@ -209,6 +232,7 @@ export interface DelayedForwardDeps {
     eventExists: typeof eventExists;
     getVoteById: typeof getVoteById;
     schedule(fn: () => Promise<void>, ms: number): void;
+    log: typeof logToGuild;
 }
 
 export function defaultDelayedForwardDeps(): DelayedForwardDeps {
@@ -218,6 +242,7 @@ export function defaultDelayedForwardDeps(): DelayedForwardDeps {
         schedule: (fn, ms) => {
             setTimeout(() => void fn(), ms);
         },
+        log: logToGuild,
     };
 }
 
@@ -278,8 +303,10 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             flags: MessageFlags.IsComponentsV2,
             allowedMentions: forwardMentions(job.config.role_id, job.dryRun),
         });
+        clearLogDedup(job.guildId, `forward:${job.config.channel_id}`);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), { guildId: job.guildId, biome: job.biome });
+        await deps.log(job.client, job.guildId, forwardFailure(job.biome, job.stats.finderDiscordId ?? null, job.config.channel_id, err));
     }
 }
 

@@ -45,6 +45,7 @@ const baseInput = (over: Partial<SettingsInput> = {}): SettingsInput => ({
     deleteAfterS: 72 * 3600,
     autoCreateCategories: false,
     counterChannelId: null,
+    logChannelId: null,
     roles: { active: null, idle: null, inactive: null },
     categoryIds: ["cat1"],
     autoDelete: false,
@@ -71,6 +72,9 @@ function fakeDeps(opts: { canAssign?: boolean; reloaded?: SettingsInput } = {}) 
         setGuildFlag: rec("setGuildFlag"),
         updateCounterChannel: rec("updateCounterChannel"),
         clearCounterChannel: rec("clearCounterChannel"),
+        setLogChannel: rec("setLogChannel"),
+        clearLogChannel: rec("clearLogChannel"),
+        sendLogTest: rec("sendLogTest", "Test posted in <#c9>."),
         forceCounterUpdate: rec("forceCounterUpdate", "Live counter updated."),
         resetGuildConfig: rec("resetGuildConfig"),
         canAssignRole: () => opts.canAssign ?? true,
@@ -224,6 +228,40 @@ test("counter: Refresh now updates it, and asks for a channel first when there i
     await fake.emit(fake.click("refresh", OWNER));
     expect(calls.at(-1)).toEqual(["forceCounterUpdate", GUILD]);
     expect(fake.notifies.at(-1)?.content).toBe("Live counter updated.");
+});
+
+test("log channel row and screen", async () => {
+    const { fake, calls } = await open();
+    expect(text(fake.lastPayload())).toContain("**Log channel**\nOff");
+    await fake.emit(fake.click("edit:logs", OWNER));
+    expect(text(fake.lastPayload())).toContain(
+        "Where the bot posts what went wrong on this server, and every fake find. Clear the select to turn it off.",
+    );
+    await fake.emit(fake.click("logs:test", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("Pick a channel first.");
+    expect(calls).toHaveLength(0);
+
+    await fake.emit(fake.click("logs", OWNER, ["c9"]));
+    expect(calls).toEqual([["setLogChannel", GUILD, "c9"]]);
+    await fake.emit(fake.click("logs:test", OWNER));
+    expect(calls.at(-1)).toEqual(["sendLogTest", GUILD]);
+    expect(fake.notifies.at(-1)?.content).toBe("Test posted in <#c9>.");
+
+    await fake.emit(fake.click("logs", OWNER, []));
+    expect(calls.at(-1)).toEqual(["clearLogChannel", GUILD]);
+    await fake.emit(fake.click("back", OWNER));
+    expect(text(fake.lastPayload())).toContain("**Log channel**\nOff");
+});
+
+test("log channel row shows the channel", async () => {
+    const { fake } = await open(baseInput({ logChannelId: "c9" }));
+    expect(text(fake.lastPayload())).toContain("**Log channel**\nProblems are posted in <#c9>.");
+});
+
+test("reset all clears the log channel", async () => {
+    const { fake } = await open(baseInput({ logChannelId: "c9" }), { reloaded: baseInput({ logChannelId: null, categoryIds: ["cat1"] }) });
+    await submitForm(fake, "reset", { confirm: "reset" });
+    expect(text(fake.lastPayload())).toContain("**Log channel**\nOff");
 });
 
 test("reset needs the word reset", async () => {

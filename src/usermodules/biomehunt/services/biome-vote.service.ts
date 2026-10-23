@@ -3,8 +3,7 @@ import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { newTraceRef } from "@/utils/trace";
-import { getBiomeMeta } from "../constants/biomes.constants";
-import { deleteEventById } from "../repository/activity.repository";
+import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getBotSetting, setBotSetting } from "../repository/bot-settings.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
@@ -14,6 +13,8 @@ import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
 import { BiomeHuntError, VoteChoice, VoteStatus } from "../types";
 import { buildForwardContainer, type VoteRenderInfo } from "../views/forward-post.view";
 import { grantBiomeReward, revertBiomeRewards, revokeOrphanedBadges } from "./biome-reward.service";
+import { type RevertedRewards, reportFakeFind } from "./fake-find.service";
+import { guildLog } from "./guild-log.service";
 
 const logger = new Logger("biomehunt.services.biome-vote");
 
@@ -33,7 +34,10 @@ export interface VoteServiceDeps {
     grantBiomeReward: typeof grantBiomeReward;
     revertBiomeRewards: typeof revertBiomeRewards;
     revokeOrphanedBadges: typeof revokeOrphanedBadges;
-    deleteEventById: typeof deleteEventById;
+    /** Posts a problem to the server's log channel. */
+    log: typeof guildLog;
+    /** Tells the finder (and the log channel) that a find was ruled fake. */
+    reportFakeFind: typeof reportFakeFind;
 }
 
 export function defaultVoteServiceDeps(): VoteServiceDeps {
@@ -49,7 +53,8 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         grantBiomeReward,
         revertBiomeRewards,
         revokeOrphanedBadges,
-        deleteEventById,
+        log: guildLog,
+        reportFakeFind,
     };
 }
 
@@ -178,33 +183,33 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
 /**
  * Grants the outcome exactly once - `community_real`/`admin_confirmed` grant the reward only if
  * this event doesn't already have one (an admin later re-confirming, e.g. via `/admin review-voting`,
- * must never double-grant); `admin_denied` reverts whatever was granted (safe/no-op if nothing
- * was) and deletes the event, mirroring the existing admin-deny behavior. `no_votes`/`tie`/
- * `community_fake` do nothing - the event is kept for a possible later admin review.
+ * must never double-grant); `admin_denied`/`community_fake` revert whatever was granted (safe/no-op
+ * if nothing was) - the event is kept but stops counting, and its ledger row is dropped so a later
+ * confirm grants again. `no_votes`/`tie` do nothing - the event is kept for a possible later admin review.
+ * Returns what a fake/denied outcome took back, `null` for any other outcome.
  *
- * A `null` `event_id` (a PRIOR admin deny already deleted the event - `bh_biome_votes.event_id`
- * is `ON DELETE SET NULL`, not cascaded away) short-circuits everything: there's no event left to
- * credit or debit, so a later flip-flop (e.g. confirming after denying) is a pure status change.
+ * A `null` `event_id` (the event was removed some other way - `bh_biome_votes.event_id` is
+ * `ON DELETE SET NULL`) short-circuits everything: there's no event left to credit or debit.
  */
-async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<RevertedRewards | null> {
     const eventId = vote.event_id;
-    if (eventId === null) return;
+    if (eventId === null) return null;
 
     if (vote.status === VoteStatus.COMMUNITY_REAL || vote.status === VoteStatus.ADMIN_CONFIRMED) {
         const existing = await deps.getRewardsByEventIds([eventId]);
         if (existing.length === 0) {
             await deps.grantBiomeReward(vote.guild_id, vote.finder_user_id, eventId, vote.biome);
         }
-        return;
+        return null;
     }
 
-    if (vote.status === VoteStatus.ADMIN_DENIED) {
-        // Must run BEFORE the event is deleted - revertBiomeRewards reads the ledger row, which
-        // would otherwise cascade away the moment the event itself is gone.
-        const { badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [eventId]);
-        await deps.deleteEventById(eventId);
-        await deps.revokeOrphanedBadges(vote.guild_id, vote.finder_user_id, badgeCandidates);
+    if (vote.status === VoteStatus.ADMIN_DENIED || vote.status === VoteStatus.COMMUNITY_FAKE) {
+        // The event stays (it only stops counting); revertBiomeRewards also drops its ledger row.
+        const { seedsReverted, xpReverted, badgeCandidates } = await deps.revertBiomeRewards(vote.finder_user_id, [eventId]);
+        const revoked = await deps.revokeOrphanedBadges(vote.guild_id, vote.finder_user_id, badgeCandidates);
+        return { seedsReverted, xpReverted, revoked };
     }
+    return null;
 }
 
 /**
@@ -212,17 +217,26 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
  * close has ALREADY committed, so a failure here must never look like the vote itself failed to
  * close: it did, just without its grant/revert applied yet. The log line names `/admin review-voting`
  * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
- * itself idempotent).
+ * itself idempotent). A fake/denied outcome that applied is then reported (see `reportFakeFind`).
  */
-async function applyOutcomeSafely(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+async function applyOutcomeSafely(client: BotClient, vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<void> {
+    let reverted: RevertedRewards | null = null;
     try {
-        await applyOutcome(vote, deps);
+        reverted = await applyOutcome(vote, deps);
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,
             note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /admin review-voting ${vote.id}`,
         });
+        const from = vote.finder_discord_id ? ` from <@${vote.finder_discord_id}>` : "";
+        await deps.log(client, vote.guild_id, {
+            kind: "error",
+            title: "🛑 Something broke",
+            body: `**${formatBiomeName(vote.biome)}**${from}: the vote closed as ${vote.status} but its rewards weren't updated. Run \`/admin review-voting ${vote.id}\` to apply them.`,
+        });
     }
+    // Outside the try: a report failure is not an outcome failure (and `reportFakeFind` never throws).
+    if (reverted) await deps.reportFakeFind(client, vote, reverted);
 }
 
 /** Fetches the vote's own forward message, or `null` if the channel/message is gone (best-effort - a missing message never fails the caller). */
@@ -334,7 +348,7 @@ export async function adminDecide(
     const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);
     if (!closed) return { kind: "already_decided" };
 
-    await applyOutcomeSafely(closed, deps);
+    await applyOutcomeSafely(client, closed, deps);
 
     // Read AFTER the close committed - any ballot racing the close is now either reflected here
     // (it landed before the commit) or cleanly rejected by insertBallot's own atomicity (after).
@@ -366,7 +380,7 @@ export async function closeDueVotes(
             const closed = await deps.closeVote(vote.id, VoteStatus.OPEN, status, null);
             if (!closed) continue; // an admin already decided it - don't apply this outcome too
 
-            await applyOutcomeSafely(closed, deps);
+            await applyOutcomeSafely(client, closed, deps);
 
             // Read AFTER the close committed, not the pre-close snapshot used to pick `status` -
             // a ballot racing the close is now either reflected here (it landed before the commit)

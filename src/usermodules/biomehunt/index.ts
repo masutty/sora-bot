@@ -17,6 +17,7 @@ import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity.service";
+import { channelNameWorker } from "./workers/channel-name.worker";
 import { counterWorker } from "./workers/counter.worker";
 import { networkDailyWorker } from "./workers/network-daily.worker";
 import { networkPublishWorker } from "./workers/network-publish.worker";
@@ -36,7 +37,16 @@ export default defineCog({
 
     migrations: [BIOMEHUNT_SCHEMA],
 
-    workers: [statusWorker, roleWorker, counterWorker, voteCloseWorker, networkPublishWorker, networkVoteCloseWorker, networkDailyWorker],
+    workers: [
+        statusWorker,
+        roleWorker,
+        counterWorker,
+        channelNameWorker,
+        voteCloseWorker,
+        networkPublishWorker,
+        networkVoteCloseWorker,
+        networkDailyWorker,
+    ],
 
     components: [biomeVoteComponent(), forwardInfoComponent(), networkReviewComponent(), networkVoteComponent()],
 

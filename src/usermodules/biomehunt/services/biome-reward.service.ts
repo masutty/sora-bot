@@ -7,6 +7,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import {
     adjustUserBalance,
     countRewardsWithBadge,
+    deleteRewardsByEventIds,
     getRewardsByEventIds,
     getUnrewardedEventsForUser,
     insertReward,
@@ -68,12 +69,12 @@ export async function grantBiomeReward(
 }
 
 /**
- * Reverses whatever grantBiomeReward granted for a set of events that are about to be deleted
- * (an admin correcting fake reports). Must be called BEFORE the events are actually deleted - it
- * reads the ledger and applies the Seeds/XP reversal here, but returns the set of badges that MIGHT
- * now need revoking (`badgeCandidates`) rather than revoking them itself: that check can only run
- * correctly AFTER the caller deletes the events (which cascades the ledger rows away) - see
- * `revokeOrphanedBadges` below and its call sites in `member.service.ts`.
+ * Reverses whatever grantBiomeReward granted for a set of events (an admin correcting fake
+ * reports, or a fake/denied vote). It reads the ledger, applies the Seeds/XP reversal and deletes
+ * those ledger rows - so the event can be rewarded again if it is later confirmed. It returns the
+ * set of badges that MIGHT now need revoking (`badgeCandidates`) rather than revoking them itself:
+ * that check counts surviving ledger rows - see `revokeOrphanedBadges` below and its call sites
+ * in `member.service.ts`.
  */
 export async function revertBiomeRewards(
     userId: number,
@@ -91,13 +92,14 @@ export async function revertBiomeRewards(
     if (seedsReverted !== 0 || xpReverted !== 0) {
         await adjustUserBalance(null, userId, -seedsReverted, -xpReverted);
     }
+    await deleteRewardsByEventIds(eventIds);
 
     return { seedsReverted, xpReverted, badgeCandidates };
 }
 
 /**
- * Second half of a revert: call this AFTER the caller has already deleted the events (so any
- * ledger rows they granted are already gone via cascade), passing `revertBiomeRewards`'s
+ * Second half of a revert: call this AFTER `revertBiomeRewards` (so the reverted events' ledger
+ * rows are already gone), passing `revertBiomeRewards`'s
  * `badgeCandidates`. Revokes each one that no longer has ANY surviving ledger grant.
  */
 export async function revokeOrphanedBadges(guildId: string, userId: number, candidateBadges: Badge[]): Promise<Badge[]> {

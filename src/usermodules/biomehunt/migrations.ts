@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bh_guilds (
 
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_eval_hour_utc SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS quota_last_evaluated_date DATE;
+ALTER TABLE bh_guilds ADD COLUMN IF NOT EXISTS log_channel_id VARCHAR(20);
 
 /* Forwarding is now fully implicit (a biome forwards iff it has a configured channel) - no separate on/off switch. */
 ALTER TABLE bh_guilds DROP COLUMN IF EXISTS forwarding_enabled;
@@ -248,6 +249,7 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS find_count INTEGER;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS finder_discord_id VARCHAR(20);
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS server_find_count INTEGER;
 ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS last_seen_in_server_at TIMESTAMPTZ;
+ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS fake_reported_at TIMESTAMPTZ;
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
@@ -519,6 +521,12 @@ CREATE TABLE IF NOT EXISTS bh_bot_settings (
 
 /* The bot owner who decided a Network vote with a click - NULL when the ballots decided it. */
 ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS vote_decided_by VARCHAR(20);
+
+/* Rare count in the macro channel name: the badges the bot applied, and when it last renamed the channel. */
+ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_badges TEXT NOT NULL DEFAULT '';
+ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_renamed_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS bh_biome_votes_event ON bh_biome_votes(event_id, created_at DESC);
 
 /* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
 CREATE TABLE IF NOT EXISTS bh_data_migrations (

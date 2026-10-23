@@ -1,5 +1,6 @@
 import type { Client, MessageCreateOptions } from "discord.js";
 import { MessageFlags } from "discord.js";
+import type { BotClient } from "@/core/bot-client";
 import { requireSnowflake } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
@@ -29,6 +30,7 @@ import { settings } from "../settings";
 import { BiomeHuntError, type NetworkGuildRow, type NetworkPostRow, NetworkStatus } from "../types";
 import { buildMirrorContainer, serverNameLink } from "../views/network-mirror.view";
 import { getVoteWindowMs } from "./biome-vote.service";
+import { clearLogDedup, describeDiscordError, guildLog } from "./guild-log.service";
 import { type EligibilityReport, getNetworkBiomes, loadEligibility } from "./network-eligibility.service";
 import { notifyOwners } from "./owner-dm.service";
 
@@ -98,7 +100,11 @@ export interface NetworkPublishDeps {
     getNetworkPingRolesForBiome: typeof getNetworkPingRolesForBiome;
     insertNetworkMirror: typeof insertNetworkMirror;
     /** Sends one Mirror - `null` if the channel is gone or the send failed. Must never throw. */
-    sendMirror: (channelId: string, payload: MessageCreateOptions) => Promise<{ channelId: string; messageId: string } | null>;
+    sendMirror: (
+        channelId: string,
+        payload: MessageCreateOptions,
+        target: MirrorTarget,
+    ) => Promise<{ channelId: string; messageId: string } | null>;
     /** The send order - random in production, so the same server isn't always the last to get it. */
     shuffle: <T>(items: T[]) => T[];
     /** The Network vote's current duration (`getVoteWindowMs("network")`). */
@@ -127,7 +133,7 @@ export function defaultNetworkPublishDeps(client: Client): NetworkPublishDeps {
         getMemberNetworkGuilds,
         getNetworkPingRolesForBiome,
         insertNetworkMirror,
-        sendMirror: (channelId, payload) => sendMirror(client, channelId, payload),
+        sendMirror: (channelId, payload, target) => sendMirror(client, channelId, payload, target),
         shuffle: shuffleInPlace,
         voteWindowMs: () => getVoteWindowMs("network"),
         now: () => new Date(),
@@ -144,14 +150,38 @@ function shuffleInPlace<T>(items: T[]): T[] {
     return out;
 }
 
-async function sendMirror(client: Client, channelId: string, payload: MessageCreateOptions) {
+/** Who a Mirror goes to, for the log post when it can't be sent. */
+export interface MirrorTarget {
+    guildId: string;
+    biome: string;
+}
+
+async function logMirrorFailure(client: Client, channelId: string, target: MirrorTarget, reason: string): Promise<void> {
+    await guildLog(client as BotClient, target.guildId, {
+        kind: "warning",
+        title: "⚠️ Couldn't post a Network find",
+        body: `**${formatBiomeName(target.biome)}** from the Network wasn't posted in <#${channelId}>: ${reason}.`,
+        dedupKey: `mirror:${target.guildId}`,
+    });
+}
+
+async function sendMirror(client: Client, channelId: string, payload: MessageCreateOptions, target: MirrorTarget) {
     try {
         const channel = await client.channels.fetch(channelId);
-        if (!channel || channel.isDMBased() || !channel.isTextBased()) return null;
+        if (!channel) {
+            await logMirrorFailure(client, channelId, target, "the channel no longer exists");
+            return null;
+        }
+        if (channel.isDMBased() || !channel.isTextBased()) {
+            await logMirrorFailure(client, channelId, target, "it isn't a text channel");
+            return null;
+        }
         const sent = await channel.send(payload);
+        clearLogDedup(target.guildId, `mirror:${target.guildId}`);
         return { channelId: sent.channelId, messageId: sent.id };
     } catch (err) {
         logger.warn(`Could not send a Network Mirror to channel ${channelId}`, { error: err instanceof Error ? err.message : String(err) });
+        await logMirrorFailure(client, channelId, target, describeDiscordError(err));
         return null;
     }
 }
@@ -350,15 +380,19 @@ async function sendOneMirror(
     const home = guild.guild_id === post.origin_guild_id;
     const roleId = post.simulated || home ? null : (pingRoles.get(guild.guild_id) ?? null);
     const flavorText = getBiomeMeta(post.biome)?.flavorText;
-    const sent = await deps.sendMirror(guild.network_channel_id as string, {
-        components: [
-            post.simulated
-                ? buildMirrorContainer({ post, roleId: null, simulated: true, home, flavorText })
-                : buildMirrorContainer({ post, roleId, vote: { status: "open" }, home, flavorText }),
-        ],
-        flags: MessageFlags.IsComponentsV2,
-        allowedMentions: { parse: [], roles: roleId ? [roleId] : [] },
-    });
+    const sent = await deps.sendMirror(
+        guild.network_channel_id as string,
+        {
+            components: [
+                post.simulated
+                    ? buildMirrorContainer({ post, roleId: null, simulated: true, home, flavorText })
+                    : buildMirrorContainer({ post, roleId, vote: { status: "open" }, home, flavorText }),
+            ],
+            flags: MessageFlags.IsComponentsV2,
+            allowedMentions: { parse: [], roles: roleId ? [roleId] : [] },
+        },
+        { guildId: guild.guild_id, biome: post.biome },
+    );
     if (sent) {
         await deps.insertNetworkMirror({
             post_id: post.id,

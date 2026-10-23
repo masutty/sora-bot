@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Client } from "discord.js";
+import type { BotClient } from "@/core/bot-client";
 import { type BiomeDelayedForwardRow, type BiomeForwardRow, BiomeHuntError, type BiomeVoteRow, VoteStatus } from "../types";
 import { FORWARD_INFO_PREFIX } from "../views/forward-post.view";
 import {
@@ -12,6 +13,7 @@ import {
     sendDelayedForward,
     setDelayedForward,
 } from "./forward.service";
+import { clearLogDedup, type GuildLogDeps, guildLog } from "./guild-log.service";
 
 /** An in-memory `ForwardServiceDeps` - never touches the DB. `openVote` just records its params. */
 function createFakeDeps(
@@ -35,6 +37,7 @@ function createFakeDeps(
         scheduleDelayedForward: (job) => {
             scheduled.push(job);
         },
+        log: async () => {},
     };
     return { deps, openVoteCalls, scheduled };
 }
@@ -244,6 +247,7 @@ function fakeDeps(opts: { eventExists?: boolean; voteStatus?: VoteStatus | null 
         schedule: (_fn, ms) => {
             scheduledMs.push(ms);
         },
+        log: async () => {},
     };
     return { deps, scheduledMs };
 }
@@ -294,6 +298,52 @@ test("sendDelayedForward: the delayed card carries the biome's flavor text too",
     const client = fakeClient(sent);
     await sendDelayedForward(job(client), fakeDeps({ voteStatus: VoteStatus.OPEN }).deps);
     expect(JSON.stringify(sent[0])).toContain("Unexpected error occurred. [Code 404]");
+});
+
+test("forward send failure logs a warning once", async () => {
+    const posted: string[] = [];
+    const logDeps: GuildLogDeps = {
+        getLogChannelId: async () => "log-channel",
+        send: async (_channelId, payload) => {
+            posted.push(JSON.stringify(payload));
+        },
+    };
+    const failing = {
+        channels: {
+            fetch: async () => ({
+                isDMBased: () => false,
+                isTextBased: () => true,
+                send: async () => {
+                    throw Object.assign(new Error("Missing Permissions"), { code: 50013 });
+                },
+            }),
+        },
+    } as unknown as Client;
+    const { deps } = createFakeDeps();
+    deps.log = (client, guildId, entry) => guildLog(client as BotClient, guildId, entry, logDeps);
+    try {
+        await forwardBiome(failing, "guild-log-once", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+        await forwardBiome(failing, "guild-log-once", 42, STARTED, 11, "https://discord.com/channels/guild1/x", deps);
+    } finally {
+        clearLogDedup("guild-log-once", "forward:forward-channel");
+    }
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toContain("Couldn't post a forward");
+    expect(posted[0]).toContain("Send Messages");
+    expect(posted[0]).toContain("<#forward-channel>");
+});
+
+test("forward: a vote that fails to open after a good send logs no forward warning", async () => {
+    const logged: unknown[] = [];
+    const { deps } = createFakeDeps();
+    deps.openVote = async () => {
+        throw new Error("insert failed");
+    };
+    deps.log = async (_c, _g, entry) => {
+        logged.push(entry);
+    };
+    await forwardBiome(fakeClient(), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", deps);
+    expect(logged).toHaveLength(0);
 });
 
 test("setDelayedForward rejects a non-rare biome before touching the DB", async () => {

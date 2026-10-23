@@ -1,4 +1,4 @@
-import { VoteStatus } from "../types";
+import { type RareFind, VoteStatus } from "../types";
 
 export interface VoteTally {
     real: number;
@@ -35,6 +35,27 @@ export function voteOutcomeLine(o: VoteOutcome): string {
             return o.decidedBy
                 ? `❌ Marked as fake by <@${o.decidedBy}>`
                 : `❌ Marked as fake by ${o.voters ?? "community voting"}${chips}`;
+    }
+}
+
+/** A rare find's vote result as one short label for the history and session views - `""` when it had no vote. */
+export function findResultLabel(vote: RareFind["vote"]): string {
+    if (!vote) return "";
+    switch (vote.status) {
+        case VoteStatus.OPEN:
+            return "⏳ Voting";
+        case VoteStatus.NO_VOTES:
+            return "No votes";
+        case VoteStatus.TIE:
+            return "⚖️ Tied";
+        case VoteStatus.COMMUNITY_REAL:
+            return "✅ Real";
+        case VoteStatus.ADMIN_CONFIRMED:
+            return `✅ Confirmed by <@${vote.decidedBy}>`;
+        case VoteStatus.COMMUNITY_FAKE:
+            return `❌ Fake \`✅ ${vote.real}\` \`❌ ${vote.fake}\``;
+        case VoteStatus.ADMIN_DENIED:
+            return `❌ Denied by <@${vote.decidedBy}>`;
     }
 }
 

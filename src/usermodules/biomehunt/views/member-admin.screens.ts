@@ -20,15 +20,16 @@ import {
     getBiomeMeta,
     getEnabledBiomes,
 } from "../constants/biomes.constants";
-import type { ActivitySessionRow } from "../types";
 import type { MemberAdminState } from "./member-admin.view";
 import { formatHours } from "./settings.screens";
 import {
     buildBiomesTabContainer,
     buildProfileTabContainer,
     buildSessionsTabContainer,
+    inspectSessionRow,
     type ProfileData,
-    SESSIONS_PER_PAGE,
+    sessionPages,
+    sessionsOnPage,
 } from "./stats-builders";
 
 export const BADGES_PER_PAGE = 5;
@@ -64,17 +65,6 @@ function addRow(container: ContainerBuilder, text: string, button: ButtonBuilder
 }
 
 const buttonRow = (...buttons: ButtonBuilder[]) => new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
-
-/** The sessions the tab lists: the newest one is left out while it is still running. */
-export function completedSessions(data: ProfileData): ActivitySessionRow[] {
-    return data.user.current_status === "active" ? data.sessions.slice(1) : data.sessions;
-}
-
-export const sessionPages = (data: ProfileData) => Math.max(Math.ceil(completedSessions(data).length / SESSIONS_PER_PAGE), 1);
-
-export function sessionsOnPage(data: ProfileData, page: number): ActivitySessionRow[] {
-    return completedSessions(data).slice(page * SESSIONS_PER_PAGE, (page + 1) * SESSIONS_PER_PAGE);
-}
 
 /** Every badge an admin can give or take, then any earned badge outside that list. */
 export function listedBadges(data: ProfileData): string[] {
@@ -211,6 +201,7 @@ function sessionRows(s: MemberAdminState, data: ProfileData, kit: RenderKit): Ac
             ),
         ) as unknown as ActionRowBuilder<ButtonBuilder>,
     );
+    rows.push(inspectSessionRow(kit, slice, data.rareFinds));
     if (pages > 1) rows.push(paginationRow(kit, s.page, pages));
     rows.push(buttonRow(kit.button("clearSessions", (b) => b.setLabel("Clear all").setStyle(ButtonStyle.Danger))));
     return rows;

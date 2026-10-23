@@ -8,7 +8,9 @@ import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
 import { buildBalanceReply } from "../views/balance.view";
 import { openProfileView } from "../views/profile.view";
+import { openRareFindsView } from "../views/rare-finds.view";
 import { openRerollView } from "../views/reroll.view";
+import { openSessionView } from "../views/session.view";
 
 export const PROFILE_DESCRIPTION = "View your hunt profile, or someone else's.";
 export const PROFILE_USER_DESCRIPTION = "Whose profile to view (defaults to yourself)";
@@ -46,6 +48,18 @@ export default defineCommand({
         .addSubcommand((sub) => sub.setName("reroll").setDescription(REROLL_DESCRIPTION))
         .addSubcommand((sub) =>
             sub
+                .setName("session")
+                .setDescription("Inspect one macro session.")
+                .addIntegerOption((o) => o.setName("id").setDescription("Session id").setRequired(true).setMinValue(1)),
+        )
+        .addSubcommand((sub) =>
+            sub
+                .setName("rare-finds")
+                .setDescription("View a member's rare biome finds.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose rare finds to view (defaults to yourself)")),
+        )
+        .addSubcommand((sub) =>
+            sub
                 .setName("balance")
                 .setDescription("View your Seeds and level, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),
@@ -66,6 +80,20 @@ export default defineCommand({
             const target = (await ctx.args.getMember("user")) ?? ctx.member;
             const balance = await getBalance(ctx.guild.id, target.id);
             await ctx.reply(buildBalanceReply(target.id, target.id === ctx.user.id, balance));
+            return;
+        }
+
+        if (sub === "session") {
+            await ctx.defer();
+            await openSessionView(ctx, ctx.guild.id, ctx.args.getInteger("id", true));
+            return;
+        }
+
+        if (sub === "rare-finds") {
+            // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
+            const target = (await ctx.args.getMember("user")) ?? ctx.member;
+            await ctx.defer();
+            await openRareFindsView(ctx, ctx.guild.id, target);
             return;
         }
 
