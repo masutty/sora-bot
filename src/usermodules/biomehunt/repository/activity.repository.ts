@@ -413,7 +413,7 @@ export async function getUserLongestSessionRank(
 }
 
 interface RareFindRow {
-    event_id: number | null;
+    event_id: number | string | null;
     biome: string;
     at: Date;
     macro_message_id: string | null;
@@ -461,7 +461,7 @@ export async function getRareFinds(userId: number, rareBiomes: string[]): Promis
         [userId, rareBiomes],
     );
     return result.rows.map((r) => ({
-        eventId: r.event_id,
+        eventId: r.event_id === null ? null : Number(r.event_id),
         biome: r.biome,
         at: r.at,
         macroMessageId: r.macro_message_id,

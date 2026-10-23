@@ -16,6 +16,7 @@ test("badgeEmojis groups repeats, orders by registry and skips fakes", () => {
     const finds = [find("SINGULARITY"), find("GLITCHED"), find("GLITCHED"), find("GLITCHED", {}, VoteStatus.COMMUNITY_FAKE)];
     expect(badgeEmojis(finds)).toBe("🔥🔥 🏅");
     expect(badgeEmojis([find("GLITCHED", {}, VoteStatus.ADMIN_DENIED)])).toBe("");
+    expect(badgeEmojis([find("MYSTERY"), find("GLITCHED")])).toBe("🔥 🏅");
 });
 
 test("findsInSession includes both boundaries", () => {
