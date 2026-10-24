@@ -305,12 +305,11 @@ describe("test", () => {
         await runBadgeTracker(t.ctx, t.deps);
         expect(t.sends.map(([ch]) => ch)).toEqual(["c1", "c1"]);
         for (const [, payload] of t.sends) {
-            const content: string = postJson(payload).components[0].content;
-            expect(content.startsWith(TEST_LINE)).toBe(true);
-            expect(content).not.toContain("<@&");
+            expect(postJson(payload).content).toBe(TEST_LINE);
+            expect(JSON.stringify(payload.components[1].toJSON())).not.toContain("<@&");
             expect(payload.allowedMentions).toEqual({ parse: [], roles: [] });
         }
-        expect(postJson(t.sends[0]?.[1]).accent_color).toBe(0x7cf5ff);
+        expect(t.sends[0]?.[1].components[1].toJSON().accent_color).toBe(0x7cf5ff);
         expect(text(t.replies[0])).toContain("Sent 2 test posts to <#c1>.");
         expect(t.replies[0].allowedMentions).toEqual(NO_PINGS);
     });

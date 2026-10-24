@@ -4,6 +4,7 @@ import {
     type MessageCreateOptions,
     MessageFlags,
     SectionBuilder,
+    SeparatorSpacingSize,
     TextDisplayBuilder,
     ThumbnailBuilder,
 } from "discord.js";
@@ -21,16 +22,18 @@ export interface AwardPostInput {
     description: string | null;
     iconUrl: string | null;
     delta: number;
+    /** The awarded count now; the count before is `total - delta`. */
     total: number;
     window: CheckWindow;
     pingRoleId: string | null;
     /** The Subscription's own accent; `null` = {@link AWARD_COLOR}. */
     accentColor: number | null;
-    /** A test post from `/badgetracker test`: marked as such on the first line. */
+    /** A test post from `/badgetracker test`: marked as such above the card. */
     test?: boolean;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+const unix = (d: Date) => Math.floor(d.getTime() / 1000);
 
 /** The custom text wins over Roblox's; blank on both sides gives `null`. Cut to the max length with "…". */
 export function resolveDescription(custom: string | null, roblox: string): string | null {
@@ -40,43 +43,56 @@ export function resolveDescription(custom: string | null, roblox: string): strin
     return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function windowText(window: CheckWindow): string {
-    if (window.kind === "since") return `since <t:${Math.floor(window.at.getTime() / 1000)}:t>`;
-    return window.minutes === 1 ? "in the last minute" : `in the last ${window.minutes} minutes`;
-}
-
-/** One card: a Section (text plus thumbnail) or, without an icon, a plain TextDisplay. */
-function card(text: string, iconUrl: string | null, color: number): ContainerBuilder {
-    const container = new ContainerBuilder().setAccentColor(color);
+/** The text blocks beside the icon - a Section when there's an icon, plain TextDisplays otherwise. */
+function addTop(container: ContainerBuilder, blocks: string[], iconUrl: string | null): void {
+    const texts = blocks.map((content) => new TextDisplayBuilder().setContent(content));
     if (iconUrl) {
         container.addSectionComponents(
             new SectionBuilder()
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(text))
+                .addTextDisplayComponents(...texts)
                 .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: iconUrl } })),
         );
     } else {
-        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
+        container.addTextDisplayComponents(...texts);
     }
-    return container;
 }
 
+/** A divider, then `content` at full width (under the icon). */
+function addBelow(container: ContainerBuilder, content: string): void {
+    container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+}
+
+/**
+ * The test mark and the ping go above the card, so they never change its size. Beside the icon:
+ * the linked name and a `diff` block with the new awards (green) and before → now. Under it, each
+ * after a divider: the description, then the span the awards came in.
+ */
 export function buildAwardPost(input: AwardPostInput): MessageCreateOptions {
-    const lines: string[] = [];
-    if (input.test) lines.push(TEST_LINE);
-    if (input.pingRoleId) lines.push(`<@&${input.pingRoleId}>`);
-    lines.push(`## [${escapeMarkdown(input.name)}](https://www.roblox.com/badges/${input.badgeId})`);
-    if (input.description) {
-        const descLines = input.description
-            .split(/\r?\n/)
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0);
-        lines.push(...descLines.map((l) => `-# ${l}`));
-    }
-    lines.push(`**+${fmt(input.delta)}** ${input.delta === 1 ? "award" : "awards"} ${windowText(input.window)}`);
-    lines.push(`${fmt(input.total)} total`);
+    const above: string[] = [];
+    if (input.test) above.push(TEST_LINE);
+    if (input.pingRoleId) above.push(`<@&${input.pingRoleId}>`);
+
+    const title = `## [${escapeMarkdown(input.name)}](https://www.roblox.com/badges/${input.badgeId})`;
+    const awards = [
+        "```diff",
+        `+${fmt(input.delta)} ${input.delta === 1 ? "award" : "awards"}`,
+        `  ${fmt(input.total - input.delta)} → ${fmt(input.total)}`,
+        "```",
+    ].join("\n");
+    const post = new ContainerBuilder().setAccentColor(input.accentColor ?? AWARD_COLOR);
+    addTop(post, [title, awards], input.iconUrl);
+
+    const descLines = (input.description ?? "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    if (descLines.length > 0) addBelow(post, descLines.map((l) => `-# ${l}`).join("\n"));
+    const { from, to } = input.window;
+    addBelow(post, `-# <t:${unix(from)}:t> to <t:${unix(to)}:t> • <t:${unix(to)}:R>`);
 
     return {
-        components: [card(lines.join("\n"), input.iconUrl, input.accentColor ?? AWARD_COLOR)],
+        components: above.length > 0 ? [new TextDisplayBuilder().setContent(above.join("\n")), post] : [post],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [], roles: input.pingRoleId ? [input.pingRoleId] : [] },
     };
@@ -84,8 +100,8 @@ export function buildAwardPost(input: AwardPostInput): MessageCreateOptions {
 
 export const TEST_LINE = "**🧪 Test - not a real award**";
 
-/** What a Subscription's post looks like, with +1 award and never a ping. */
-export function buildTestPost(row: GuildBadgeRow, intervalMinutes: number): MessageCreateOptions {
+/** What a Subscription's post looks like, with +1 award over the last interval and never a ping. */
+export function buildTestPost(row: GuildBadgeRow, intervalMinutes: number, now: Date = new Date()): MessageCreateOptions {
     return buildAwardPost({
         badgeId: row.badge_id,
         name: row.name,
@@ -93,7 +109,7 @@ export function buildTestPost(row: GuildBadgeRow, intervalMinutes: number): Mess
         iconUrl: row.icon_url,
         delta: 1,
         total: row.awarded_count === null ? 1 : Number(row.awarded_count),
-        window: { kind: "interval", minutes: intervalMinutes },
+        window: { from: new Date(now.getTime() - intervalMinutes * 60_000), to: now },
         pingRoleId: null,
         accentColor: row.accent_color,
         test: true,
@@ -103,8 +119,10 @@ export function buildTestPost(row: GuildBadgeRow, intervalMinutes: number): Mess
 export function buildDeletedPost(input: { name: string; lastCount: number | null; iconUrl: string | null }): MessageCreateOptions {
     const lines = [`## ${escapeMarkdown(input.name)}`, "This badge was deleted on Roblox and is no longer tracked here."];
     if (input.lastCount !== null) lines.push(`Last count: ${fmt(input.lastCount)}`);
+    const post = new ContainerBuilder().setAccentColor(DELETED_COLOR);
+    addTop(post, [lines.join("\n")], input.iconUrl);
     return {
-        components: [card(lines.join("\n"), input.iconUrl, DELETED_COLOR)],
+        components: [post],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
     };
