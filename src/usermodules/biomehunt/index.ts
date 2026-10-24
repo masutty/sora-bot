@@ -13,6 +13,7 @@ import { biomeVoteComponent } from "./components/biome-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
 import { networkVoteComponent } from "./components/network-vote.component";
+import { shopManageComponent } from "./components/shop-manage.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
@@ -48,7 +49,7 @@ export default defineCog({
         networkDailyWorker,
     ],
 
-    components: [biomeVoteComponent(), forwardInfoComponent(), networkReviewComponent(), networkVoteComponent()],
+    components: [biomeVoteComponent(), forwardInfoComponent(), networkReviewComponent(), networkVoteComponent(), shopManageComponent()],
 
     events: {
         async messageCreate(_client, message) {
