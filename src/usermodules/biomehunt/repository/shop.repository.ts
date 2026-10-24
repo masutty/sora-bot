@@ -56,8 +56,8 @@ export async function getItem(guildId: string, itemId: number): Promise<ShopItem
 export async function insertItem(guildId: string, fields: ShopItemFields): Promise<ShopItemRow> {
     const res = await query<ShopItemRow>(
         `INSERT INTO bh_shop_items (guild_id, name, description, emoji, image_url, price, kind, role_id, duration_s, stock, max_per_member, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM bh_shop_items WHERE guild_id = $1 AND removed_at IS NULL))
+         VALUES ($1::text, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM bh_shop_items WHERE guild_id = $1::text AND removed_at IS NULL))
          RETURNING ${ITEM_COLUMNS}`,
         [
             guildId,
