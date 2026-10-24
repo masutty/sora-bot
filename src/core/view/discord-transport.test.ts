@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { type Message, MessageFlags } from "discord.js";
 import { buildModal, createDiscordTransport } from "./discord-transport";
+import { hasLiveView } from "./orphan-click";
 import type { ComponentEvent } from "./view-engine";
 
 /** Just the Message members the transport touches; `edit` records (or 404s, like an ephemeral message would). */
@@ -45,6 +46,19 @@ function click(overrides: Record<string, Fn> = {}) {
 }
 
 const spec = { title: "t", fields: [{ key: "a", label: "A" }] };
+
+test("the message counts as a live View from listen until close", () => {
+    const message = {
+        id: "m-transport",
+        flags: { has: () => false },
+        createMessageComponentCollector: () => ({ on: () => {}, stop: () => {} }),
+    } as unknown as Message;
+    const t = createDiscordTransport(message);
+    t.listen(async () => {});
+    expect(hasLiveView("m-transport")).toBe(true);
+    t.close();
+    expect(hasLiveView("m-transport")).toBe(false);
+});
 
 test("buildModal: text goes first as a TextDisplay, then each field as a labelled input", () => {
     const json = buildModal({ title: "t", text: "Hello", fields: [{ key: "a", label: "A", value: "1" }] }, "v:1:m").toJSON();
