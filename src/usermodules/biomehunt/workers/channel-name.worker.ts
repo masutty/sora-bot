@@ -2,8 +2,8 @@ import { PermissionFlagsBits } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { defineWorker } from "@/define";
 import { Logger } from "@/utils/logging";
-import { type ChannelNameCandidate, getChannelNameCandidates, getClosedRareCounts, setNameBadges } from "../repository/users.repository";
-import { type RareCounts, rareBadgeString, wantedChannelName } from "../services/channel-name.service";
+import { type ChannelNameCandidate, getChannelNameCandidates, getChannelNameCounts, setNameBadges } from "../repository/users.repository";
+import { type BiomeCounts, channelNameBadges, wantedChannelName } from "../services/channel-name.service";
 import { clearLogDedup, guildLog } from "../services/guild-log.service";
 import { settings } from "../settings";
 
@@ -13,7 +13,7 @@ const logger = new Logger("biomehunt.workers.channel-name");
 export interface ChannelNameDeps {
     now(): number;
     getCandidates(): Promise<ChannelNameCandidate[]>;
-    getCounts(userIds: number[]): Promise<Map<number, RareCounts>>;
+    getCounts(userIds: number[]): Promise<Map<number, BiomeCounts>>;
     setNameBadges(userId: number, badges: string): Promise<void>;
     /** The cached channel - null when the server or the channel isn't in the cache. */
     getChannel(guildId: string, channelId: string): { name: string; setName(name: string): Promise<unknown> } | null;
@@ -60,7 +60,7 @@ export function createChannelNameTick(deps: ChannelNameDeps): () => Promise<void
             const channel = deps.getChannel(c.guildId, c.channelId);
             if (!channel) continue;
 
-            const badges = c.flagOn ? rareBadgeString(counts.get(c.userId) ?? []) : "";
+            const badges = c.flagOn ? channelNameBadges(counts.get(c.userId) ?? []) : "";
             const wanted = wantedChannelName(channel.name, c.nameBadges, badges);
             if (wanted === channel.name) continue;
 
@@ -87,7 +87,7 @@ function defaultDeps(client: BotClient): ChannelNameDeps {
     return {
         now: () => Date.now(),
         getCandidates: getChannelNameCandidates,
-        getCounts: getClosedRareCounts,
+        getCounts: getChannelNameCounts,
         setNameBadges,
         getChannel: (guildId, channelId) => {
             const channel = client.guilds.cache.get(guildId)?.channels.cache.get(channelId);
@@ -104,7 +104,7 @@ function defaultDeps(client: BotClient): ChannelNameDeps {
             guildLog(client, guildId, {
                 kind: "warning",
                 title: "⚠️ Couldn't rename macro channels",
-                body: "The bot is missing **Manage Channels**, so the rare counts in channel names aren't updated.",
+                body: "The bot is missing **Manage Channels**, so the counts in channel names aren't updated.",
                 dedupKey: "rename",
             }),
         clearWarn: (guildId) => clearLogDedup(guildId, "rename"),

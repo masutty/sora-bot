@@ -36,6 +36,8 @@ export interface BiomeConfigEntry {
     hasBadge?: boolean;
     /** The badge's emoji - `null` = the default one. Optional in the file. */
     badgeEmoji?: string | null;
+    /** Whether its finds count in the macro channel name. Optional in the file - absent = no. */
+    showInChannelName?: boolean;
     enabled: boolean;
 }
 
@@ -69,6 +71,7 @@ function toConfigEntry(e: BiomeEntry): BiomeConfigEntry {
         durationSeconds: e.durationS ?? null,
         hasBadge: e.hasBadge === true,
         badgeEmoji: e.badgeEmoji || null,
+        showInChannelName: e.showInChannelName === true,
         enabled: e.enabled,
     };
 }
@@ -115,6 +118,7 @@ function fromConfigEntry(raw: unknown): BiomeEntry {
         durationS: parseDurationSeconds(raw.durationSeconds),
         hasBadge: raw.hasBadge === true,
         badgeEmoji: optionalString(raw.badgeEmoji) ? parseBadgeEmoji(String(raw.badgeEmoji)) : undefined,
+        showInChannelName: raw.showInChannelName === true,
         enabled: raw.enabled !== false,
     };
 }
@@ -168,14 +172,16 @@ const COMPARED_FIELDS = [
     "durationS",
     "hasBadge",
     "badgeEmoji",
+    "showInChannelName",
     "enabled",
 ] as const;
 
 /** `""` and `undefined` both mean "not set" (e.g. a seeded empty icon URL vs. a missing one). */
 const unset = <T>(v: T) => (v === "" ? undefined : v);
 
-/** A field's value for comparing - an unset `hasBadge` is the same as `false`. */
-const comparable = (field: (typeof COMPARED_FIELDS)[number], v: unknown) => (field === "hasBadge" ? v === true : unset(v));
+/** A field's value for comparing - an unset `hasBadge`/`showInChannelName` is the same as `false`. */
+const comparable = (field: (typeof COMPARED_FIELDS)[number], v: unknown) =>
+    field === "hasBadge" || field === "showInChannelName" ? v === true : unset(v);
 
 export interface BiomeImportPlan {
     added: string[];

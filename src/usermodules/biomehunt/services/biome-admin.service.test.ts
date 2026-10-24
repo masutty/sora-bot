@@ -64,6 +64,7 @@ const NEW_BIOME = {
     duration: null,
     hasBadge: null,
     badgeEmoji: null,
+    showInChannelName: null,
 };
 
 const NO_EDIT = {
@@ -76,6 +77,7 @@ const NO_EDIT = {
     duration: null,
     hasBadge: null,
     badgeEmoji: null,
+    showInChannelName: null,
 };
 
 test("addBiome registers the normalized key, and the parser/selectors see it right away", async () => {
@@ -216,6 +218,13 @@ test("a biome badge is turned on with its emoji, and 'none' falls back to the de
     await editBiome({ ...NO_EDIT, biome: "BLOODMOON", hasBadge: false }, deps);
     expect(getBiomeBadges()).not.toContain("BLOODMOON");
     expect(() => parseBadgeEmoji("two emojis")).toThrow(BiomeHuntError);
+});
+
+test("showing in channel names is off on add and changes only when given", async () => {
+    const deps = createFakeDeps();
+    expect((await addBiome(NEW_BIOME, deps)).showInChannelName).toBe(false);
+    expect(await editBiome({ ...NO_EDIT, biome: "BLOODMOON", showInChannelName: true }, deps)).toMatchObject({ showInChannelName: true });
+    expect(await editBiome({ ...NO_EDIT, biome: "BLOODMOON", color: "000000" }, deps)).toMatchObject({ showInChannelName: true });
 });
 
 test("the three badges that used to be hard-coded are biome badges by default", () => {

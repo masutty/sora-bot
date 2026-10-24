@@ -26,6 +26,7 @@ import {
     parseBiomeConfig,
     planBiomeImport,
 } from "../services/biome-config.service";
+import { channelBadgeEmoji } from "../services/channel-name.service";
 import { BiomeHuntError } from "../types";
 import { biomeListView, buildBiomeCard } from "../views/biome-list.view";
 
@@ -77,7 +78,14 @@ function addSharedBiomeOptions(s: SlashCommandSubcommandBuilder, required: boole
         .addBooleanOption((o) =>
             o.setName("has_badge").setDescription("Finding it gives a profile badge (and the server's badge role, if set)"),
         )
-        .addStringOption((o) => o.setName("badge_emoji").setDescription(`The badge's emoji - unicode or custom${removable}`));
+        .addStringOption((o) =>
+            o.setName("badge_emoji").setDescription(`Its emoji, for the badge and the channel name count - unicode or custom${removable}`),
+        )
+        .addBooleanOption((o) =>
+            o
+                .setName("show_in_channel_name")
+                .setDescription("Count its finds in macro channel names (needs a unicode emoji and the server flag)"),
+        );
 }
 
 /** `/owner biome ...` - the bot owner's runtime biome registry (see `bh_biomes`). */
@@ -173,6 +181,13 @@ function enabledNotes(e: BiomeEntry, detectionName: string): string[] {
     return notes;
 }
 
+/** Shown in channel names but no emoji a name can hold - nothing would show. */
+function channelNameNotes(e: BiomeEntry): string[] {
+    return e.showInChannelName && !channelBadgeEmoji(e.badgeEmoji)
+        ? ["Channel names only show unicode emojis - set one in `badge_emoji` for this biome to show there."]
+        : [];
+}
+
 /** `/owner biome <sub>` - the caller already deferred ephemerally. */
 export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void> {
     const args = ctx.args;
@@ -190,8 +205,11 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
                 duration: args.getString("duration"),
                 hasBadge: args.getBoolean("has_badge"),
                 badgeEmoji: args.getString("badge_emoji"),
+                showInChannelName: args.getBoolean("show_in_channel_name"),
             });
-            await ctx.reply(biomeCard("Biome added", entry, enabledNotes(entry, detectionName ?? entry.label)));
+            await ctx.reply(
+                biomeCard("Biome added", entry, [...enabledNotes(entry, detectionName ?? entry.label), ...channelNameNotes(entry)]),
+            );
             return;
         }
         case "edit": {
@@ -206,8 +224,14 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
                 duration: args.getString("duration"),
                 hasBadge: args.getBoolean("has_badge"),
                 badgeEmoji: args.getString("badge_emoji"),
+                showInChannelName: args.getBoolean("show_in_channel_name"),
             });
-            await ctx.reply(biomeCard("Biome updated", entry, entry.category === "rare" && entry.enabled ? [NETWORK_NOTE] : []));
+            await ctx.reply(
+                biomeCard("Biome updated", entry, [
+                    ...(entry.category === "rare" && entry.enabled ? [NETWORK_NOTE] : []),
+                    ...channelNameNotes(entry),
+                ]),
+            );
             return;
         }
         case "disable": {

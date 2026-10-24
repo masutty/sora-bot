@@ -526,6 +526,9 @@ ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS vote_decided_by VARCHAR(20
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_badges TEXT NOT NULL DEFAULT '';
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_renamed_at TIMESTAMPTZ;
 
+/* Which biomes count in the macro channel name (needs RARE_COUNT_IN_CHANNEL_NAME on). */
+ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS show_in_channel_name BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS bh_biome_votes_event ON bh_biome_votes(event_id, created_at DESC);
 
 /* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
@@ -543,6 +546,16 @@ BEGIN
         DELETE FROM bh_biome_delayed_forwards d
          WHERE NOT EXISTS (SELECT 1 FROM bh_biomes b WHERE b.biome = d.biome AND b.category = 'rare');
         INSERT INTO bh_data_migrations (name) VALUES ('delayed-forwards-rare-only');
+    END IF;
+END $$;
+
+/* The channel name count used to show every rare biome with an emoji - keeps them on, once, so an owner's later change sticks. */
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM bh_data_migrations WHERE name = 'channel-name-rare-default')
+       AND EXISTS (SELECT 1 FROM bh_biomes) THEN
+        UPDATE bh_biomes SET show_in_channel_name = TRUE WHERE category = 'rare' AND badge_emoji IS NOT NULL;
+        INSERT INTO bh_data_migrations (name) VALUES ('channel-name-rare-default');
     END IF;
 END $$;
 
