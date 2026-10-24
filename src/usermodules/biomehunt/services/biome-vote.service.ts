@@ -266,6 +266,7 @@ async function refreshVoteMessage(client: BotClient, vote: BiomeVoteRow, render:
         findCount: vote.find_count,
         serverFindCount: vote.server_find_count,
         lastSeenInServerAt: vote.last_seen_in_server_at,
+        sentAt: message.createdAt,
         vote: render,
     });
     // An edit never re-pings, but be explicit: the finder/deciding admin are only ever named, never pinged.

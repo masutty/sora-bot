@@ -190,6 +190,7 @@ async function sendLiveForward(
         serverLink: parsed.serverLink,
         jumpLink,
         ...stats,
+        sentAt: now,
         vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
         badges: dryRun ? { simulated: true } : undefined,
         flavorText: getBiomeMeta(biome)?.flavorText,
@@ -295,6 +296,7 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             serverLink: job.serverLink,
             jumpLink: job.jumpLink,
             ...job.stats,
+            sentAt: new Date(),
             badges: { delayed: true, simulated: job.dryRun },
             flavorText: getBiomeMeta(job.biome)?.flavorText,
         });
