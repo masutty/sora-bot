@@ -82,9 +82,11 @@ function purchase(over: Partial<PurchaseRow> = {}): PurchaseRow {
 
 const buyInput = { guildId: "g1", itemId: 7, userId: 3, buyerDiscordId: "d3", expectedPrice: 500, code: "ABC234", now: NOW };
 
-test("buyItem locks the live item row", async () => {
+test("buyItem locks the member, then the live item row", async () => {
     await repo.buyItem(buyInput);
-    const select = calls[0].sql;
+    expect(calls[0].sql).toContain("FROM bh_users");
+    expect(calls[0].sql).toContain("FOR UPDATE");
+    const select = calls[1].sql;
     expect(select).toContain("FROM bh_shop_items");
     expect(select).toContain("FOR UPDATE");
     expect(select).toContain("removed_at IS NULL");
@@ -202,13 +204,15 @@ test("refundPurchase refuses a second refund and writes nothing", async () => {
     expect(sqlOf("FROM bh_shop_purchases").at(-1)?.sql).toContain("FOR UPDATE");
 });
 
-test("refundPurchase locks the item row before the purchase row and Seeds (same order as buyItem)", async () => {
+test("refundPurchase locks member, item, purchase row, then touches Seeds (same order as buyItem)", async () => {
     script = [{ match: "AND code = $2", rows: [purchase()] }];
     await repo.refundPurchase(refundInput);
+    const lockUser = calls.findIndex((c) => c.sql.includes("FROM bh_users") && c.sql.includes("FOR UPDATE"));
     const lockItem = calls.findIndex((c) => c.sql.includes("FROM bh_shop_items") && c.sql.includes("FOR UPDATE"));
     const lockPurchase = calls.findIndex((c) => c.sql.includes("FROM bh_shop_purchases") && c.sql.includes("FOR UPDATE"));
     const credit = calls.findIndex((c) => c.sql.includes("UPDATE bh_users"));
-    expect(lockItem).toBeGreaterThan(-1);
+    expect(lockUser).toBeGreaterThan(-1);
+    expect(lockUser).toBeLessThan(lockItem);
     expect(lockItem).toBeLessThan(lockPurchase);
     expect(lockPurchase).toBeLessThan(credit);
 });

@@ -37,6 +37,8 @@ export interface BuyInput {
 export async function buyItem(input: BuyInput): Promise<BuyResult> {
     const { guildId, itemId, userId, buyerDiscordId, expectedPrice, code, now } = input;
     return transaction(async (client) => {
+        // Lock order everywhere: member, item, purchase rows, grant. The member lock serialises one member's money moves.
+        await client.query("SELECT id FROM bh_users WHERE id = $1 FOR UPDATE", [userId]);
         const found = await client.query<ShopItemRow>(
             "SELECT * FROM bh_shop_items WHERE id = $1 AND guild_id = $2 AND removed_at IS NULL FOR UPDATE",
             [itemId, guildId],
@@ -155,12 +157,13 @@ export async function refundPurchase(input: RefundInput): Promise<RefundResult> 
     const { guildId, code, by, reason, now } = input;
     return transaction(async (client) => {
         const run: Run = (sql, params) => client.query(sql, params);
-        // Lock order matches buyItem (item, user, grant, purchases): peek at the item id, lock the item first, then the purchase row.
-        const peek = await client.query<{ item_id: number }>("SELECT item_id FROM bh_shop_purchases WHERE guild_id = $1 AND code = $2", [
-            guildId,
-            code,
-        ]);
+        // Lock order matches buyItem (member, item, purchase rows, grant): peek at the ids (they never change), lock member and item, then the purchase row.
+        const peek = await client.query<{ item_id: number; user_id: number }>(
+            "SELECT item_id, user_id FROM bh_shop_purchases WHERE guild_id = $1 AND code = $2",
+            [guildId, code],
+        );
         if (!peek.rows[0]) return { kind: "not_found" };
+        await client.query("SELECT id FROM bh_users WHERE id = $1 FOR UPDATE", [peek.rows[0].user_id]);
         await client.query("SELECT id FROM bh_shop_items WHERE id = $1 FOR UPDATE", [peek.rows[0].item_id]);
         const found = await client.query<PurchaseRow>(
             `SELECT ${PURCHASE_COLUMNS} FROM bh_shop_purchases WHERE guild_id = $1 AND code = $2 FOR UPDATE`,
