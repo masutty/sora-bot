@@ -15,6 +15,7 @@ import { defaultForwardsDeps, forwardsView } from "../views/forwards.view";
 import { openMemberAdmin, resolveTargetMember } from "../views/member-admin.open";
 import { defaultQuotasDeps, loadQuotasInput, quotasView } from "../views/quotas.view";
 import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
+import { shopAdminView } from "../views/shop-admin.view";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
 
 /**
@@ -51,6 +52,7 @@ export default defineCommand({
         .addSubcommand((s) => s.setName("setup").setDescription("Guided step-by-step setup wizard."))
         .addSubcommand((s) => s.setName("flags").setDescription("Turn optional features on or off for this server."))
         .addSubcommand((s) => s.setName("quotas").setDescription("Quota reward roles members earn by macroing."))
+        .addSubcommand((s) => s.setName("shop").setDescription("Sell roles and items for Seeds."))
         .addSubcommand((s) => s.setName("forwarding").setDescription("Where biome finds get posted, right away and after a delay."))
         .addSubcommand((s) =>
             s.setName("settings").setDescription("Activity, status roles, macro channels, auto-delete and the live counter."),
@@ -132,6 +134,14 @@ export default defineCommand({
         if (routeKey === "forwarding") {
             await ctx.defer();
             await ctx.open(forwardsView(defaultForwardsDeps(ctx.client, ctx.guild)), undefined);
+            return;
+        }
+
+        if (routeKey === "shop") {
+            await ctx.defer();
+            // Lazy: the real repositories load only when the shop menu opens.
+            const { defaultShopAdminDeps } = await import("../services/shop-admin-deps.service");
+            await ctx.open(shopAdminView(defaultShopAdminDeps(ctx.client, ctx.guild)), undefined);
             return;
         }
 

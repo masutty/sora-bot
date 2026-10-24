@@ -259,6 +259,15 @@ export async function countPending(guildId: string): Promise<number> {
     return Number(res.rows[0].count);
 }
 
+/** Pending purchases of one item, for the remove confirm. */
+export async function countPendingForItem(itemId: number): Promise<number> {
+    const res = await query<{ count: string }>(
+        "SELECT COUNT(*) AS count FROM bh_shop_purchases WHERE item_id = $1 AND status = 'pending'",
+        [itemId],
+    );
+    return Number(res.rows[0].count);
+}
+
 /** One page of a member's purchases, newest first. */
 export async function listMemberPurchases(userId: number, offset: number, limit: number): Promise<{ rows: PurchaseRow[]; total: number }> {
     const [count, page] = await Promise.all([

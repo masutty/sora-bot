@@ -358,3 +358,11 @@ test("getDueGrants maps rows with the Discord id", async () => {
     expect(await repo.getDueGrants(NOW, 50)).toEqual([{ userId: 3, guildId: "g1", discordUserId: "d3", roleId: "r1" }]);
     expect(calls[0].sql).toContain("ends_at <= ");
 });
+
+test("countPendingForItem counts the item's pending purchases as a number", async () => {
+    script = [{ match: "COUNT(*)", rows: [{ count: "4" }] }];
+    expect(await repo.countPendingForItem(9)).toBe(4);
+    expect(calls[0].sql).toContain("item_id = $1");
+    expect(calls[0].sql).toContain("status = 'pending'");
+    expect(calls[0].params).toEqual([9]);
+});
