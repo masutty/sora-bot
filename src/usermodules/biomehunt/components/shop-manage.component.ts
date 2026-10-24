@@ -2,7 +2,6 @@ import { type GuildMember, MessageFlags, PermissionFlagsBits } from "discord.js"
 import { defineComponent, type RunViewOptions, runView } from "@/define";
 import { normalizePurchaseCode } from "../constants/shop.constants";
 import type { ShopDeps } from "../services/shop.service";
-import { defaultShopDeps } from "../services/shop-deps.service";
 import { purchaseCardView, SHOP_MANAGE_PREFIX } from "../views/shop-purchase.view";
 
 /**
@@ -21,7 +20,7 @@ export function shopManageComponent(deps?: ShopDeps, viewTransport?: RunViewOpti
             }
             // Acknowledged first: the lookup below must not eat Discord's 3s window.
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const shopDeps = deps ?? defaultShopDeps(client);
+            const shopDeps = deps ?? (await import("../services/shop-deps.service")).defaultShopDeps(client);
             const code = normalizePurchaseCode(parts[0] ?? "");
             const purchase = code && interaction.guildId ? await shopDeps.getPurchaseByCode(interaction.guildId, code) : null;
             if (!code || !interaction.guildId || !purchase) {

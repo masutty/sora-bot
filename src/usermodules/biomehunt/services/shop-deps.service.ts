@@ -31,13 +31,28 @@ async function fetchTextChannel(client: Client, channelId: string): Promise<Guil
     return channel;
 }
 
+/** The sale post's database lookups, injectable so tests need no DB. */
+export interface SalesIo {
+    salesChannelId(guildId: string): Promise<string | null>;
+    logChannelId(guildId: string): Promise<string | null>;
+    savePost(purchaseId: number, channelId: string, messageId: string): Promise<void>;
+    /** Replaces the guild log, for tests. */
+    log?: ShopDeps["log"];
+}
+
+const defaultSalesIo: SalesIo = {
+    salesChannelId: async (guildId) => (await getShop(guildId))?.sales_channel_id ?? null,
+    logChannelId: async (guildId) => (await getOrCreateGuildConfig(guildId)).log_channel_id,
+    savePost: setPurchasePost,
+};
+
 /**
  * The real wiring of the shop flows. Sale-post failures are logged here (one warning per server,
  * dedup key `shop-sales`) and never thrown, so the flows' own log-on-throw doesn't repeat them.
  * Lives apart from `shop.service.ts` because the sale post view imports the flows from there.
  */
-export function defaultShopDeps(client: BotClient): ShopDeps {
-    const log: ShopDeps["log"] = (guildId, entry) => guildLog(client, guildId, entry);
+export function defaultShopDeps(client: BotClient, io: SalesIo = defaultSalesIo): ShopDeps {
+    const log: ShopDeps["log"] = io.log ?? ((guildId, entry) => guildLog(client, guildId, entry));
 
     const warnSales = (title: string, purchase: PurchaseRow, channelId: string | null, err: unknown) =>
         log(purchase.guild_id, {
@@ -77,13 +92,11 @@ export function defaultShopDeps(client: BotClient): ShopDeps {
         async postSale(purchase) {
             let channelId: string | null = null;
             try {
-                channelId =
-                    (await getShop(purchase.guild_id))?.sales_channel_id ??
-                    (await getOrCreateGuildConfig(purchase.guild_id)).log_channel_id;
+                channelId = (await io.salesChannelId(purchase.guild_id)) ?? (await io.logChannelId(purchase.guild_id));
                 if (!channelId) return;
                 const channel = await fetchTextChannel(client, channelId);
                 const message = await channel.send(buildSalePost(purchase));
-                await setPurchasePost(purchase.id, channel.id, message.id);
+                await io.savePost(purchase.id, channel.id, message.id);
             } catch (err) {
                 await warnSales("⚠️ Couldn't post a shop sale", purchase, channelId, err);
             }
