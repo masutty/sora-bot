@@ -1,6 +1,6 @@
 import { type Guild, PermissionFlagsBits } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import { countPending, countPendingForItem } from "../repository/purchases.repository";
+import { countPending, countPendingForItem, listPurchases } from "../repository/purchases.repository";
 import {
     ensureShop,
     insertItem,
@@ -32,6 +32,7 @@ export function defaultShopAdminDeps(client: BotClient, guild: Guild): ShopAdmin
         moveItem,
         setShopOpen,
         setSalesChannel,
+        listPurchases,
         countPending,
         countPendingForItem,
         economyOn: (guildId) => shop.economyOn(guildId),

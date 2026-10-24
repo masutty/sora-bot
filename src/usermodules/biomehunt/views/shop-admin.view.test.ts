@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { createFakeViewTransport, type ViewPayload } from "@/define";
+import { PURCHASE_CODE_ALPHABET } from "../constants/shop.constants";
 import type { ShopDeps } from "../services/shop.service";
-import type { ShopItemRow } from "../types";
+import type { PurchaseRow, ShopItemRow } from "../types";
 import { type ShopAdminDeps, shopAdminView } from "./shop-admin.view";
 
 const OWNER = "owner";
@@ -69,7 +70,32 @@ const item = (id: number, over: Partial<ShopItemRow> = {}): ShopItemRow => ({
     ...over,
 });
 
+const purchase = (n: number, over: Partial<PurchaseRow> = {}): PurchaseRow => ({
+    id: n,
+    code: `K7Q2M${PURCHASE_CODE_ALPHABET[n]}`,
+    guild_id: GUILD,
+    item_id: 1,
+    user_id: n,
+    buyer_discord_id: `b${n}`,
+    item_name: `Thing ${n}`,
+    item_emoji: null,
+    price: 100,
+    kind: "manual",
+    role_id: null,
+    duration_s: null,
+    role_ends_at: null,
+    status: "pending",
+    refund_reason: null,
+    decided_by: null,
+    decided_at: null,
+    post_channel_id: null,
+    post_message_id: null,
+    created_at: new Date("2026-01-01T00:00:00Z"),
+    ...over,
+});
+
 interface Setup {
+    purchases?: PurchaseRow[];
     items?: ShopItemRow[];
     open?: boolean;
     economyOn?: boolean;
@@ -80,10 +106,25 @@ interface Setup {
 
 function fakeDeps(setup: Setup = {}) {
     const calls: unknown[][] = [];
-    const data = { items: [...(setup.items ?? [])], open: setup.open ?? false, channel: null as string | null, nextId: 100 };
+    const data = {
+        items: [...(setup.items ?? [])],
+        purchases: [...(setup.purchases ?? [])],
+        open: setup.open ?? false,
+        channel: null as string | null,
+        nextId: 100,
+        economyOn: setup.economyOn ?? true,
+    };
     const deps: ShopAdminDeps = {
         guildId: GUILD,
-        shop: {} as ShopDeps,
+        shop: {
+            now: () => new Date("2026-01-03T00:00:00Z"),
+            getPurchaseByCode: async (_g: string, code: string) => data.purchases.find((p) => p.code === code) ?? null,
+        } as unknown as ShopDeps,
+        listPurchases: async (_g, filter, offset, limit) => {
+            calls.push(["listPurchases", filter, offset]);
+            const all = data.purchases.filter((p) => filter === "all" || p.status === "pending");
+            return { rows: all.slice(offset, offset + limit), total: all.length };
+        },
         ensureShop: async () => ({ guild_id: GUILD, open: data.open, sales_channel_id: data.channel }),
         listLiveItems: async () => data.items,
         insertItem: async (_g, fields) => {
@@ -113,9 +154,9 @@ function fakeDeps(setup: Setup = {}) {
             calls.push(["setSalesChannel", channelId]);
             data.channel = channelId;
         },
-        countPending: async () => setup.pending ?? 0,
+        countPending: async () => setup.pending ?? data.purchases.filter((p) => p.status === "pending").length,
         countPendingForItem: async () => setup.pendingForItem ?? 0,
-        economyOn: async () => setup.economyOn ?? true,
+        economyOn: async () => data.economyOn,
         checkRole: async (_g, roleId) => {
             calls.push(["checkRole", roleId]);
             return setup.roleProblem ?? null;
@@ -353,4 +394,128 @@ test("the Settings channel select saves on change and can be cleared", async () 
     expect(component(fake.lastPayload(), "salesChannel")?.default_values?.[0]?.id).toBe("c1");
     await fake.emit(fake.click("salesChannel", OWNER, []));
     expect(calls).toContainEqual(["setSalesChannel", null]);
+});
+
+const codeOf = (n: number) => purchase(n).code;
+
+test("Purchases starts on Pending when something is pending, on All otherwise", async () => {
+    const pending = await open({ purchases: [purchase(1), purchase(2, { status: "delivered" })] });
+    await pending.fake.emit(pending.fake.click("tab:purchases", OWNER));
+    const t = text(pending.fake.lastPayload());
+    expect(t).toContain("**Purchases**");
+    expect(t).toContain(`\`#${codeOf(1)}\` · **Thing 1** · <@b1>\n-# ⏳ Pending · <t:1767225600:R>`);
+    expect(t).not.toContain("Thing 2");
+    expect(component(pending.fake.lastPayload(), "filter")?.options?.find((o) => o.default)?.label).toBe("Pending");
+
+    const none = await open({ purchases: [purchase(2, { status: "delivered" })] });
+    await none.fake.emit(none.fake.click("tab:purchases", OWNER));
+    expect(text(none.fake.lastPayload())).toContain("Thing 2");
+    expect(component(none.fake.lastPayload(), "filter")?.options?.find((o) => o.default)?.label).toBe("All");
+});
+
+test("empty lists say so", async () => {
+    const none = await open();
+    await none.fake.emit(none.fake.click("tab:purchases", OWNER));
+    expect(text(none.fake.lastPayload())).toContain("No purchases yet.");
+    expect(component(none.fake.lastPayload(), "open")).toBeUndefined();
+    const done = await open({ purchases: [purchase(1, { status: "delivered" })] });
+    await done.fake.emit(done.fake.click("tab:purchases", OWNER));
+    await done.fake.emit(done.fake.click("filter", OWNER, ["pending"]));
+    expect(text(done.fake.lastPayload())).toContain("Nothing pending.");
+});
+
+test("status lines for delivered and refunded purchases", async () => {
+    const at = new Date("2026-01-02T00:00:00Z");
+    const { fake } = await open({
+        purchases: [
+            purchase(1, { kind: "timed_role", role_id: "r1", role_ends_at: new Date("2026-01-09T00:00:00Z"), status: "delivered" }),
+            purchase(2, { kind: "role", role_id: "r1", status: "delivered", decided_at: at }),
+            purchase(3, { status: "refunded", decided_by: "adm", decided_at: at }),
+        ],
+    });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("-# ✅ Delivered · <@&r1> until <t:1767916800:D>");
+    expect(t).toContain("-# ✅ Delivered · <t:1767312000:R>");
+    expect(t).toContain("-# ↩️ Refunded by <@adm> · <t:1767312000:R>");
+});
+
+test("switching the filter resets to page 0 and reloads", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => purchase(i + 1, i < 3 ? {} : { status: "delivered" }));
+    const { fake, calls } = await open({ purchases: many });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    await fake.emit(fake.click("filter", OWNER, ["all"]));
+    await fake.emit(fake.click("next", OWNER));
+    expect(labels(fake.lastPayload())).toContain("2 / 2");
+    await fake.emit(fake.click("filter", OWNER, ["pending"]));
+    expect(calls.filter((c) => c[0] === "listPurchases").at(-1)).toEqual(["listPurchases", "pending", 0]);
+    expect(labels(fake.lastPayload())).not.toContain("2 / 2");
+    expect(text(fake.lastPayload())).toContain("Thing 1");
+});
+
+test("12 purchases show a page row and page 2 lists 2", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => purchase(i + 1));
+    const { fake } = await open({ purchases: many });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    expect(labels(fake.lastPayload())).toContain("1 / 2");
+    expect(component(fake.lastPayload(), "open")?.options?.length).toBe(10);
+    await fake.emit(fake.click("next", OWNER));
+    expect(text(fake.lastPayload()).match(/⏳ Pending/g)?.length).toBe(2);
+    expect(component(fake.lastPayload(), "open")?.options?.length).toBe(2);
+});
+
+test("the open select lists '#CODE · name' and opens the card", async () => {
+    const { fake } = await open({ purchases: [purchase(1)] });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    expect(component(fake.lastPayload(), "open")?.options?.[0].label).toBe(`#${codeOf(1)} · Thing 1`);
+    await fake.emit(fake.click("open", OWNER, [codeOf(1)]));
+    expect(text(fake.lastPayload())).toContain("Bought by <@b1>");
+    expect(button(fake.lastPayload(), "Back")).toBeDefined();
+});
+
+test("Find ID opens the card for a lowercase code", async () => {
+    const { fake } = await open({ purchases: [purchase(1)] });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    expect(button(fake.lastPayload(), "Find ID")?.style).toBe(ButtonPrimary);
+    answerModal(fake, { id: ` #${codeOf(1).toLowerCase()}` });
+    await fake.emit(fake.click("find", OWNER));
+    expect(fake.modals[0].spec.title).toBe("Find a purchase");
+    expect(fake.modals[0].spec.fields[0].label).toBe("Purchase ID");
+    expect(text(fake.lastPayload())).toContain(`#${codeOf(1)}`);
+    expect(text(fake.lastPayload())).toContain("Bought by <@b1>");
+});
+
+test("an unknown or malformed ID notifies and opens nothing", async () => {
+    const { fake } = await open({ purchases: [purchase(1)] });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    answerModal(fake, { id: "zzzzzz" });
+    await fake.emit(fake.click("find", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("No purchase with ID `#ZZZZZZ`.");
+    answerModal(fake, { id: "#ab" });
+    await fake.emit(fake.click("find", OWNER));
+    expect(fake.notifies.at(-1)?.content).toBe("No purchase with ID `#AB`.");
+    expect(text(fake.lastPayload())).toContain("**Purchases**");
+});
+
+test("a purchase keeps its snapshot name", async () => {
+    const { fake } = await open({
+        items: [item(1, { name: "Renamed" })],
+        purchases: [purchase(1, { item_name: "Old name", item_emoji: "🎁" })],
+    });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    expect(text(fake.lastPayload())).toContain("🎁 **Old name**");
+});
+
+test("switching tabs reloads the pending count and the economy flag", async () => {
+    const { fake, data } = await open({ purchases: [purchase(1)] });
+    data.purchases = [purchase(1), purchase(2)];
+    data.economyOn = false;
+    await fake.emit(fake.click("tab:settings", OWNER));
+    expect(labels(fake.lastPayload())).toContain("Purchases · 2");
+    await fake.emit(fake.click("tab:items", OWNER));
+    expect(text(fake.lastPayload())).toContain("The economy is off");
+    data.economyOn = true;
+    await fake.emit(fake.click("tab:settings", OWNER));
+    await fake.emit(fake.click("tab:items", OWNER));
+    expect(text(fake.lastPayload())).not.toContain("The economy is off");
 });

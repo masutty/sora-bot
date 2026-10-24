@@ -6,10 +6,12 @@ import {
     ITEM_NAME_MAX,
     MAX_ITEM_PRICE,
     MAX_SHOP_ITEMS,
+    normalizePurchaseCode,
+    PURCHASES_PER_PAGE,
     parseRoleDuration,
     SHOP_ITEMS_PER_PAGE,
 } from "../constants/shop.constants";
-import type { countPending, countPendingForItem } from "../repository/purchases.repository";
+import type { countPending, countPendingForItem, listPurchases } from "../repository/purchases.repository";
 import type {
     ensureShop,
     insertItem,
@@ -22,8 +24,9 @@ import type {
 } from "../repository/shop.repository";
 import { parseBadgeEmoji, parseIconUrl } from "../services/biome-admin.service";
 import type { ShopDeps } from "../services/shop.service";
-import { BiomeHuntError, type ShopItemFields, type ShopItemRow, type ShopRow } from "../types";
-import { DEFAULT_TIMED_DURATION_S, renderShopAdmin, shopItemPages } from "./shop-admin.screens";
+import { BiomeHuntError, type PurchaseRow, type ShopItemFields, type ShopItemRow, type ShopRow } from "../types";
+import { DEFAULT_TIMED_DURATION_S, purchasePages, renderShopAdmin, shopItemPages } from "./shop-admin.screens";
+import { purchaseCardView } from "./shop-purchase.view";
 
 const RED = 0xda373c;
 
@@ -40,6 +43,7 @@ export interface ShopAdminDeps {
     moveItem: typeof moveItem;
     setShopOpen: typeof setShopOpen;
     setSalesChannel: typeof setSalesChannel;
+    listPurchases: typeof listPurchases;
     countPending: typeof countPending;
     countPendingForItem: typeof countPendingForItem;
     economyOn(guildId: string): Promise<boolean>;
@@ -59,6 +63,10 @@ export interface ShopAdminState {
     pending: number;
     economyOn: boolean;
     roleIssue: string | null;
+    /** The Purchases tab: which purchases, and the current page of them (`page` is shared with Items). */
+    filter: "pending" | "all";
+    purchases: PurchaseRow[];
+    purchaseTotal: number;
 }
 
 type Ctx = HandlerContext<ShopAdminState, void>;
@@ -127,6 +135,19 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
 
     const selected = (s: ShopAdminState) => s.items.find((i) => i.id === s.itemId);
 
+    const pagesOf = (s: ShopAdminState) => (s.screen === "purchases" ? purchasePages(s) : shopItemPages(s));
+
+    /** Re-reads the current page of purchases for the filter; steps back a page when the list shrank. */
+    async function loadPurchases(s: ShopAdminState): Promise<void> {
+        let res = await deps.listPurchases(guildId, s.filter, s.page * PURCHASES_PER_PAGE, PURCHASES_PER_PAGE);
+        const last = Math.max(0, Math.ceil(res.total / PURCHASES_PER_PAGE) - 1);
+        if (s.page > last) {
+            s.page = last;
+            res = await deps.listPurchases(guildId, s.filter, s.page * PURCHASES_PER_PAGE, PURCHASES_PER_PAGE);
+        }
+        Object.assign(s, { purchases: res.rows, purchaseTotal: res.total });
+    }
+
     /** Re-reads the shop, its items and the pending count; re-checks the selected item's role. */
     async function reload(s: ShopAdminState): Promise<void> {
         const [shop, items, pending, economyOn] = await Promise.all([
@@ -136,7 +157,8 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
             deps.economyOn(guildId),
         ]);
         Object.assign(s, { shop, items, pending, economyOn });
-        s.page = Math.min(s.page, shopItemPages(s) - 1);
+        if (s.screen === "purchases") await loadPurchases(s);
+        else s.page = Math.min(s.page, shopItemPages(s) - 1);
         if (s.screen === "editor" && !selected(s)) s.screen = "items";
         const item = selected(s);
         s.roleIssue = item && isRoleKind(item.kind) && item.role_id ? await deps.checkRole(guildId, item.role_id) : null;
@@ -277,6 +299,45 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
         await reload(c.state);
     };
 
+    /** Switches tab from page 0 and re-reads, so the pending count and economy flag are fresh. */
+    const tab = (screen: ShopAdminScreen) => async (c: Ctx) => {
+        Object.assign(c.state, { screen, page: 0 });
+        await reload(c.state);
+    };
+
+    /** Opens the purchase card, then refreshes the list: the admin may have decided it. */
+    async function openPurchase(c: Ctx, code: string): Promise<void> {
+        await c.open(purchaseCardView(deps.shop), { guildId, code, fromMenu: true });
+        await reload(c.state);
+    }
+
+    const find = async (c: Ctx) => {
+        const values = await c.modal({
+            title: "Find a purchase",
+            fields: [{ key: "id", label: "Purchase ID", required: true, maxLength: 12 }],
+        });
+        if (!values) return;
+        const typed = (values.id ?? "").trim().replace(/^#/, "").toUpperCase();
+        const code = normalizePurchaseCode(typed);
+        if (!code || !(await deps.shop.getPurchaseByCode(guildId, code))) {
+            await c.notify(`No purchase with ID \`#${typed}\`.`);
+            return;
+        }
+        await openPurchase(c, code);
+    };
+
+    /** The shared pagination handlers, re-reading the purchases after a page change. */
+    const paging = paginationHandlers<ShopAdminState>({ pages: pagesOf });
+    const paged = Object.fromEntries(
+        Object.entries(paging).map(([key, handler]) => [
+            key,
+            async (c: Ctx) => {
+                await handler(c);
+                if (c.state.screen === "purchases") await loadPurchases(c.state);
+            },
+        ]),
+    );
+
     return defineView<ShopAdminState, void, void>({
         name: "biomehunt.shop-admin",
         initial: async () => {
@@ -287,20 +348,31 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
                 pending: 0,
                 economyOn: true,
                 roleIssue: null,
+                filter: "all" as ShopAdminState["filter"],
+                purchases: [],
+                purchaseTotal: 0,
                 items: [],
                 shop: { guild_id: guildId, open: false, sales_channel_id: null },
             } satisfies ShopAdminState;
             await reload(state);
+            state.filter = state.pending > 0 ? "pending" : "all";
             return state;
         },
         render: renderShopAdmin,
         on: {
-            ...paginationHandlers<ShopAdminState>({ pages: shopItemPages }),
-            "tab:items": (c) => {
-                c.state.screen = "items";
+            ...paged,
+            "tab:items": tab("items"),
+            "tab:purchases": tab("purchases"),
+            "tab:settings": tab("settings"),
+            find,
+            filter: async (c) => {
+                c.state.filter = c.values[0] === "all" ? "all" : "pending";
+                c.state.page = 0;
+                await loadPurchases(c.state);
             },
-            "tab:settings": (c) => {
-                c.state.screen = "settings";
+            open: async (c) => {
+                const code = c.values[0];
+                if (code) await openPurchase(c, code);
             },
             ...Object.fromEntries(
                 Array.from({ length: SHOP_ITEMS_PER_PAGE }, (_, slot) => [

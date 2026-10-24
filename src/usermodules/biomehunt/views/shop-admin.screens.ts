@@ -9,8 +9,15 @@ import {
 } from "discord.js";
 import { paginationRow, type RenderKit, type ViewRender } from "@/define";
 import { NO_PINGS } from "@/utils/format";
-import { DURATION_PRESET_DAYS, formatSeeds, MAX_SHOP_ITEMS, SHOP_ITEMS_PER_PAGE } from "../constants/shop.constants";
-import type { ShopItemRow } from "../types";
+import {
+    DURATION_PRESET_DAYS,
+    formatPurchaseCode,
+    formatSeeds,
+    MAX_SHOP_ITEMS,
+    PURCHASES_PER_PAGE,
+    SHOP_ITEMS_PER_PAGE,
+} from "../constants/shop.constants";
+import type { PurchaseRow, ShopItemRow } from "../types";
 import type { ShopAdminState } from "./shop-admin.view";
 
 export const DEFAULT_TIMED_DURATION_S = 7 * 86400;
@@ -28,6 +35,8 @@ function newContainer(color = 0x5865f2): { container: ContainerBuilder; divider:
 }
 
 export const shopItemPages = (s: Pick<ShopAdminState, "items">) => Math.max(1, Math.ceil(s.items.length / SHOP_ITEMS_PER_PAGE));
+
+export const purchasePages = (s: Pick<ShopAdminState, "purchaseTotal">) => Math.max(1, Math.ceil(s.purchaseTotal / PURCHASES_PER_PAGE));
 
 /** `7 days`, `1 day`, `12 hours`, `1 day 12 hours`. */
 export function durationText(seconds: number): string {
@@ -220,9 +229,75 @@ function settingsScreen(s: ShopAdminState, kit: RenderKit): Parts {
     return [container, tabsRow(s, kit), row(kit.button("close", (b) => b.setLabel("Close")))];
 }
 
+const unix = (d: Date) => Math.floor(d.getTime() / 1000);
+
+/** The second line of a purchase in the list: status and when. */
+function purchaseStatus(p: PurchaseRow): string {
+    if (p.status === "pending") return `⏳ Pending · <t:${unix(p.created_at)}:R>`;
+    if (p.status === "delivered") {
+        if (p.kind === "timed_role" && p.role_id && p.role_ends_at)
+            return `✅ Delivered · <@&${p.role_id}> until <t:${unix(p.role_ends_at)}:D>`;
+        return `✅ Delivered · <t:${unix(p.decided_at ?? p.created_at)}:R>`;
+    }
+    return `↩️ Refunded${p.decided_by ? ` by <@${p.decided_by}>` : ""} · <t:${unix(p.decided_at ?? p.created_at)}:R>`;
+}
+
+function purchasesScreen(s: ShopAdminState, kit: RenderKit): Parts {
+    const { container, divider } = newContainer();
+    container.addTextDisplayComponents((td) => td.setContent("**Purchases**"));
+    divider();
+    if (s.purchases.length === 0) {
+        container.addTextDisplayComponents((td) => td.setContent(s.filter === "pending" ? "Nothing pending." : "No purchases yet."));
+    } else {
+        container.addTextDisplayComponents((td) =>
+            td.setContent(
+                s.purchases
+                    .map(
+                        (p) =>
+                            `\`${formatPurchaseCode(p.code)}\` · ${p.item_emoji ? `${p.item_emoji} ` : ""}**${p.item_name}** · <@${p.buyer_discord_id}>\n-# ${purchaseStatus(p)}`,
+                    )
+                    .join("\n"),
+            ),
+        );
+        container.addActionRowComponents(
+            kit.row(
+                kit.stringSelect("open", (m) =>
+                    m.setPlaceholder("Open a purchase").addOptions(
+                        s.purchases.map((p) => ({
+                            label: `${formatPurchaseCode(p.code)} · ${p.item_name}`.slice(0, 100),
+                            value: p.code,
+                        })),
+                    ),
+                ),
+            ),
+        );
+    }
+    container.addActionRowComponents(
+        kit.row(
+            kit.stringSelect("filter", (m) =>
+                m.addOptions(
+                    { label: "Pending", value: "pending", default: s.filter === "pending" },
+                    { label: "All", value: "all", default: s.filter === "all" },
+                ),
+            ),
+        ),
+    );
+    const parts: Parts = [container];
+    if (purchasePages(s) > 1) parts.push(paginationRow(kit, s.page, purchasePages(s)));
+    parts.push(
+        tabsRow(s, kit),
+        row(
+            kit.button("find", (b) => b.setLabel("Find ID").setStyle(ButtonStyle.Primary)),
+            kit.button("close", (b) => b.setLabel("Close")),
+        ),
+    );
+    return parts;
+}
+
 const SCREENS: Partial<Record<ShopAdminState["screen"], (s: ShopAdminState, kit: RenderKit) => Parts>> = {
     items: itemsScreen,
     editor: editorScreen,
+    purchases: purchasesScreen,
     settings: settingsScreen,
 };
 
