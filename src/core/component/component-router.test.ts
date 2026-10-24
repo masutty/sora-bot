@@ -3,7 +3,14 @@ import { MessageFlags } from "discord.js";
 import { Logger } from "@/utils/logging";
 import { currentTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
-import { type ComponentDefinition, defineComponent, dispatchComponent, matchComponent, validateComponentPrefix } from "./component-router";
+import {
+    type ComponentDefinition,
+    defineComponent,
+    dispatchComponent,
+    matchComponent,
+    routeComponent,
+    validateComponentPrefix,
+} from "./component-router";
 
 let logError: ReturnType<typeof spyOn>;
 
@@ -21,6 +28,7 @@ function fakeInteraction(customId: string, opts: { userId?: string; guildId?: st
         customId,
         user: { id: opts.userId ?? "u1", username: "tester" },
         guildId: opts.guildId ?? "g1",
+        message: { id: "m1" },
         replied: opts.replied ?? false,
         deferred: opts.deferred ?? false,
         reply: async (payload: unknown) => {
@@ -167,4 +175,46 @@ test("dispatchComponent does NOT reply when handle throws after already answerin
     expect(handled).toBe(true);
     expect(logError).toHaveBeenCalledTimes(1);
     expect(replies).toHaveLength(0); // already deferred - a reply() here would throw a second error
+});
+
+function routeDeps(live: string[] = []) {
+    const orphans: unknown[] = [];
+    return {
+        orphans,
+        deps: {
+            hasLiveView: (messageId: string) => live.includes(messageId),
+            answerOrphanClick: async (i: unknown) => void orphans.push(i),
+        },
+    };
+}
+
+test("routeComponent: a persistent component's click goes to its owner, never to the orphan answer", async () => {
+    const calls: string[] = [];
+    const vote = defineComponent({ prefix: "mycog:vote", handle: async () => void calls.push("vote") });
+    const client = fakeClient({ mycog: { name: "mycog", components: [vote] } });
+    const { orphans, deps } = routeDeps();
+
+    await routeComponent(client, fakeInteraction("mycog:vote:abc").interaction, deps);
+
+    expect(calls).toEqual(["vote"]);
+    expect(orphans).toHaveLength(0);
+});
+
+test("routeComponent: a click on a message a live View listens on is left to the View", async () => {
+    const client = fakeClient({});
+    const { orphans, deps } = routeDeps(["m1"]);
+
+    await routeComponent(client, fakeInteraction("some.view:1a:back").interaction, deps);
+
+    expect(orphans).toHaveLength(0);
+});
+
+test("routeComponent: a click nothing listens to (a View that died with a restart) gets the orphan answer", async () => {
+    const client = fakeClient({});
+    const { orphans, deps } = routeDeps();
+    const { interaction } = fakeInteraction("some.view:1a:back");
+
+    await routeComponent(client, interaction, deps);
+
+    expect(orphans).toEqual([interaction]);
 });

@@ -9,6 +9,7 @@ import { Logger } from "@/utils/logging";
 import { newTraceRef, runWithTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
 import { botBanReply } from "../moderation/bot-ban";
+import { answerOrphanClick, hasLiveView } from "../view/orphan-click";
 
 const logger = new Logger("core.component");
 
@@ -119,4 +120,25 @@ export async function dispatchComponent(client: BotClient, interaction: MessageC
         return true;
     }
     return false;
+}
+
+export interface RouteComponentDeps {
+    hasLiveView: (messageId: string) => boolean;
+    answerOrphanClick: (interaction: MessageComponentInteraction) => Promise<void>;
+}
+
+/**
+ * Every button/select interaction goes through here: a persistent component's goes to its owner
+ * (`dispatchComponent`), a live View's is left to the View's own collector, and anything else
+ * (a View that died with a restart, a removed component) gets `answerOrphanClick` - never
+ * Discord's "This interaction failed".
+ */
+export async function routeComponent(
+    client: BotClient,
+    interaction: MessageComponentInteraction,
+    deps: RouteComponentDeps = { hasLiveView, answerOrphanClick },
+): Promise<void> {
+    if (await dispatchComponent(client, interaction)) return;
+    if (deps.hasLiveView(interaction.message.id)) return;
+    await deps.answerOrphanClick(interaction);
 }

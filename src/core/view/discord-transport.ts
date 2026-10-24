@@ -11,6 +11,7 @@ import {
 } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { type Answerable, createInteractionAnswers } from "./interaction-answers";
+import { markViewClosed, markViewListening } from "./orphan-click";
 import type { ModalSpec, ViewPayload } from "./view";
 import type { ComponentEvent, TextEvent, ViewTransport } from "./view-engine";
 
@@ -105,6 +106,7 @@ export function createDiscordTransport(message: Message, opts: DiscordTransportO
             const collector = message.createMessageComponentCollector();
             collector.on("collect", (i) => void onEvent?.(componentEvent(i)));
             components = collector;
+            markViewListening(message.id);
         },
 
         setTextListening(on) {
@@ -199,6 +201,7 @@ export function createDiscordTransport(message: Message, opts: DiscordTransportO
         close() {
             closed = true;
             onEvent = null;
+            if (components) markViewClosed(message.id);
             components?.stop();
             components = null;
             text?.stop();

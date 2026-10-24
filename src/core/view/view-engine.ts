@@ -204,7 +204,7 @@ function isAllowed(def: AnyView, e: ComponentEvent | TextEvent, invokerId: strin
 
 type JsonComponent = { type: number; components?: JsonComponent[]; accessory?: JsonComponent; [k: string]: unknown };
 
-function toJsonList(components: ViewPayload["components"]): JsonComponent[] {
+export function toJsonList(components: ViewPayload["components"]): JsonComponent[] {
     return (components ?? []).map((c) => {
         const encodable = c as { toJSON?: () => JsonComponent };
         return typeof encodable.toJSON === "function" ? encodable.toJSON() : (c as unknown as JsonComponent);
@@ -215,7 +215,7 @@ function toJsonList(components: ViewPayload["components"]): JsonComponent[] {
 const isLink = (c: JsonComponent | undefined) => c?.type === ComponentType.Button && c.style === ButtonStyle.Link;
 
 /** "strip": drops action rows (at any depth) and turns button-accessory sections into their text - Link buttons stay. */
-function stripInteractive(list: JsonComponent[]): JsonComponent[] {
+export function stripInteractive(list: JsonComponent[]): JsonComponent[] {
     return list.flatMap((c) => {
         if (c.type === ComponentType.ActionRow) {
             const links = (c.components ?? []).filter(isLink);

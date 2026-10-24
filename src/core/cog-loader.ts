@@ -8,7 +8,7 @@ import { Logger } from "@/utils/logging";
 import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 import type { BotClient } from "./bot-client";
 import { describeConflicts, findConflictsWithLoaded, partitionByConflicts } from "./command/command-conflicts";
-import { dispatchComponent, validateComponentPrefix } from "./component/component-router";
+import { routeComponent, validateComponentPrefix } from "./component/component-router";
 import { type RunningWorker, startWorker } from "./worker/worker";
 
 const logger = new Logger("core.cogloader");
@@ -228,7 +228,7 @@ let componentRouterListening = false;
 
 /**
  * Wires the single global `interactionCreate` listener that routes persistent components
- * (`Cog.components`, see `dispatchComponent`) - called once from `loadCogs` (boot, and again after
+ * (`Cog.components`) and answers clicks nothing listens to (see `routeComponent`) - called once from `loadCogs` (boot, and again after
  * `hotReloadBot` wipes every `InteractionCreate` listener and calls `loadCogs` fresh).
  */
 function ensureComponentRouter(client: BotClient): void {
@@ -236,7 +236,7 @@ function ensureComponentRouter(client: BotClient): void {
     componentRouterListening = true;
     client.on(Events.InteractionCreate, (interaction) => {
         if (!interaction.isMessageComponent()) return;
-        void dispatchComponent(client, interaction);
+        void routeComponent(client, interaction);
     });
 }
 
