@@ -652,3 +652,26 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_bh_shop_role_grants_ends ON bh_shop_role_grants (ends_at);
 
 `;
+
+/**
+ * Gives the Infinity Gauntlet to every member who had already found every enabled rare biome
+ * before it existed (a find counts like in `getFoundBiomes`). Its own migration, so it runs once:
+ * schema changes never re-run it over a badge an admin took away.
+ */
+export const INFINITY_BADGE_BACKFILL = `
+INSERT INTO bh_user_badges (user_id, badge)
+SELECT u.id, 'INFINITY_GAUNTLET' FROM bh_users u
+WHERE EXISTS (SELECT 1 FROM bh_biomes b WHERE b.category = 'rare' AND b.enabled)
+  AND NOT EXISTS (
+      SELECT 1 FROM bh_biomes b
+      WHERE b.category = 'rare' AND b.enabled
+        AND NOT EXISTS (
+            SELECT 1 FROM bh_activity_events e
+            WHERE e.user_id = u.id AND e.event_type = 'started' AND e.biome = b.biome
+              AND NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id
+                    AND v.status IN ('community_fake', 'admin_denied', 'open')
+                    AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))
+        )
+  )
+ON CONFLICT (user_id, badge) DO NOTHING;
+`;

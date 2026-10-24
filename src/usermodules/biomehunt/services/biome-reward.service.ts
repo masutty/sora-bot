@@ -1,6 +1,6 @@
 import { transaction } from "@/database/connection";
-import { biomeHasBadge } from "../constants/badges.constants";
-import { getBiomeMeta } from "../constants/biomes.constants";
+import { biomeHasBadge, INFINITY_BADGE } from "../constants/badges.constants";
+import { getBiomeMeta, getBiomesByCategory } from "../constants/biomes.constants";
 import { getLevelForXp, REWARD_BY_CATEGORY } from "../constants/levels.constants";
 import { getGuildBadgeRole, grantUserBadge, revokeUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
@@ -13,7 +13,7 @@ import {
     insertReward,
 } from "../repository/rewards.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
-import { getUserById } from "../repository/users.repository";
+import { getFoundBiomes, getUserById } from "../repository/users.repository";
 import type { Badge, UserRow } from "../types";
 
 /**
@@ -24,6 +24,17 @@ import type { Badge, UserRow } from "../types";
  * knows exactly what this specific event granted.
  */
 export async function grantBiomeReward(
+    guildId: string,
+    userId: number,
+    eventId: number,
+    biome: string,
+): Promise<{ seeds: number; xp: number; badge: Badge | null; leveledUp: boolean }> {
+    const reward = await grantFindReward(guildId, userId, eventId, biome);
+    if (getBiomeMeta(biome)?.category === "rare") await grantInfinityBadgeIfComplete(guildId, userId);
+    return reward;
+}
+
+async function grantFindReward(
     guildId: string,
     userId: number,
     eventId: number,
@@ -66,6 +77,31 @@ export async function grantBiomeReward(
     const levelAfter = userAfter ? getLevelForXp(userAfter.xp).level : levelBefore;
 
     return { seeds, xp, badge, leveledUp: levelAfter > levelBefore };
+}
+
+export interface InfinityBadgeDeps {
+    getFoundBiomes(userId: number, biomes: string[]): Promise<Set<string>>;
+    grantUserBadge(userId: number, badge: Badge): Promise<boolean>;
+    getGuildBadgeRole(guildId: string, badge: Badge): Promise<string | null>;
+    enqueueRoleJob(guildId: string, userId: number, roleId: string, action: "add"): Promise<unknown>;
+}
+
+const infinityBadgeDeps: InfinityBadgeDeps = { getFoundBiomes, grantUserBadge, getGuildBadgeRole, enqueueRoleJob };
+
+/**
+ * Gives the Infinity Gauntlet (and the guild's role for it) once the user has a counted find of
+ * every enabled rare biome. Checked on every confirmed rare find. Nothing ever takes it back on
+ * its own - a rare biome added later, or a find later ruled fake, leaves it in place. `true` if granted now.
+ */
+export async function grantInfinityBadgeIfComplete(guildId: string, userId: number, deps = infinityBadgeDeps): Promise<boolean> {
+    const rares = getBiomesByCategory("rare");
+    if (rares.length === 0) return false;
+    const found = await deps.getFoundBiomes(userId, rares);
+    if (rares.some((r) => !found.has(r))) return false;
+    if (!(await deps.grantUserBadge(userId, INFINITY_BADGE))) return false;
+    const roleId = await deps.getGuildBadgeRole(guildId, INFINITY_BADGE);
+    if (roleId) await deps.enqueueRoleJob(guildId, userId, roleId, "add");
+    return true;
 }
 
 /**

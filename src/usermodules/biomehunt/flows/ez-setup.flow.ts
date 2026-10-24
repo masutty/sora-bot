@@ -12,7 +12,7 @@ import {
     type ViewPayload,
 } from "@/define";
 import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
-import { getBadgeMeta, getBiomeBadges } from "../constants/badges.constants";
+import { getBadgeMeta, getRoleBadges } from "../constants/badges.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled, setGuildFlag } from "../repository/flags.repository";
 import { getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
@@ -785,7 +785,7 @@ const MAX_BADGE_ROLE_SELECTS = 10;
 
 function badgeRolesStep(deps: EzSetupDeps): FlowStep<EzSetupContext> {
     // Read when the step is built, like the Network pings step - a biome badge added later shows on the next run.
-    const badges = getBiomeBadges().slice(0, MAX_BADGE_ROLE_SELECTS);
+    const badges = getRoleBadges().slice(0, MAX_BADGE_ROLE_SELECTS);
     const label = (b: Badge) => `${getBadgeMeta(b).emoji} ${getBadgeMeta(b).display}`;
     return defineView<BadgeRolesState, StepResult, EzSetupContext>({
         name: "biomehunt.ez-setup.badge-roles",

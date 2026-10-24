@@ -202,7 +202,23 @@ export async function getChannelNameCandidates(): Promise<ChannelNameCandidate[]
     }));
 }
 
-/** Counted finds per user of the biomes shown in channel names, leaving out finds whose newest vote is still open (a find with no vote counts). */
+/** SQL predicate over an events alias `e`: the find counts - not fake, and its newest vote isn't still open (a find with no vote counts). */
+const COUNTED_FIND_SQL = `${NOT_FAKE_SQL}
+           AND NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id AND v.status = 'open'
+                 AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))`;
+
+/** Which of `biomes` the user has a counted find of. */
+export async function getFoundBiomes(userId: number, biomes: string[]): Promise<Set<string>> {
+    if (biomes.length === 0) return new Set();
+    const result = await query<{ biome: string }>(
+        `SELECT DISTINCT e.biome FROM bh_activity_events e
+         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome = ANY($2) AND ${COUNTED_FIND_SQL}`,
+        [userId, biomes],
+    );
+    return new Set(result.rows.map((r) => r.biome));
+}
+
+/** Counted finds per user of the biomes shown in channel names. */
 export async function getChannelNameCounts(userIds: number[]): Promise<Map<number, Array<{ biome: string; count: number }>>> {
     const counts = new Map<number, Array<{ biome: string; count: number }>>();
     const biomes = getAllBiomes()
@@ -212,9 +228,7 @@ export async function getChannelNameCounts(userIds: number[]): Promise<Map<numbe
     const result = await query<{ user_id: number; biome: string; count: string }>(
         `SELECT e.user_id, e.biome, COUNT(*) AS count
          FROM bh_activity_events e
-         WHERE e.user_id = ANY($1) AND e.event_type = 'started' AND e.biome = ANY($2) AND ${NOT_FAKE_SQL}
-           AND NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id AND v.status = 'open'
-                 AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))
+         WHERE e.user_id = ANY($1) AND e.event_type = 'started' AND e.biome = ANY($2) AND ${COUNTED_FIND_SQL}
          GROUP BY e.user_id, e.biome`,
         [userIds, biomes],
     );
