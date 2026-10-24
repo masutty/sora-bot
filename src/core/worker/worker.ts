@@ -45,6 +45,30 @@ const realClock: WorkerClock = {
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
+/** What a running worker has done so far - read by `!bot workers` and `!bot status`. */
+export interface WorkerStats {
+    cog: string;
+    name: string;
+    intervalMs: number;
+    startedAt: Date;
+    /** Ticks finished, failed ones included. */
+    runs: number;
+    running: boolean;
+    lastRunAt: Date | null;
+    lastDurationMs: number | null;
+    /** The last failure - cleared by the next tick that succeeds. */
+    lastError: { message: string; at: Date } | null;
+    /** Ticks skipped because the previous one was still running. */
+    skipped: number;
+}
+
+const stats = new Map<string, WorkerStats>();
+
+/** Every running worker's stats, by cog then name. */
+export function listWorkerStats(): WorkerStats[] {
+    return [...stats.values()].sort((a, b) => a.cog.localeCompare(b.cog) || a.name.localeCompare(b.name));
+}
+
 /** Handle returned by `startWorker` - stops the loop for good (no further ticks). */
 export interface RunningWorker {
     stop(): void;
@@ -65,20 +89,44 @@ export function startWorker(cogName: string, worker: WorkerDefinition, client: B
     let stopped = false;
     let running = false;
     let handle: unknown = null;
+    const stat: WorkerStats = {
+        cog: cogName,
+        name: worker.name,
+        intervalMs: worker.intervalMs,
+        startedAt: new Date(),
+        runs: 0,
+        running: false,
+        lastRunAt: null,
+        lastDurationMs: null,
+        lastError: null,
+        skipped: 0,
+    };
+    stats.set(label, stat);
 
     const runTick = async (): Promise<void> => {
-        if (running) return;
+        if (running) {
+            stat.skipped++;
+            return;
+        }
         running = true;
+        stat.running = true;
         const startedAt = Date.now();
+        let failure: Error | null = null;
         try {
             await runWithTrace({ ref: newTraceRef(), command: `worker:${label}` }, async () => {
                 await worker.run(client);
             });
         } catch (err) {
-            logger.error(err instanceof Error ? err : new Error(String(err)), { worker: label });
+            failure = err instanceof Error ? err : new Error(String(err));
+            logger.error(failure, { worker: label });
         } finally {
             running = false;
             const durationMs = Date.now() - startedAt;
+            stat.running = false;
+            stat.runs++;
+            stat.lastRunAt = new Date(startedAt);
+            stat.lastDurationMs = durationMs;
+            stat.lastError = failure ? { message: failure.message, at: new Date() } : null;
             if (durationMs > worker.intervalMs) {
                 logger.warn(`Worker ${label} tick took ${durationMs}ms (interval is ${worker.intervalMs}ms) - may be falling behind`);
             }
@@ -99,6 +147,7 @@ export function startWorker(cogName: string, worker: WorkerDefinition, client: B
     return {
         stop() {
             stopped = true;
+            if (stats.get(label) === stat) stats.delete(label);
             if (handle !== null) clock.clearTimeout(handle);
         },
     };

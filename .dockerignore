@@ -11,7 +11,7 @@ data
 logs
 *.log
 
-.git
+# .git stays in the context: the Dockerfile reads the commit from it (bind mount, never copied into the image).
 .gitignore
 
 docs

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { Logger } from "@/utils/logging";
 import { currentTrace } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
-import { defineWorker, startWorker, type WorkerClock } from "./worker";
+import { defineWorker, listWorkerStats, startWorker, type WorkerClock } from "./worker";
 
 const client = {} as BotClient;
 
@@ -232,5 +232,56 @@ test("each run happens inside a trace named worker:<cog>.<name>", async () => {
     expect(seen[0]?.command).toBe("worker:mycog.sweep");
     expect(seen[0]?.ref).toBeTruthy();
 
+    handle.stop();
+});
+
+test("startWorker records each run's time, duration and error, and forgets the worker on stop", async () => {
+    const clock = createManualClock();
+    let fail = true;
+    const worker = defineWorker({
+        name: "stats",
+        intervalMs: 100,
+        run: async () => {
+            if (fail) throw new Error("boom");
+        },
+    });
+    const handle = startWorker("statscog", worker, client, clock);
+    const stat = () => listWorkerStats().find((w) => w.cog === "statscog" && w.name === "stats");
+
+    expect(stat()).toMatchObject({ runs: 0, lastRunAt: null, lastError: null, running: false, intervalMs: 100 });
+    await clock.advance(100);
+    expect(stat()?.runs).toBe(1);
+    expect(stat()?.lastError?.message).toBe("boom");
+    fail = false;
+    await clock.advance(100);
+    expect(stat()?.runs).toBe(2);
+    expect(stat()?.lastError).toBeNull();
+    expect(stat()?.lastRunAt).toBeInstanceOf(Date);
+
+    handle.stop();
+    expect(stat()).toBeUndefined();
+});
+
+test("startWorker counts a tick skipped while the previous one still runs", async () => {
+    const clock = createManualClock();
+    let release: () => void = () => {};
+    const worker = defineWorker({
+        name: "slow",
+        intervalMs: 100,
+        run: () =>
+            new Promise<void>((resolve) => {
+                release = resolve;
+            }),
+    });
+    const handle = startWorker("skipcog", worker, client, clock);
+    const stat = () => listWorkerStats().find((w) => w.cog === "skipcog");
+
+    await clock.advance(100);
+    expect(stat()?.running).toBe(true);
+    await clock.advance(100);
+    expect(stat()?.skipped).toBe(1);
+    release();
+    await clock.advance(0);
+    expect(stat()?.running).toBe(false);
     handle.stop();
 });
