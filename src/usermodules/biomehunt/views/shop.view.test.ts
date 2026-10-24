@@ -81,6 +81,7 @@ const purchase = (n: number, over: Partial<PurchaseRow> = {}): PurchaseRow => ({
     role_id: null,
     duration_s: null,
     role_ends_at: null,
+    role_window_start: null,
     status: "pending",
     refund_reason: null,
     decided_by: null,
@@ -124,7 +125,10 @@ function fakeDeps(setup: Setup = {}) {
             return { rows: all.slice(offset, offset + limit), total: all.length };
         },
         countMemberItemPurchases: async () => setup.bought ?? 0,
-        getActiveGrantEnd: async () => setup.grantEnd ?? null,
+        getActiveGrantEnd: async (...args) => {
+            calls.push(["getActiveGrantEnd", ...args]);
+            return setup.grantEnd ?? null;
+        },
         holdsRole: () => data.holdsRole,
         purchaseItem: async (input) => {
             calls.push(["purchaseItem", input]);
@@ -158,6 +162,22 @@ for (const [name, setup] of [
         expect(text(fake.lastPayload())).toContain("`#K7Q2M1` · **Thing 1** · `100 🌱`");
     });
 }
+
+test("a role item with no role picked is hidden from the list", async () => {
+    const { fake } = await open({
+        items: [item(1, { kind: "role", role_id: null }), item(2, { kind: "timed_role", role_id: null, duration_s: 60 }), item(3)],
+    });
+    const t = text(fake.lastPayload());
+    expect(t).not.toContain("Item 1");
+    expect(t).not.toContain("Item 2");
+    expect(t).toContain("Item 3");
+});
+
+test("the running grant is looked up by server, Discord id and role", async () => {
+    const { fake, calls } = await open({ items: [item(1, { kind: "timed_role", role_id: "r1", duration_s: 60 })] });
+    await fake.emit(fake.click("view:0", OWNER));
+    expect(calls.find((c) => c[0] === "getActiveGrantEnd")?.slice(1, 4)).toEqual([GUILD, OWNER, "r1"]);
+});
 
 test("an open shop with no live items says nothing is for sale", async () => {
     const { fake } = await open();
@@ -284,6 +304,7 @@ for (const [outcome, line] of [
     [{ kind: "short", short: 50 }, "You're `50 🌱` short."],
     [{ kind: "gone" }, "This item is no longer in the shop."],
     [{ kind: "closed" }, "The shop is closed."],
+    [{ kind: "role_unavailable" }, "This item can't be bought right now."],
 ] as const) {
     test(`${outcome.kind} notifies a plain line`, async () => {
         const { fake } = await open({ items: [item(1)], outcome });

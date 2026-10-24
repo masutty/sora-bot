@@ -22,6 +22,7 @@ const purchase = (over: Partial<PurchaseRow> = {}): PurchaseRow => ({
     role_id: null,
     duration_s: null,
     role_ends_at: null,
+    role_window_start: null,
     status: "pending",
     refund_reason: null,
     decided_by: null,
@@ -134,7 +135,7 @@ function deps(state: { p: PurchaseRow }, over: Partial<ShopDeps> = {}) {
         now: () => new Date("2026-01-03T00:00:00Z"),
         getPurchaseByCode: async () => state.p,
         getItem: async () => item(),
-        refundWouldRemoveRole: async () => false,
+        refundRoleImpact: async () => ({ removeRole: false, lostSeconds: 0 }),
         markDelivered: async () => {
             calls.push("deliver");
             state.p = purchase({ status: "delivered", decided_by: ADMIN, decided_at: decided });
@@ -161,6 +162,12 @@ async function open(p: PurchaseRow, fromMenu = false, over: Partial<ShopDeps> = 
     await fake.flush();
     return { fake, calls, state, done };
 }
+
+/** A click as an administrator (or not): the card re-checks the permission on the raw interaction. */
+const asAdmin = <E extends { userId: string }>(e: E, admin = true): E => ({
+    ...e,
+    raw: { user: { id: e.userId }, memberPermissions: { has: () => admin } },
+});
 
 const buttons = (t: string) => [...t.matchAll(/<<([^>]+)>>/g)].map((m) => m[1]);
 
@@ -191,7 +198,7 @@ test("card shows banner, item, buyer and the timed role end", async () => {
 
 test("Mark delivered runs the flow and redraws", async () => {
     const { fake, calls } = await open(purchase());
-    await fake.emit(fake.click("deliver", ADMIN));
+    await fake.emit(asAdmin(fake.click("deliver", ADMIN)));
     await fake.flush();
     expect(calls).toEqual(["deliver"]);
     expect(text(fake.lastPayload())).toContain("● DELIVERED");
@@ -202,7 +209,7 @@ test("a stale Mark delivered tells the current status", async () => {
     const { fake } = await open(purchase(), false, {
         markDelivered: async () => ({ kind: "not_pending", purchase: purchase({ status: "refunded" }) }),
     } as never);
-    await fake.emit(fake.click("deliver", ADMIN));
+    await fake.emit(asAdmin(fake.click("deliver", ADMIN)));
     await fake.flush();
     expect(fake.notifies.map((n) => n.content)).toEqual(["This purchase is already refunded."]);
     expect(buttons(text(fake.lastPayload()))).toEqual([]);
@@ -210,10 +217,10 @@ test("a stale Mark delivered tells the current status", async () => {
 
 test("the refund confirm lists only what applies", async () => {
     const full = await open(purchase({ kind: "role", role_id: "r1" }), false, {
-        refundWouldRemoveRole: async () => true,
+        refundRoleImpact: async () => ({ removeRole: true, lostSeconds: 0 }),
         getItem: async () => item({ stock: 4 }),
     });
-    await full.fake.emit(full.fake.click("refund", ADMIN));
+    await full.fake.emit(asAdmin(full.fake.click("refund", ADMIN)));
     await full.fake.flush();
     const t = text(full.fake.lastPayload());
     expect(t).toContain("**Refund `#K7Q2MX`?**");
@@ -222,27 +229,61 @@ test("the refund confirm lists only what applies", async () => {
     expect(t).toContain("- The stock goes back to 5");
 
     const bare = await open(purchase({ price: 0 }), false, { getItem: async () => item({ removed_at: new Date(), stock: 4 }) });
-    await bare.fake.emit(bare.fake.click("refund", ADMIN));
+    await bare.fake.emit(asAdmin(bare.fake.click("refund", ADMIN)));
     await bare.fake.flush();
     expect(text(bare.fake.lastPayload())).not.toContain("stock");
     expect(text(bare.fake.lastPayload())).not.toContain("go back");
 
     const unlimited = await open(purchase());
-    await unlimited.fake.emit(unlimited.fake.click("refund", ADMIN));
+    await unlimited.fake.emit(asAdmin(unlimited.fake.click("refund", ADMIN)));
     await unlimited.fake.flush();
     expect(text(unlimited.fake.lastPayload())).not.toContain("stock");
 });
 
-test("a timed role that stays says how much it loses", async () => {
-    const { fake } = await open(purchase({ kind: "timed_role", role_id: "r1", duration_s: 7 * 86400, status: "delivered" }));
-    await fake.emit(fake.click("refund", ADMIN));
+test("a timed role that stays says how much of it is unused", async () => {
+    const { fake } = await open(purchase({ kind: "timed_role", role_id: "r1", duration_s: 7 * 86400, status: "delivered" }), false, {
+        refundRoleImpact: async () => ({ removeRole: false, lostSeconds: 90000 }),
+    });
+    await fake.emit(asAdmin(fake.click("refund", ADMIN)));
     await fake.flush();
-    expect(text(fake.lastPayload())).toContain("- <@&r1> loses 7d");
+    expect(text(fake.lastPayload())).toContain("- <@&r1> loses 1d1h");
+});
+
+test("a timed role with no unused time has no loses bullet", async () => {
+    const { fake } = await open(purchase({ kind: "timed_role", role_id: "r1", duration_s: 7 * 86400, status: "delivered" }));
+    await fake.emit(asAdmin(fake.click("refund", ADMIN)));
+    await fake.flush();
+    expect(text(fake.lastPayload())).not.toContain("loses");
+});
+
+test("a refund whose buyer has no profile says the Seeds cannot go back", async () => {
+    const { fake } = await open(purchase({ user_id: null }));
+    await fake.emit(asAdmin(fake.click("refund", ADMIN)));
+    await fake.flush();
+    const t = text(fake.lastPayload());
+    expect(t).toContain("- `500 🌱` can't go back - <@u1> has no profile anymore");
+    expect(t).not.toContain("go back to");
+});
+
+test("Mark delivered and Refund refuse a clicker who is not an administrator", async () => {
+    const { fake, calls } = await open(purchase());
+    await fake.emit(asAdmin(fake.click("deliver", ADMIN), false));
+    await fake.emit(asAdmin(fake.click("refund", ADMIN), false));
+    await fake.flush();
+    expect(calls).toEqual([]);
+    expect(fake.notifies.map((n) => n.content)).toEqual(["Only admins can manage purchases.", "Only admins can manage purchases."]);
+});
+
+test("a role purchase with no role never prints a null mention", () => {
+    const t = postText(purchase({ kind: "role", role_id: null, status: "delivered" }));
+    expect(t).not.toContain("null");
+    expect(postText(purchase({ kind: "role", role_id: null, status: "refunded", refund_reason: "role_failed" }))).not.toContain("null");
+    expect(postText(purchase({ status: "delivered", decided_by: null }))).not.toContain("null");
 });
 
 test("confirming the refund runs it and returns to the refunded card", async () => {
     const { fake, calls } = await open(purchase());
-    await fake.emit(fake.click("refund", ADMIN));
+    await fake.emit(asAdmin(fake.click("refund", ADMIN)));
     await fake.flush();
     await fake.emit(fake.click("yes", ADMIN));
     await fake.flush();
@@ -253,7 +294,7 @@ test("confirming the refund runs it and returns to the refunded card", async () 
 
 test("Cancel leaves the purchase alone", async () => {
     const { fake, calls } = await open(purchase());
-    await fake.emit(fake.click("refund", ADMIN));
+    await fake.emit(asAdmin(fake.click("refund", ADMIN)));
     await fake.flush();
     await fake.emit(fake.click("no", ADMIN));
     await fake.flush();
@@ -264,7 +305,7 @@ test("Cancel leaves the purchase alone", async () => {
 test("a stale Refund on a refunded purchase is told the status without a confirm", async () => {
     const { fake, state } = await open(purchase());
     state.p = purchase({ status: "refunded" });
-    await fake.emit(fake.click("refund", ADMIN));
+    await fake.emit(asAdmin(fake.click("refund", ADMIN)));
     await fake.flush();
     expect(fake.notifies.map((n) => n.content)).toEqual(["This purchase is already refunded."]);
     expect(text(fake.lastPayload())).toContain("● REFUNDED");

@@ -1,4 +1,4 @@
-import { type Guild, PermissionFlagsBits } from "discord.js";
+import type { Guild } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { countPending, countPendingForItem, listPurchases } from "../repository/purchases.repository";
 import {
@@ -12,7 +12,6 @@ import {
     updateItem,
 } from "../repository/shop.repository";
 import type { ShopAdminDeps } from "../views/shop-admin.view";
-import { roleProblem } from "./shop.service";
 import { defaultShopDeps } from "./shop-deps.service";
 
 /**
@@ -36,10 +35,6 @@ export function defaultShopAdminDeps(client: BotClient, guild: Guild): ShopAdmin
         countPending,
         countPendingForItem,
         economyOn: (guildId) => shop.economyOn(guildId),
-        checkRole: async (guildId, roleId) => {
-            const me = guild.members.me ?? (await guild.members.fetchMe());
-            const role = await guild.roles.fetch(roleId).catch(() => null);
-            return roleProblem(role, guildId, me.roles.highest.position, me.permissions.has(PermissionFlagsBits.ManageRoles));
-        },
+        checkRole: (guildId, roleId) => shop.checkRole(guildId, roleId),
     };
 }

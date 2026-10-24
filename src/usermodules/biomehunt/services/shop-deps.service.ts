@@ -1,4 +1,4 @@
-import { ChannelType, type Client, type GuildTextBasedChannel } from "discord.js";
+import { ChannelType, type Client, type GuildTextBasedChannel, PermissionFlagsBits } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
@@ -7,14 +7,14 @@ import {
     getPurchaseByCode,
     markDelivered,
     refundPurchase,
-    refundWouldRemoveRole,
+    refundRoleImpact,
     setPurchasePost,
 } from "../repository/purchases.repository";
 import { getItem, getShop } from "../repository/shop.repository";
 import type { PurchaseRow } from "../types";
 import { buildSalePost } from "../views/shop-purchase.view";
 import { describeDiscordError, guildLog } from "./guild-log.service";
-import type { ShopDeps } from "./shop.service";
+import { roleProblem, type ShopDeps } from "./shop.service";
 
 const UNKNOWN_MEMBER = 10007;
 
@@ -72,8 +72,15 @@ export function defaultShopDeps(client: BotClient, io: SalesIo = defaultSalesIo)
         refundPurchase,
         markDelivered,
         getPurchaseByCode,
-        refundWouldRemoveRole,
+        refundRoleImpact,
         log,
+
+        async checkRole(guildId, roleId) {
+            const guild = client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId));
+            const me = guild.members.me ?? (await guild.members.fetchMe());
+            const role = await guild.roles.fetch(roleId).catch(() => null);
+            return roleProblem(role, guildId, me.roles.highest.position, me.permissions.has(PermissionFlagsBits.ManageRoles));
+        },
 
         async addRole(guildId, discordUserId, roleId) {
             const member = await fetchMember(client, guildId, discordUserId);

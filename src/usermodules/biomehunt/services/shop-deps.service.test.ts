@@ -115,3 +115,15 @@ test("a failed post warns once with the shop-sales key and does not throw", asyn
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.entry.dedupKey).toBe("shop-sales");
 });
+
+test("checkRole reports a role that no longer exists and passes a giveable one", async () => {
+    const guild = (role: unknown) => ({
+        id: "g1",
+        members: { me: { roles: { highest: { position: 10 } }, permissions: { has: () => true } } },
+        roles: { fetch: async () => role },
+    });
+    const missing = { guilds: { cache: new Map([["g1", guild(null)]]) } } as unknown as BotClient;
+    expect(await defaultShopDeps(missing).checkRole("g1", "r1")).toBe("⚠️ That role no longer exists.");
+    const fine = { guilds: { cache: new Map([["g1", guild({ managed: false, id: "r1", position: 1 })]]) } } as unknown as BotClient;
+    expect(await defaultShopDeps(fine).checkRole("g1", "r1")).toBeNull();
+});

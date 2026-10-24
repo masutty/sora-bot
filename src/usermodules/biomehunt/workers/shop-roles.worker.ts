@@ -6,20 +6,24 @@ import { settings } from "../settings";
 
 const logger = new Logger("biomehunt.workers.shop-roles");
 
-const DUE_PER_TICK = 50;
+/** Grants handled per tick, and how many due rows are read to find them (failing ones are skipped, not dropped). */
+const HANDLED_PER_TICK = 50;
+const DUE_READ = 200;
+/** A grant whose removal failed is left alone this long. */
+const RETRY_AFTER_MS = 10 * 60_000;
 
 /** Unknown Guild, Unknown Member, Unknown Role, Unknown User - the role can't be on the member any more. */
 const GONE_CODES = new Set([10004, 10007, 10011, 10013]);
 
-type DueGrant = { userId: number; guildId: string; discordUserId: string; roleId: string };
+type DueGrant = { guildId: string; discordUserId: string; roleId: string };
 
 /** What a tick needs from the database and Discord, injected so tests use neither. */
 export interface ShopRolesDeps {
     now(): Date;
     getDueGrants(now: Date, limit: number): Promise<DueGrant[]>;
-    getActiveGrantEnd(userId: number, roleId: string, now: Date): Promise<Date | null>;
-    /** Deletes the grant only if it is still over; false when a renewal beat it. */
-    deleteGrant(userId: number, roleId: string, now: Date): Promise<boolean>;
+    getActiveGrantEnd(guildId: string, discordUserId: string, roleId: string, now: Date): Promise<Date | null>;
+    /** Deletes the grant only if it is still over; false when a renewal beat it or a refund already deleted it. */
+    deleteGrant(guildId: string, discordUserId: string, roleId: string, now: Date): Promise<boolean>;
     /** "gone" means the member or the role no longer exists, so there is nothing to remove. */
     removeRole(guildId: string, discordUserId: string, roleId: string): Promise<"ok" | "gone" | "failed">;
     addRole(guildId: string, discordUserId: string, roleId: string): Promise<void>;
@@ -29,22 +33,34 @@ const asError = (err: unknown) => (err instanceof Error ? err : new Error(String
 
 /** Builds the tick: takes back the roles whose time ran out, never one that was renewed meanwhile. */
 export function createShopRolesTick(deps: ShopRolesDeps): () => Promise<void> {
+    /** Grant key -> when to try again. Lives in memory, so a restart tries everything once more. */
+    const retryAt = new Map<string, number>();
     return async () => {
         const now = deps.now();
-        const due = await deps.getDueGrants(now, DUE_PER_TICK);
+        for (const [key, at] of retryAt) if (at <= now.getTime()) retryAt.delete(key);
+        const due = await deps.getDueGrants(now, DUE_READ);
 
+        let handled = 0;
         for (const grant of due) {
-            const { userId, guildId, discordUserId, roleId } = grant;
+            if (handled >= HANDLED_PER_TICK) break;
+            const { guildId, discordUserId, roleId } = grant;
+            const key = `${guildId}:${discordUserId}:${roleId}`;
+            if (retryAt.has(key)) continue;
+            handled++;
             try {
                 // A renewal since getDueGrants makes the grant active again: leave the role alone.
-                if (await deps.getActiveGrantEnd(userId, roleId, now)) continue;
+                if (await deps.getActiveGrantEnd(guildId, discordUserId, roleId, now)) continue;
 
                 const result = await deps.removeRole(guildId, discordUserId, roleId);
-                if (result === "failed") continue; // keep the row, retry next tick
+                if (result === "failed") {
+                    retryAt.set(key, now.getTime() + RETRY_AFTER_MS); // keep the row, try again later
+                    continue;
+                }
 
-                if (!(await deps.deleteGrant(userId, roleId, now))) {
-                    // Renewed between the check and the removal: give the role back so the renewal isn't lost.
-                    await deps.addRole(guildId, discordUserId, roleId);
+                if (!(await deps.deleteGrant(guildId, discordUserId, roleId, now))) {
+                    // The row did not go: a renewal bought meanwhile (give the role back) or a refund deleted it (nothing to give back).
+                    if (await deps.getActiveGrantEnd(guildId, discordUserId, roleId, now))
+                        await deps.addRole(guildId, discordUserId, roleId);
                 }
             } catch (err) {
                 logger.error(asError(err), { guild: guildId, user: discordUserId, role: roleId });

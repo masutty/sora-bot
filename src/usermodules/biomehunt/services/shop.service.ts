@@ -1,5 +1,5 @@
 import { formatSeeds, generatePurchaseCode } from "../constants/shop.constants";
-import type { buyItem, getPurchaseByCode, markDelivered, refundPurchase, refundWouldRemoveRole } from "../repository/purchases.repository";
+import type { buyItem, getPurchaseByCode, markDelivered, refundPurchase, refundRoleImpact } from "../repository/purchases.repository";
 import type { getItem, getShop } from "../repository/shop.repository";
 import type { PurchaseRow, ShopItemRow } from "../types";
 import type { GuildLogEntry } from "./guild-log.service";
@@ -63,7 +63,9 @@ export interface ShopDeps {
     refundPurchase: typeof refundPurchase;
     markDelivered: typeof markDelivered;
     getPurchaseByCode: typeof getPurchaseByCode;
-    refundWouldRemoveRole: typeof refundWouldRemoveRole;
+    refundRoleImpact: typeof refundRoleImpact;
+    /** The warning for a role the bot cannot give right now, or null when it can. */
+    checkRole(guildId: string, roleId: string): Promise<string | null>;
     addRole(guildId: string, discordUserId: string, roleId: string): Promise<void>;
     removeRole(guildId: string, discordUserId: string, roleId: string): Promise<void>;
     postSale(purchase: PurchaseRow): Promise<void>;
@@ -75,6 +77,7 @@ export type PurchaseOutcome =
     | { kind: "ok"; purchase: PurchaseRow; seedsLeft: number }
     | { kind: "role_failed"; purchase: PurchaseRow }
     | { kind: "closed" }
+    | { kind: "role_unavailable" }
     | Exclude<Awaited<ReturnType<typeof buyItem>>, { kind: "ok" }>;
 
 const isCodeClash = (err: unknown) => (err as { code?: string } | null)?.code === "23505";
@@ -102,6 +105,12 @@ export async function purchaseItem(
     if (!(await deps.economyOn(guildId))) return { kind: "closed" };
     const shop = await deps.getShop(guildId);
     if (!shop?.open) return { kind: "closed" };
+
+    // A role the bot cannot give is refused before any charge.
+    const wanted = await deps.getItem(guildId, itemId);
+    if (wanted && (wanted.kind === "role" || wanted.kind === "timed_role") && wanted.role_id) {
+        if (await deps.checkRole(guildId, wanted.role_id)) return { kind: "role_unavailable" };
+    }
 
     let result: Awaited<ReturnType<typeof buyItem>> | null = null;
     for (let attempt = 1; !result; attempt++) {

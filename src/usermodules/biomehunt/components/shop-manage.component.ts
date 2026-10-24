@@ -1,4 +1,4 @@
-import { type GuildMember, MessageFlags, PermissionFlagsBits } from "discord.js";
+import { MessageFlags, PermissionFlagsBits } from "discord.js";
 import { defineComponent, type RunViewOptions, runView } from "@/define";
 import { normalizePurchaseCode } from "../constants/shop.constants";
 import type { ShopDeps } from "../services/shop.service";
@@ -13,8 +13,7 @@ export function shopManageComponent(deps?: ShopDeps, viewTransport?: RunViewOpti
         prefix: SHOP_MANAGE_PREFIX,
         handle: async (interaction, parts, client) => {
             if (!interaction.isButton()) return;
-            const member = interaction.member as GuildMember | null;
-            if (!member?.permissions.has(PermissionFlagsBits.Administrator)) {
+            if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
                 await interaction.reply({ content: "Only admins can manage purchases.", flags: MessageFlags.Ephemeral });
                 return;
             }

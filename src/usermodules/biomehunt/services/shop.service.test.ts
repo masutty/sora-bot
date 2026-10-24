@@ -80,7 +80,8 @@ function fakeDeps(over: Partial<ShopDeps> = {}) {
         refundPurchase: rec("refundPurchase", async () => ({ kind: "ok", purchase: purchase(), removeRole: false, stockRestored: false })),
         markDelivered: rec("markDelivered", async () => ({ kind: "ok", purchase: purchase() })),
         getPurchaseByCode: rec("getPurchaseByCode", async () => purchase()),
-        refundWouldRemoveRole: rec("refundWouldRemoveRole", async () => false),
+        refundRoleImpact: rec("refundRoleImpact", async () => ({ removeRole: false, lostSeconds: 0 })),
+        checkRole: rec("checkRole", async () => null),
         addRole: rec("addRole", async () => {}),
         removeRole: rec("removeRole", async () => {}),
         postSale: rec("postSale", async () => {}),
@@ -118,6 +119,31 @@ describe("purchaseItem", () => {
         expect(calls.postSale).toHaveLength(1);
         expect((calls.postSale[0][0] as PurchaseRow).code).toBe("ABC234");
         expect(calls.addRole).toBeUndefined();
+    });
+    test("checks the role before charging and refuses with role_unavailable", async () => {
+        const { deps, calls } = fakeDeps({
+            getItem: async () => item({ kind: "role", role_id: "r1" }),
+            checkRole: async () => "⚠️ That role no longer exists.",
+        });
+        expect(await purchaseItem(deps, input)).toEqual({ kind: "role_unavailable" });
+        expect(calls.buyItem).toBeUndefined();
+        expect(calls.postSale).toBeUndefined();
+    });
+    test("a giveable role goes on to the purchase; a manual item is never checked", async () => {
+        const checked: unknown[][] = [];
+        const role = fakeDeps({
+            getItem: async () => item({ kind: "timed_role", role_id: "r1", duration_s: 60 }),
+            checkRole: async (...a) => {
+                checked.push(a);
+                return null;
+            },
+            buyItem: roleOk("timed_role"),
+        });
+        expect((await purchaseItem(role.deps, input)).kind).toBe("ok");
+        expect(checked).toEqual([["g1", "r1"]]);
+        const manual = fakeDeps();
+        await purchaseItem(manual.deps, input);
+        expect(manual.calls.checkRole).toBeUndefined();
     });
     test("passes a buy blocker through", async () => {
         const { deps, calls } = fakeDeps({ buyItem: async () => ({ kind: "sold_out" }) });

@@ -263,7 +263,8 @@ export function memberShopView(deps: MemberShopDeps): ViewDefinition<MemberShopS
     async function loadShop(s: MemberShopState): Promise<void> {
         const [economyOn, shop, seeds] = await Promise.all([deps.economyOn(s.guildId), deps.getShop(s.guildId), deps.getSeeds()]);
         s.visible = economyOn && !!shop?.open;
-        s.items = s.visible ? await deps.listLiveItems(s.guildId) : [];
+        // A role item with no role picked can't be bought, so members don't see it.
+        s.items = s.visible ? (await deps.listLiveItems(s.guildId)).filter((i) => !isRoleKind(i.kind) || i.role_id) : [];
         if (seeds !== null) s.seeds = seeds;
         s.page = Math.min(s.page, listPages(s) - 1);
     }
@@ -286,7 +287,7 @@ export function memberShopView(deps: MemberShopDeps): ViewDefinition<MemberShopS
         const roleId = isRoleKind(item.kind) ? item.role_id : null;
         const [bought, activeEnd, seeds] = await Promise.all([
             deps.countMemberItemPurchases(item.id, s.user.id),
-            roleId ? deps.getActiveGrantEnd(s.user.id, roleId, deps.now()) : null,
+            roleId ? deps.getActiveGrantEnd(s.guildId, s.user.discord_user_id, roleId, deps.now()) : null,
             deps.getSeeds(),
         ]);
         if (seeds !== null) s.seeds = seeds;
@@ -361,6 +362,9 @@ export function memberShopView(deps: MemberShopDeps): ViewDefinition<MemberShopS
             case "closed":
                 await c.notify(CLOSED);
                 return toList(s);
+            case "role_unavailable":
+                await c.notify("This item can't be bought right now.");
+                return toItem(c);
             case "sold_out":
                 await c.notify(blockerLine({ kind: "sold_out" }));
                 return toItem(c);

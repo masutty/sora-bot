@@ -593,7 +593,7 @@ CREATE TABLE IF NOT EXISTS bh_shop_purchases (
     code             CHAR(6) NOT NULL UNIQUE,
     guild_id         VARCHAR(20) NOT NULL,
     item_id          INTEGER NOT NULL REFERENCES bh_shop_items(id),
-    user_id          INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    user_id          INTEGER REFERENCES bh_users(id) ON DELETE SET NULL,
     buyer_discord_id VARCHAR(20) NOT NULL,
     item_name        VARCHAR(60) NOT NULL,
     item_emoji       VARCHAR(64),
@@ -602,6 +602,7 @@ CREATE TABLE IF NOT EXISTS bh_shop_purchases (
     role_id          VARCHAR(20),
     duration_s       INTEGER,
     role_ends_at     TIMESTAMPTZ,
+    role_window_start TIMESTAMPTZ,
     status           VARCHAR(10) NOT NULL CHECK (status IN ('pending', 'delivered', 'refunded')),
     refund_reason    VARCHAR(20),
     decided_by       VARCHAR(20),
@@ -615,13 +616,39 @@ CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_pending ON bh_shop_purchases (g
 CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_user ON bh_shop_purchases (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_item_user ON bh_shop_purchases (item_id, user_id);
 
+/* A profile wipe keeps purchases (user_id goes NULL) and grants (keyed by Discord id, no FK). The blocks below move a database made with the first shape. */
+ALTER TABLE bh_shop_purchases ADD COLUMN IF NOT EXISTS role_window_start TIMESTAMPTZ;
+ALTER TABLE bh_shop_purchases ALTER COLUMN user_id DROP NOT NULL;
+DO $$
+DECLARE
+    fk TEXT;
+BEGIN
+    SELECT conname INTO fk FROM pg_constraint
+    WHERE conrelid = 'bh_shop_purchases'::regclass AND contype = 'f' AND confrelid = 'bh_users'::regclass AND confdeltype = 'c';
+    IF fk IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE bh_shop_purchases DROP CONSTRAINT %I', fk);
+        ALTER TABLE bh_shop_purchases ADD CONSTRAINT bh_shop_purchases_user_id_fkey FOREIGN KEY (user_id) REFERENCES bh_users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS bh_shop_role_grants (
-    user_id  INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
-    guild_id VARCHAR(20) NOT NULL,
-    role_id  VARCHAR(20) NOT NULL,
-    ends_at  TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (user_id, role_id)
+    guild_id        VARCHAR(20) NOT NULL,
+    discord_user_id VARCHAR(20) NOT NULL,
+    role_id         VARCHAR(20) NOT NULL,
+    ends_at         TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (guild_id, discord_user_id, role_id)
 );
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bh_shop_role_grants' AND column_name = 'user_id') THEN
+        ALTER TABLE bh_shop_role_grants ADD COLUMN IF NOT EXISTS discord_user_id VARCHAR(20);
+        UPDATE bh_shop_role_grants g SET discord_user_id = u.discord_user_id FROM bh_users u WHERE u.id = g.user_id;
+        DELETE FROM bh_shop_role_grants WHERE discord_user_id IS NULL;
+        ALTER TABLE bh_shop_role_grants DROP COLUMN user_id;
+        ALTER TABLE bh_shop_role_grants ALTER COLUMN discord_user_id SET NOT NULL;
+        ALTER TABLE bh_shop_role_grants ADD PRIMARY KEY (guild_id, discord_user_id, role_id);
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_bh_shop_role_grants_ends ON bh_shop_role_grants (ends_at);
 
 `;

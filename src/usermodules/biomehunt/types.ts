@@ -427,7 +427,8 @@ export interface PurchaseRow {
     code: string;
     guild_id: string;
     item_id: number;
-    user_id: number;
+    /** NULL once the buyer's profile was wiped. */
+    user_id: number | null;
     buyer_discord_id: string;
     item_name: string;
     item_emoji: string | null;
@@ -436,6 +437,8 @@ export interface PurchaseRow {
     role_id: string | null;
     duration_s: number | null;
     role_ends_at: Date | null;
+    /** Timed only: when this purchase's own window starts; it ends `duration_s` later. */
+    role_window_start: Date | null;
     status: PurchaseStatus;
     refund_reason: "role_failed" | null;
     decided_by: string | null;

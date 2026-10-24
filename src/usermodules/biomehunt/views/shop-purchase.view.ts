@@ -1,4 +1,4 @@
-import { ButtonStyle, ContainerBuilder, MessageFlags } from "discord.js";
+import { ButtonStyle, ContainerBuilder, type MessageComponentInteraction, MessageFlags, PermissionFlagsBits } from "discord.js";
 import { confirm, defineView, UserFacingError, type ViewDefinition, type ViewRender } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import { formatPurchaseCode, formatSeeds, STATUS_COLORS } from "../constants/shop.constants";
@@ -42,7 +42,7 @@ const itemLine = (p: PurchaseRow) => `${p.item_emoji ? `${p.item_emoji} ` : ""}*
 
 /** The role and, for a timed one, when it ends. */
 function roleText(p: PurchaseRow): string {
-    const role = `<@&${p.role_id}>`;
+    const role = p.role_id ? `<@&${p.role_id}>` : "the role";
     return p.role_ends_at ? `${role} until <t:${unix(p.role_ends_at)}:D>` : role;
 }
 
@@ -54,11 +54,12 @@ function statusLine(p: PurchaseRow): string {
         case "pending":
             return `${buyer} · <t:${unix(p.created_at)}:R>`;
         case "delivered":
-            return isRoleKind(p) && p.role_id ? `${buyer} · ${roleText(p)}` : `${buyer} · delivered by <@${p.decided_by}>${at}`;
+            if (isRoleKind(p) && p.role_id) return `${buyer} · ${roleText(p)}`;
+            return p.decided_by ? `${buyer} · delivered by <@${p.decided_by}>${at}` : `${buyer} · delivered${at}`;
         case "refunded":
             return p.decided_by ? `${buyer} · refunded by <@${p.decided_by}>${at}` : `${buyer} · refunded${at}`;
         case "failed":
-            return `${buyer} · the bot couldn't give <@&${p.role_id}>`;
+            return `${buyer} · the bot couldn't give ${p.role_id ? `<@&${p.role_id}>` : "the role"}`;
     }
 }
 
@@ -88,10 +89,17 @@ function formatSpan(seconds: number): string {
 /** Only what a refund will undo. */
 async function refundBullets(deps: ShopDeps, p: PurchaseRow): Promise<string> {
     const lines: string[] = [];
-    if (p.price > 0) lines.push(`${formatSeeds(p.price)} go back to <@${p.buyer_discord_id}>`);
+    if (p.price > 0) {
+        lines.push(
+            p.user_id === null
+                ? `${formatSeeds(p.price)} can't go back - <@${p.buyer_discord_id}> has no profile anymore`
+                : `${formatSeeds(p.price)} go back to <@${p.buyer_discord_id}>`,
+        );
+    }
     if (isRoleKind(p) && p.role_id) {
-        if (await deps.refundWouldRemoveRole(p, deps.now())) lines.push(`<@&${p.role_id}> is removed`);
-        else if (p.kind === "timed_role" && p.duration_s) lines.push(`<@&${p.role_id}> loses ${formatSpan(p.duration_s)}`);
+        const impact = await deps.refundRoleImpact(p, deps.now());
+        if (impact.removeRole) lines.push(`<@&${p.role_id}> is removed`);
+        else if (p.kind === "timed_role" && impact.lostSeconds > 0) lines.push(`<@&${p.role_id}> loses ${formatSpan(impact.lostSeconds)}`);
     }
     const item = await deps.getItem(p.guild_id, p.item_id);
     if (item && !item.removed_at && item.stock !== null) lines.push(`The stock goes back to ${item.stock + 1}`);
@@ -111,6 +119,10 @@ export interface PurchaseCardInput {
 }
 
 const GONE = "This purchase no longer exists.";
+const NOT_ADMIN = "Only admins can manage purchases.";
+
+/** The Manage button already checks this; the card checks it again on every decision. */
+const isAdmin = (raw: unknown) => !!(raw as Partial<MessageComponentInteraction>).memberPermissions?.has(PermissionFlagsBits.Administrator);
 
 /**
  * A6: one purchase for an admin to decide - `biomehunt.shop-purchase`. Opened from the Purchases tab
@@ -153,6 +165,7 @@ export function purchaseCardView(deps: ShopDeps): ViewDefinition<PurchaseCardSta
         on: {
             back: (c) => c.done(),
             deliver: async (c) => {
+                if (!isAdmin(c.raw)) return c.notify(NOT_ADMIN);
                 const res = await deliverFlow(deps, c.state.guildId, c.state.purchase.code, c.user.id);
                 if (res.kind === "ok") c.state.purchase = res.purchase;
                 else if (res.kind === "not_pending") {
@@ -161,6 +174,7 @@ export function purchaseCardView(deps: ShopDeps): ViewDefinition<PurchaseCardSta
                 } else await c.notify(GONE);
             },
             refund: async (c) => {
+                if (!isAdmin(c.raw)) return c.notify(NOT_ADMIN);
                 const current = await reload(c);
                 if (!current) return c.notify(GONE);
                 if (current.status === "refunded") return c.notify("This purchase is already refunded.");

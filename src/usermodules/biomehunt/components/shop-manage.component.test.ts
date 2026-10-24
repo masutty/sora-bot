@@ -16,7 +16,7 @@ function fakeInteraction(isAdmin: boolean, onEdit: (payload: unknown) => void = 
         isButton: () => true,
         guildId: "g1",
         user: { id: "a1" },
-        member: { permissions: { has: () => isAdmin } },
+        memberPermissions: { has: () => isAdmin },
         reply: async (p: unknown) => void replies.push(p),
         deferReply: async (p: unknown) => void deferred.push(p),
         editReply: async (p: unknown) => {

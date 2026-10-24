@@ -3,18 +3,19 @@ import type { GuildMember } from "discord.js";
 import { createShopRolesTick, regrantOnJoin, type ShopRolesDeps } from "./shop-roles.worker";
 
 const NOW = new Date("2026-10-23T12:00:00Z");
-const due = (n: number) => ({ userId: n, guildId: "g1", discordUserId: `d${n}`, roleId: `r${n}` });
+const due = (n: number) => ({ guildId: "g1", discordUserId: `d${n}`, roleId: `r${n}` });
 
 function makeDeps(over: Partial<ShopRolesDeps> = {}) {
-    const deleted: Array<[number, string]> = [];
+    const deleted: Array<[string, string]> = [];
+    let clock = NOW;
     const added: string[] = [];
     const deps: ShopRolesDeps = {
-        now: () => NOW,
+        now: () => clock,
         getDueGrants: async () => [due(1)],
         getActiveGrantEnd: async () => null,
         removeRole: async () => "ok",
-        deleteGrant: async (userId, roleId) => {
-            deleted.push([userId, roleId]);
+        deleteGrant: async (_guildId, discordUserId, roleId) => {
+            deleted.push([discordUserId, roleId]);
             return true;
         },
         addRole: async (_g, _u, roleId) => {
@@ -22,20 +23,27 @@ function makeDeps(over: Partial<ShopRolesDeps> = {}) {
         },
         ...over,
     };
-    return { deps, deleted, added };
+    return {
+        deps,
+        deleted,
+        added,
+        setNow: (d: Date) => {
+            clock = d;
+        },
+    };
 }
 
 describe("createShopRolesTick", () => {
     test("deletes the grant when the role is removed", async () => {
         const { deps, deleted } = makeDeps();
         await createShopRolesTick(deps)();
-        expect(deleted).toEqual([[1, "r1"]]);
+        expect(deleted).toEqual([["d1", "r1"]]);
     });
 
     test("deletes the grant when the member or role is gone", async () => {
         const { deps, deleted } = makeDeps({ removeRole: async () => "gone" });
         await createShopRolesTick(deps)();
-        expect(deleted).toEqual([[1, "r1"]]);
+        expect(deleted).toEqual([["d1", "r1"]]);
     });
 
     test("keeps the grant when the removal fails", async () => {
@@ -44,16 +52,61 @@ describe("createShopRolesTick", () => {
         expect(deleted).toEqual([]);
     });
 
-    test("asks for at most 50 due grants", async () => {
+    test("reads past the first 50 due grants and handles at most 50", async () => {
         let limit = 0;
+        const removed: string[] = [];
         const { deps } = makeDeps({
             getDueGrants: async (_now, l) => {
                 limit = l;
-                return [];
+                return Array.from({ length: 80 }, (_, i) => due(i + 1));
+            },
+            removeRole: async (_g, _u, roleId) => {
+                removed.push(roleId);
+                return "ok";
             },
         });
         await createShopRolesTick(deps)();
-        expect(limit).toBe(50);
+        expect(limit).toBe(200);
+        expect(removed).toHaveLength(50);
+    });
+
+    test("a grant whose removal failed is skipped for 10 minutes while others go ahead", async () => {
+        const tried: string[] = [];
+        const { deps, setNow } = makeDeps({
+            getDueGrants: async () => [due(1), due(2)],
+            removeRole: async (_g, _u, roleId) => {
+                tried.push(roleId);
+                return roleId === "r1" ? "failed" : "ok";
+            },
+        });
+        const tick = createShopRolesTick(deps);
+        await tick();
+        expect(tried).toEqual(["r1", "r2"]);
+        tried.length = 0;
+        setNow(new Date(NOW.getTime() + 5 * 60_000));
+        await tick();
+        expect(tried).toEqual(["r2"]);
+        tried.length = 0;
+        setNow(new Date(NOW.getTime() + 11 * 60_000));
+        await tick();
+        expect(tried).toEqual(["r1", "r2"]);
+    });
+
+    test("failing grants at the head do not starve the rest of the queue", async () => {
+        const removed: string[] = [];
+        const { deps, setNow } = makeDeps({
+            getDueGrants: async () => Array.from({ length: 60 }, (_, i) => due(i + 1)),
+            removeRole: async (_g, _u, roleId) => {
+                removed.push(roleId);
+                return Number(roleId.slice(1)) <= 50 ? "failed" : "ok";
+            },
+        });
+        const tick = createShopRolesTick(deps);
+        await tick();
+        removed.length = 0;
+        setNow(new Date(NOW.getTime() + 60_000));
+        await tick();
+        expect(removed).toEqual(Array.from({ length: 10 }, (_, i) => `r${i + 51}`));
     });
 
     test("skips a grant renewed since it was read", async () => {
@@ -71,15 +124,26 @@ describe("createShopRolesTick", () => {
     });
 
     test("gives the role back when a renewal lands during the removal", async () => {
-        const { deps, added } = makeDeps({ deleteGrant: async () => false });
+        let reads = 0;
+        const { deps, added } = makeDeps({
+            deleteGrant: async () => false,
+            getActiveGrantEnd: async () => (++reads > 1 ? new Date("2026-10-24T00:00:00Z") : null),
+        });
         await createShopRolesTick(deps)();
         expect(added).toEqual(["r1"]);
+    });
+
+    test("does not give the role back when a refund deleted the grant meanwhile", async () => {
+        const { deps, added } = makeDeps({ deleteGrant: async () => false });
+        await createShopRolesTick(deps)();
+        expect(added).toEqual([]);
     });
 
     test("a failing add-back does not stop the tick", async () => {
         const { deps } = makeDeps({
             getDueGrants: async () => [due(1), due(2)],
             deleteGrant: async () => false,
+            getActiveGrantEnd: async () => new Date("2026-10-24T00:00:00Z"),
             addRole: async () => {
                 throw new Error("boom");
             },
@@ -96,7 +160,7 @@ describe("createShopRolesTick", () => {
             },
         });
         await createShopRolesTick(deps)();
-        expect(deleted).toEqual([[2, "r2"]]);
+        expect(deleted).toEqual([["d2", "r2"]]);
     });
 });
 

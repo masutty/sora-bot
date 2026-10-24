@@ -69,6 +69,7 @@ function purchase(over: Partial<PurchaseRow> = {}): PurchaseRow {
         role_id: null,
         duration_s: null,
         role_ends_at: null,
+        role_window_start: null,
         status: "delivered",
         refund_reason: null,
         decided_by: null,
@@ -164,11 +165,23 @@ test("buyItem upserts the timed grant from the later of now and the old end", as
     await repo.buyItem(buyInput);
     const grant = sqlOf("INSERT INTO bh_shop_role_grants")[0];
     expect(grant.sql).toContain("GREATEST(");
-    expect(grant.sql).toContain("ON CONFLICT (user_id, role_id)");
+    expect(grant.sql).toContain("ON CONFLICT (guild_id, discord_user_id, role_id)");
+    expect(grant.params.slice(0, 3)).toEqual(["g1", "d3", "r1"]);
     const sync = sqlOf("SET role_ends_at");
     expect(sync).toHaveLength(1);
     expect(sync[0].params).toContain(end);
     expect(sqlOf("INSERT INTO bh_shop_purchases")[0].params).toContain(end);
+    // The purchase window is the last duration_s of the new grant end.
+    expect(sqlOf("INSERT INTO bh_shop_purchases")[0].params).toContainEqual(new Date("2026-10-23T12:00:00Z"));
+});
+
+test("buyItem refuses a role item with no role picked", async () => {
+    for (const kind of ["role", "timed_role"] as const) {
+        calls.length = 0;
+        script = [{ match: "FROM bh_shop_items", rows: [item({ kind, role_id: null, duration_s: kind === "timed_role" ? 60 : null })] }];
+        expect(await repo.buyItem(buyInput)).toEqual({ kind: "gone" });
+        expect(sqlOf("UPDATE bh_users")).toHaveLength(0);
+    }
 });
 
 test("buyItem lets a code clash surface as the pg error", async () => {
@@ -218,12 +231,12 @@ test("refundPurchase locks member, item, purchase row, then touches Seeds (same 
 });
 
 test("deleteGrant only deletes an ended grant and reports whether it did", async () => {
-    script = [{ match: "DELETE FROM bh_shop_role_grants", rows: [{ user_id: 3 }] }];
-    expect(await repo.deleteGrant(3, "r1", NOW)).toBe(true);
-    expect(calls[0].sql).toContain("ends_at <= $3");
-    expect(calls[0].params).toEqual([3, "r1", NOW]);
+    script = [{ match: "DELETE FROM bh_shop_role_grants", rows: [{ role_id: "r1" }] }];
+    expect(await repo.deleteGrant("g1", "d3", "r1", NOW)).toBe(true);
+    expect(calls[0].sql).toContain("ends_at <= $4");
+    expect(calls[0].params).toEqual(["g1", "d3", "r1", NOW]);
     script = [];
-    expect(await repo.deleteGrant(3, "r1", NOW)).toBe(false);
+    expect(await repo.deleteGrant("g1", "d3", "r1", NOW)).toBe(false);
 });
 
 test("buyItem never reports a short below 1", async () => {
@@ -260,6 +273,24 @@ test("refundPurchase restores stock only for a live item", async () => {
     expect(sqlOf("SET stock = stock + 1")[0].sql).toContain("removed_at IS NULL");
 });
 
+test("refundPurchase of a wiped profile skips the member lock and the Seeds", async () => {
+    script = [{ match: "AND code = $2", rows: [purchase({ user_id: null })] }];
+    const res = await repo.refundPurchase(refundInput);
+    expect(res.kind).toBe("ok");
+    expect(sqlOf("FROM bh_users")).toHaveLength(0);
+    expect(sqlOf("UPDATE bh_users")).toHaveLength(0);
+    expect(sqlOf("SET status = 'refunded'")).toHaveLength(1);
+});
+
+test("the permanent-role held check ignores timed purchases", async () => {
+    script = [{ match: "AND code = $2", rows: [purchase({ kind: "role", role_id: "r1" })] }];
+    await repo.refundPurchase(refundInput);
+    const held = sqlOf("AS held")[0];
+    expect(held.sql).toContain("kind = 'role'");
+    expect(held.sql).not.toContain("timed_role");
+    expect(held.sql).toContain("ends_at > ");
+});
+
 test("refundPurchase keeps a permanent role another purchase still gives", async () => {
     script = [
         { match: "AND code = $2", rows: [purchase({ kind: "role", role_id: "r1" })] },
@@ -278,7 +309,8 @@ test("refundPurchase removes a permanent role nothing else gives", async () => {
     expect(res.kind === "ok" && res.removeRole).toBe(true);
 });
 
-const timed = () => purchase({ kind: "timed_role", role_id: "r1", duration_s: 86400 });
+const timed = (over: Partial<PurchaseRow> = {}) =>
+    purchase({ kind: "timed_role", role_id: "r1", duration_s: 86400, role_window_start: NOW, ...over });
 
 test("refundPurchase moves a timed grant back and keeps the role while the end is ahead", async () => {
     const end = new Date("2026-10-25T12:00:00Z");
@@ -304,13 +336,52 @@ test("refundPurchase deletes the grant and removes the role when the end falls i
     expect(res.kind === "ok" && res.removeRole).toBe(true);
     expect(sqlOf("DELETE FROM bh_shop_role_grants")).toHaveLength(1);
     expect(sqlOf("UPDATE bh_shop_role_grants")).toHaveLength(0);
+    // The other timed purchases of the role end now.
+    const sync = sqlOf("SET role_ends_at");
+    expect(sync).toHaveLength(1);
+    expect(sync[0].params).toContain(NOW);
 });
 
-test("refundWouldRemoveRole reads without writing", async () => {
+test("refundPurchase takes only the unused part of a half-used window", async () => {
+    const end = new Date("2026-10-25T12:00:00Z");
+    script = [
+        { match: "AND code = $2", rows: [timed({ role_window_start: new Date("2026-10-23T00:00:00Z") })] },
+        { match: "FROM bh_shop_role_grants", rows: [{ ends_at: end }] },
+    ];
+    await repo.refundPurchase(refundInput);
+    // Window 10-23T00 to 10-24T00, now is 12:00, so 12h are left.
+    expect(sqlOf("UPDATE bh_shop_role_grants")[0].params).toContain(new Date("2026-10-25T00:00:00Z").toISOString());
+});
+
+test("refundPurchase of a window that already ran out leaves the grant alone", async () => {
+    script = [
+        { match: "AND code = $2", rows: [timed({ role_window_start: new Date("2026-10-20T00:00:00Z") })] },
+        { match: "FROM bh_shop_role_grants", rows: [{ ends_at: new Date("2026-10-25T12:00:00Z") }] },
+    ];
+    const res = await repo.refundPurchase(refundInput);
+    expect(res.kind === "ok" && res.removeRole).toBe(false);
+    expect(sqlOf("UPDATE bh_shop_role_grants")).toHaveLength(0);
+    expect(sqlOf("DELETE FROM bh_shop_role_grants")).toHaveLength(0);
+});
+
+test("a queued window that has not started loses its whole duration", async () => {
+    script = [{ match: "FROM bh_shop_role_grants", rows: [{ ends_at: new Date("2026-10-25T12:00:00Z") }] }];
+    expect(await repo.refundRoleImpact(timed({ role_window_start: new Date("2026-10-24T12:00:00Z") }), NOW)).toEqual({
+        removeRole: false,
+        lostSeconds: 86400,
+    });
+});
+
+test("refundRoleImpact reads without writing", async () => {
     script = [{ match: "AS held", rows: [{ held: false }] }];
-    expect(await repo.refundWouldRemoveRole(purchase({ kind: "role", role_id: "r1" }), NOW)).toBe(true);
+    expect(await repo.refundRoleImpact(purchase({ kind: "role", role_id: "r1" }), NOW)).toEqual({ removeRole: true, lostSeconds: 0 });
     expect(calls.some((c) => /^\s*(UPDATE|INSERT|DELETE)/.test(c.sql))).toBe(false);
-    expect(await repo.refundWouldRemoveRole(purchase(), NOW)).toBe(false);
+    expect(await repo.refundRoleImpact(purchase(), NOW)).toEqual({ removeRole: false, lostSeconds: 0 });
+});
+
+test("refundRoleImpact reports the unused seconds of a timed purchase", async () => {
+    script = [{ match: "FROM bh_shop_role_grants", rows: [{ ends_at: new Date("2026-10-25T12:00:00Z") }] }];
+    expect(await repo.refundRoleImpact(timed(), NOW)).toEqual({ removeRole: false, lostSeconds: 86400 });
 });
 
 const decideInput = { guildId: "g1", code: "ABC234", by: "admin1", now: NOW };
@@ -349,13 +420,14 @@ test("countMemberItemPurchases ignores refunded purchases", async () => {
 });
 
 test("getActiveGrantEnd returns null when no grant is active", async () => {
-    expect(await repo.getActiveGrantEnd(3, "r1", NOW)).toBeNull();
+    expect(await repo.getActiveGrantEnd("g1", "d3", "r1", NOW)).toBeNull();
     expect(calls[0].sql).toContain("ends_at > ");
+    expect(calls[0].params).toEqual(["g1", "d3", "r1", NOW]);
 });
 
 test("getDueGrants maps rows with the Discord id", async () => {
-    script = [{ match: "bh_shop_role_grants", rows: [{ user_id: 3, guild_id: "g1", discord_user_id: "d3", role_id: "r1" }] }];
-    expect(await repo.getDueGrants(NOW, 50)).toEqual([{ userId: 3, guildId: "g1", discordUserId: "d3", roleId: "r1" }]);
+    script = [{ match: "bh_shop_role_grants", rows: [{ guild_id: "g1", discord_user_id: "d3", role_id: "r1" }] }];
+    expect(await repo.getDueGrants(NOW, 50)).toEqual([{ guildId: "g1", discordUserId: "d3", roleId: "r1" }]);
     expect(calls[0].sql).toContain("ends_at <= ");
 });
 

@@ -25,3 +25,25 @@ test("the delayed-forward cleanup runs once and only once bh_biomes has rows", (
 test("the schema still creates bh_guild_flags", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS bh_guild_flags/);
 });
+
+// A profile wipe must not cascade into the shop: purchases keep their row, grants are keyed by Discord id.
+test("the shop tables survive a profile wipe", () => {
+    const purchases = sql.slice(
+        sql.indexOf("CREATE TABLE IF NOT EXISTS bh_shop_purchases"),
+        sql.indexOf("CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_guild"),
+    );
+    expect(purchases).toMatch(/user_id\s+INTEGER REFERENCES bh_users\(id\) ON DELETE SET NULL/);
+    const grants = sql.slice(
+        sql.indexOf("CREATE TABLE IF NOT EXISTS bh_shop_role_grants"),
+        sql.indexOf("CREATE INDEX IF NOT EXISTS idx_bh_shop_role_grants_ends"),
+    );
+    expect(grants).toMatch(/PRIMARY KEY \(guild_id, discord_user_id, role_id\)/);
+    expect(grants).not.toMatch(/REFERENCES bh_users/);
+});
+
+// The shop tables of the first shape are moved by guarded statements, so the whole schema stays safe to re-run.
+test("the shop migration steps are guarded", () => {
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS role_window_start/);
+    expect(sql).toMatch(/table_name = 'bh_shop_role_grants' AND column_name = 'user_id'/);
+    expect(sql).toMatch(/IF fk IS NOT NULL THEN/);
+});
