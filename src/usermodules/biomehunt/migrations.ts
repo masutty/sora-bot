@@ -559,4 +559,69 @@ BEGIN
     END IF;
 END $$;
 
+/* Per-server Seeds shop: shop settings, items, purchases (with snapshots) and timed-role grants. */
+CREATE TABLE IF NOT EXISTS bh_shops (
+    guild_id         VARCHAR(20) PRIMARY KEY,
+    open             BOOLEAN NOT NULL DEFAULT FALSE,
+    sales_channel_id VARCHAR(20),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bh_shop_items (
+    id             SERIAL PRIMARY KEY,
+    guild_id       VARCHAR(20) NOT NULL,
+    name           VARCHAR(60) NOT NULL,
+    description    VARCHAR(300),
+    emoji          VARCHAR(64),
+    image_url      TEXT,
+    price          INTEGER NOT NULL CHECK (price >= 0),
+    kind           VARCHAR(12) NOT NULL DEFAULT 'manual' CHECK (kind IN ('manual', 'role', 'timed_role')),
+    role_id        VARCHAR(20),
+    duration_s     INTEGER,
+    stock          INTEGER CHECK (stock >= 0),
+    max_per_member INTEGER CHECK (max_per_member >= 1),
+    sort_order     INTEGER NOT NULL,
+    removed_at     TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_items_live ON bh_shop_items (guild_id, sort_order) WHERE removed_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS bh_shop_purchases (
+    id               SERIAL PRIMARY KEY,
+    code             CHAR(6) NOT NULL UNIQUE,
+    guild_id         VARCHAR(20) NOT NULL,
+    item_id          INTEGER NOT NULL REFERENCES bh_shop_items(id),
+    user_id          INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    buyer_discord_id VARCHAR(20) NOT NULL,
+    item_name        VARCHAR(60) NOT NULL,
+    item_emoji       VARCHAR(64),
+    price            INTEGER NOT NULL,
+    kind             VARCHAR(12) NOT NULL,
+    role_id          VARCHAR(20),
+    duration_s       INTEGER,
+    role_ends_at     TIMESTAMPTZ,
+    status           VARCHAR(10) NOT NULL CHECK (status IN ('pending', 'delivered', 'refunded')),
+    refund_reason    VARCHAR(20),
+    decided_by       VARCHAR(20),
+    decided_at       TIMESTAMPTZ,
+    post_channel_id  VARCHAR(20),
+    post_message_id  VARCHAR(20),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_guild ON bh_shop_purchases (guild_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_pending ON bh_shop_purchases (guild_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_user ON bh_shop_purchases (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_item_user ON bh_shop_purchases (item_id, user_id);
+
+CREATE TABLE IF NOT EXISTS bh_shop_role_grants (
+    user_id  INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    guild_id VARCHAR(20) NOT NULL,
+    role_id  VARCHAR(20) NOT NULL,
+    ends_at  TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, role_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_role_grants_ends ON bh_shop_role_grants (ends_at);
+
 `;
