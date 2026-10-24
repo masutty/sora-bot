@@ -116,6 +116,7 @@ describe("purchaseItem", () => {
         const { deps, calls } = fakeDeps();
         expect((await purchaseItem(deps, input)).kind).toBe("ok");
         expect(calls.postSale).toHaveLength(1);
+        expect((calls.postSale[0][0] as PurchaseRow).code).toBe("ABC234");
         expect(calls.addRole).toBeUndefined();
     });
     test("passes a buy blocker through", async () => {
@@ -183,6 +184,29 @@ describe("purchaseItem", () => {
         expect(entry.body).toContain("<@&r1>");
         expect(entry.body).toContain("<@u1>");
         expect(entry.body).toContain("ABC234");
+    });
+    test.each([
+        [
+            "a throwing refund",
+            async () => {
+                throw new Error("db");
+            },
+        ],
+        ["a not_found refund", async () => ({ kind: "not_found" as const })],
+    ])("%s still logs, says to refund by hand and returns role_failed", async (_name, refundPurchase) => {
+        const { deps, calls } = fakeDeps({
+            buyItem: roleOk("role"),
+            addRole: async () => {
+                throw new Error("nope");
+            },
+            refundPurchase,
+        });
+        expect((await purchaseItem(deps, input)).kind).toBe("role_failed");
+        expect(calls.log).toHaveLength(1);
+        const body = (calls.log[0][1] as { body: string }).body;
+        expect(body).toContain("refund `ABC234` by hand");
+        expect(body).not.toContain("Seeds went back");
+        expect(calls.postSale).toHaveLength(1);
     });
     test("a throwing postSale keeps the ok outcome", async () => {
         const { deps } = fakeDeps({

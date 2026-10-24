@@ -90,6 +90,9 @@ async function logFailure(deps: ShopDeps, guildId: string, title: string, body: 
     }
 }
 
+const refreshPost = (deps: ShopDeps, guildId: string, purchase: PurchaseRow) =>
+    logFailure(deps, guildId, "⚠️ Couldn't update a shop sale", `Purchase \`${purchase.code}\`.`, () => deps.updateSalePost(purchase));
+
 /** Buys an item and delivers what can be delivered at once: role kinds get the role, a failed grant is refunded. */
 export async function purchaseItem(
     deps: ShopDeps,
@@ -126,13 +129,28 @@ export async function purchaseItem(
             await deps.addRole(guildId, buyerDiscordId, roleId);
         } catch {
             failed = true;
-            const refund = await deps.refundPurchase({ guildId, code: purchase.code, by: null, reason: "role_failed", now: deps.now() });
-            if (refund.kind === "ok" || refund.kind === "already_refunded") purchase = refund.purchase;
+            let refunded = false;
+            try {
+                const refund = await deps.refundPurchase({
+                    guildId,
+                    code: purchase.code,
+                    by: null,
+                    reason: "role_failed",
+                    now: deps.now(),
+                });
+                if (refund.kind === "ok" || refund.kind === "already_refunded") {
+                    refunded = true;
+                    purchase = refund.purchase;
+                }
+            } catch {
+                // Falls through to the log below, which says the refund did not land.
+            }
+            const outcome = refunded ? "The Seeds went back." : `The refund failed - refund \`${purchase.code}\` by hand.`;
             await deps
                 .log(guildId, {
                     kind: "warning",
                     title: "⚠️ Couldn't give a shop role",
-                    body: `<@&${roleId}> for <@${buyerDiscordId}>, purchase \`${purchase.code}\`. The Seeds went back.`,
+                    body: `<@&${roleId}> for <@${buyerDiscordId}>, purchase \`${purchase.code}\`. ${outcome}`,
                 })
                 .catch(() => {});
         }
@@ -157,7 +175,7 @@ export async function refundFlow(deps: ShopDeps, guildId: string, code: string, 
             () => deps.removeRole(guildId, purchase.buyer_discord_id, roleId),
         );
     }
-    await logFailure(deps, guildId, "⚠️ Couldn't update a shop sale", `Purchase \`${purchase.code}\`.`, () => deps.updateSalePost(purchase));
+    await refreshPost(deps, guildId, purchase);
     return res;
 }
 
@@ -165,10 +183,7 @@ export async function refundFlow(deps: ShopDeps, guildId: string, code: string, 
 export async function deliverFlow(deps: ShopDeps, guildId: string, code: string, by: string) {
     const res = await deps.markDelivered({ guildId, code, by, now: deps.now() });
     if (res.kind === "ok") {
-        const { purchase } = res;
-        await logFailure(deps, guildId, "⚠️ Couldn't update a shop sale", `Purchase \`${purchase.code}\`.`, () =>
-            deps.updateSalePost(purchase),
-        );
+        await refreshPost(deps, guildId, res.purchase);
     }
     return res;
 }
