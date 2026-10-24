@@ -154,6 +154,7 @@ for (const [name, setup] of [
         expect(text(fake.lastPayload())).toContain("## Shop\nThe shop is closed.");
         expect(text(fake.lastPayload())).not.toContain("Item 1");
         await fake.emit(fake.click("tab:purchases", OWNER));
+        expect(text(fake.lastPayload())).toContain("**My purchases**");
         expect(text(fake.lastPayload())).toContain("`#K7Q2M1` · **Thing 1** · `100 🌱`");
     });
 }
@@ -168,7 +169,7 @@ test("the list shows five items per page with View buttons and Sold out", async 
     const items = [item(1, { stock: 0 }), item(2), item(3), item(4), item(5), item(6)];
     const { fake } = await open({ items });
     const t = text(fake.lastPayload());
-    expect(t).toContain("**Item 1** · `500 🌱`\n-# Delivered by hand · Sold out");
+    expect(t).toContain("**Item 1** · `500 🌱`\n-# Sold out");
     expect(t).not.toContain("Item 6");
     expect(labels(fake.lastPayload()).filter((l) => l === "View")).toHaveLength(5);
     expect(labels(fake.lastPayload())).toContain("1 / 2");
@@ -179,6 +180,7 @@ test("200 Seeds on a 500 item renders a disabled short button instead of Buy", a
     await fake.emit(fake.click("view:0", OWNER));
     const blocked = button(fake.lastPayload(), "300 🌱 short");
     expect(blocked?.disabled).toBe(true);
+    expect(blocked?.style).toBe(ButtonSuccess);
     expect(button(fake.lastPayload(), "Buy")).toBeUndefined();
 });
 
@@ -186,6 +188,7 @@ test("a sold-out item is disabled on the card", async () => {
     const { fake } = await open({ items: [item(1, { stock: 0 })] });
     await fake.emit(fake.click("view:0", OWNER));
     expect(button(fake.lastPayload(), "Sold out")?.disabled).toBe(true);
+    expect(button(fake.lastPayload(), "Sold out")?.style).toBe(2);
 });
 
 test("the card offers Buy to a member who can buy", async () => {
@@ -203,9 +206,20 @@ test("confirm for a timed role already active states both dates", async () => {
     await fake.emit(fake.click("buy", OWNER));
     const t = text(fake.lastPayload());
     expect(t).toContain("**Buy Item 1 for `500 🌱`?**");
+    expect(t).toContain(
+        `Your <@&r1> runs until <t:${ts("2026-01-13T00:00:00Z")}:D> - this moves it to <t:${ts("2026-01-20T00:00:00Z")}:D>. You keep \`750 🌱\`.`,
+    );
     expect(t).toContain(`<t:${ts("2026-01-13T00:00:00Z")}:D>`);
     expect(t).toContain(`<t:${ts("2026-01-20T00:00:00Z")}:D>`);
     expect(t).toContain("You keep `750 🌱`");
+});
+
+test("confirm for a manual item has no delivery line", async () => {
+    const { fake } = await open({ items: [item(1)] });
+    await fake.emit(fake.click("view:0", OWNER));
+    await fake.emit(fake.click("buy", OWNER));
+    expect(text(fake.lastPayload())).toContain("**Buy Item 1 for `500 🌱`?**\nYou keep `750 🌱`.");
+    expect(text(fake.lastPayload())).not.toContain("An admin will deliver it");
 });
 
 test("confirm for a fresh timed role says what you get and keep", async () => {
@@ -245,8 +259,7 @@ test("price_changed shows the new price and Buy then uses it", async () => {
     await fake.emit(fake.click("view:0", OWNER));
     await fake.emit(fake.click("buy", OWNER));
     await fake.emit(fake.click("confirm", OWNER));
-    expect(text(fake.lastPayload())).toContain("The price changed to `600 🌱`. Buy Item 1 anyway?");
-    expect(text(fake.lastPayload())).toContain("You keep `650 🌱`");
+    expect(text(fake.lastPayload())).toContain("**The price changed to `600 🌱`.**\nBuy Item 1 anyway? You keep `650 🌱`.");
     data.items = [item(1, { price: 600 })];
     await fake.emit(fake.click("confirm", OWNER));
     expect(buyCalls(calls).at(-1)?.[1]).toMatchObject({ expectedPrice: 600 });

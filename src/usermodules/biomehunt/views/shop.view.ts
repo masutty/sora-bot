@@ -6,7 +6,7 @@ import type { countMemberItemPurchases, getActiveGrantEnd, listMemberPurchases }
 import type { getItem, getShop, listLiveItems } from "../repository/shop.repository";
 import { type BuyBlocker, blockerLabel, buyBlocker, type PurchaseOutcome, type purchaseItem } from "../services/shop.service";
 import type { PurchaseRow, ShopItemRow, UserRow } from "../types";
-import { durationText, givesText, nameLine, numbers } from "./shop-admin.screens";
+import { durationText, nameLine, numbers } from "./shop-admin.screens";
 
 /** What `/bh shop` needs from the database and Discord, injected so its tests use neither. */
 export interface MemberShopDeps {
@@ -77,28 +77,30 @@ function blockerLine(b: BuyBlocker): string {
     }
 }
 
-/** `<@&role>`, `<@&role> for 7 days` for a timed one, a plain phrase for a manual item. */
-function factsGives(item: ShopItemRow): string {
-    if (item.kind === "manual") return "Delivered by hand";
-    const role = item.role_id ? `<@&${item.role_id}>` : "a role";
-    return item.kind === "timed_role" && item.duration_s ? `${role} for ${durationText(item.duration_s)}` : role;
+/** The role, with its duration for a timed one; nothing for a manual item. */
+function gives(item: ShopItemRow): string[] {
+    if (item.kind === "manual" || !item.role_id) return [];
+    const role = `<@&${item.role_id}>`;
+    return [item.kind === "timed_role" && item.duration_s ? `${role} for ${durationText(item.duration_s)}` : role];
 }
+
+/** Stock and per-member limit, as in the admin list. */
+const limits = (item: ShopItemRow) => numbers(item);
 
 /** U3 / U3a / U3b: what the member gets and keeps. */
 function confirmText(s: MemberShopState): string {
     const item = s.item as ShopItemRow;
     const keep = formatSeeds(s.seeds - s.price);
     const role = `<@&${item.role_id}>`;
+    if (s.priceChanged) return `**The price changed to ${formatSeeds(s.price)}.**\nBuy ${item.name} anyway? You keep ${keep}.`;
     let body: string;
-    if (item.kind === "manual") body = `An admin will deliver it. You keep ${keep}.`;
+    if (item.kind === "manual") body = `You keep ${keep}.`;
     else if (item.kind === "role") body = `You get ${role} and keep ${keep}.`;
     else if (s.activeEnd) {
         const next = new Date(s.activeEnd.getTime() + (item.duration_s ?? 0) * 1000);
-        body = `You have ${role} until <t:${unix(s.activeEnd)}:D>. It will last until <t:${unix(next)}:D>. You keep ${keep}.`;
+        body = `Your ${role} runs until <t:${unix(s.activeEnd)}:D> - this moves it to <t:${unix(next)}:D>. You keep ${keep}.`;
     } else body = `You get ${role} for ${durationText(item.duration_s ?? 0)} and keep ${keep}.`;
-    return s.priceChanged
-        ? `The price changed to ${formatSeeds(s.price)}. Buy ${item.name} anyway?\n${body}`
-        : `**Buy ${item.name} for ${formatSeeds(s.price)}?**\n${body}`;
+    return `**Buy ${item.name} for ${formatSeeds(s.price)}?**\n${body}`;
 }
 
 /** U4: the bought screen. */
@@ -159,10 +161,12 @@ function listScreen(s: MemberShopState, kit: RenderKit): Parts {
         divider();
         if (s.items.length === 0) c.addTextDisplayComponents((td) => td.setContent("Nothing for sale yet."));
         s.items.slice(s.page * SHOP_ITEMS_PER_PAGE, (s.page + 1) * SHOP_ITEMS_PER_PAGE).forEach((item, slot, shown) => {
-            const sub = [givesText(item), ...numbers(item)].join(" · ");
+            const sub = [...gives(item), ...limits(item)].join(" · ");
             c.addSectionComponents((section) =>
                 section
-                    .addTextDisplayComponents((td) => td.setContent(`${nameLine(item)} · ${formatSeeds(item.price)}\n-# ${sub}`))
+                    .addTextDisplayComponents((td) =>
+                        td.setContent(`${nameLine(item)} · ${formatSeeds(item.price)}${sub ? `\n-# ${sub}` : ""}`),
+                    )
                     .setButtonAccessory(kit.button(`view:${slot}`, (b) => b.setLabel("View"))),
             );
             if (slot < shown.length - 1) divider();
@@ -185,13 +189,18 @@ function itemScreen(s: MemberShopState, kit: RenderKit): Parts {
         );
     } else c.addTextDisplayComponents((td) => td.setContent(heading));
     divider();
-    c.addTextDisplayComponents((td) => td.setContent([formatSeeds(item.price), factsGives(item), ...numbers(item)].join(" · ")));
+    c.addTextDisplayComponents((td) => td.setContent([formatSeeds(item.price), ...gives(item), ...limits(item)].join(" · ")));
     const blocker = s.blocker;
     return [
         c,
         row(
             blocker
-                ? kit.button("blocked", (b) => b.setLabel(blockerLabel(blocker)).setStyle(ButtonStyle.Secondary).setDisabled(true))
+                ? kit.button("blocked", (b) =>
+                      b
+                          .setLabel(blockerLabel(blocker))
+                          .setStyle(blocker.kind === "short" ? ButtonStyle.Success : ButtonStyle.Secondary)
+                          .setDisabled(true),
+                  )
                 : kit.button("buy", (b) => b.setLabel("Buy").setStyle(ButtonStyle.Success)),
             kit.button("back", (b) => b.setLabel("Back")),
         ),
@@ -224,7 +233,7 @@ function boughtScreen(s: MemberShopState, kit: RenderKit): Parts {
 
 function purchasesScreen(s: MemberShopState, kit: RenderKit, now: Date): Parts {
     const { container: c, divider } = container();
-    c.addTextDisplayComponents((td) => td.setContent("## My purchases"));
+    c.addTextDisplayComponents((td) => td.setContent("**My purchases**"));
     divider();
     if (s.purchases.length === 0) c.addTextDisplayComponents((td) => td.setContent("No purchases yet."));
     else {
