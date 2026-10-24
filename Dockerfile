@@ -20,6 +20,16 @@ COPY scripts ./scripts
 ENV BOT_TOKEN=build BOT_CLIENT_ID=build POSTGRES_DB=build POSTGRES_PASSWORD=build
 RUN bun run build
 
+# ---- which commit this image is - `!bot status` shows it ----
+# The context is bind-mounted, not copied: a build without .git (some deploy tools strip it) still
+# works - it falls back to the GIT_SHA build arg, or an unknown commit. .git never reaches the image.
+FROM base AS version
+ARG GIT_SHA=""
+RUN apk add --no-cache git
+RUN --mount=type=bind,target=/ctx \
+	git -c safe.directory='*' -C /ctx log -1 --format='%h%n%cI%n%s' > /version.txt 2>/dev/null \
+	|| echo "$GIT_SHA" > /version.txt
+
 # ---- production-only deps for the final image ----
 FROM base AS prod-deps
 COPY package.json bun.lock ./
@@ -37,6 +47,7 @@ RUN apk add --no-cache su-exec
 COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
 COPY --chown=bun:bun src ./src
 COPY --chown=bun:bun package.json tsconfig.json ./
+COPY --from=version --chown=bun:bun /version.txt ./version.txt
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

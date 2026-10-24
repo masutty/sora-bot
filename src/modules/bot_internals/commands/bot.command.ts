@@ -4,15 +4,18 @@ import type { BotClient } from "@/core/bot-client";
 import { hotReloadBot, unloadCog } from "@/core/cog-loader";
 import type { CommandContext } from "@/core/command/command-context";
 import { registerSlashCommands } from "@/core/command/command-handler";
+import { listWorkerStats } from "@/core/worker/worker";
 import { getPoolStats, query } from "@/database/connection";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
 import { getLogLevels, LOG_LEVELS, Logger, type LogLevel, setLogLevel } from "@/utils/logging";
-import { getEventLoopLag, getEventLoopLagDetail, getLastTickStats } from "@/utils/metrics";
+import { getEventLoopLag, getEventLoopLagDetail } from "@/utils/metrics";
+import { getBuildInfo } from "@/utils/version";
 import { classifyLiveArgs, type Destination, parseFilter } from "../live-feed/filter";
 import { type FeedSurface, liveFeed } from "../live-feed/live-feed";
 import type { FeedPayload } from "../live-feed/render";
+import { buildWorkersContainer } from "../views/workers.view";
 import { addUserSubcommands, runUserSubcommand, USER_SUBCOMMANDS } from "./bot-user";
 
 const logger = new Logger("admin.commands.bot");
@@ -96,6 +99,7 @@ export default defineCommand({
             )
             .addSubcommand((sub) => sub.setName("sync").setDescription("Sync slash commands with Discord."))
             .addSubcommand((sub) => sub.setName("status").setDescription("Show bot status."))
+            .addSubcommand((sub) => sub.setName("workers").setDescription("Lists the background workers and how their last run went."))
             .addSubcommand((sub) => sub.setName("shutdown").setDescription("Shut down the bot gracefully."))
             .addSubcommand((sub) => sub.setName("uptime").setDescription("Shows how long the process has been running."))
             .addSubcommand((sub) =>
@@ -139,6 +143,12 @@ export default defineCommand({
         // the generic string -> EmbedFormatter pipeline used by the rest of the subcommands.
         if (routeKey === "status") {
             await ctx.reply({ flags: MessageFlags.IsComponentsV2, components: [buildStatusContainer(ctx.client)] }, { ephemeral: true });
+            return;
+        }
+
+        if (routeKey === "workers") {
+            const container = buildWorkersContainer(listWorkerStats(), ctx.mode === "slash");
+            await ctx.reply({ flags: MessageFlags.IsComponentsV2, components: [container] }, { ephemeral: true });
             return;
         }
 
@@ -380,11 +390,22 @@ function addSection(container: ContainerBuilder, content: string): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 }
 
+const unix = (date: Date) => Math.floor(date.getTime() / 1000);
+
+/** `1.0.0 · \`38069fd\` <t:R>` + the commit subject as subtext - "commit unknown" when the build had none. */
+function versionLines(): string[] {
+    const build = getBuildInfo();
+    if (!build.commit) return [`**Version:** ${build.version} · commit unknown`];
+    const when = build.committedAt ? ` <t:${unix(build.committedAt)}:R>` : "";
+    return [`**Version:** ${build.version} · \`${build.commit}\`${when}`, ...(build.subject ? [`-# ${build.subject}`] : [])];
+}
+
 function buildStatusContainer(client: BotClient): ContainerBuilder {
     const mem = process.memoryUsage();
     const pool = getPoolStats();
     const eventLoop = getEventLoopLag();
-    const lastTick = getLastTickStats();
+    const workers = listWorkerStats();
+    const failing = workers.filter((w) => w.lastError).length;
 
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
@@ -393,12 +414,12 @@ function buildStatusContainer(client: BotClient): ContainerBuilder {
 
     addSection(
         container,
-        [
-            `**Uptime:** ${formatUptime(process.uptime())}`,
-            `**Cogs:** ${client.cogs.size}`,
-            `**Commands:** ${client.commands.size}`,
-            `**Guilds:** ${client.guilds.cache.size}`,
-        ].join("\n"),
+        [...versionLines(), `**Started:** <t:${unix(getBuildInfo().startedAt)}:f> (${formatUptime(process.uptime())} ago)`].join("\n"),
+    );
+
+    addSection(
+        container,
+        [`**Cogs:** ${client.cogs.size}`, `**Commands:** ${client.commands.size}`, `**Guilds:** ${client.guilds.cache.size}`].join("\n"),
     );
 
     addSection(
@@ -414,9 +435,7 @@ function buildStatusContainer(client: BotClient): ContainerBuilder {
             [
                 `-# DB pool: ${pool.total} total, ${pool.idle} idle, ${pool.waiting} waiting${pool.waiting > 0 ? " ⚠️" : ""}`,
                 `-# Event loop lag: ${eventLoop.meanMs}ms mean, ${eventLoop.maxMs}ms max${eventLoop.maxMs > 100 ? " ⚠️" : ""}`,
-                lastTick
-                    ? `-# Last activity sweep: ${lastTick.durationMs}ms for ${lastTick.userCount} user(s), <t:${Math.floor(lastTick.ranAt.getTime() / 1000)}:R>`
-                    : "-# Last activity sweep: none yet",
+                `-# Workers: ${workers.length}${failing > 0 ? `, ${failing} failing ⚠️` : ""}`,
             ].join("\n"),
         ),
     );
