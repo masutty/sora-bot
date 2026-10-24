@@ -47,20 +47,3 @@ export function getEventLoopLagDetail(): EventLoopLagDetail {
     eventLoopHistogram.reset();
     return stats;
 }
-
-export interface TickStats {
-    durationMs: number;
-    userCount: number;
-    ranAt: Date;
-}
-
-let lastTick: TickStats | null = null;
-
-/** Called by the biomehunt status worker after each sweep - the single most direct "is this bot keeping up" signal, since the sweep has a fixed interval it needs to finish within. */
-export function recordTickStats(durationMs: number, userCount: number): void {
-    lastTick = { durationMs, userCount, ranAt: new Date() };
-}
-
-export function getLastTickStats(): TickStats | null {
-    return lastTick;
-}

@@ -2,7 +2,6 @@ import type { BotClient } from "@/core/bot-client";
 import { getPoolStats } from "@/database/connection";
 import { defineWorker } from "@/define";
 import { Logger } from "@/utils/logging";
-import { recordTickStats } from "@/utils/metrics";
 import { grantUserBadge } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
@@ -33,8 +32,6 @@ export function resolveStatus(
 }
 
 async function tick(client: BotClient): Promise<void> {
-    const tickStart = Date.now();
-
     await runFixedRewardSweep(client).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
 
     const users = await getUsersForStatusSweep();
@@ -100,8 +97,6 @@ async function tick(client: BotClient): Promise<void> {
             }
         }
     }
-
-    recordTickStats(Date.now() - tickStart, users.length);
 
     const poolStats = getPoolStats();
     if (poolStats.waiting > 0) {
