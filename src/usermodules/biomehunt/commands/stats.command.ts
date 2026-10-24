@@ -21,6 +21,7 @@ import {
 } from "../repository/activity.repository";
 import { getUserByDiscordId } from "../repository/users.repository";
 import { loadQuotaDayReport } from "../services/quota.service";
+import { loadRareStats } from "../services/rare-stats.service";
 import { quotaStatsView } from "../views/quota-report.view";
 import { biomesStatsView, sessionsStatsView, usersStatsView } from "../views/stats.view";
 import { buildGuildStatsContainer, getUserListPage } from "../views/stats-builders";
@@ -116,8 +117,12 @@ async function buildUserBiomesContainer(discordUserId: string, userRowId: number
 }
 
 async function runBiomesStats(ctx: CommandContext, guildId: string): Promise<void> {
-    const [overview, contributors] = await Promise.all([buildBiomesOverviewContainer(guildId), buildBiomesContributorsContainer(guildId)]);
-    await ctx.open(biomesStatsView, { overview, contributors });
+    const [overview, contributors, rares] = await Promise.all([
+        buildBiomesOverviewContainer(guildId),
+        buildBiomesContributorsContainer(guildId),
+        loadRareStats(guildId),
+    ]);
+    await ctx.open(biomesStatsView, { overview, contributors, rares });
 }
 
 async function runUserBiomesStats(guildId: string, target: User, send: (payload: StatsPayload) => Promise<Message>): Promise<void> {

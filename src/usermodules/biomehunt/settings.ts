@@ -13,6 +13,7 @@ export const settings = {
         networkVoteCloseTickMs: 5_000,
         networkDailyTickMs: 60 * 60 * 1000,
         channelNameTickMs: 60_000,
+        shopRolesTickMs: 60_000,
     },
     channelName: {
         /** Discord allows 2 renames per channel per 10 minutes - one per 6 keeps a margin under it. */

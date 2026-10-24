@@ -28,8 +28,8 @@ const emojiOf = (biome: string, plain: boolean): string | null => {
     return emoji;
 };
 
-/** Badge emojis of the non-fake finds in registry order: repeats joined, biomes space-separated. Biomes with no badge emoji of their own are left out. */
-export function badgeEmojis(finds: RareFind[], plain = false): string {
+/** Non-fake finds per biome in registry order, as each biome's badge emoji and count. Biomes with no badge emoji of their own are left out. */
+function emojiCounts(finds: RareFind[], plain: boolean): Array<{ emoji: string; count: number }> {
     const counts = new Map<string, number>();
     for (const f of finds) if (!isFake(f)) counts.set(f.biome, (counts.get(f.biome) ?? 0) + 1);
     const keys = getAllBiomes().map((b) => b.key);
@@ -38,8 +38,21 @@ export function badgeEmojis(finds: RareFind[], plain = false): string {
         .sort((a, b) => rank(a) - rank(b))
         .flatMap((biome) => {
             const emoji = emojiOf(biome, plain);
-            return emoji ? [emoji.repeat(counts.get(biome) ?? 0)] : [];
-        })
+            return emoji ? [{ emoji, count: counts.get(biome) ?? 0 }] : [];
+        });
+}
+
+/** Badge emojis of the non-fake finds: repeats joined, biomes space-separated - `🔥🔥 🌸`. */
+export function badgeEmojis(finds: RareFind[], plain = false): string {
+    return emojiCounts(finds, plain)
+        .map((c) => c.emoji.repeat(c.count))
+        .join(" ");
+}
+
+/** Badge emojis of the non-fake finds with their counts - `🔥11 🌸2`. Stays short however many finds there are. */
+export function badgeCounts(finds: RareFind[]): string {
+    return emojiCounts(finds, false)
+        .map((c) => `${c.emoji}${c.count}`)
         .join(" ");
 }
 
@@ -55,11 +68,20 @@ export function forwardLink(guildId: string, f: RareFind): string | null {
     return f.vote ? `https://discord.com/channels/${guildId}/${f.vote.channelId}/${f.vote.messageId}` : null;
 }
 
-/** One find as `<time> · <emoji> **<Biome>** · <result>` plus a subtext line with its links. */
-export function formatFindLine(guildId: string, f: RareFind): string {
+/** `<emoji> **<Biome>**` - the name alone when the biome has no emoji. */
+export function biomeTitle(biome: string): string {
+    return [emojiOf(biome, false), `**${formatBiomeName(biome)}**`].filter(Boolean).join(" ");
+}
+
+/**
+ * One find as `<time> · <emoji> **<Biome>** · <result>` plus a subtext line with its links.
+ * `finderId` adds the finder's mention after the biome; `time` is the timestamp style (`t` = time of day, `R` = relative).
+ */
+export function formatFindLine(guildId: string, f: RareFind, opts: { finderId?: string; time?: "t" | "R" } = {}): string {
     const head = [
-        `<t:${unix(f.at)}:t>`,
-        `${[emojiOf(f.biome, false), `**${formatBiomeName(f.biome)}**`].filter(Boolean).join(" ")}`,
+        `<t:${unix(f.at)}:${opts.time ?? "t"}>`,
+        biomeTitle(f.biome),
+        opts.finderId && `<@${opts.finderId}>`,
         findResultLabel(f.vote),
     ]
         .filter(Boolean)

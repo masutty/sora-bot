@@ -28,7 +28,7 @@ test("open votes don't count until closed", async () => {
         { user_id: 1, biome: "GLITCHED", count: "3" },
         { user_id: 1, biome: "DREAMSPACE", count: "1" },
     ];
-    const counts = await repo.getClosedRareCounts([1, 2]);
+    const counts = await repo.getChannelNameCounts([1, 2]);
     const { sql, params } = calls[0];
     expect(sql).toContain(NOT_FAKE_SQL);
     expect(sql).toContain("v.status = 'open'");
@@ -40,9 +40,9 @@ test("open votes don't count until closed", async () => {
     ]);
 });
 
-test("getClosedRareCounts skips the query for no users", async () => {
+test("getChannelNameCounts skips the query for no users", async () => {
     calls.length = 0;
-    expect((await repo.getClosedRareCounts([])).size).toBe(0);
+    expect((await repo.getChannelNameCounts([])).size).toBe(0);
     expect(calls).toHaveLength(0);
 });
 

@@ -2,7 +2,7 @@ import type { Guild, GuildMember } from "discord.js";
 import { SlashCommandBuilder } from "discord.js";
 import { defineCommand, type GuildCommandContext } from "@/define";
 import { CommandCategory } from "@/types";
-import { EmbedFormatter, type FormattedReply } from "@/utils/format";
+import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { getBalance } from "../services/economy.service";
 import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
@@ -11,10 +11,12 @@ import { openProfileView } from "../views/profile.view";
 import { openRareFindsView } from "../views/rare-finds.view";
 import { openRerollView } from "../views/reroll.view";
 import { openSessionView } from "../views/session.view";
+import { memberShopView } from "../views/shop.view";
 
 export const PROFILE_DESCRIPTION = "View your hunt profile, or someone else's.";
 export const PROFILE_USER_DESCRIPTION = "Whose profile to view (defaults to yourself)";
 export const REROLL_DESCRIPTION = "Reroll your Flower for 50 Seeds.";
+export const SHOP_DESCRIPTION = "Spend your Seeds in this server's shop.";
 
 /** `/bh profile` and its `/profile` alias. */
 export async function runProfile(ctx: GuildCommandContext): Promise<void> {
@@ -46,6 +48,7 @@ export default defineCommand({
                 .addUserOption((o) => o.setName("user").setDescription(PROFILE_USER_DESCRIPTION)),
         )
         .addSubcommand((sub) => sub.setName("reroll").setDescription(REROLL_DESCRIPTION))
+        .addSubcommand((sub) => sub.setName("shop").setDescription(SHOP_DESCRIPTION))
         .addSubcommand((sub) =>
             sub
                 .setName("session")
@@ -99,6 +102,23 @@ export default defineCommand({
 
         if (sub === "reroll") {
             await runReroll(ctx);
+            return;
+        }
+
+        if (sub === "shop") {
+            await ctx.defer();
+            // Lazy: the real repositories load only when the shop opens.
+            const { getUserByDiscordId } = await import("../repository/users.repository");
+            const user = await getUserByDiscordId(ctx.guild.id, ctx.user.id);
+            if (!user) {
+                await ctx.reply({
+                    ...EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started."),
+                    allowedMentions: NO_PINGS,
+                });
+                return;
+            }
+            const { defaultMemberShopDeps } = await import("../services/member-shop-deps.service");
+            await ctx.open(memberShopView(defaultMemberShopDeps(ctx.client, ctx.guild, ctx.member)), { guildId: ctx.guild.id, user });
             return;
         }
 

@@ -359,6 +359,21 @@ export interface NetworkAlertRow {
 }
 
 /** One rare-biome find with its newest local vote - fake finds included (the history lists them on purpose). */
+/** A rare find with its finder - what the server-wide rare stats read. */
+export interface GuildRareFind extends RareFind {
+    /** The finder's `bh_users` id. */
+    userId: number;
+    discordUserId: string;
+}
+
+/** A session that holds at least one rare find. */
+export interface RareSession {
+    id: number;
+    userId: number;
+    startedAt: Date;
+    endedAt: Date;
+}
+
 export interface RareFind {
     /** `null` for an old Deny, when the event was deleted with the vote. */
     eventId: number | null;
@@ -379,3 +394,62 @@ export interface RareFind {
         fake: number;
     } | null;
 }
+
+export type ShopItemKind = "manual" | "role" | "timed_role";
+export type PurchaseStatus = "pending" | "delivered" | "refunded";
+
+export interface ShopRow {
+    guild_id: string;
+    open: boolean;
+    sales_channel_id: string | null;
+}
+
+export interface ShopItemRow {
+    id: number;
+    guild_id: string;
+    name: string;
+    description: string | null;
+    emoji: string | null;
+    image_url: string | null;
+    price: number;
+    kind: ShopItemKind;
+    role_id: string | null;
+    duration_s: number | null;
+    stock: number | null;
+    max_per_member: number | null;
+    sort_order: number;
+    removed_at: Date | null;
+}
+
+/** One purchase. Name, emoji, price, kind and role are snapshots taken at buy time, so later item edits never change history. */
+export interface PurchaseRow {
+    id: number;
+    code: string;
+    guild_id: string;
+    item_id: number;
+    /** NULL once the buyer's profile was wiped. */
+    user_id: number | null;
+    buyer_discord_id: string;
+    item_name: string;
+    item_emoji: string | null;
+    price: number;
+    kind: ShopItemKind;
+    role_id: string | null;
+    duration_s: number | null;
+    role_ends_at: Date | null;
+    /** Timed only: when this purchase's own window starts; it ends `duration_s` later. */
+    role_window_start: Date | null;
+    status: PurchaseStatus;
+    refund_reason: "role_failed" | null;
+    decided_by: string | null;
+    decided_at: Date | null;
+    post_channel_id: string | null;
+    post_message_id: string | null;
+    created_at: Date;
+}
+
+/** The admin-editable fields of a shop item. */
+export type ShopItemFields = Pick<
+    ShopItemRow,
+    "name" | "description" | "emoji" | "image_url" | "price" | "kind" | "role_id" | "duration_s" | "stock" | "max_per_member"
+>;

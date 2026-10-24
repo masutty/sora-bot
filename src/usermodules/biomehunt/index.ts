@@ -13,6 +13,7 @@ import { biomeVoteComponent } from "./components/biome-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
 import { networkVoteComponent } from "./components/network-vote.component";
+import { shopManageComponent } from "./components/shop-manage.component";
 import { BIOMEHUNT_SCHEMA } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
@@ -23,6 +24,7 @@ import { networkDailyWorker } from "./workers/network-daily.worker";
 import { networkPublishWorker } from "./workers/network-publish.worker";
 import { networkVoteCloseWorker } from "./workers/network-vote-close.worker";
 import { roleWorker } from "./workers/role.worker";
+import { regrantOnJoin, shopRolesWorker } from "./workers/shop-roles.worker";
 import { statusWorker } from "./workers/status.worker";
 import { voteCloseWorker } from "./workers/vote-close.worker";
 
@@ -46,11 +48,16 @@ export default defineCog({
         networkPublishWorker,
         networkVoteCloseWorker,
         networkDailyWorker,
+        shopRolesWorker,
     ],
 
-    components: [biomeVoteComponent(), forwardInfoComponent(), networkReviewComponent(), networkVoteComponent()],
+    components: [biomeVoteComponent(), forwardInfoComponent(), networkReviewComponent(), networkVoteComponent(), shopManageComponent()],
 
     events: {
+        async guildMemberAdd(_client, member) {
+            await regrantOnJoin(member);
+        },
+
         async messageCreate(_client, message) {
             if (!message.guild) return;
             if (!message.webhookId) return;

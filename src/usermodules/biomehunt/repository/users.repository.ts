@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
-import { getBiomesByCategory } from "../constants/biomes.constants";
+import { getAllBiomes } from "../constants/biomes.constants";
 import type { ActivityGrace, ActivityStatus, UserMacroChannelRow, UserRow } from "../types";
 import { NOT_FAKE_SQL } from "./activity.repository";
 
@@ -202,10 +202,13 @@ export async function getChannelNameCandidates(): Promise<ChannelNameCandidate[]
     }));
 }
 
-/** Counted rare finds per user and biome, leaving out finds whose newest vote is still open (a find with no vote counts). */
-export async function getClosedRareCounts(userIds: number[]): Promise<Map<number, Array<{ biome: string; count: number }>>> {
+/** Counted finds per user of the biomes shown in channel names, leaving out finds whose newest vote is still open (a find with no vote counts). */
+export async function getChannelNameCounts(userIds: number[]): Promise<Map<number, Array<{ biome: string; count: number }>>> {
     const counts = new Map<number, Array<{ biome: string; count: number }>>();
-    if (userIds.length === 0) return counts;
+    const biomes = getAllBiomes()
+        .filter((b) => b.showInChannelName)
+        .map((b) => b.key);
+    if (userIds.length === 0 || biomes.length === 0) return counts;
     const result = await query<{ user_id: number; biome: string; count: string }>(
         `SELECT e.user_id, e.biome, COUNT(*) AS count
          FROM bh_activity_events e
@@ -213,7 +216,7 @@ export async function getClosedRareCounts(userIds: number[]): Promise<Map<number
            AND NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id AND v.status = 'open'
                  AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))
          GROUP BY e.user_id, e.biome`,
-        [userIds, getBiomesByCategory("rare")],
+        [userIds, biomes],
     );
     for (const r of result.rows) {
         const list = counts.get(r.user_id) ?? [];

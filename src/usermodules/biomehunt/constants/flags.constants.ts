@@ -46,7 +46,7 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
     },
     RARE_COUNT_IN_CHANNEL_NAME: {
         description:
-            "Puts each member's rare finds in their macro channel name, like `🔥3🌸1・masutty`. Changes show up within a few minutes.",
+            "Puts each member's finds in their macro channel name, like `🔥3🌸1・masutty` - for the biomes set to show there. Changes show up within a few minutes.",
         default: false,
     },
 };

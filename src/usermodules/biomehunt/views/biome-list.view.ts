@@ -57,7 +57,7 @@ export function buildCategoryTable(biomes: BiomeEntry[]): string {
             (e.durationS ? formatTime(e.durationS).replace(/ /g, "") : "-").padEnd(durationWidth),
             e.enabled ? `${e.iconUrl ? "icon" : "-   "} ${e.flavorText ? "flavor" : "-     "}` : "disabled",
             // Last on the line - an emoji's width varies, so nothing after it would line up.
-            ...(e.hasBadge ? [e.badgeEmoji || DEFAULT_BADGE_EMOJI] : []),
+            ...(e.badgeEmoji || e.hasBadge ? [e.badgeEmoji || DEFAULT_BADGE_EMOJI] : []),
         ].join("  ");
         return e.enabled ? `${e.ansiColor ?? ""}${label}${ANSI_RESET}  ${rest}` : `${ANSI_DISABLED}${label}  ${rest}${ANSI_RESET}`;
     });
@@ -72,7 +72,9 @@ function describeBiome(e: BiomeEntry): string {
         `Flavor text: ${e.flavorText ? `*${e.flavorText}*` : "none"}`,
         `Icon: ${e.iconUrl || "none"}`,
         `Duration: ${e.durationS ? formatTime(e.durationS) : "none"}`,
-        `Badge: ${e.hasBadge ? e.badgeEmoji || DEFAULT_BADGE_EMOJI : "none"}`,
+        `Emoji: ${e.badgeEmoji || "none"}`,
+        `Badge: ${e.hasBadge ? "on" : "off"}`,
+        `Channel name count: ${e.showInChannelName ? "on" : "off"}`,
         `ANSI: ${describeAnsiColor(e.ansiColor)}`,
         formatCodeblock(`${e.ansiColor ?? ""}${e.label}${ANSI_RESET}: 12`, "ansi"),
     ].join("\n");
@@ -159,9 +161,12 @@ function editorRows(e: BiomeEntry, kit: RenderKit) {
         ),
         kit.row(
             kit.button("edit:details", (b) => b.setLabel("Edit details").setStyle(ButtonStyle.Primary)),
-            kit.button("edit:badge-emoji", (b) => b.setLabel("Badge emoji")),
+            kit.button("edit:badge-emoji", (b) => b.setLabel("Emoji")),
             kit.button("edit:bold", (b) => b.setLabel(`Bold: ${style.bold ? "on" : "off"}`).setStyle(toggle(style.bold))),
             kit.button("edit:badge", (b) => b.setLabel(`Badge: ${e.hasBadge ? "on" : "off"}`).setStyle(toggle(e.hasBadge === true))),
+            kit.button("edit:channel-name", (b) =>
+                b.setLabel(`Channel name: ${e.showInChannelName ? "on" : "off"}`).setStyle(toggle(e.showInChannelName === true)),
+            ),
         ),
         kit.row(
             kit.button("edit:enabled", (b) =>
@@ -247,6 +252,7 @@ export function biomeListView(deps: BiomeAdminDeps = defaultBiomeAdminDeps()): V
             "edit:ansi-background": (c) => edit(c, { ansi: { ...NO_BIOME_CHANGES.ansi, background: c.values[0] } }),
             "edit:bold": (c) => edit(c, { ansi: { ...NO_BIOME_CHANGES.ansi, bold: !parseAnsiCode(selectedEntry(c)?.ansiColor).bold } }),
             "edit:badge": (c) => edit(c, { hasBadge: selectedEntry(c)?.hasBadge !== true }),
+            "edit:channel-name": (c) => edit(c, { showInChannelName: selectedEntry(c)?.showInChannelName !== true }),
             "edit:enabled": async (c) => {
                 const e = selectedEntry(c);
                 if (e) await setBiomeActive(e.key, !e.enabled, deps);
@@ -282,7 +288,7 @@ export function biomeListView(deps: BiomeAdminDeps = defaultBiomeAdminDeps()): V
                 const e = selectedEntry(c);
                 if (!e) return;
                 const values = await c.modal({
-                    title: `${e.label} badge emoji`.slice(0, 45),
+                    title: `${e.label} emoji`.slice(0, 45),
                     fields: [
                         { key: "emoji", label: "Emoji or <:name:id> (blank = default)", value: e.badgeEmoji || undefined, required: false },
                     ],

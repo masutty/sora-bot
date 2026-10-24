@@ -144,8 +144,10 @@ export interface AddBiomeInput {
     duration: string | null;
     /** Whether finding it gives a profile badge - `null` = not given (off on add, unchanged on edit). */
     hasBadge: boolean | null;
-    /** The badge's emoji. On edit, `CLEAR_VALUE` removes it (the default emoji shows). */
+    /** The biome's emoji. On edit, `CLEAR_VALUE` removes it (the badge shows the default emoji). */
     badgeEmoji: string | null;
+    /** Whether its finds count in the macro channel name - `null` = not given (off on add, unchanged on edit). */
+    showInChannelName: boolean | null;
 }
 
 /** Adds a new, enabled biome. Its key is the detection name normalized (e.g. "Blood Rain" -> `BLOODRAIN`). */
@@ -162,6 +164,7 @@ export async function addBiome(input: AddBiomeInput, deps: BiomeAdminDeps = defa
         durationS: input.duration ? parseDuration(input.duration) : undefined,
         hasBadge: input.hasBadge === true,
         badgeEmoji: input.badgeEmoji ? parseBadgeEmoji(input.badgeEmoji) : undefined,
+        showInChannelName: input.showInChannelName === true,
     };
 
     const existing = getBiomeMeta(key);
@@ -186,8 +189,10 @@ export interface EditBiomeInput {
     duration: string | null;
     /** Whether finding it gives a profile badge - `null` = not given (off on add, unchanged on edit). */
     hasBadge: boolean | null;
-    /** The badge's emoji. On edit, `CLEAR_VALUE` removes it (the default emoji shows). */
+    /** The biome's emoji. On edit, `CLEAR_VALUE` removes it (the badge shows the default emoji). */
     badgeEmoji: string | null;
+    /** Whether its finds count in the macro channel name - `null` = not given (unchanged). */
+    showInChannelName: boolean | null;
 }
 
 /** An edit that changes nothing - spread it and set only the fields to change. */
@@ -201,6 +206,7 @@ export const NO_BIOME_CHANGES: Omit<EditBiomeInput, "biome"> = {
     duration: null,
     hasBadge: null,
     badgeEmoji: null,
+    showInChannelName: null,
 };
 
 /** Seconds -> the `1h30m` form `parseDuration` reads back (`formatTime` would write `1d` for 24h, which it doesn't). */
@@ -232,6 +238,7 @@ export async function editBiome(input: EditBiomeInput, deps: BiomeAdminDeps = de
         input.duration,
         input.hasBadge,
         input.badgeEmoji,
+        input.showInChannelName,
         ansi.text,
         ansi.background,
         ansi.bold,
@@ -248,6 +255,7 @@ export async function editBiome(input: EditBiomeInput, deps: BiomeAdminDeps = de
     if (input.duration !== null) next.durationS = isClear(input.duration) ? undefined : parseDuration(input.duration);
     if (input.hasBadge !== null) next.hasBadge = input.hasBadge;
     if (input.badgeEmoji !== null) next.badgeEmoji = isClear(input.badgeEmoji) ? undefined : parseBadgeEmoji(input.badgeEmoji);
+    if (input.showInChannelName !== null) next.showInChannelName = input.showInChannelName;
 
     await deps.updateBiome(next.key, next);
     await deps.reloadRegistry();

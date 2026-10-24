@@ -28,8 +28,10 @@ export interface BiomeMeta {
     durationS?: number;
     /** Finding this biome earns a permanent profile badge (and the guild's badge role, if set). */
     hasBadge?: boolean;
-    /** The badge's emoji - unicode or a custom `<:name:id>`. Unset = the default badge emoji. */
+    /** The biome's emoji - unicode or a custom `<:name:id>`. Its badge shows it (unset = the default badge emoji), and so does its channel name count. */
     badgeEmoji?: string;
+    /** Its finds count in the macro channel name (`🔥3`) when the server has `RARE_COUNT_IN_CHANNEL_NAME` on. Needs a unicode `badgeEmoji`. */
+    showInChannelName?: boolean;
 }
 
 /** One registered biome. A disabled biome is no longer recognized from macro webhooks nor offered
@@ -129,6 +131,7 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
         ansiColor: "\u001b[1;32;40m",
         hasBadge: true,
         badgeEmoji: "🔥",
+        showInChannelName: true,
     },
     CYBERSPACE: {
         label: "Cyberspace",
@@ -139,6 +142,7 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
         ansiColor: "\u001b[1;34;40m",
         hasBadge: true,
         badgeEmoji: "🌐",
+        showInChannelName: true,
     },
     DREAMSPACE: {
         label: "Dreamspace",
@@ -149,6 +153,7 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
         ansiColor: "\u001b[1;37;45m",
         hasBadge: true,
         badgeEmoji: "🌸",
+        showInChannelName: true,
     },
     SINGULARITY: {
         label: "Singularity",
@@ -225,7 +230,13 @@ export function normalizeBiomeName(raw: string): string {
 }
 
 function defaultEntries(): BiomeEntry[] {
-    return Object.entries(DEFAULT_BIOMES).map(([key, meta]) => ({ ...meta, key, hasBadge: meta.hasBadge === true, enabled: true }));
+    return Object.entries(DEFAULT_BIOMES).map(([key, meta]) => ({
+        ...meta,
+        key,
+        hasBadge: meta.hasBadge === true,
+        showInChannelName: meta.showInChannelName === true,
+        enabled: true,
+    }));
 }
 
 /**

@@ -1,6 +1,8 @@
 import { type ContainerBuilder, MessageFlags } from "discord.js";
-import { tabs, type ViewDefinition } from "@/define";
+import { paginationHandlers, tabs, type ViewDefinition } from "@/define";
+import type { RarePeriod, RareStatsData } from "../services/rare-stats.service";
 import type { ActivityStatus, UserRow } from "../types";
+import { buildRareSection, type RareSection, rareControlRows, rareMembersPageCount } from "./rare-stats.view";
 import { buildUserListContainer, USERS_PER_PAGE } from "./stats-builders";
 
 // ─── Biomes ─────────────────────────────────────────────────────────────────
@@ -10,25 +12,53 @@ type BiomesTab = "overview" | "contributors";
 export interface BiomesStatsInput {
     overview: ContainerBuilder;
     contributors: ContainerBuilder;
+    rares: RareStatsData;
 }
 
 interface BiomesStatsState {
     tab: string;
-    containers: BiomesStatsInput;
+    containers: Omit<BiomesStatsInput, "rares">;
+    rares: RareStatsData;
+    section: RareSection;
+    period: RarePeriod;
+    /** Members' page (0-based). */
+    page: number;
 }
 
-/** Guild-wide biome stats: Overview / Top Contributors tabs over two already-built containers. */
+/** Guild-wide biome stats: Overview / Top Contributors over two already-built containers, and Rares, built from its data on each render. */
 export const biomesStatsView: ViewDefinition<BiomesStatsState, void, BiomesStatsInput> = tabs<BiomesStatsState, BiomesStatsInput>({
     name: "biomehunt.stats-biomes",
-    initial: (containers) => ({ tab: "overview", containers }),
+    initial: ({ rares, ...containers }) => ({ tab: "overview", containers, rares, section: "overview", period: "all", page: 0 }),
     disableActive: false,
     tabs: [
         { key: "overview", label: "Overview" },
         { key: "contributors", label: "Top Contributors" },
+        { key: "rares", label: "Rares" },
     ],
-    renderTab: (state) => ({
-        payload: { flags: MessageFlags.IsComponentsV2, components: [state.containers[state.tab as BiomesTab]] },
-    }),
+    renderTab: (state, kit) => {
+        if (state.tab !== "rares")
+            return { payload: { flags: MessageFlags.IsComponentsV2, components: [state.containers[state.tab as BiomesTab]] } };
+        return {
+            payload: {
+                flags: MessageFlags.IsComponentsV2,
+                components: [
+                    buildRareSection(state.rares, state.section, state.period, state.page),
+                    ...rareControlRows(kit, state.rares, state.section, state.period, state.page),
+                ],
+            },
+        };
+    },
+    on: {
+        ...paginationHandlers<BiomesStatsState>({ pages: (s) => rareMembersPageCount(s.rares, s.period) }),
+        "rare-section": (c) => {
+            c.state.section = c.values[0] as RareSection;
+            c.state.page = 0;
+        },
+        "rare-period": (c) => {
+            c.state.period = c.values[0] as RarePeriod;
+            c.state.page = 0;
+        },
+    },
 });
 
 // ─── Sessions ───────────────────────────────────────────────────────────────

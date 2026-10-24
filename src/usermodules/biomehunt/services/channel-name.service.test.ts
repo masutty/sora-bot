@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
-import { initialChannelName, rareBadgeString, wantedChannelName } from "./channel-name.service";
+import { channelNameBadges, initialChannelName, wantedChannelName } from "./channel-name.service";
 
-describe("rareBadgeString", () => {
+describe("channelNameBadges", () => {
     test("writes emoji and count in registry order", () => {
         expect(
-            rareBadgeString([
+            channelNameBadges([
                 { biome: "DREAMSPACE", count: 1 },
                 { biome: "GLITCHED", count: 3 },
             ]),
@@ -13,8 +13,8 @@ describe("rareBadgeString", () => {
     });
 
     test("is empty when every count is 0", () => {
-        expect(rareBadgeString([])).toBe("");
-        expect(rareBadgeString([{ biome: "GLITCHED", count: 0 }])).toBe("");
+        expect(channelNameBadges([])).toBe("");
+        expect(channelNameBadges([{ biome: "GLITCHED", count: 0 }])).toBe("");
     });
 });
 
@@ -73,11 +73,22 @@ describe("initialChannelName", () => {
 describe("custom badge emoji", () => {
     afterEach(() => resetBiomeRegistry());
 
+    test("a biome not set to show in channel names is left out, and its old tokens are still stripped", () => {
+        setBiomeRegistry(getAllBiomes().map((b) => (b.key === "GLITCHED" ? { ...b, showInChannelName: false } : b)));
+        expect(channelNameBadges([{ biome: "GLITCHED", count: 2 }])).toBe("");
+        expect(wantedChannelName("🔥2・x", "", "")).toBe("・x");
+    });
+
+    test("any category can show in channel names", () => {
+        setBiomeRegistry(getAllBiomes().map((b) => (b.key === "WINDY" ? { ...b, badgeEmoji: "💨", showInChannelName: true } : b)));
+        expect(channelNameBadges([{ biome: "WINDY", count: 4 }])).toBe("💨4");
+    });
+
     test("a biome with a custom or no badge emoji is left out of the name, and old 🏅 tokens are still stripped", () => {
         setBiomeRegistry(getAllBiomes().map((b) => (b.key === "GLITCHED" ? { ...b, badgeEmoji: "<:glitch:123456>" } : b)));
-        expect(rareBadgeString([{ biome: "GLITCHED", count: 2 }])).toBe("");
+        expect(channelNameBadges([{ biome: "GLITCHED", count: 2 }])).toBe("");
         expect(
-            rareBadgeString([
+            channelNameBadges([
                 { biome: "SINGULARITY", count: 1 },
                 { biome: "DREAMSPACE", count: 1 },
             ]),

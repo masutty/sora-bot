@@ -526,6 +526,9 @@ ALTER TABLE bh_network_posts ADD COLUMN IF NOT EXISTS vote_decided_by VARCHAR(20
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_badges TEXT NOT NULL DEFAULT '';
 ALTER TABLE bh_user_macro_channels ADD COLUMN IF NOT EXISTS name_renamed_at TIMESTAMPTZ;
 
+/* Which biomes count in the macro channel name (needs RARE_COUNT_IN_CHANNEL_NAME on). */
+ALTER TABLE bh_biomes ADD COLUMN IF NOT EXISTS show_in_channel_name BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS bh_biome_votes_event ON bh_biome_votes(event_id, created_at DESC);
 
 /* One-time data fixes: a name here is never run again, even though the schema text re-runs on every change. */
@@ -545,5 +548,107 @@ BEGIN
         INSERT INTO bh_data_migrations (name) VALUES ('delayed-forwards-rare-only');
     END IF;
 END $$;
+
+/* The channel name count used to show every rare biome with an emoji - keeps them on, once, so an owner's later change sticks. */
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM bh_data_migrations WHERE name = 'channel-name-rare-default')
+       AND EXISTS (SELECT 1 FROM bh_biomes) THEN
+        UPDATE bh_biomes SET show_in_channel_name = TRUE WHERE category = 'rare' AND badge_emoji IS NOT NULL;
+        INSERT INTO bh_data_migrations (name) VALUES ('channel-name-rare-default');
+    END IF;
+END $$;
+
+/* Per-server Seeds shop: shop settings, items, purchases (with snapshots) and timed-role grants. */
+CREATE TABLE IF NOT EXISTS bh_shops (
+    guild_id         VARCHAR(20) PRIMARY KEY,
+    open             BOOLEAN NOT NULL DEFAULT FALSE,
+    sales_channel_id VARCHAR(20),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bh_shop_items (
+    id             SERIAL PRIMARY KEY,
+    guild_id       VARCHAR(20) NOT NULL,
+    name           VARCHAR(60) NOT NULL,
+    description    VARCHAR(300),
+    emoji          VARCHAR(64),
+    image_url      TEXT,
+    price          INTEGER NOT NULL CHECK (price >= 0),
+    kind           VARCHAR(12) NOT NULL DEFAULT 'manual' CHECK (kind IN ('manual', 'role', 'timed_role')),
+    role_id        VARCHAR(20),
+    duration_s     INTEGER,
+    stock          INTEGER CHECK (stock >= 0),
+    max_per_member INTEGER CHECK (max_per_member >= 1),
+    sort_order     INTEGER NOT NULL,
+    removed_at     TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_items_live ON bh_shop_items (guild_id, sort_order) WHERE removed_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS bh_shop_purchases (
+    id               SERIAL PRIMARY KEY,
+    code             CHAR(6) NOT NULL UNIQUE,
+    guild_id         VARCHAR(20) NOT NULL,
+    item_id          INTEGER NOT NULL REFERENCES bh_shop_items(id),
+    user_id          INTEGER REFERENCES bh_users(id) ON DELETE SET NULL,
+    buyer_discord_id VARCHAR(20) NOT NULL,
+    item_name        VARCHAR(60) NOT NULL,
+    item_emoji       VARCHAR(64),
+    price            INTEGER NOT NULL,
+    kind             VARCHAR(12) NOT NULL,
+    role_id          VARCHAR(20),
+    duration_s       INTEGER,
+    role_ends_at     TIMESTAMPTZ,
+    role_window_start TIMESTAMPTZ,
+    status           VARCHAR(10) NOT NULL CHECK (status IN ('pending', 'delivered', 'refunded')),
+    refund_reason    VARCHAR(20),
+    decided_by       VARCHAR(20),
+    decided_at       TIMESTAMPTZ,
+    post_channel_id  VARCHAR(20),
+    post_message_id  VARCHAR(20),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_guild ON bh_shop_purchases (guild_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_pending ON bh_shop_purchases (guild_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_user ON bh_shop_purchases (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bh_shop_purchases_item_user ON bh_shop_purchases (item_id, user_id);
+
+/* A profile wipe keeps purchases (user_id goes NULL) and grants (keyed by Discord id, no FK). The blocks below move a database made with the first shape. */
+ALTER TABLE bh_shop_purchases ADD COLUMN IF NOT EXISTS role_window_start TIMESTAMPTZ;
+ALTER TABLE bh_shop_purchases ALTER COLUMN user_id DROP NOT NULL;
+DO $$
+DECLARE
+    fk TEXT;
+BEGIN
+    SELECT conname INTO fk FROM pg_constraint
+    WHERE conrelid = 'bh_shop_purchases'::regclass AND contype = 'f' AND confrelid = 'bh_users'::regclass AND confdeltype = 'c';
+    IF fk IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE bh_shop_purchases DROP CONSTRAINT %I', fk);
+        ALTER TABLE bh_shop_purchases ADD CONSTRAINT bh_shop_purchases_user_id_fkey FOREIGN KEY (user_id) REFERENCES bh_users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS bh_shop_role_grants (
+    guild_id        VARCHAR(20) NOT NULL,
+    discord_user_id VARCHAR(20) NOT NULL,
+    role_id         VARCHAR(20) NOT NULL,
+    ends_at         TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (guild_id, discord_user_id, role_id)
+);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'bh_shop_role_grants' AND column_name = 'user_id') THEN
+        ALTER TABLE bh_shop_role_grants ADD COLUMN IF NOT EXISTS discord_user_id VARCHAR(20);
+        UPDATE bh_shop_role_grants g SET discord_user_id = u.discord_user_id FROM bh_users u WHERE u.id = g.user_id;
+        DELETE FROM bh_shop_role_grants WHERE discord_user_id IS NULL;
+        ALTER TABLE bh_shop_role_grants DROP COLUMN user_id;
+        ALTER TABLE bh_shop_role_grants ALTER COLUMN discord_user_id SET NOT NULL;
+        ALTER TABLE bh_shop_role_grants ADD PRIMARY KEY (guild_id, discord_user_id, role_id);
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_bh_shop_role_grants_ends ON bh_shop_role_grants (ends_at);
 
 `;
