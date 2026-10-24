@@ -59,7 +59,7 @@ export async function buyItem(input: BuyInput): Promise<BuyResult> {
         );
         if (spent.rows.length === 0) {
             const bal = await client.query<{ seeds: number }>("SELECT seeds FROM bh_users WHERE id = $1", [userId]);
-            return { kind: "short", short: item.price - (bal.rows[0]?.seeds ?? 0) };
+            return { kind: "short", short: Math.max(1, item.price - (bal.rows[0]?.seeds ?? 0)) };
         }
 
         if (item.stock !== null)
@@ -155,6 +155,13 @@ export async function refundPurchase(input: RefundInput): Promise<RefundResult> 
     const { guildId, code, by, reason, now } = input;
     return transaction(async (client) => {
         const run: Run = (sql, params) => client.query(sql, params);
+        // Lock order matches buyItem (item, user, grant, purchases): peek at the item id, lock the item first, then the purchase row.
+        const peek = await client.query<{ item_id: number }>("SELECT item_id FROM bh_shop_purchases WHERE guild_id = $1 AND code = $2", [
+            guildId,
+            code,
+        ]);
+        if (!peek.rows[0]) return { kind: "not_found" };
+        await client.query("SELECT id FROM bh_shop_items WHERE id = $1 FOR UPDATE", [peek.rows[0].item_id]);
         const found = await client.query<PurchaseRow>(
             `SELECT ${PURCHASE_COLUMNS} FROM bh_shop_purchases WHERE guild_id = $1 AND code = $2 FOR UPDATE`,
             [guildId, code],
@@ -301,8 +308,14 @@ export async function getDueGrants(
     return res.rows.map((r) => ({ userId: r.user_id, guildId: r.guild_id, discordUserId: r.discord_user_id, roleId: r.role_id }));
 }
 
-export async function deleteGrant(userId: number, roleId: string): Promise<void> {
-    await query("DELETE FROM bh_shop_role_grants WHERE user_id = $1 AND role_id = $2", [userId, roleId]);
+/** Deletes a grant only if it is still over (a renewal bought since the worker read it survives); true when a row went. */
+export async function deleteGrant(userId: number, roleId: string, now: Date): Promise<boolean> {
+    const res = await query("DELETE FROM bh_shop_role_grants WHERE user_id = $1 AND role_id = $2 AND ends_at <= $3 RETURNING user_id", [
+        userId,
+        roleId,
+        now,
+    ]);
+    return res.rows.length > 0;
 }
 
 /** Running grants of one member in a server - the rejoin re-grant reads these. */

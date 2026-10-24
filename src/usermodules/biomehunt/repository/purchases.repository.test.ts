@@ -199,7 +199,35 @@ test("refundPurchase refuses a second refund and writes nothing", async () => {
     const res = await repo.refundPurchase(refundInput);
     expect(res.kind).toBe("already_refunded");
     expect(calls.some((c) => /^\s*(UPDATE|INSERT|DELETE)/.test(c.sql))).toBe(false);
-    expect(calls[0].sql).toContain("FOR UPDATE");
+    expect(sqlOf("FROM bh_shop_purchases").at(-1)?.sql).toContain("FOR UPDATE");
+});
+
+test("refundPurchase locks the item row before the purchase row and Seeds (same order as buyItem)", async () => {
+    script = [{ match: "AND code = $2", rows: [purchase()] }];
+    await repo.refundPurchase(refundInput);
+    const lockItem = calls.findIndex((c) => c.sql.includes("FROM bh_shop_items") && c.sql.includes("FOR UPDATE"));
+    const lockPurchase = calls.findIndex((c) => c.sql.includes("FROM bh_shop_purchases") && c.sql.includes("FOR UPDATE"));
+    const credit = calls.findIndex((c) => c.sql.includes("UPDATE bh_users"));
+    expect(lockItem).toBeGreaterThan(-1);
+    expect(lockItem).toBeLessThan(lockPurchase);
+    expect(lockPurchase).toBeLessThan(credit);
+});
+
+test("deleteGrant only deletes an ended grant and reports whether it did", async () => {
+    script = [{ match: "DELETE FROM bh_shop_role_grants", rows: [{ user_id: 3 }] }];
+    expect(await repo.deleteGrant(3, "r1", NOW)).toBe(true);
+    expect(calls[0].sql).toContain("ends_at <= $3");
+    expect(calls[0].params).toEqual([3, "r1", NOW]);
+    script = [];
+    expect(await repo.deleteGrant(3, "r1", NOW)).toBe(false);
+});
+
+test("buyItem never reports a short below 1", async () => {
+    script = [
+        { match: "FROM bh_shop_items", rows: [item()] },
+        { match: "SELECT seeds FROM bh_users", rows: [{ seeds: 900 }] },
+    ];
+    expect(await repo.buyItem(buyInput)).toEqual({ kind: "short", short: 1 });
 });
 
 test("refundPurchase gives the Seeds back and marks the purchase refunded", async () => {
