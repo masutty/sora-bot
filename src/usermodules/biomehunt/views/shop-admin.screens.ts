@@ -7,7 +7,7 @@ import {
     MessageFlags,
     SeparatorSpacingSize,
 } from "discord.js";
-import { paginationRow, type RenderKit, type ViewRender } from "@/define";
+import { type AnySelect, paginationRow, type RenderKit, type ViewRender } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import {
     DURATION_PRESET_DAYS,
@@ -22,7 +22,7 @@ import type { ShopAdminState } from "./shop-admin.view";
 
 export const DEFAULT_TIMED_DURATION_S = 7 * 86400;
 
-type Parts = Array<ContainerBuilder | ActionRowBuilder<ButtonBuilder>>;
+type Parts = Array<ContainerBuilder | ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<ButtonBuilder | AnySelect>>;
 
 const row = (...buttons: ButtonBuilder[]) => new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 
@@ -55,10 +55,14 @@ export function numbers(item: ShopItemRow): string[] {
     ];
 }
 
+/** Shown for a role item with no role picked - such an item is not for sale. */
+export const NO_ROLE = "⚠️ No role picked";
+
 /** What the item gives, as a short phrase. */
 export function givesText(item: ShopItemRow): string {
     if (item.kind === "manual") return "Delivered by hand";
-    const role = item.role_id ? `<@&${item.role_id}>` : "no role picked";
+    if (!item.role_id) return NO_ROLE;
+    const role = `<@&${item.role_id}>`;
     return item.kind === "timed_role" && item.duration_s ? `Role ${role} for ${durationText(item.duration_s)}` : `Role ${role}`;
 }
 
@@ -97,7 +101,7 @@ function itemsScreen(s: ShopAdminState, kit: RenderKit): Parts {
     container.addSectionComponents((section) =>
         section
             .addTextDisplayComponents((td) =>
-                td.setContent(s.shop.open ? "Open - members buy with `/bh shop`." : "Closed - only admins see it."),
+                td.setContent(`**Shop**\n${s.shop.open ? "Open - members buy with `/bh shop`." : "Closed - only admins see it."}`),
             )
             .setButtonAccessory(
                 kit.button("toggle", (b) =>
@@ -272,7 +276,9 @@ function purchasesScreen(s: ShopAdminState, kit: RenderKit): Parts {
             ),
         );
     }
-    container.addActionRowComponents(
+    const parts: Parts = [container];
+    if (purchasePages(s) > 1) parts.push(paginationRow(kit, s.page, purchasePages(s)));
+    parts.push(
         kit.row(
             kit.stringSelect("filter", (m) =>
                 m.addOptions(
@@ -281,10 +287,6 @@ function purchasesScreen(s: ShopAdminState, kit: RenderKit): Parts {
                 ),
             ),
         ),
-    );
-    const parts: Parts = [container];
-    if (purchasePages(s) > 1) parts.push(paginationRow(kit, s.page, purchasePages(s)));
-    parts.push(
         tabsRow(s, kit),
         row(
             kit.button("find", (b) => b.setLabel("Find ID").setStyle(ButtonStyle.Primary)),

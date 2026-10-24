@@ -84,6 +84,7 @@ const purchase = (n: number, over: Partial<PurchaseRow> = {}): PurchaseRow => ({
     role_id: null,
     duration_s: null,
     role_ends_at: null,
+    role_window_start: null,
     status: "pending",
     refund_reason: null,
     decided_by: null,
@@ -190,6 +191,33 @@ test("open shop shows the Close shop button, closed shows Open shop", async () =
     await fake.emit(fake.click("toggle", OWNER));
     expect(text(fake.lastPayload())).toContain("Closed - only admins see it.");
     expect(button(fake.lastPayload(), "Open shop")?.style).toBe(ButtonSuccess);
+});
+
+test("the shop section has a Shop heading on its own line", async () => {
+    const { fake } = await open({ open: true });
+    expect(text(fake.lastPayload())).toContain("**Shop**\nOpen - members buy with `/bh shop`.");
+});
+
+test("a role item with no role picked says so in the list and the editor", async () => {
+    const { fake } = await open({ items: [item(1, { kind: "role", role_id: null })] });
+    expect(text(fake.lastPayload())).toContain("⚠️ No role picked");
+    await fake.emit(fake.click("edit:0", OWNER));
+    expect(text(fake.lastPayload())).toContain("⚠️ No role picked");
+});
+
+test("the Add item and Limits forms use the short titles, labels and a 9 digit price", async () => {
+    const added = await open();
+    answerModal(added.fake, validForm);
+    await added.fake.emit(added.fake.click("add", OWNER));
+    expect(added.fake.modals[0].spec.title).toBe("New item");
+    expect(added.fake.modals[0].spec.fields.find((f) => f.key === "price")?.maxLength).toBe(9);
+    const { fake } = await open({ items: [item(1, { name: "A".repeat(60), stock: 5 })] });
+    await fake.emit(fake.click("edit:0", OWNER));
+    answerModal(fake, { stock: "5", max: "" });
+    await fake.emit(fake.click("limits", OWNER));
+    const limits = fake.modals.at(-1)?.spec;
+    expect(limits?.title).toBe(`${"A".repeat(60)} limits`.slice(0, 45));
+    expect(limits?.fields.map((f) => f.label)).toEqual(["Stock", "Max per member"]);
 });
 
 test("the economy-off block shows only when the economy is off", async () => {
@@ -411,6 +439,24 @@ test("Purchases starts on Pending when something is pending, on All otherwise", 
     await none.fake.emit(none.fake.click("tab:purchases", OWNER));
     expect(text(none.fake.lastPayload())).toContain("Thing 2");
     expect(component(none.fake.lastPayload(), "filter")?.options?.find((o) => o.default)?.label).toBe("All");
+});
+
+test("Purchases lays out the list, page row, filter, tabs, then Find ID / Close", async () => {
+    const { fake } = await open({ purchases: Array.from({ length: 12 }, (_, i) => purchase(i + 1)) });
+    await fake.emit(fake.click("tab:purchases", OWNER));
+    const tops = (fake.lastPayload().components as unknown as Array<{ toJSON(): Json }>).map((c) => c.toJSON());
+    const ids = (node: Json) =>
+        JSON.stringify(node)
+            .match(/"custom_id":"[^"]*:([^":]+)"/g)
+            ?.map((m) => m.split(":").at(-1)?.replace('"', "")) ?? [];
+    expect(JSON.stringify(tops[0])).toContain(":open");
+    expect(JSON.stringify(tops[0])).not.toContain(":filter");
+    const rest = tops.slice(1).map((t) => ids(t));
+    const at = (key: string) => rest.findIndex((r) => r.includes(key));
+    expect(at("next")).toBeGreaterThanOrEqual(0);
+    expect(at("next")).toBeLessThan(at("filter"));
+    expect(at("filter")).toBeLessThan(at("items"));
+    expect(at("items")).toBeLessThan(at("find"));
 });
 
 test("empty lists say so", async () => {

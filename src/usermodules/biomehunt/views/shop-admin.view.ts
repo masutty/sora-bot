@@ -25,7 +25,7 @@ import type {
 import { parseBadgeEmoji, parseIconUrl } from "../services/biome-admin.service";
 import type { ShopDeps } from "../services/shop.service";
 import { BiomeHuntError, type PurchaseRow, type ShopItemFields, type ShopItemRow, type ShopRow } from "../types";
-import { DEFAULT_TIMED_DURATION_S, purchasePages, renderShopAdmin, shopItemPages } from "./shop-admin.screens";
+import { DEFAULT_TIMED_DURATION_S, NO_ROLE, purchasePages, renderShopAdmin, shopItemPages } from "./shop-admin.screens";
 import { purchaseCardView } from "./shop-purchase.view";
 
 const RED = 0xda373c;
@@ -85,7 +85,7 @@ function detailsFields(item?: ShopItemRow) {
             required: false,
             maxLength: ITEM_DESCRIPTION_MAX,
         },
-        { key: "price", label: "Price in Seeds", value: item ? String(item.price) : undefined, required: true, maxLength: 7 },
+        { key: "price", label: "Price in Seeds", value: item ? String(item.price) : undefined, required: true, maxLength: 9 },
         { key: "emoji", label: "Emoji", value: item?.emoji ?? undefined, required: false },
         { key: "image", label: "Image URL, https://", value: item?.image_url ?? undefined, required: false },
     ];
@@ -161,7 +161,7 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
         else s.page = Math.min(s.page, shopItemPages(s) - 1);
         if (s.screen === "editor" && !selected(s)) s.screen = "items";
         const item = selected(s);
-        s.roleIssue = item && isRoleKind(item.kind) && item.role_id ? await deps.checkRole(guildId, item.role_id) : null;
+        s.roleIssue = !item || !isRoleKind(item.kind) ? null : item.role_id ? await deps.checkRole(guildId, item.role_id) : NO_ROLE;
     }
 
     /** Runs a form parser; tells the admin what is wrong and returns null when it throws. */
@@ -183,7 +183,7 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
     }
 
     const add = async (c: Ctx) => {
-        const values = await c.modal({ title: "Add item", fields: detailsFields() });
+        const values = await c.modal({ title: "New item", fields: detailsFields() });
         if (!values) return;
         const details = await parsed(c, () => parseDetails(values));
         if (!details) return;
@@ -217,17 +217,17 @@ export function shopAdminView(deps: ShopAdminDeps): ViewDefinition<ShopAdminStat
         const item = selected(c.state);
         if (!item) return;
         const values = await c.modal({
-            title: "Limits",
+            title: `${item.name} limits`.slice(0, 45),
             fields: [
                 {
                     key: "stock",
-                    label: "Stock (empty = unlimited)",
+                    label: "Stock",
                     value: item.stock === null ? undefined : String(item.stock),
                     required: false,
                 },
                 {
                     key: "max",
-                    label: "Max per member (empty = no limit)",
+                    label: "Max per member",
                     value: item.max_per_member === null ? undefined : String(item.max_per_member),
                     required: false,
                 },
