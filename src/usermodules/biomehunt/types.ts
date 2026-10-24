@@ -359,6 +359,21 @@ export interface NetworkAlertRow {
 }
 
 /** One rare-biome find with its newest local vote - fake finds included (the history lists them on purpose). */
+/** A rare find with its finder - what the server-wide rare stats read. */
+export interface GuildRareFind extends RareFind {
+    /** The finder's `bh_users` id. */
+    userId: number;
+    discordUserId: string;
+}
+
+/** A session that holds at least one rare find. */
+export interface RareSession {
+    id: number;
+    userId: number;
+    startedAt: Date;
+    endedAt: Date;
+}
+
 export interface RareFind {
     /** `null` for an old Deny, when the event was deleted with the vote. */
     eventId: number | null;

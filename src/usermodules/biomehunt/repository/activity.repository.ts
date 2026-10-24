@@ -1,7 +1,7 @@
 import type { PoolClient } from "pg";
 import { query } from "@/database/connection";
 import { newTraceRef } from "@/utils/trace";
-import type { ActivitySessionRow, RareFind, VoteStatus } from "../types";
+import type { ActivitySessionRow, GuildRareFind, RareFind, RareSession, VoteStatus } from "../types";
 
 /**
  * SQL predicate over an events alias `e`: true unless the event's newest vote ruled it fake
@@ -461,21 +461,24 @@ interface RareFindRow {
     jump_link: string | null;
     real: string | number | null;
     fake: string | number | null;
+    user_id: number | string;
+    discord_user_id: string;
 }
 
 /**
- * A user's rare finds, newest first: every rare `started` event with its newest vote, plus the
- * votes of old Denies whose event is gone (`event_id IS NULL`). Fake finds are NOT filtered -
- * the history lists them; callers decide visibility.
+ * Rare finds, newest first: every rare `started` event with its newest vote, plus the votes of old
+ * Denies whose event is gone (`event_id IS NULL`). `scope` is `u.id` (one user) or `u.guild_id`
+ * (a whole server), matched against `$1`; `$2` is the rare biomes.
  */
-export async function getRareFinds(userId: number, rareBiomes: string[]): Promise<RareFind[]> {
-    const result = await query<RareFindRow>(
-        `SELECT e.id AS event_id, e.biome, e.received_at AS at,
+function rareFindsSql(scope: "u.id" | "u.guild_id"): string {
+    return `SELECT e.id AS event_id, e.biome, e.received_at AS at,
                 CASE WHEN e.discord_message_id LIKE 'adm-%' THEN NULL ELSE e.discord_message_id END AS macro_message_id,
                 mc.channel_id AS macro_channel_id,
                 v.id AS vote_id, v.status, v.decided_by, v.channel_id AS vote_channel_id, v.message_id AS vote_message_id, v.jump_link,
-                COALESCE(b.real, 0) AS real, COALESCE(b.fake, 0) AS fake
+                COALESCE(b.real, 0) AS real, COALESCE(b.fake, 0) AS fake,
+                u.id AS user_id, u.discord_user_id
          FROM bh_activity_events e
+         JOIN bh_users u ON u.id = e.user_id
          LEFT JOIN bh_user_macro_channels mc ON mc.user_id = e.user_id
          LEFT JOIN LATERAL (
              SELECT * FROM bh_biome_votes v WHERE v.event_id = e.id ORDER BY v.created_at DESC LIMIT 1
@@ -484,18 +487,21 @@ export async function getRareFinds(userId: number, rareBiomes: string[]): Promis
              SELECT COUNT(*) FILTER (WHERE choice = 'real') AS real, COUNT(*) FILTER (WHERE choice = 'fake') AS fake
              FROM bh_biome_vote_ballots WHERE vote_id = v.id
          ) b ON TRUE
-         WHERE e.user_id = $1 AND e.event_type = 'started' AND e.biome = ANY($2)
+         WHERE ${scope} = $1 AND e.event_type = 'started' AND e.biome = ANY($2)
          UNION ALL
          SELECT NULL, v.biome, v.created_at, NULL, NULL,
                 v.id, v.status, v.decided_by, v.channel_id, v.message_id, v.jump_link,
                 (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'real'),
-                (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'fake')
+                (SELECT COUNT(*) FROM bh_biome_vote_ballots WHERE vote_id = v.id AND choice = 'fake'),
+                u.id, u.discord_user_id
          FROM bh_biome_votes v
-         WHERE v.event_id IS NULL AND v.finder_user_id = $1 AND v.biome = ANY($2)
-         ORDER BY at DESC`,
-        [userId, rareBiomes],
-    );
-    return result.rows.map((r) => ({
+         JOIN bh_users u ON u.id = v.finder_user_id
+         WHERE v.event_id IS NULL AND ${scope} = $1 AND v.biome = ANY($2)
+         ORDER BY at DESC`;
+}
+
+function toRareFind(r: RareFindRow): GuildRareFind {
+    return {
         eventId: r.event_id === null ? null : Number(r.event_id),
         biome: r.biome,
         at: r.at,
@@ -513,5 +519,48 @@ export async function getRareFinds(userId: number, rareBiomes: string[]): Promis
                   fake: Number(r.fake ?? 0),
               }
             : null,
-    }));
+        userId: Number(r.user_id),
+        discordUserId: r.discord_user_id,
+    };
+}
+
+/** A user's rare finds, newest first (see `rareFindsSql`). Fake finds are NOT filtered - the history lists them; callers decide visibility. */
+export async function getRareFinds(userId: number, rareBiomes: string[]): Promise<RareFind[]> {
+    const result = await query<RareFindRow>(rareFindsSql("u.id"), [userId, rareBiomes]);
+    return result.rows.map(toRareFind);
+}
+
+/** Every rare find of a server, newest first, with its finder - fake ones included. */
+export async function getGuildRareFinds(guildId: string, rareBiomes: string[]): Promise<GuildRareFind[]> {
+    const result = await query<RareFindRow>(rareFindsSql("u.guild_id"), [guildId, rareBiomes]);
+    return result.rows.map(toRareFind);
+}
+
+/** The server's sessions that hold at least one rare `started` event. */
+export async function getGuildRareSessions(guildId: string, rareBiomes: string[]): Promise<RareSession[]> {
+    const result = await query<{ id: number | string; user_id: number | string; started_at: Date; ended_at: Date }>(
+        `SELECT DISTINCT s.id, s.user_id, s.started_at, s.ended_at
+         FROM bh_activity_sessions s
+         JOIN bh_users u ON u.id = s.user_id
+         JOIN bh_activity_events e ON e.user_id = s.user_id AND e.event_type = 'started' AND e.biome = ANY($2)
+              AND e.received_at BETWEEN s.started_at AND s.ended_at
+         WHERE u.guild_id = $1`,
+        [guildId, rareBiomes],
+    );
+    return result.rows.map((r) => ({ id: Number(r.id), userId: Number(r.user_id), startedAt: r.started_at, endedAt: r.ended_at }));
+}
+
+/** Macro time of every member of a server, in seconds: the last 7 days, the last 30 days and all time. */
+export async function getGuildMacroSeconds(guildId: string): Promise<{ week: number; month: number; all: number }> {
+    const clipped = (days: number) =>
+        `COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM s.ended_at - GREATEST(s.started_at, NOW() - INTERVAL '${days} days')))), 0)`;
+    const result = await query<{ week: string; month: string; all_time: string }>(
+        `SELECT ${clipped(7)} AS week, ${clipped(30)} AS month, COALESCE(SUM(s.duration_seconds), 0) AS all_time
+         FROM bh_activity_sessions s
+         JOIN bh_users u ON u.id = s.user_id
+         WHERE u.guild_id = $1`,
+        [guildId],
+    );
+    const row = result.rows[0];
+    return { week: Number(row?.week ?? 0), month: Number(row?.month ?? 0), all: Number(row?.all_time ?? 0) };
 }
