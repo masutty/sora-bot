@@ -3,7 +3,7 @@ import { BiomeHuntError } from "../types";
 export const PURCHASE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export const PURCHASE_CODE_LENGTH = 6;
 export const MAX_SHOP_ITEMS = 25;
-export const MAX_ITEM_PRICE = 1_000_000;
+export const MAX_ITEM_PRICE = 999_999_999;
 export const ITEM_NAME_MAX = 60;
 export const ITEM_DESCRIPTION_MAX = 300;
 export const DURATION_PRESET_DAYS = [1, 3, 7, 14, 30];

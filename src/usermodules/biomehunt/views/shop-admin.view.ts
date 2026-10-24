@@ -85,7 +85,7 @@ function detailsFields(item?: ShopItemRow) {
             required: false,
             maxLength: ITEM_DESCRIPTION_MAX,
         },
-        { key: "price", label: "Price in Seeds", value: item ? String(item.price) : undefined, required: true, maxLength: 9 },
+        { key: "price", label: "Price in Seeds", value: item ? String(item.price) : undefined, required: true, maxLength: 11 },
         { key: "emoji", label: "Emoji", value: item?.emoji ?? undefined, required: false },
         { key: "image", label: "Image URL, https://", value: item?.image_url ?? undefined, required: false },
     ];
@@ -98,7 +98,9 @@ function parseDetails(values: Record<string, string>): Pick<ShopItemFields, "nam
     const description = (values.description ?? "").trim();
     if (description.length > ITEM_DESCRIPTION_MAX)
         throw new BiomeHuntError(`The description can have up to ${ITEM_DESCRIPTION_MAX} characters.`);
-    const rawPrice = (values.price ?? "").replace(/[,\s]/g, "");
+    // Digits, optionally grouped by thousands with commas, dots or spaces (`1,250`, `1.250`, `1 250`).
+    const typedPrice = (values.price ?? "").trim();
+    const rawPrice = /^\d{1,3}([.,\s]\d{3})+$/.test(typedPrice) ? typedPrice.replace(/[.,\s]/g, "") : typedPrice;
     const price = Number(rawPrice);
     if (!/^\d+$/.test(rawPrice) || price > MAX_ITEM_PRICE)
         throw new BiomeHuntError(`The price must be a whole number from 0 to ${MAX_ITEM_PRICE.toLocaleString("en-US")}.`);

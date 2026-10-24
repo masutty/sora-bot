@@ -205,12 +205,12 @@ test("a role item with no role picked says so in the list and the editor", async
     expect(text(fake.lastPayload())).toContain("⚠️ No role picked");
 });
 
-test("the Add item and Limits forms use the short titles, labels and a 9 digit price", async () => {
+test("the Add item and Limits forms use the short titles, labels and an 11 character price", async () => {
     const added = await open();
     answerModal(added.fake, validForm);
     await added.fake.emit(added.fake.click("add", OWNER));
     expect(added.fake.modals[0].spec.title).toBe("New item");
-    expect(added.fake.modals[0].spec.fields.find((f) => f.key === "price")?.maxLength).toBe(9);
+    expect(added.fake.modals[0].spec.fields.find((f) => f.key === "price")?.maxLength).toBe(11);
     const { fake } = await open({ items: [item(1, { name: "A".repeat(60), stock: 5 })] });
     await fake.emit(fake.click("edit:0", OWNER));
     answerModal(fake, { stock: "5", max: "" });
@@ -270,7 +270,7 @@ test("a bad price in the Add item form notifies and inserts nothing", async () =
     const { fake, calls } = await open();
     answerModal(fake, { ...validForm, price: "abc" });
     await fake.emit(fake.click("add", OWNER));
-    expect(fake.notifies.at(-1)?.content).toContain("whole number from 0 to 1,000,000");
+    expect(fake.notifies.at(-1)?.content).toContain("whole number from 0 to 999,999,999");
     expect(calls.some((c) => c[0] === "insertItem")).toBe(false);
     expect(text(fake.lastPayload())).toContain("No items yet.");
 });
@@ -283,6 +283,26 @@ test("a bad image URL and a bad emoji notify and insert nothing", async () => {
     answerModal(fake, { ...validForm, emoji: "two words" });
     await fake.emit(fake.click("add", OWNER));
     expect(fake.notifies.at(-1)?.content).toContain("emoji");
+    expect(calls.some((c) => c[0] === "insertItem")).toBe(false);
+});
+
+test.each([
+    ["999.999.999", 999_999_999],
+    ["999,999,999", 999_999_999],
+    ["1 250", 1250],
+    ["0", 0],
+])("the price %p is read as %p", async (typed, price) => {
+    const { fake, calls } = await open();
+    answerModal(fake, { ...validForm, price: typed });
+    await fake.emit(fake.click("add", OWNER));
+    expect(calls.find((c) => c[0] === "insertItem")?.[1]).toMatchObject({ price });
+});
+
+test.each(["1.5", "1,50", "1000000000"])("the price %p is refused", async (typed) => {
+    const { fake, calls } = await open();
+    answerModal(fake, { ...validForm, price: typed });
+    await fake.emit(fake.click("add", OWNER));
+    expect(fake.notifies.at(-1)?.content).toContain("whole number from 0 to 999,999,999");
     expect(calls.some((c) => c[0] === "insertItem")).toBe(false);
 });
 
