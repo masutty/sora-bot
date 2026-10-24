@@ -4,7 +4,7 @@ import type { BotClient } from "@/core/bot-client";
 import { type CommandArgs, defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
-import { getBadgeMeta, getBiomeBadges, resolveBadgeSlug } from "../constants/badges.constants";
+import { getBadgeMeta, getRoleBadges, resolveBadgeSlug } from "../constants/badges.constants";
 import { MAX_DISCORD_CHOICES } from "../constants/biomes.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { getGuildFlags } from "../repository/flags.repository";
@@ -19,11 +19,11 @@ import { shopAdminView } from "../views/shop-admin.view";
 import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
 
 /**
- * Autocomplete for the `badge` option of `badges set` - only biome badges (the ones a role can be
- * attached to). Value is the badge's slug (easy to type in prefix mode), resolved back via `resolveBadgeSlug`.
+ * Autocomplete for the `badge` option of `badges set` - only the badges a role can be
+ * attached to. Value is the badge's slug (easy to type in prefix mode), resolved back via `resolveBadgeSlug`.
  */
 function badgeAutocompleteChoices(typed: string): Array<{ name: string; value: string }> {
-    const badges = getBiomeBadges();
+    const badges = getRoleBadges();
     const needle = typed.trim().toLowerCase();
     return badges
         .map((b) => getBadgeMeta(b))

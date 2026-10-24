@@ -1,5 +1,5 @@
 import { ContainerBuilder } from "discord.js";
-import { DELETED_BADGE, getBadgeMeta, getBiomeBadges } from "../constants/badges.constants";
+import { DELETED_BADGE, getBadgeMeta, getRoleBadges } from "../constants/badges.constants";
 import {
     getGuildBadgeRole,
     getGuildBadgeRoles,
@@ -44,8 +44,7 @@ export async function setBadges(guildId: string, badge: Badge, roleId: string | 
         await removeGuildBadgeRole(guildId, badge);
         return `${getBadgeMeta(badge).emoji} ${getBadgeMeta(badge).display} no longer grants a role.`;
     }
-    if (!getBiomeBadges().includes(badge))
-        throw new BiomeHuntError(`${getBadgeMeta(badge).display} isn't a biome badge - only those can grant a role.`);
+    if (!getRoleBadges().includes(badge)) throw new BiomeHuntError(`${getBadgeMeta(badge).display} can't grant a role.`);
     await setGuildBadgeRole(guildId, badge, roleId);
     return `${getBadgeMeta(badge).emoji} ${getBadgeMeta(badge).display} will now grant <@&${roleId}>.`;
 }
@@ -54,7 +53,7 @@ export async function listBadges(guildId: string): Promise<ContainerBuilder> {
     const badgeRoles = await getGuildBadgeRoles(guildId);
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
 
-    const finderLines = getBiomeBadges().map((badge) => {
+    const finderLines = getRoleBadges().map((badge) => {
         const roleId = badgeRoleMap.get(badge);
         return `${getBadgeMeta(badge).emoji} ${getBadgeMeta(badge).display}: ${roleId ? `<@&${roleId}>` : "not set"}`;
     });

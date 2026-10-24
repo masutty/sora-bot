@@ -9,7 +9,7 @@ export type BiomeCategory = "biome" | "weather" | "rare" | "event" | "admin";
 export type RoleJobAction = "add" | "remove";
 export type QuotaRoleMode = "F" | "RW";
 
-/** A biome key (the biome badge of a biome with `hasBadge` - see `BiomeMeta`) or the bot-triggered `DELETED`. */
+/** A biome key (the biome badge of a biome with `hasBadge` - see `BiomeMeta`), `INFINITY_GAUNTLET` or the bot-triggered `DELETED`. */
 export type Badge = string;
 
 export type FlagName =

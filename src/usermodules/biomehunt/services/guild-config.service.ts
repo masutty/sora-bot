@@ -1,7 +1,7 @@
 import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { formatTime } from "@/utils/format";
-import { getBadgeMeta, getBiomeBadges } from "../constants/badges.constants";
+import { getBadgeMeta, getRoleBadges } from "../constants/badges.constants";
 import { formatBiomeName } from "../constants/biomes.constants";
 import { getGuildBadgeRoles } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
@@ -33,7 +33,7 @@ export async function showConfig(guildId: string): Promise<ContainerBuilder> {
     const autoDeleteEnabled = await isFlagEnabled(guildId, "AUTO_DELETE_ENABLED");
 
     const badgeRoleMap = new Map(badgeRoles.map((b) => [b.badge, b.role_id]));
-    const badgeLines = getBiomeBadges().map((badge) => {
+    const badgeLines = getRoleBadges().map((badge) => {
         const roleId = badgeRoleMap.get(badge);
         const meta = getBadgeMeta(badge);
         return `${meta.emoji} ${meta.display}: ${roleId ? `<@&${roleId}>` : "not set"}`;
