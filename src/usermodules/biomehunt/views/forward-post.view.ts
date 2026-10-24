@@ -42,6 +42,8 @@ export interface ForwardContainerParams {
     serverFindCount?: number | null;
     /** When this biome was last found in the server before this find - "Last one <t:R>". `null` = never. */
     lastSeenInServerAt?: Date | null;
+    /** When this forward was posted - a relative `<t:R>` in the byline, so busy channels don't need Discord's own timestamp. */
+    sentAt?: Date;
     vote?: VoteRenderInfo;
     badges?: ForwardBadges;
     /** The biome's optional in-game style line (`getBiomeMeta(biome)?.flavorText`), shown small on its own line right under the title. */
@@ -223,6 +225,7 @@ function titleBlock(params: ForwardContainerParams): string {
 
     const byline = [
         params.finderDiscordId ? `Found by <@${params.finderDiscordId}>` : null,
+        params.sentAt ? `<t:${epochOf(params.sentAt)}:R>` : null,
         params.vote ? `Vote \`${params.vote.voteId}\`` : null,
     ].filter(Boolean);
 
