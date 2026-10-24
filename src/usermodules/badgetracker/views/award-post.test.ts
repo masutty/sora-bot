@@ -3,6 +3,10 @@ import { MessageFlags } from "discord.js";
 import { NO_PINGS } from "@/utils/format";
 import { type AwardPostInput, buildAwardPost, buildDeletedPost, buildTestPost, resolveDescription, TEST_LINE } from "./award-post";
 
+const FROM = new Date(1_700_000_000_000);
+const TO = new Date(1_700_000_300_000);
+const FOOTER = "-# <t:1700000000:t> to <t:1700000300:t> • <t:1700000300:R>";
+
 const base: AwardPostInput = {
     badgeId: "2124445684",
     name: "Glitch Hunter",
@@ -10,23 +14,36 @@ const base: AwardPostInput = {
     iconUrl: "https://img/x.png",
     delta: 3,
     total: 48216,
-    window: { kind: "interval", minutes: 5 },
+    window: { from: FROM, to: TO },
     pingRoleId: "ROLE",
     accentColor: null,
 };
 
 // biome-ignore lint/suspicious/noExplicitAny: inspecting raw JSON
-function container(post: any): any {
-    return post.components[0].toJSON();
+type Json = any;
+
+function json(post: Json): Json[] {
+    return post.components.map((c: Json) => c.toJSON());
 }
-// biome-ignore lint/suspicious/noExplicitAny: inspecting raw JSON
-function first(post: any): any {
-    return container(post).components[0];
+/** The card: the last top-level component. */
+function card(post: Json): Json {
+    return json(post).at(-1);
 }
-// biome-ignore lint/suspicious/noExplicitAny: inspecting raw JSON
-function text(post: any): string {
-    const c = first(post);
-    return c.type === 9 ? c.components[0].content : c.content;
+/** The text blocks beside the icon (a Section), or the card's leading TextDisplays without one. */
+function top(post: Json): string[] {
+    const first = card(post).components[0];
+    if (first.type === 9) return first.components.map((t: Json) => t.content);
+    const texts: string[] = [];
+    for (const c of card(post).components) {
+        if (c.type !== 10) break;
+        texts.push(c.content);
+    }
+    return texts;
+}
+/** Each TextDisplay that follows a divider, in order. */
+function below(post: Json): string[] {
+    const comps = card(post).components;
+    return comps.flatMap((c: Json, i: number) => (i > 0 && comps[i - 1].type === 14 && comps[i - 1].divider ? [c.content] : []));
 }
 
 test("resolveDescription", () => {
@@ -38,22 +55,58 @@ test("resolveDescription", () => {
     expect(cut).toBe(`${"a".repeat(299)}…`);
 });
 
-test("buildAwardPost: exact text, flags, accent", () => {
+test("buildAwardPost: ping above; title and diff beside the icon; description and span below dividers", () => {
     const post = buildAwardPost(base);
     expect(post.flags).toBe(MessageFlags.IsComponentsV2);
-    expect(container(post).accent_color).toBe(0x3ba55d);
-    expect(text(post)).toBe(
-        "<@&ROLE>\n## [Glitch Hunter](https://www.roblox.com/badges/2124445684)\n-# Someone caught the glitch again.\n**+3** awards in the last 5 minutes\n48,216 total",
-    );
-    expect(first(post).type).toBe(9);
+    expect(json(post)[0]).toMatchObject({ type: 10, content: "<@&ROLE>" });
+    expect(card(post).accent_color).toBe(0x3ba55d);
+    expect(card(post).components.map((c: Json) => c.type)).toEqual([9, 14, 10, 14, 10]);
+    expect(top(post)).toEqual([
+        "## [Glitch Hunter](https://www.roblox.com/badges/2124445684)",
+        "```diff\n+3 awards\n  48,213 → 48,216\n```",
+    ]);
+    expect(below(post)).toEqual(["-# Someone caught the glitch again.", FOOTER]);
     expect(post.allowedMentions).toEqual({ parse: [], roles: ["ROLE"] });
 });
 
 test("buildAwardPost: the Subscription's color replaces the default", () => {
-    expect(container(buildAwardPost({ ...base, accentColor: 0x7cf5ff })).accent_color).toBe(0x7cf5ff);
+    expect(card(buildAwardPost({ ...base, accentColor: 0x7cf5ff })).accent_color).toBe(0x7cf5ff);
 });
 
-test("buildTestPost: marked as a test, +1 award, never pings, keeps the color", () => {
+test("buildAwardPost: no role leaves only the card", () => {
+    const post = buildAwardPost({ ...base, pingRoleId: null });
+    expect(json(post)).toHaveLength(1);
+    expect(post.allowedMentions).toEqual({ parse: [], roles: [] });
+});
+
+test("buildAwardPost: singular award, thousands separators", () => {
+    expect(top(buildAwardPost({ ...base, delta: 1, total: 1000 }))[1]).toBe("```diff\n+1 award\n  999 → 1,000\n```");
+    expect(top(buildAwardPost({ ...base, delta: 1234 }))[1]).toBe("```diff\n+1,234 awards\n  46,982 → 48,216\n```");
+});
+
+test("buildAwardPost: no description leaves out its line and divider", () => {
+    const post = buildAwardPost({ ...base, description: null });
+    expect(card(post).components.map((c: Json) => c.type)).toEqual([9, 14, 10]);
+    expect(below(post)).toEqual([FOOTER]);
+});
+
+test("buildAwardPost: multi-line, CRLF and blank description lines", () => {
+    expect(below(buildAwardPost({ ...base, description: "one\ntwo" }))[0]).toBe("-# one\n-# two");
+    const desc = below(buildAwardPost({ ...base, description: "a\r\n\r\nb" }))[0];
+    expect(desc).toBe("-# a\n-# b");
+});
+
+test("buildAwardPost: no icon puts the title and diff straight in the container", () => {
+    const post = buildAwardPost({ ...base, iconUrl: null });
+    expect(card(post).components.map((c: Json) => c.type)).toEqual([10, 10, 14, 10, 14, 10]);
+    expect(top(post)[0]).toContain("## [Glitch Hunter]");
+});
+
+test("buildAwardPost: escapes the name", () => {
+    expect(top(buildAwardPost({ ...base, name: "A*B_c" }))[0]).toContain("[A\\*B\\_c](");
+});
+
+test("buildTestPost: marked above the card, +1 award over the last interval, never pings, keeps the color", () => {
     const post = buildTestPost(
         {
             guild_id: "g",
@@ -68,59 +121,20 @@ test("buildTestPost: marked as a test, +1 award, never pings, keeps the color", 
             deleted: false,
         },
         5,
+        TO,
     );
-    const json = container(post);
-    expect(json.accent_color).toBe(0x7cf5ff);
-    expect(json.components[0].content).toBe(
-        `${TEST_LINE}\n## [Glitch Hunter](https://www.roblox.com/badges/2124445684)\n-# Roblox text.\n**+1** award in the last 5 minutes\n48,216 total`,
-    );
+    expect(json(post)[0]).toMatchObject({ type: 10, content: TEST_LINE });
+    expect(card(post).accent_color).toBe(0x7cf5ff);
+    expect(top(post)[1]).toBe("```diff\n+1 award\n  48,215 → 48,216\n```");
+    expect(below(post)).toEqual(["-# Roblox text.", FOOTER]);
     expect(post.allowedMentions).toEqual({ parse: [], roles: [] });
-});
-
-test("buildAwardPost: singular award and minute", () => {
-    const t = text(buildAwardPost({ ...base, delta: 1, window: { kind: "interval", minutes: 1 } }));
-    expect(t).toContain("**+1** award in the last minute\n");
-});
-
-test("buildAwardPost: since window", () => {
-    const at = new Date(1_700_000_000_000);
-    const t = text(buildAwardPost({ ...base, delta: 41, window: { kind: "since", at } }));
-    expect(t).toContain("**+41** awards since <t:1700000000:t>");
-});
-
-test("buildAwardPost: no role", () => {
-    const post = buildAwardPost({ ...base, pingRoleId: null });
-    expect(text(post).startsWith("## ")).toBe(true);
-    expect(post.allowedMentions).toEqual({ parse: [], roles: [] });
-});
-
-test("buildAwardPost: description handling", () => {
-    expect(text(buildAwardPost({ ...base, description: null }))).not.toContain("-#");
-    expect(text(buildAwardPost({ ...base, description: "one\ntwo" }))).toContain("-# one\n-# two\n");
-});
-
-test("buildAwardPost: no icon uses a TextDisplay", () => {
-    const post = buildAwardPost({ ...base, iconUrl: null });
-    expect(first(post).type).toBe(10);
-    expect(text(post)).toContain("## [Glitch Hunter]");
-});
-
-test("buildAwardPost: escapes the name", () => {
-    expect(text(buildAwardPost({ ...base, name: "A*B_c" }))).toContain("[A\\*B\\_c](");
 });
 
 test("buildDeletedPost", () => {
     const post = buildDeletedPost({ name: "Old Event Badge", lastCount: 3902, iconUrl: null });
-    expect(container(post).accent_color).toBe(0xda373c);
+    expect(card(post).accent_color).toBe(0xda373c);
     expect(post.flags).toBe(MessageFlags.IsComponentsV2);
-    expect(text(post)).toBe("## Old Event Badge\nThis badge was deleted on Roblox and is no longer tracked here.\nLast count: 3,902");
+    expect(top(post)).toEqual(["## Old Event Badge\nThis badge was deleted on Roblox and is no longer tracked here.\nLast count: 3,902"]);
     expect(post.allowedMentions).toEqual(NO_PINGS);
-    expect(text(buildDeletedPost({ name: "X", lastCount: null, iconUrl: "https://i" }))).not.toContain("Last count");
-});
-
-test("buildAwardPost: CRLF and blank description lines give no empty quote lines", () => {
-    const post = buildAwardPost({ ...base, description: "a\r\n\r\nb" });
-    expect(text(post)).toContain("-# a\n-# b\n");
-    expect(text(post)).not.toContain("-# \n");
-    expect(text(post)).not.toContain("\r");
+    expect(top(buildDeletedPost({ name: "X", lastCount: null, iconUrl: "https://i" }))[0]).not.toContain("Last count");
 });

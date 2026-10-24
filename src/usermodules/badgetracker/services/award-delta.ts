@@ -1,6 +1,7 @@
 import { settings } from "../settings";
 
-export type CheckWindow = { kind: "interval"; minutes: number } | { kind: "since"; at: Date };
+/** The span the new awards came in: from the last check to this one. */
+export type CheckWindow = { from: Date; to: Date };
 export type CheckOutcome =
     | { kind: "baseline" }
     | { kind: "unchanged" }
@@ -21,9 +22,5 @@ export function evaluateCheck(
     if (gap >= silentGapMs) return { kind: "baseline" };
     if (current < prev.awardedCount) return { kind: "decreased" };
     if (current === prev.awardedCount) return { kind: "unchanged" };
-    const window: CheckWindow =
-        gap <= intervalMs * settings.gap.intervalSlack
-            ? { kind: "interval", minutes: Math.round(intervalMs / 60_000) }
-            : { kind: "since", at: prev.lastCheckedAt };
-    return { kind: "post", delta: current - prev.awardedCount, window };
+    return { kind: "post", delta: current - prev.awardedCount, window: { from: prev.lastCheckedAt, to: now } };
 }
