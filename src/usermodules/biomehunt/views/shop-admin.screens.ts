@@ -48,7 +48,7 @@ export function durationText(seconds: number): string {
 }
 
 /** `\`500 🌱\` · 12 left · 1 per member` - only the parts that apply. */
-function numbers(item: ShopItemRow): string[] {
+export function numbers(item: ShopItemRow): string[] {
     return [
         ...(item.stock === null ? [] : [item.stock > 0 ? `${item.stock} left` : "Sold out"]),
         ...(item.max_per_member === null ? [] : [`${item.max_per_member} per member`]),
@@ -56,13 +56,13 @@ function numbers(item: ShopItemRow): string[] {
 }
 
 /** What the item gives, as a short phrase. */
-function givesText(item: ShopItemRow): string {
+export function givesText(item: ShopItemRow): string {
     if (item.kind === "manual") return "Delivered by hand";
     const role = item.role_id ? `<@&${item.role_id}>` : "no role picked";
     return item.kind === "timed_role" && item.duration_s ? `Role ${role} for ${durationText(item.duration_s)}` : `Role ${role}`;
 }
 
-const nameLine = (item: ShopItemRow) => `${item.emoji ? `${item.emoji} ` : ""}**${item.name}**`;
+export const nameLine = (item: ShopItemRow) => `${item.emoji ? `${item.emoji} ` : ""}**${item.name}**`;
 
 const ECONOMY_OFF = [
     "```ansi",
