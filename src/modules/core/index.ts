@@ -3,6 +3,7 @@ import _echo from "./commands/echo.command";
 import _help from "./commands/help.command";
 // import echoCommand from "./commands/echo.command";
 import _ping from "./commands/ping.command";
+import _search from "./commands/search.command";
 import _setprefix from "./commands/setprefix.command";
 
 export default defineCog({
@@ -10,5 +11,5 @@ export default defineCog({
     description: "Built-in bot commands",
     authors: [{ name: "masutty", id: 188851299255713792n }],
     // commands: [pingCommand, helpCommand, echoCommand, setprefixCommand],
-    commands: [_help, _setprefix, _ping, _echo],
+    commands: [_help, _search, _setprefix, _ping, _echo],
 });
