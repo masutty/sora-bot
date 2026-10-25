@@ -20,7 +20,7 @@ mock.module("../repository/activity.repository", () => ({
 mock.module("../services/rare-finds.service", () => ({
     loadRareFinds: async () => [],
     findsInSession: (all: RareFind[]) => all,
-    formatFindLine: (_g: string, f: RareFind) => `<t:1:t> · **${f.biome}**\n-# [Macro message](https://x/${f.biome})`,
+    formatFindLine: (_g: string, f: RareFind) => `- **${f.biome}**\n  -# <t:1:t> · [Macro message](https://x/${f.biome})`,
 }));
 
 type View = typeof import("./session.view");
@@ -28,13 +28,13 @@ let buildSessionContainer: View["buildSessionContainer"];
 let sessionView: View["sessionView"];
 let openSessionView: View["openSessionView"];
 let openSessionFromTab: View["openSessionFromTab"];
-let findsQuote: View["findsQuote"];
+let findsList: View["findsList"];
 afterAll(() => {
     mock.module("../repository/activity.repository", () => realRepo);
     mock.module("../services/rare-finds.service", () => realFinds);
 });
 beforeAll(async () => {
-    ({ buildSessionContainer, sessionView, openSessionView, openSessionFromTab, findsQuote } = await import("./session.view"));
+    ({ buildSessionContainer, sessionView, openSessionView, openSessionFromTab, findsList } = await import("./session.view"));
 });
 
 const session: ActivitySessionRow = {
@@ -72,12 +72,12 @@ const input = (f: RareFind[]) => ({
     biomes: [{ biome: "GLITCHED", count: 1 }],
 });
 
-test("renders rare finds in a blockquote", () => {
+test("renders rare finds as a bullet list", () => {
     const out = text({ components: [buildSessionContainer(input([find("A"), find("B")]))] });
     expect(out).toContain("## Session `#7` · `1h");
     expect(out).toContain("<@u1>");
     expect(out).toContain(
-        "**Rare finds**\n> <t:1:t> · **A**\n> -# [Macro message](https://x/A)\n> <t:1:t> · **B**\n> -# [Macro message](https://x/B)",
+        "**Rare finds**\n- **A**\n  -# <t:1:t> · [Macro message](https://x/A)\n- **B**\n  -# <t:1:t> · [Macro message](https://x/B)",
     );
     expect(out).toContain("**Biomes found**");
 });
@@ -149,13 +149,13 @@ test("openSessionFromTab: ignores ids off the page, notifies on a missing sessio
     expect(JSON.stringify(fake.lastPayload().components)).toContain("sessions:2");
 });
 
-test("findsQuote keeps the Rare finds text under the limit and ends with the remainder", () => {
+test("findsList keeps the Rare finds text under the limit and ends with the remainder", () => {
     const finds = Array.from({ length: 60 }, (_, i) => ({ biome: `B${i}-${"x".repeat(80)}`, eventId: i }) as unknown as RareFind);
-    const quote = findsQuote("g1", finds);
-    expect(quote.length).toBeLessThan(3600);
-    const last = quote.split("\n").at(-1) ?? "";
-    expect(last).toMatch(/^> …and \d+ more$/);
-    const shown = quote.split("\n").filter((l) => l.startsWith("> <t:")).length;
+    const list = findsList("g1", finds);
+    expect(list.length).toBeLessThan(3600);
+    const last = list.split("\n").at(-1) ?? "";
+    expect(last).toMatch(/^-# …and \d+ more$/);
+    const shown = list.split("\n").filter((l) => l.startsWith("- ")).length;
     expect(shown + Number(/\d+/.exec(last)?.[0])).toBe(60);
-    expect(findsQuote("g1", finds.slice(0, 2))).not.toContain("more");
+    expect(findsList("g1", finds.slice(0, 2))).not.toContain("more");
 });

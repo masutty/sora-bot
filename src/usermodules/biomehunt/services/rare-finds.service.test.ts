@@ -36,12 +36,14 @@ test("macroLink and forwardLink", () => {
     expect(forwardLink("g", find("GLITCHED", {}, VoteStatus.COMMUNITY_REAL))).toBe("https://discord.com/channels/g/fc/fm");
 });
 
-test("formatFindLine joins time, biome, result and links", () => {
+test("formatFindLine puts the biome on a bullet and the result, time and links on the subtext below", () => {
     const line = formatFindLine("g", find("GLITCHED", {}, VoteStatus.COMMUNITY_REAL));
     expect(line).toBe(
-        "<t:1767261600:t> · 🔥 **Glitched** · ✅ Real\n-# [Macro message](https://j/1) · [Forward](https://discord.com/channels/g/fc/fm)",
+        "- 🔥 **Glitched**\n  -# ✅ Real · <t:1767261600:t> · [Macro message](https://j/1) · [Forward](https://discord.com/channels/g/fc/fm)",
     );
-    expect(formatFindLine("g", find("GLITCHED", { macroMessageId: null }))).toBe("<t:1767261600:t> · 🔥 **Glitched**");
+    expect(formatFindLine("g", find("GLITCHED", { macroMessageId: null }), { finderId: "42", time: "R" })).toBe(
+        "- 🔥 **Glitched** · <@42>\n  -# <t:1767261600:R>",
+    );
 });
 
 test("badgeEmojis plain mode leaves out a custom emoji", () => {

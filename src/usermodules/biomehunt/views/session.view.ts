@@ -22,25 +22,20 @@ function addDivider(container: ContainerBuilder): void {
     container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 }
 
-/** Room for the quote inside Discord's 4000-character text limit, leaving space for the heading and the "more" line. */
-const QUOTE_LIMIT = 3500;
+/** Room for the list inside Discord's 4000-character text limit, leaving space for the heading and the "more" line. */
+const LIST_LIMIT = 3500;
 
-/** The finds as a blockquote, cut after the last find that fits, then `> …and N more`. */
-export function findsQuote(guildId: string, finds: RareFind[]): string {
-    const blocks = finds.map((f) =>
-        formatFindLine(guildId, f)
-            .split("\n")
-            .map((line) => `> ${line}`)
-            .join("\n"),
-    );
+/** The finds as a bullet list, cut after the last find that fits, then `-# …and N more`. */
+export function findsList(guildId: string, finds: RareFind[]): string {
+    const blocks = finds.map((f) => formatFindLine(guildId, f));
     const kept: string[] = [];
     let length = 0;
     for (const block of blocks) {
-        if (length + block.length + 1 > QUOTE_LIMIT) break;
+        if (length + block.length + 1 > LIST_LIMIT) break;
         kept.push(block);
         length += block.length + 1;
     }
-    if (kept.length < blocks.length) kept.push(`> …and ${blocks.length - kept.length} more`);
+    if (kept.length < blocks.length) kept.push(`-# …and ${blocks.length - kept.length} more`);
     return kept.join("\n");
 }
 
@@ -57,7 +52,7 @@ export function buildSessionContainer(input: SessionViewInput): ContainerBuilder
     addDivider(container);
 
     if (finds.length > 0) {
-        container.addTextDisplayComponents((td) => td.setContent(`**Rare finds**\n${findsQuote(guildId, finds)}`));
+        container.addTextDisplayComponents((td) => td.setContent(`**Rare finds**\n${findsList(guildId, finds)}`));
         addDivider(container);
     }
 

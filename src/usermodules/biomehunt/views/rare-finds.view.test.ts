@@ -40,8 +40,8 @@ test("groups finds by session newest first", () => {
     expect(i8).toBeGreaterThan(-1);
     expect(i7).toBeGreaterThan(i8);
     expect(text.match(/\*\*Session\*\* `#8`/g)).toHaveLength(1);
-    expect(text).toContain("> <t:");
-    expect(text).toContain("\n<t:1767090600:D>\n> ");
+    expect(text).toContain("\n- ");
+    expect(text).toContain("\n<t:1767090600:D>\n- ");
 });
 
 test("10 finds per page", () => {
