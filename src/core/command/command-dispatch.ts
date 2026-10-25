@@ -106,8 +106,9 @@ export function assertSubcommandModeKeys(def: CommandDefinition): void {
 export function buildSlashJson(
     def: CommandDefinition,
 ): RESTPostAPIChatInputApplicationCommandsJSONBody | RESTPostAPIContextMenuApplicationCommandsJSONBody | null {
-    if (def.contextMenu === "user") {
-        const menu: RESTPostAPIContextMenuApplicationCommandsJSONBody = { type: ApplicationCommandType.User, name: def.name };
+    if (def.contextMenu) {
+        const type = def.contextMenu === "user" ? ApplicationCommandType.User : ApplicationCommandType.Message;
+        const menu: RESTPostAPIContextMenuApplicationCommandsJSONBody = { type, name: def.name };
         if (def.guildOnly) menu.contexts = [InteractionContextType.Guild];
         // Hidden from non-admins in the Apps menu - the adminOnly guard still runs on use.
         if (def.adminOnly) menu.default_member_permissions = String(PermissionFlagsBits.Administrator);

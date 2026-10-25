@@ -250,16 +250,18 @@ export function registerCommandHandlers(client: BotClient): void {
 
     // ── Slash ─────────────────────────────────────────────────────────────────
     client.on(Events.InteractionCreate, async (interaction) => {
-        if (!interaction.isChatInputCommand() && !interaction.isUserContextMenuCommand()) return;
+        if (!interaction.isChatInputCommand() && !interaction.isContextMenuCommand()) return;
 
         const command = client.commands.get(interaction.commandName);
-        if (!command || Boolean(command.contextMenu) !== interaction.isUserContextMenuCommand()) {
+        const menu = interaction.isUserContextMenuCommand() ? "user" : interaction.isMessageContextMenuCommand() ? "message" : undefined;
+        if (!command || command.contextMenu !== menu) {
             await interaction.reply({ content: "Unknown command.", ephemeral: true });
             return;
         }
 
         // A user context-menu interaction goes through the slash path: its options resolver carries
         // the clicked user as the "user" option, and has no subcommands - the context's args read it as-is.
+        // A message one goes the same way; its args expose the clicked message's id.
         const slash = interaction as ChatInputCommandInteraction;
         const started = Date.now();
         const ctx: CommandContext = createSlashContext(slash, client, {
