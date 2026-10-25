@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test";
-import { createFakeViewTransport, type ViewPayload } from "@/define";
-import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
+import { createFakeViewTransport, defineView, type ViewPayload } from "@/define";
+import type { BiomeVoteBallotRow, BiomeVoteRow, NetworkBallotRow, NetworkPostRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
-import { type VoteReviewDeps, voteReviewView } from "./vote-review.view";
+import { type ReviewData, takesBackLine, type VoteReviewDeps, voteReviewView } from "./vote-review.view";
 
 const ADMIN = "admin-1";
+const OWNER_ID = "owner-1";
 const GUILD_ID = "g1";
 const VOTE_ID = "abc12345";
+const POST_ID = "net12345";
 
 function makeVote(overrides: Partial<BiomeVoteRow> = {}): BiomeVoteRow {
     return {
@@ -21,7 +23,7 @@ function makeVote(overrides: Partial<BiomeVoteRow> = {}): BiomeVoteRow {
         server_link: null,
         jump_link: "https://discord.com/channels/1/2/3",
         find_count: null,
-        finder_discord_id: null,
+        finder_discord_id: "finder-1",
         server_find_count: null,
         last_seen_in_server_at: null,
         fake_reported_at: null,
@@ -34,135 +36,235 @@ function makeVote(overrides: Partial<BiomeVoteRow> = {}): BiomeVoteRow {
     };
 }
 
-function makeBallot(userId: string, choice: VoteChoice): BiomeVoteBallotRow {
-    return { vote_id: VOTE_ID, user_id: userId, choice, changed: false, created_at: new Date() };
-}
+const ballot = (userId: string, choice: VoteChoice): BiomeVoteBallotRow => ({
+    vote_id: VOTE_ID,
+    user_id: userId,
+    choice,
+    changed: false,
+    created_at: new Date(),
+});
 
-function fakeDeps(
-    overrides: Partial<VoteReviewDeps> = {},
-    vote: BiomeVoteRow | null = makeVote(),
-    ballots: BiomeVoteBallotRow[] = [],
-): VoteReviewDeps {
+const netBallot = (userId: string, guildId: string, choice: VoteChoice): NetworkBallotRow => ({
+    post_id: POST_ID,
+    discord_user_id: userId,
+    guild_id: guildId,
+    choice,
+    changed: false,
+    created_at: new Date(),
+});
+
+function makePost(overrides: Partial<NetworkPostRow> = {}): NetworkPostRow {
     return {
-        getVote: async () => vote,
-        getBallots: async () => ballots,
-        getFinderDiscordId: async () => "finder-1",
-        adminDecide: async () => ({ kind: "ok", status: VoteStatus.ADMIN_CONFIRMED }),
+        id: POST_ID,
+        origin_guild_id: GUILD_ID,
+        origin_name: "Sol Hunters",
+        origin_icon_url: null,
+        invite_url: null,
+        event_id: 42,
+        finder_discord_id: "finder-1",
+        biome: "GLITCHED",
+        server_link: "https://roblox",
+        server_code: "x",
+        simulated: false,
+        relay_guild_ids: null,
+        status: "published",
+        publish_at: new Date(),
+        published_at: new Date(),
+        vote_status: "real",
+        vote_closes_at: null,
+        vote_closed_by: null,
+        vote_decided_by: null,
+        created_at: new Date(),
         ...overrides,
     };
 }
 
-function text(payload: ViewPayload): string {
-    const flatten = (node: unknown): string[] => {
-        if (node === null || typeof node !== "object") return [];
-        const json = typeof (node as { toJSON?: unknown }).toJSON === "function" ? (node as { toJSON(): unknown }).toJSON() : node;
-        if (Array.isArray(json)) return json.flatMap(flatten);
-        const obj = json as { content?: string; components?: unknown; accessory?: unknown };
-        return [obj.content ?? "", ...flatten(obj.components), ...flatten(obj.accessory)].filter(Boolean);
-    };
-    return [(payload as { content?: string }).content ?? "", ...flatten((payload as { components?: unknown }).components)]
-        .filter(Boolean)
-        .join("\n");
-}
-
-test('biomehunt.vote-review: unknown id throws "No vote with that id."', async () => {
-    const fake = createFakeViewTransport();
-    const deps = fakeDeps({}, null);
-
-    await expect(fake.run(voteReviewView(deps), { voteId: "nope", guildId: GUILD_ID }, ADMIN)).rejects.toThrow("No vote with that id.");
+const local = (vote = makeVote(), ballots: BiomeVoteBallotRow[] = []) => ({
+    vote,
+    ballots,
+    finderDiscordId: "finder-1",
+    rewards: { seeds: 120, xp: 40, badge: "GLITCHED" },
 });
 
-test("biomehunt.vote-review: a vote from another guild is treated as unknown", async () => {
-    const fake = createFakeViewTransport();
-    const deps = fakeDeps({}, makeVote({ guild_id: "other-guild" }));
-
-    await expect(fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN)).rejects.toThrow("No vote with that id.");
+const network = (post = makePost(), ballots: NetworkBallotRow[] = []) => ({
+    post,
+    ballots,
+    servers: [
+        { guildId: GUILD_ID, name: "Sol Hunters", inviteUrl: null, real: 2, fake: 0 },
+        { guildId: "g2", name: "Glitch Society", inviteUrl: "https://discord.gg/x", real: 1, fake: 1 },
+    ],
+    jumpLink: "https://discord.com/channels/g1/n/m",
 });
 
-test("biomehunt.vote-review: shows the finder, biome, state and Real/Fake voter mentions", async () => {
-    const ballots = [makeBallot("real-voter", VoteChoice.REAL), makeBallot("fake-voter", VoteChoice.FAKE)];
-    const deps = fakeDeps({}, makeVote(), ballots);
-    const fake = createFakeViewTransport();
-
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
-    await fake.flush();
-
-    const rendered = text(fake.lastPayload());
-    expect(rendered).toContain("Finder: <@finder-1>");
-    expect(rendered).toContain("Biome:");
-    expect(rendered).toContain(":white_check_mark: : <@real-voter>");
-    expect(rendered).toContain(":x: : <@fake-voter>");
-});
-
-test('biomehunt.vote-review: no ballots shows "*none*" on both sides', async () => {
-    const deps = fakeDeps({}, makeVote(), []);
-    const fake = createFakeViewTransport();
-
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
-    await fake.flush();
-
-    const rendered = text(fake.lastPayload());
-    expect(rendered).toContain(":white_check_mark: : *none*");
-    expect(rendered).toContain(":x: : *none*");
-});
-
-test("biomehunt.vote-review: Confirm calls adminDecide(REAL) and redraws as admin-confirmed", async () => {
-    const calls: Array<[string, VoteChoice]> = [];
-    const deps = fakeDeps({
-        adminDecide: async (adminId, choice) => {
-            calls.push([adminId, choice]);
-            return { kind: "ok", status: VoteStatus.ADMIN_CONFIRMED };
-        },
-    });
-    const fake = createFakeViewTransport();
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
-    await fake.flush();
-
-    await fake.emit(fake.click("confirm", ADMIN));
-
-    expect(calls).toEqual([[ADMIN, VoteChoice.REAL]]);
-    expect(text(fake.lastPayload())).toContain(`Marked as real by <@${ADMIN}>`);
-});
-
-test("biomehunt.vote-review: Deny calls adminDecide(FAKE) and redraws as admin-denied", async () => {
-    const calls: Array<[string, VoteChoice]> = [];
-    const deps = fakeDeps({
-        adminDecide: async (adminId, choice) => {
-            calls.push([adminId, choice]);
+function fakeDeps(world: { data: ReviewData | null }, overrides: Partial<VoteReviewDeps> = {}) {
+    const calls: unknown[][] = [];
+    const deps: VoteReviewDeps = {
+        load: async () => (world.data ? structuredClone(world.data) : null),
+        decideLocal: async (voteId, adminId, choice) => {
+            calls.push(["local", voteId, adminId, choice]);
+            if (world.data?.local)
+                world.data.local.vote = {
+                    ...world.data.local.vote,
+                    status: choice === VoteChoice.REAL ? VoteStatus.ADMIN_CONFIRMED : VoteStatus.ADMIN_DENIED,
+                    decided_by: adminId,
+                };
             return { kind: "ok", status: VoteStatus.ADMIN_DENIED };
         },
-    });
+        decideNetwork: async (postId, ownerId, choice) => {
+            calls.push(["network", postId, ownerId, choice]);
+            return "ok";
+        },
+        isOwner: (id) => id === OWNER_ID,
+        finderPanel: async (id) => {
+            calls.push(["finder", id]);
+            return defineView<object, void, undefined>({
+                name: "test.panel",
+                initial: () => ({}),
+                render: () => ({ content: "panel" }),
+                on: {},
+            }) as never;
+        },
+        ...overrides,
+    };
+    return { deps, calls };
+}
+
+type Json = { content?: string; label?: string; custom_id?: string; disabled?: boolean; components?: unknown; accessory?: unknown };
+
+function flatten(payload: ViewPayload): Json[] {
+    const out: Json[] = [];
+    const walk = (node: unknown) => {
+        if (node === null || typeof node !== "object") return;
+        const json = typeof (node as { toJSON?: unknown }).toJSON === "function" ? (node as { toJSON(): unknown }).toJSON() : node;
+        if (Array.isArray(json)) return json.forEach(walk);
+        const obj = json as Json;
+        out.push(obj);
+        walk(obj.components);
+        walk(obj.accessory);
+    };
+    walk(payload.components);
+    return out;
+}
+
+const text = (p: ViewPayload) => [p.content ?? "", ...flatten(p).map((c) => c.content ?? "")].filter(Boolean).join("\n");
+const button = (p: ViewPayload, key: string) => flatten(p).find((c) => c.custom_id?.endsWith(`:${key}`));
+const labels = (p: ViewPayload) => flatten(p).flatMap((c) => (c.label ? [c.label] : []));
+
+async function open(data: ReviewData | null, viewer = ADMIN, id = VOTE_ID, opts: { back?: boolean } = {}) {
+    const world = { data };
+    const { deps, calls } = fakeDeps(world);
     const fake = createFakeViewTransport();
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
+    void fake.run(voteReviewView(deps, opts), { id, guildId: GUILD_ID, viewerId: viewer }, viewer);
     await fake.flush();
+    return { fake, calls, world };
+}
 
-    await fake.emit(fake.click("deny", ADMIN));
-
-    expect(calls).toEqual([[ADMIN, VoteChoice.FAKE]]);
-    expect(text(fake.lastPayload())).toContain(`Marked as fake by <@${ADMIN}>`);
+test("an id this server can't see is an error", async () => {
+    const { deps } = fakeDeps({ data: null });
+    const fake = createFakeViewTransport();
+    await expect(fake.run(voteReviewView(deps), { id: "nope", guildId: GUILD_ID, viewerId: ADMIN }, ADMIN)).rejects.toThrow(
+        "No vote with that id in this server.",
+    );
 });
 
-test('biomehunt.vote-review: a CAS miss notifies "This vote was already decided." without changing the screen', async () => {
-    const deps = fakeDeps({ adminDecide: async () => ({ kind: "already_decided" }) });
-    const fake = createFakeViewTransport();
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
-    await fake.flush();
+test("local tab: open vote shows the split, both sides' voters and no tabs without a Network post", async () => {
+    const { fake } = await open({
+        local: local(makeVote(), [ballot("r1", VoteChoice.REAL), ballot("f1", VoteChoice.FAKE)]),
+        network: null,
+    });
+    const t = text(fake.lastPayload());
+    expect(t).toContain("## Glitched\nFound by <@finder-1>");
+    expect(t).toMatch(/⏳ Voting · closes <t:\d+:R> `✅ 1` `❌ 1`/);
+    expect(t).toContain("**✅ Real**\n<@r1>");
+    expect(t).toContain("**❌ Fake**\n<@f1>");
+    expect(labels(fake.lastPayload())).toEqual(["Mark real", "Mark fake", "Finder's quality", "Jump to post"]);
+});
+
+test("local tab: no ballots says so", async () => {
+    const { fake } = await open({ local: local(), network: null });
+    expect(text(fake.lastPayload())).toContain("No votes yet.");
+});
+
+test("local tab: the current result greys out its Mark button", async () => {
+    const { fake } = await open({ local: local(makeVote({ status: VoteStatus.COMMUNITY_FAKE })), network: null });
+    expect(button(fake.lastPayload(), "markFake")?.disabled).toBe(true);
+    expect(button(fake.lastPayload(), "markReal")?.disabled).toBeFalsy();
+});
+
+test("Mark fake asks first, listing what it takes back; Confirm decides and redraws", async () => {
+    const { fake, calls } = await open({ local: local(makeVote({ status: VoteStatus.COMMUNITY_REAL })), network: null });
+    await fake.emit(fake.click("markFake", ADMIN));
+    const ask = text(fake.lastPayload());
+    expect(ask).toContain("**Mark this find fake?**\n**Glitched** by <@finder-1>");
+    expect(ask).toContain("-# Takes back `120 🌱`, `40 XP` and the");
+    expect(calls).toEqual([]);
 
     await fake.emit(fake.click("confirm", ADMIN));
-
-    expect(fake.notifies).toHaveLength(1);
-    expect(fake.notifies[0].content).toBe("This vote was already decided.");
-    expect(text(fake.lastPayload())).not.toContain("(admin)");
+    expect(calls).toEqual([["local", VOTE_ID, ADMIN, VoteChoice.FAKE]]);
+    expect(text(fake.lastPayload())).toContain(`❌ Marked as fake by <@${ADMIN}>`);
 });
 
-test('biomehunt.vote-review: a vote deleted out from under the review notifies "This vote is no longer available."', async () => {
-    const deps = fakeDeps({ adminDecide: async () => ({ kind: "not_found" }) });
+test("Cancel goes back without deciding", async () => {
+    const { fake, calls } = await open({ local: local(), network: null });
+    await fake.emit(fake.click("markReal", ADMIN));
+    expect(text(fake.lastPayload())).toContain("**Mark this find real?**");
+    await fake.emit(fake.click("cancel", ADMIN));
+    expect(calls).toEqual([]);
+    expect(labels(fake.lastPayload())).toContain("Mark real");
+});
+
+test("a lost race notifies", async () => {
+    const world = { data: { local: local(), network: null } as ReviewData };
+    const { deps } = fakeDeps(world, { decideLocal: async () => ({ kind: "already_decided" }) });
     const fake = createFakeViewTransport();
-    void fake.run(voteReviewView(deps), { voteId: VOTE_ID, guildId: GUILD_ID }, ADMIN);
+    void fake.run(voteReviewView(deps), { id: VOTE_ID, guildId: GUILD_ID, viewerId: ADMIN }, ADMIN);
     await fake.flush();
+    await fake.emit(fake.click("markReal", ADMIN));
+    await fake.emit(fake.click("confirm", ADMIN));
+    expect(fake.notifies.at(-1)?.content).toBe("This vote was already decided.");
+});
 
-    await fake.emit(fake.click("deny", ADMIN));
+test("with a Network post: tabs, votes by server, this server's voters, and no Mark buttons for an admin", async () => {
+    const ballots = [
+        netBallot("a", GUILD_ID, VoteChoice.REAL),
+        netBallot("b", GUILD_ID, VoteChoice.REAL),
+        netBallot("c", "g2", VoteChoice.FAKE),
+        netBallot("d", "g2", VoteChoice.REAL),
+    ];
+    const { fake } = await open({ local: local(), network: network(makePost(), ballots) });
+    expect(labels(fake.lastPayload())).toContain("Network");
+    await fake.emit(fake.click("tab:network", ADMIN));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("✅ Marked as real by the Network `✅ 3` `❌ 1`");
+    expect(t).toContain("**Votes by server**\n🏠 **Sol Hunters** `✅ 2` `❌ 0`\n[Glitch Society](https://discord.gg/x) `✅ 1` `❌ 1`");
+    expect(t).toContain("**From this server**\n✅ <@a>, <@b>");
+    expect(labels(fake.lastPayload())).not.toContain("Mark real");
+});
 
-    expect(fake.notifies).toHaveLength(1);
-    expect(fake.notifies[0].content).toBe("This vote is no longer available.");
+test("Network tab: the bot owner can mark it, from a server that only has its Mirror", async () => {
+    const post = makePost({ origin_guild_id: "g2", vote_status: "open", vote_closes_at: new Date(Date.now() + 60_000) });
+    const { fake, calls } = await open({ local: null, network: network(post) }, OWNER_ID, POST_ID);
+    const t = text(fake.lastPayload());
+    expect(t).toContain("From **Sol Hunters**, found by <@finder-1>");
+    expect(t).toMatch(/⏳ Voting · closes <t:\d+:R> `✅ 0` `❌ 0`\nNo votes yet\.$/);
+    await fake.emit(fake.click("markFake", OWNER_ID));
+    await fake.emit(fake.click("confirm", OWNER_ID));
+    expect(calls).toEqual([["network", POST_ID, OWNER_ID, VoteChoice.FAKE]]);
+});
+
+test("Finder's quality opens their member panel; opened from the panel it's a Back button instead", async () => {
+    const { fake, calls } = await open({ local: local(), network: null });
+    await fake.emit(fake.click("finder", ADMIN));
+    expect(calls).toContainEqual(["finder", "finder-1"]);
+    expect(text(fake.lastPayload())).toBe("panel");
+
+    const child = await open({ local: local(), network: null }, ADMIN, VOTE_ID, { back: true });
+    expect(labels(child.fake.lastPayload())).toContain("Back");
+    expect(labels(child.fake.lastPayload())).not.toContain("Finder's quality");
+});
+
+test("takesBackLine lists what a fake verdict takes back", () => {
+    expect(takesBackLine({ seeds: 0, xp: 0, badge: null })).toBe("");
+    expect(takesBackLine({ seeds: 1200, xp: 0, badge: null })).toBe("Takes back `1,200 🌱`.");
+    expect(takesBackLine({ seeds: 5, xp: 3, badge: null })).toBe("Takes back `5 🌱` and `3 XP`.");
 });

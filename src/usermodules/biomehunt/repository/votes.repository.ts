@@ -130,3 +130,26 @@ export async function closeVote(
     );
     return result.rows[0] ?? null;
 }
+
+/** The server's newest rare-find votes. */
+export async function getRecentGuildVotes(guildId: string, limit: number): Promise<BiomeVoteRow[]> {
+    const result = await query<BiomeVoteRow>(`SELECT * FROM bh_biome_votes WHERE guild_id = $1 ORDER BY created_at DESC LIMIT $2`, [
+        guildId,
+        limit,
+    ]);
+    return result.rows;
+}
+
+/** The vote a forward message in `guildId` carries. */
+export async function getVoteByMessage(guildId: string, messageId: string): Promise<BiomeVoteRow | null> {
+    const result = await query<BiomeVoteRow>(`SELECT * FROM bh_biome_votes WHERE guild_id = $1 AND message_id = $2`, [guildId, messageId]);
+    return result.rows[0] ?? null;
+}
+
+/** The newest vote opened on an event - `null` when the find had none. */
+export async function getLatestVoteByEventId(eventId: number): Promise<BiomeVoteRow | null> {
+    const result = await query<BiomeVoteRow>(`SELECT * FROM bh_biome_votes WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1`, [
+        eventId,
+    ]);
+    return result.rows[0] ?? null;
+}

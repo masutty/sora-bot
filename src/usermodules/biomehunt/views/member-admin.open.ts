@@ -25,5 +25,5 @@ export async function openMemberAdmin(ctx: CommandContext, guild: Guild, member:
         return;
     }
     await ctx.defer();
-    await ctx.open(memberAdminView(member, defaultMemberAdminDeps(ctx.client, guild, member)), undefined);
+    await ctx.open(memberAdminView(member, defaultMemberAdminDeps(ctx.client, guild, member, ctx.user.id)), undefined);
 }

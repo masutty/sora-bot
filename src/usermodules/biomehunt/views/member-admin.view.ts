@@ -3,12 +3,14 @@ import type { BotClient } from "@/core/bot-client";
 import { describeCommandError } from "@/core/command/user-facing-error";
 import { confirm, defineView, type HandlerContext, paginationHandlers, type ViewDefinition } from "@/define";
 import { EmbedFormatter, formatTime, NO_PINGS } from "@/utils/format";
+import { Logger } from "@/utils/logging";
 import { getBadgeMeta } from "../constants/badges.constants";
 import { formatBiomeName } from "../constants/biomes.constants";
 import { countSessionsForUser, deleteAllSessionsForUser, getBiomeCountForUser, getBiomeCounts } from "../repository/activity.repository";
 import { getGuildBadgeRoles, getUserBadges } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { insertMemberLog } from "../repository/member-log.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
 import { awardBadge, takeBadge } from "../services/badge.service";
 import { grantEconomy } from "../services/economy.service";
@@ -23,12 +25,30 @@ import {
     unlinkMember,
     unpauseMember,
 } from "../services/member.service";
-import { BiomeHuntError } from "../types";
-import { badgeOnPage, badgePages, biomeCount, editableBiomes, MEMBER_TABS, plural, renderMemberAdmin } from "./member-admin.screens";
+import { loadMemberQuality, type MemberQuality } from "../services/member-quality.service";
+import { BiomeHuntError, type MemberLogEntry } from "../types";
+import {
+    badgeOnPage,
+    badgePages,
+    biomeCount,
+    editableBiomes,
+    MEMBER_TABS,
+    type MemberTab,
+    plural,
+    QUALITY_PER_PAGE,
+    qualityEventOnPage,
+    qualityPages,
+    renderMemberAdmin,
+    reviewIdOf,
+} from "./member-admin.screens";
 import { loadProfileData } from "./profile.view";
 import { canBotAssignRole } from "./role-check";
 import { openSessionFromTab } from "./session.view";
 import { type ProfileData, sessionPages, sessionsOnPage } from "./stats-builders";
+import { reviewDepsFor } from "./vote-review.open";
+import { voteReviewView } from "./vote-review.view";
+
+const logger = new Logger("biomehunt.views.member-admin");
 
 const RED = 0xda373c;
 
@@ -50,6 +70,8 @@ export interface MemberAdminSnapshot {
     sessionTotal: number;
     /** Badge -> the role it gives. */
     badgeRoles: Record<string, string>;
+    /** The Quality tab - `null` when the member has no profile. */
+    quality: MemberQuality | null;
 }
 
 /** What the View needs that would otherwise be a DB/Discord call, injected so its tests never hit any of them. */
@@ -81,6 +103,8 @@ export interface MemberAdminDeps {
     sessionTotal(): Promise<number>;
     deleteSessions(ids: number[]): Promise<number>;
     clearSessions(): Promise<number>;
+    /** The review of a find on the Quality tab, opened as a child with a Back button. */
+    review(): ReturnType<typeof voteReviewView>;
 }
 
 export type MemberAdminInput = undefined;
@@ -90,17 +114,29 @@ export type MemberScreen = "main" | "channel" | "existing" | "biome" | "danger";
 export interface MemberAdminState extends MemberAdminSnapshot {
     tab: string;
     screen: MemberScreen;
-    /** The page of the Badges or Sessions tab. */
+    /** The page of the Badges, Sessions or Quality tab. */
     page: number;
     /** The biome in the editor. */
     biome: string | null;
 }
 
-export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: GuildMember): MemberAdminDeps {
+/**
+ * The real deps. `adminId` is who opened the panel: every change it makes is written to the member's
+ * log (`bh_member_log`) under that admin - a failed log write never undoes or blocks the change.
+ */
+export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: GuildMember, adminId: string): MemberAdminDeps {
     const userId = async () => {
         const user = await getUserByDiscordId(guild.id, member.id);
         if (!user) throw new BiomeHuntError("That user has no profile yet.");
         return user.id;
+    };
+    const log = async (entry: MemberLogEntry) => {
+        await insertMemberLog(guild.id, member.id, adminId, entry).catch((err) =>
+            logger.warn("Could not write the member log", { kind: entry.kind, error: String(err) }),
+        );
+    };
+    const findsChanged = async (biome: string, from: number, to: number) => {
+        if (from !== to) await log({ kind: "finds_changed", detail: { biome, from, to } });
     };
     return {
         load: async () => {
@@ -124,24 +160,34 @@ export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: 
                 deleteAfterS: config.delete_inactive_after_s,
                 sessionTotal: data ? await countSessionsForUser(data.user.id) : 0,
                 badgeRoles: Object.fromEntries(roles.map((r) => [r.badge, r.role_id])),
+                quality: data ? await loadMemberQuality(guild.id, member.id, data.rareFinds) : null,
             };
         },
         pause: async () => {
             await pauseMember(guild.id, member.id);
+            await log({ kind: "auto_delete_paused", detail: {} });
         },
         unpause: async () => {
             await unpauseMember(guild.id, member.id);
+            await log({ kind: "auto_delete_resumed", detail: {} });
         },
         grant: async (seeds, xp) => {
             await grantEconomy(guild.id, member.id, seeds || null, xp || null);
+            await log({ kind: "seeds_xp", detail: { seeds, xp } });
         },
-        setup: (dmUser) => forceSetupMember(client, guild, member, dmUser, null),
+        setup: async (dmUser) => {
+            const text = await forceSetupMember(client, guild, member, dmUser, null);
+            await log({ kind: "channel_set_up", detail: {} });
+            return text;
+        },
         adopt: async (channelId, webhookUrl) => {
             const channel = await guild.channels.fetch(channelId).catch(() => null);
             if (!channel?.isTextBased() || channel.isDMBased() || channel.isThread() || channel.isVoiceBased()) {
                 throw new BiomeHuntError("Pick a text channel.");
             }
-            return forceSetupMember(client, guild, member, false, { channel: channel as never, webhookUrl });
+            const text = await forceSetupMember(client, guild, member, false, { channel: channel as never, webhookUrl });
+            await log({ kind: "channel_set_up", detail: {} });
+            return text;
         },
         stillInGuild: () =>
             guild.members.fetch(member.id).then(
@@ -152,7 +198,10 @@ export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: 
                 },
             ),
         channelName: (channelId) => guild.channels.cache.get(channelId)?.name ?? "channel",
-        unlink: () => unlinkMember(client, guild.id, member.id),
+        unlink: async () => {
+            await unlinkMember(client, guild.id, member.id);
+            await log({ kind: "unlinked", detail: {} });
+        },
         resetPreview: async () => {
             const user = await getUserByDiscordId(guild.id, member.id);
             if (!user) throw new BiomeHuntError("That user has no profile yet.");
@@ -169,26 +218,49 @@ export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: 
                 xp: user.xp,
             };
         },
-        reset: () => resetMemberProgress(guild.id, member.id),
+        reset: async () => {
+            const totals = await resetMemberProgress(guild.id, member.id);
+            await log({ kind: "reset", detail: { ...totals } });
+            return totals;
+        },
         deleteEverything: async () => {
             await deleteMemberEverything(client, guild.id, member.id);
+            await log({ kind: "deleted_everything", detail: {} });
         },
         adjustBiome: async (biome, delta) => {
             const id = await userId();
             const current = await getBiomeCountForUser(id, biome);
-            await setBiomeCount(id, biome, Math.max(0, current + delta));
+            const next = Math.max(0, current + delta);
+            await setBiomeCount(id, biome, next);
+            await findsChanged(biome, current, next);
         },
-        setBiomeCount: async (biome, count) => setBiomeCount(await userId(), biome, count),
+        setBiomeCount: async (biome, count) => {
+            const id = await userId();
+            const current = await getBiomeCountForUser(id, biome);
+            await setBiomeCount(id, biome, count);
+            await findsChanged(biome, current, count);
+        },
         giveBadge: async (badge) => {
             await awardBadge(guild.id, member.id, badge);
+            await log({ kind: "badge_given", detail: { badge } });
         },
         takeBadge: async (badge) => {
             await takeBadge(guild.id, member.id, badge);
+            await log({ kind: "badge_taken", detail: { badge } });
         },
         canAssignRole: (roleId) => canBotAssignRole(guild, roleId),
         sessionTotal: async () => countSessionsForUser(await userId()),
-        deleteSessions: async (ids) => deleteSessions(await userId(), ids),
-        clearSessions: async () => deleteAllSessionsForUser(await userId()),
+        deleteSessions: async (ids) => {
+            const count = await deleteSessions(await userId(), ids);
+            if (count > 0) await log({ kind: "sessions_deleted", detail: { count } });
+            return count;
+        },
+        clearSessions: async () => {
+            const count = await deleteAllSessionsForUser(await userId());
+            if (count > 0) await log({ kind: "sessions_deleted", detail: { count } });
+            return count;
+        },
+        review: () => voteReviewView(reviewDepsFor(client, guild, adminId), { back: true }),
     };
 }
 
@@ -260,14 +332,20 @@ function recreateChoice(channelId: string | null, recreate: (dmUser: boolean) =>
 
 const tabPages = (s: MemberAdminState) => {
     if (!s.data) return 1;
+    if (s.tab === "quality") return qualityPages(s.quality);
     return s.tab === "badges" ? badgePages(s.data) : sessionPages(s.data);
 };
 
 /**
  * `/admin member`: everything an admin does to one member. Opens on the member's profile with an
- * Admin box, and tabs for Biomes, Badges and Sessions; a member with no profile gets the setup buttons.
+ * Admin box (or on `opts.tab`), and tabs for Biomes, Badges, Sessions and Quality; a member with no
+ * profile gets the setup buttons.
  */
-export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): ViewDefinition<MemberAdminState, void, MemberAdminInput> {
+export function memberAdminView(
+    member: GuildMember,
+    deps: MemberAdminDeps,
+    opts: { tab?: MemberTab } = {},
+): ViewDefinition<MemberAdminState, void, MemberAdminInput> {
     const name = member.user.username;
 
     /** Reads the panel again and keeps the page in range. */
@@ -542,6 +620,17 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
         if (cleared) await reload(c.state);
     };
 
+    // --- Quality ---
+
+    /** Opens the review of a find on the Quality tab's page, and reads the panel again once it's closed. */
+    const reviewFind = (slot: number) => async (c: Ctx) => {
+        const event = qualityEventOnPage(c.state.quality, c.state.page, slot);
+        const id = event ? reviewIdOf(event, member.guild.id) : null;
+        if (!id) return;
+        if (!(await attempt(c, () => c.open(deps.review(), { id, guildId: member.guild.id, viewerId: c.user.id })))) return;
+        await reload(c.state);
+    };
+
     // --- Danger zone ---
 
     const unlink = (c: Ctx) =>
@@ -595,7 +684,7 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
 
     return defineView<MemberAdminState, void, MemberAdminInput>({
         name: "biomehunt.member",
-        initial: async () => ({ ...(await deps.load()), tab: "profile", screen: "main", page: 0, biome: null }),
+        initial: async () => ({ ...(await deps.load()), tab: opts.tab ?? "profile", screen: "main", page: 0, biome: null }),
         render: renderMemberAdmin(member),
         on: {
             ...paginationHandlers<MemberAdminState>({ pages: tabPages }),
@@ -649,6 +738,8 @@ export function memberAdminView(member: GuildMember, deps: MemberAdminDeps): Vie
             },
             deleteSessions: deleteChosen,
             clearSessions: clearAll,
+
+            ...Object.fromEntries(Array.from({ length: QUALITY_PER_PAGE }, (_, slot) => [`review:${slot}`, reviewFind(slot)])),
 
             unlink,
             reset,

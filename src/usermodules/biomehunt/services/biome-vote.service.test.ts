@@ -559,7 +559,7 @@ test("vote outcome failure logs an error with the review command", async () => {
         expect(calls.logged).toHaveLength(1);
         expect(calls.logged[0].kind).toBe("error");
         expect(calls.logged[0].title).toBe("🛑 Something broke");
-        expect(calls.logged[0].body).toContain(`/admin review-voting ${vote.id}`);
+        expect(calls.logged[0].body).toContain(`/admin review-vote ${vote.id}`);
     } finally {
         logError.mockRestore();
     }
@@ -600,7 +600,7 @@ test("reward is granted exactly once even if the vote is somehow closed twice", 
     const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
-    // A later admin re-confirmation (e.g. `/admin review-voting`) must not double-grant.
+    // A later admin re-confirmation (e.g. `/admin review-vote`) must not double-grant.
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
 
     expect(calls.grantBiomeReward).toHaveLength(1);

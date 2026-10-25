@@ -253,7 +253,7 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS fake_reported_at TIMESTAMPTZ
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
- * event, which used to cascade away the vote AND its ballots too: /admin review-voting <id> would
+ * event, which used to cascade away the vote AND its ballots too: /admin review-vote <id> would
  * then say "No vote with that id.", and the rejected-find stats derivable from the ballot rows
  * were gone. Now nullable with ON DELETE SET NULL: denying still deletes the event, but the vote
  * and its ballots survive with event_id = NULL - applyOutcome (biome-vote.service.ts) skips any
@@ -650,6 +650,19 @@ BEGIN
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_bh_shop_role_grants_ends ON bh_shop_role_grants (ends_at);
+
+/* What admins did to a member (the member panel's Quality tab history). Keyed by Discord id, not
+   bh_users.id, so it outlives "Delete everything" - a member who comes back keeps their record. */
+CREATE TABLE IF NOT EXISTS bh_member_log (
+    id              BIGSERIAL PRIMARY KEY,
+    guild_id        VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    discord_user_id VARCHAR(20) NOT NULL,
+    kind            VARCHAR(32) NOT NULL,
+    detail          JSONB NOT NULL DEFAULT '{}',
+    by_discord_id   VARCHAR(20),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bh_member_log_member ON bh_member_log (guild_id, discord_user_id, created_at DESC);
 
 `;
 
