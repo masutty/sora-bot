@@ -144,3 +144,34 @@ test("biomehunt.stats-biomes: Members pages 10 finders at a time", async () => {
     await fake.emit(fake.click("next", OWNER));
     expect(text(fake.lastPayload()).match(/<@u\d+>/g)).toHaveLength(2);
 });
+
+test("biomehunt.stats-biomes: History pages every find under its day, and the biome select filters it", async () => {
+    const finds = [
+        ...Array.from({ length: 11 }, (_, i) =>
+            rareFind(`u${i}`, `2026-10-22T${String(20 - i).padStart(2, "0")}:00:00Z`, VoteStatus.COMMUNITY_REAL),
+        ),
+        { ...rareFind("dream", "2026-10-21T10:00:00Z", VoteStatus.ADMIN_DENIED), biome: "DREAMSPACE" },
+    ];
+    const fake = createFakeViewTransport();
+    void fake.run(biomesStatsView, raresInput(finds), OWNER);
+    await fake.flush();
+
+    await fake.emit(fake.click("tab:rares", OWNER));
+    await fake.emit(fake.click("rare-section", OWNER, ["history"]));
+    const first = text(fake.lastPayload());
+    expect(first).toContain("## 💎 Rare History");
+    expect(first.match(/^- /gm)).toHaveLength(10);
+    expect(first).toContain(`**<t:${Date.parse("2026-10-22T20:00:00Z") / 1000}:D>**\n- `);
+
+    await fake.emit(fake.click("next", OWNER));
+    const second = text(fake.lastPayload());
+    expect(second.match(/^- /gm)).toHaveLength(2);
+
+    await fake.emit(fake.click("rare-biome", OWNER, ["DREAMSPACE"]));
+    const filtered = text(fake.lastPayload());
+    expect(filtered).toContain("## 💎 Rare History · ");
+    expect(filtered.match(/^- /gm)).toHaveLength(1);
+
+    await fake.emit(fake.click("rare-biome", OWNER, ["all"]));
+    expect(text(fake.lastPayload()).match(/^- /gm)).toHaveLength(10);
+});

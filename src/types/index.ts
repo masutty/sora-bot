@@ -84,9 +84,10 @@ export interface CommandDefinitionBase {
      * "user" registers the command as a user context-menu entry (right-click a user → Apps → `name`)
      * instead of a slash command - `name` is the label shown there, `description` is unused. It runs
      * through the same guards and `run` as a slash command; the clicked user is `ctx.args.getUser("user")`
-     * / `getMember("user")`. Never available on prefix.
+     * / `getMember("user")`. "message" does the same for a message (right-click a message → Apps →
+     * `name`), read with `ctx.args.getTargetMessageId()`. Never available on prefix.
      */
-    contextMenu?: "user";
+    contextMenu?: "user" | "message";
 
     /**
      * Per-subcommand `modes`, keyed `"sub"`, `"group"` (applies to every sub in it) or `"group:sub"`

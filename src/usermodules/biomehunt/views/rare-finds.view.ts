@@ -48,12 +48,12 @@ export function buildRareFindsPage(
         const session = sessions.find((s) => t >= s.started_at.getTime() && t <= s.ended_at.getTime());
         const header = session ? `**Session** \`#${session.id}\` · <t:${unix(session.started_at)}:D>` : `<t:${unix(f.at)}:D>`;
         const last = groups[groups.length - 1];
-        const lines = formatFindLine(guildId, f).split("\n");
-        if (last?.header === header) last.lines.push(...lines);
-        else groups.push({ header, lines });
+        const line = formatFindLine(guildId, f);
+        if (last?.header === header) last.lines.push(line);
+        else groups.push({ header, lines: [line] });
     }
 
-    const body = groups.map((g) => `${g.header}\n${g.lines.map((l) => `> ${l}`).join("\n")}`).join("\n\n");
+    const body = groups.map((g) => `${g.header}\n${g.lines.join("\n")}`).join("\n\n");
     container.addTextDisplayComponents((td) => td.setContent(`${title}\n${body}`));
     return container;
 }

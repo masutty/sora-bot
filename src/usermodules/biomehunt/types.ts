@@ -164,7 +164,7 @@ export interface BiomeDelayedForwardRow extends BiomeForwardRow {
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later
- * via `/admin review-voting`, re-editing the forward message again with the new outcome.
+ * via `/admin review-vote`, re-editing the forward message again with the new outcome.
  * `NO_VOTES` and `TIE` are distinct: 0×0 is "no votes", not a tie - a tie requires at least one
  * vote on each side.
  */
@@ -453,3 +453,27 @@ export type ShopItemFields = Pick<
     ShopItemRow,
     "name" | "description" | "emoji" | "image_url" | "price" | "kind" | "role_id" | "duration_s" | "stock" | "max_per_member"
 >;
+
+/** One thing an admin did to a member (`bh_member_log`), with what it changed. */
+export type MemberLogEntry =
+    | { kind: "seeds_xp"; detail: { seeds: number; xp: number } }
+    | { kind: "badge_given" | "badge_taken"; detail: { badge: string } }
+    | { kind: "finds_changed"; detail: { biome: string; from: number; to: number } }
+    | { kind: "sessions_deleted"; detail: { count: number } }
+    | { kind: "reset"; detail: { sessions: number; finds: number; badges: number; seeds: number; xp: number } }
+    | {
+          kind: "auto_delete_paused" | "auto_delete_resumed" | "channel_set_up" | "unlinked" | "deleted_everything";
+          detail: Record<string, never>;
+      };
+
+export type MemberLogKind = MemberLogEntry["kind"];
+
+export type MemberLogRow = MemberLogEntry & {
+    /** BIGSERIAL - pg returns it as a string. */
+    id: string;
+    guild_id: string;
+    discord_user_id: string;
+    /** The admin who did it - `null` when the bot did it on its own. */
+    by_discord_id: string | null;
+    created_at: Date;
+};

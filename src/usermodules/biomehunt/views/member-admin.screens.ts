@@ -20,6 +20,14 @@ import {
     getBiomeMeta,
     getEnabledBiomes,
 } from "../constants/biomes.constants";
+import {
+    buildMemberQuality,
+    type FindTally,
+    type MemberQuality,
+    type QualityEvent,
+    type QualityLevel,
+} from "../services/member-quality.service";
+import { type MemberLogRow, VoteStatus } from "../types";
 import type { MemberAdminState } from "./member-admin.view";
 import { formatHours } from "./settings.screens";
 import {
@@ -41,7 +49,13 @@ export const MEMBER_TABS = [
     { key: "biomes", label: "Biomes" },
     { key: "badges", label: "Badges" },
     { key: "sessions", label: "Sessions" },
+    { key: "quality", label: "Quality" },
 ] as const;
+
+export type MemberTab = (typeof MEMBER_TABS)[number]["key"];
+
+/** History rows per page on the Quality tab. */
+export const QUALITY_PER_PAGE = 5;
 
 const RED = 0xda373c;
 const BLURPLE = 0x5865f2;
@@ -207,6 +221,153 @@ function sessionRows(s: MemberAdminState, data: ProfileData, kit: RenderKit): Ac
     return rows;
 }
 
+// --- Quality tab ---
+
+const LEVEL_STYLE: Record<QualityLevel, { color: number; label: string }> = {
+    none: { color: 0x80848e, label: "⚪ **No record yet**" },
+    trusted: { color: 0x3ba55d, label: "🟢 **Trusted**" },
+    watch: { color: 0xf0b232, label: "🟡 **Keep an eye on**" },
+    untrusted: { color: RED, label: "🔴 **Not trusted**" },
+};
+
+export const qualityPages = (q: MemberQuality | null) => Math.max(Math.ceil((q?.history.length ?? 0) / QUALITY_PER_PAGE), 1);
+
+export function qualityEventOnPage(q: MemberQuality | null, page: number, slot: number): QualityEvent | undefined {
+    return q?.history[page * QUALITY_PER_PAGE + slot];
+}
+
+/** What a History row's Review opens - a local find's vote, or a Network find of this server. `null` = nothing to review. */
+export function reviewIdOf(event: QualityEvent, guildId: string): string | null {
+    if (event.type === "local") return event.find.vote?.id ?? null;
+    if (event.type === "network") return event.post.origin_guild_id === guildId ? event.post.id : null;
+    return null;
+}
+
+const by = (id: string | null) => (id ? ` by <@${id}>` : "");
+
+/** A signed amount: `+500 Seeds` / `-20 XP`. */
+const signed = (n: number, unit: string) => `${n > 0 ? "+" : ""}${num(n)} ${unit}`;
+
+/** One logged admin action as its History line. */
+function logLine(row: MemberLogRow): string {
+    switch (row.kind) {
+        case "seeds_xp": {
+            const parts = [row.detail.seeds ? signed(row.detail.seeds, "Seeds") : null, row.detail.xp ? signed(row.detail.xp, "XP") : null];
+            return `🌱 **${parts.filter(Boolean).join(", ")}**${by(row.by_discord_id)}`;
+        }
+        case "badge_given":
+            return `🏅 **${getBadgeMeta(row.detail.badge).display}** badge given${by(row.by_discord_id)}`;
+        case "badge_taken":
+            return `🏅 **${getBadgeMeta(row.detail.badge).display}** badge taken away${by(row.by_discord_id)}`;
+        case "finds_changed": {
+            const { biome, from, to } = row.detail;
+            const n = Math.abs(to - from);
+            return `${to < from ? "✂️" : "➕"} **${plural(n, `${formatBiomeName(biome)} find`)}** ${to < from ? "removed" : "added"}${by(row.by_discord_id)}`;
+        }
+        case "sessions_deleted":
+            return `🗑️ **${plural(row.detail.count, "session")}** deleted${by(row.by_discord_id)}`;
+        case "reset":
+            return `♻️ **Progress reset**${by(row.by_discord_id)}`;
+        case "auto_delete_paused":
+            return `⏸️ **Auto-delete** paused${by(row.by_discord_id)}`;
+        case "auto_delete_resumed":
+            return `▶️ **Auto-delete** resumed${by(row.by_discord_id)}`;
+        case "channel_set_up":
+            return `📺 **Macro channel** set up${by(row.by_discord_id)}`;
+        case "unlinked":
+            return `🔗 **Unlinked**${by(row.by_discord_id)}`;
+        case "deleted_everything":
+            return `💥 **Profile deleted**${by(row.by_discord_id)}`;
+    }
+}
+
+/** A History row: its line, then the date (and where, for a find) as subtext. */
+export function qualityEventText(event: QualityEvent, guildId: string): string {
+    const date = `<t:${unix(event.at)}:D>`;
+    if (event.type === "local") {
+        const vote = event.find.vote;
+        const biome = `**${formatBiomeName(event.find.biome)}**`;
+        const line =
+            vote?.status === VoteStatus.ADMIN_DENIED
+                ? `❌ ${biome} marked fake${by(vote.decidedBy)}`
+                : `❌ ${biome} voted fake \`✅ ${vote?.real ?? 0}\` \`❌ ${vote?.fake ?? 0}\``;
+        return `${line}\n-# ${date} · this server`;
+    }
+    if (event.type === "network") {
+        const p = event.post;
+        const line = p.vote_decided_by
+            ? `❌ **${formatBiomeName(p.biome)}** marked fake${by(p.vote_decided_by)}`
+            : `❌ **${formatBiomeName(p.biome)}** voted fake by the Network`;
+        return `${line}\n-# ${date} · Network${p.origin_guild_id === guildId ? "" : ` · from ${p.origin_name}`}`;
+    }
+    return `${logLine(event.log)}\n-# ${date}`;
+}
+
+/** `This server \`✅ 21 real\` \`❌ 1 fake\` \`⚖️ 1 tied\`` - tied and voting only when there are some. */
+function tallyLine(label: string, t: FindTally): string {
+    const chips = [
+        `\`✅ ${t.real} real\``,
+        `\`❌ ${t.fake} fake\``,
+        t.tied ? `\`⚖️ ${t.tied} tied\`` : null,
+        t.voting ? `\`⏳ ${t.voting} voting\`` : null,
+    ];
+    return `${label} ${chips.filter(Boolean).join(" ")}`;
+}
+
+const tallyTotal = (t: FindTally) => t.real + t.fake + t.tied + t.voting;
+
+function qualityContainer(member: GuildMember, s: MemberAdminState, q: MemberQuality, kit: RenderKit): ContainerBuilder {
+    const style = LEVEL_STYLE[q.level];
+    const { container, divider } = newContainer(style.color);
+    const decided = q.local.real + q.local.fake + q.network.real + q.network.fake;
+    const fakes = q.local.fake + q.network.fake;
+    const summary =
+        q.level === "none"
+            ? `${style.label} · ${plural(tallyTotal(q.local) + tallyTotal(q.network), "rare find")}`
+            : `${style.label} · ${plural(fakes, "fake")} in ${plural(decided, "rare find")}`;
+    container.addSectionComponents((section) =>
+        section
+            .addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Quality\n${summary}`))
+            .setThumbnailAccessory((t) => t.setURL(member.displayAvatarURL())),
+    );
+    divider();
+    const finds = [
+        tallyTotal(q.local) > 0 ? tallyLine("This server", q.local) : null,
+        tallyTotal(q.network) > 0 ? tallyLine("Network", q.network) : null,
+    ].filter(Boolean);
+    container.addTextDisplayComponents((td) => td.setContent(`**Rare finds**\n${finds.length ? finds.join("\n") : "None yet."}`));
+    const a = q.actions;
+    const actions = [
+        a.sessionsDeleted ? `🗑️ **${num(a.sessionsDeleted)}** ${a.sessionsDeleted === 1 ? "session" : "sessions"} deleted` : null,
+        a.badgesTaken ? `🏅 **${num(a.badgesTaken)}** ${a.badgesTaken === 1 ? "badge" : "badges"} taken` : null,
+        a.findsRemoved ? `✂️ **${num(a.findsRemoved)}** ${a.findsRemoved === 1 ? "find" : "finds"} removed` : null,
+    ].filter(Boolean);
+    if (actions.length > 0) {
+        divider();
+        container.addTextDisplayComponents((td) => td.setContent(`**Admin actions**\n${actions.join(" · ")}`));
+    }
+    divider();
+    if (q.history.length === 0) {
+        container.addTextDisplayComponents((td) => td.setContent("**History**\nNothing yet."));
+        return container;
+    }
+    container.addTextDisplayComponents((td) => td.setContent("**History**"));
+    const guildId = member.guild.id;
+    for (let slot = 0; slot < QUALITY_PER_PAGE; slot++) {
+        const event = qualityEventOnPage(q, s.page, slot);
+        if (!event) break;
+        const text = qualityEventText(event, guildId);
+        if (reviewIdOf(event, guildId))
+            addRow(
+                container,
+                text,
+                kit.button(`review:${slot}`, (b) => b.setLabel("Review")),
+            );
+        else container.addTextDisplayComponents((td) => td.setContent(text));
+    }
+    return container;
+}
+
 // --- Biomes tab ---
 
 function biomeSelectRow(data: ProfileData, kit: RenderKit): ActionRowBuilder<ButtonBuilder> {
@@ -356,6 +517,12 @@ function tabScreen(member: GuildMember, s: MemberAdminState, data: ProfileData, 
         case "sessions":
             parts.push(buildSessionsTabContainer(member, data, s.page, s.sessionTotal), tabRow(s, kit), ...sessionRows(s, data, kit));
             return parts;
+        case "quality": {
+            const quality = s.quality ?? buildMemberQuality([], [], []);
+            parts.push(qualityContainer(member, s, quality, kit), tabRow(s, kit));
+            if (qualityPages(quality) > 1) parts.push(paginationRow(kit, s.page, qualityPages(quality)));
+            return parts;
+        }
         default:
             parts.push(buildProfileTabContainer(member, data), adminBox(s, data, kit), tabRow(s, kit));
             return parts;

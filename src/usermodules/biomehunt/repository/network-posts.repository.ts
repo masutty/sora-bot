@@ -253,3 +253,46 @@ export async function getNetworkStats(since: Date): Promise<NetworkStatsRow> {
         banned_users: Number(row.banned_users),
     };
 }
+
+/** A member's real Network posts (tests left out), newest first - from every origin server. */
+export async function getNetworkPostsByFinder(discordUserId: string): Promise<NetworkPostRow[]> {
+    const result = await query<NetworkPostRow>(
+        `SELECT * FROM bh_network_posts
+         WHERE finder_discord_id = $1 AND NOT simulated AND status IN ('published', 'publishing')
+         ORDER BY created_at DESC`,
+        [discordUserId],
+    );
+    return result.rows;
+}
+
+/** The real Network post made from a local find's event - `null` when it never reached the Network. */
+export async function getNetworkPostByEventId(eventId: number): Promise<NetworkPostRow | null> {
+    const result = await query<NetworkPostRow>(
+        `SELECT * FROM bh_network_posts
+         WHERE event_id = $1 AND NOT simulated AND status IN ('published', 'publishing')
+         ORDER BY created_at DESC LIMIT 1`,
+        [eventId],
+    );
+    return result.rows[0] ?? null;
+}
+
+/** The newest real Network posts that have a Mirror in `guildId`. */
+export async function getRecentNetworkPostsInGuild(guildId: string, limit: number): Promise<NetworkPostRow[]> {
+    const result = await query<NetworkPostRow>(
+        `SELECT p.* FROM bh_network_posts p
+         JOIN bh_network_mirrors m ON m.post_id = p.id AND m.guild_id = $1
+         WHERE NOT p.simulated
+         ORDER BY p.created_at DESC LIMIT $2`,
+        [guildId, limit],
+    );
+    return result.rows;
+}
+
+/** The post a Mirror message in `guildId` belongs to. */
+export async function getNetworkPostIdByMirrorMessage(guildId: string, messageId: string): Promise<string | null> {
+    const result = await query<{ post_id: string }>(`SELECT post_id FROM bh_network_mirrors WHERE guild_id = $1 AND message_id = $2`, [
+        guildId,
+        messageId,
+    ]);
+    return result.rows[0]?.post_id ?? null;
+}

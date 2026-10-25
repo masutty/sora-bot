@@ -2,7 +2,7 @@ import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
 import type { RenderKit } from "@/core/view/view";
 import { paginationRow } from "@/define";
 import { formatCodeblock, formatTime, unix } from "@/utils/format";
-import { formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeAnsiColor, getBiomesByCategory } from "../constants/biomes.constants";
 import { biomeTitle, formatFindLine } from "../services/rare-finds.service";
 import {
     findsInPeriod,
@@ -17,7 +17,7 @@ import {
 } from "../services/rare-stats.service";
 import { VoteStatus } from "../types";
 
-export type RareSection = "overview" | "quality" | "members" | "pace" | "records";
+export type RareSection = "overview" | "quality" | "members" | "pace" | "records" | "history";
 
 const SECTIONS: Array<{ key: RareSection; label: string; title: string }> = [
     { key: "overview", label: "Overview", title: "Rare Finds" },
@@ -25,6 +25,7 @@ const SECTIONS: Array<{ key: RareSection; label: string; title: string }> = [
     { key: "members", label: "Members", title: "Rare Finders" },
     { key: "pace", label: "Pace", title: "Rare Pace" },
     { key: "records", label: "Records", title: "Rare Records" },
+    { key: "history", label: "History", title: "Rare History" },
 ];
 
 const PERIODS: Array<{ key: RarePeriod; label: string; empty: string }> = [
@@ -34,6 +35,12 @@ const PERIODS: Array<{ key: RarePeriod; label: string; empty: string }> = [
 ];
 
 export const RARE_MEMBERS_PER_PAGE = 10;
+export const RARE_HISTORY_PER_PAGE = 10;
+
+const DAY_MS = 86_400_000;
+
+/** The History section's biome select value for no filter. */
+export const ALL_RARE_BIOMES = "all";
 
 const ANSI_RESET = "\u001b[0m";
 const ANSI_YELLOW = "\u001b[33m";
@@ -63,8 +70,8 @@ function overviewBlocks(data: RareStatsData, period: RarePeriod): Blocks {
         const lines = o.top.map((t, i) => [`**${i + 1}.** <@${t.discordUserId}>`, `\`${t.count}\``, t.emojis].filter(Boolean).join(" · "));
         blocks.push(`**Top finders**\n${quote(lines)}`);
     }
-    const latest = o.latest.flatMap((f) => formatFindLine(data.guildId, f, { finderId: f.discordUserId, time: "R" }).split("\n"));
-    blocks.push(`**Latest**\n${quote(latest)}`);
+    const latest = o.latest.map((f) => formatFindLine(data.guildId, f, { finderId: f.discordUserId, time: "R" }));
+    blocks.push(`**Latest**\n${latest.join("\n")}`);
     return blocks;
 }
 
@@ -172,11 +179,44 @@ function recordsBlocks(data: RareStatsData, period: RarePeriod): Blocks {
     return [lines.length > 0 ? quote(lines) : "No records yet."];
 }
 
+/** The period's finds of one biome - every rare biome when `biome` is `null`. */
+function historyFinds(data: RareStatsData, period: RarePeriod, biome: string | null) {
+    const finds = findsInPeriod(data, period);
+    return biome ? finds.filter((f) => f.biome === biome) : finds;
+}
+
+export function rareHistoryPageCount(data: RareStatsData, period: RarePeriod, biome: string | null): number {
+    return Math.max(1, Math.ceil(historyFinds(data, period, biome).length / RARE_HISTORY_PER_PAGE));
+}
+
+/** One page of every rare find, newest first, under a bold date line per (UTC) day. */
+function historyBlocks(data: RareStatsData, period: RarePeriod, page: number, biome: string | null): Blocks {
+    const finds = historyFinds(data, period, biome);
+    if (finds.length === 0) return [`No ${biome ? biomeTitle(biome) : "rare"} finds in this period.`];
+    const slice = finds.slice(page * RARE_HISTORY_PER_PAGE, (page + 1) * RARE_HISTORY_PER_PAGE);
+    const days: Array<{ day: number; at: Date; lines: string[] }> = [];
+    for (const f of slice) {
+        const day = Math.floor(f.at.getTime() / DAY_MS);
+        const line = formatFindLine(data.guildId, f, { finderId: f.discordUserId });
+        const last = days[days.length - 1];
+        if (last?.day === day) last.lines.push(line);
+        else days.push({ day, at: f.at, lines: [line] });
+    }
+    return [days.map((d) => `**<t:${unix(d.at)}:D>**\n${d.lines.join("\n")}`).join("\n\n")];
+}
+
 /** The Rares tab's container: the section's title, then its blocks split by dividers. */
-export function buildRareSection(data: RareStatsData, section: RareSection, period: RarePeriod, page: number): ContainerBuilder {
+export function buildRareSection(
+    data: RareStatsData,
+    section: RareSection,
+    period: RarePeriod,
+    page: number,
+    biome: string | null = null,
+): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
     const title = SECTIONS.find((s) => s.key === section)?.title ?? "Rare Finds";
-    container.addTextDisplayComponents((td) => td.setContent(`## 💎 ${title}`));
+    const filter = section === "history" && biome ? ` · ${biomeTitle(biome)}` : "";
+    container.addTextDisplayComponents((td) => td.setContent(`## 💎 ${title}${filter}`));
     const empty = findsInPeriod(data, period).length === 0;
     const blocks = empty
         ? [PERIODS.find((p) => p.key === period)?.empty ?? ""]
@@ -186,6 +226,7 @@ export function buildRareSection(data: RareStatsData, section: RareSection, peri
               members: () => membersBlocks(data, period, page),
               pace: () => paceBlocks(data, period),
               records: () => recordsBlocks(data, period),
+              history: () => historyBlocks(data, period, page, biome),
           }[section]();
     for (const block of blocks) {
         container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -194,9 +235,24 @@ export function buildRareSection(data: RareStatsData, section: RareSection, peri
     return container;
 }
 
-/** The section and period selects - plus the page row on Members when it has more than one page. */
-export function rareControlRows(kit: RenderKit, data: RareStatsData, section: RareSection, period: RarePeriod, page: number) {
-    const pages = section === "members" ? rareMembersPageCount(data, period) : 1;
+/** Pages of the section - only Members and History have more than one. */
+export function rarePageCount(data: RareStatsData, section: RareSection, period: RarePeriod, biome: string | null): number {
+    if (section === "members") return rareMembersPageCount(data, period);
+    if (section === "history") return rareHistoryPageCount(data, period, biome);
+    return 1;
+}
+
+/** The section and period selects - plus the page row when the section has more than one page, and the biome select on History. */
+export function rareControlRows(
+    kit: RenderKit,
+    data: RareStatsData,
+    section: RareSection,
+    period: RarePeriod,
+    page: number,
+    biome: string | null = null,
+) {
+    const pages = rarePageCount(data, section, period, biome);
+    const biomes = getBiomesByCategory("rare").slice(0, 24);
     return [
         ...(pages > 1 ? [paginationRow(kit, page, pages)] : []),
         kit.row(
@@ -209,5 +265,17 @@ export function rareControlRows(kit: RenderKit, data: RareStatsData, section: Ra
                 s.addOptions(PERIODS.map((x) => ({ label: x.label, value: x.key, default: x.key === period }))),
             ),
         ),
+        ...(section === "history"
+            ? [
+                  kit.row(
+                      kit.stringSelect("rare-biome", (s) =>
+                          s.addOptions([
+                              { label: "All rare biomes", value: ALL_RARE_BIOMES, default: biome === null },
+                              ...biomes.map((b) => ({ label: formatBiomeName(b), value: b, default: b === biome })),
+                          ]),
+                      ),
+                  ),
+              ]
+            : []),
     ];
 }

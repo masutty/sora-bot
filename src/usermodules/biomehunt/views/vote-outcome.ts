@@ -18,7 +18,7 @@ export interface VoteOutcome {
 
 /**
  * The one line saying how a closed vote ended - shared by the forward post, the Network Mirror and
- * `/admin review-voting`, so the three never word an outcome differently.
+ * `/admin review-vote`, so the three never word an outcome differently.
  */
 export function voteOutcomeLine(o: VoteOutcome): string {
     const chips = ` \`✅ ${o.tally.real}\` \`❌ ${o.tally.fake}\``;

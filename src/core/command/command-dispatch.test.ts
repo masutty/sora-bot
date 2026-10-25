@@ -53,6 +53,14 @@ describe("user context menu", () => {
     });
 });
 
+describe("message context menu", () => {
+    test("registers as a message command with just its name", () => {
+        const menu = { name: "Review vote", description: "", contextMenu: "message", run: noop } as CommandDefinition;
+        expect(buildSlashJson(menu)).toEqual({ type: 3, name: "Review vote" });
+        expect(isAllowed(menu, "prefix", null)).toBe(false);
+    });
+});
+
 describe("selectHandler", () => {
     test("an override for the invoked mode wins over run", () => {
         expect(selectHandler(def({ run: noop, executeAsSlash: noop }), "slash")).toEqual({ kind: "override-slash" });

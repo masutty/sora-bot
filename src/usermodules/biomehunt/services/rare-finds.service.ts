@@ -74,20 +74,19 @@ export function biomeTitle(biome: string): string {
 }
 
 /**
- * One find as `<time> · <emoji> **<Biome>** · <result>` plus a subtext line with its links.
+ * One find as a bullet: `- <emoji> **<Biome>**` (+ the finder's mention), then an indented subtext line with its
+ * result, time and links - the top line stays short so it never wraps, whoever decided the vote.
  * `finderId` adds the finder's mention after the biome; `time` is the timestamp style (`t` = time of day, `R` = relative).
  */
 export function formatFindLine(guildId: string, f: RareFind, opts: { finderId?: string; time?: "t" | "R" } = {}): string {
-    const head = [
-        `<t:${unix(f.at)}:${opts.time ?? "t"}>`,
-        biomeTitle(f.biome),
-        opts.finderId && `<@${opts.finderId}>`,
-        findResultLabel(f.vote),
-    ]
-        .filter(Boolean)
-        .join(" · ");
+    const head = [biomeTitle(f.biome), opts.finderId && `<@${opts.finderId}>`].filter(Boolean).join(" · ");
     const macro = macroLink(guildId, f);
     const forward = forwardLink(guildId, f);
-    const links = [macro && `[Macro message](${macro})`, forward && `[Forward](${forward})`].filter(Boolean);
-    return links.length ? `${head}\n-# ${links.join(" · ")}` : head;
+    const sub = [
+        findResultLabel(f.vote),
+        `<t:${unix(f.at)}:${opts.time ?? "t"}>`,
+        macro && `[Macro message](${macro})`,
+        forward && `[Forward](${forward})`,
+    ].filter(Boolean);
+    return `- ${head}\n  -# ${sub.join(" · ")}`;
 }

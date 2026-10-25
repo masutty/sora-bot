@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
 import type { GuildMember } from "discord.js";
-import { createFakeViewTransport, type ViewPayload } from "@/define";
+import { createFakeViewTransport, defineView, type ViewPayload } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import { getAwardableBadges } from "../constants/badges.constants";
 import type { ResetTotals } from "../services/member.service";
-import type { ActivitySessionRow, UserRow } from "../types";
+import { buildMemberQuality } from "../services/member-quality.service";
+import { type ActivitySessionRow, type MemberLogRow, type NetworkPostRow, type RareFind, type UserRow, VoteStatus } from "../types";
 import { type MemberAdminDeps, type MemberAdminSnapshot, memberAdminView } from "./member-admin.view";
 import type { ProfileData } from "./stats-builders";
 
@@ -54,6 +55,7 @@ const comp = (payload: ViewPayload, key: string): Json => {
 
 const member = {
     id: "u1",
+    guild: { id: "g1" },
     user: { username: "truebnuy" },
     displayAvatarURL: () => "https://example.com/a.png",
 } as unknown as GuildMember;
@@ -108,6 +110,7 @@ const snapshot = (over: Partial<MemberAdminSnapshot> = {}): MemberAdminSnapshot 
     deleteAfterS: 48 * 3600,
     sessionTotal: 12,
     badgeRoles: { GLITCHED: "r1" },
+    quality: buildMemberQuality([], [], []),
     ...over,
 });
 
@@ -142,6 +145,16 @@ function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; can
         sessionTotal: async () => 38,
         deleteSessions: rec("deleteSessions", 2),
         clearSessions: rec("clearSessions", 38),
+        review: () =>
+            defineView<{ id: string }, void, { id: string; guildId: string; viewerId: string }>({
+                name: "test.review",
+                initial: (input) => {
+                    calls.push(["review", input.id, input.guildId, input.viewerId]);
+                    return { id: input.id };
+                },
+                render: (s, kit) => ({ components: [kit.row(kit.button("back", (b) => b.setLabel(`Back from ${s.id}`)))] }),
+                on: { back: (c) => c.done() },
+            }) as never,
     };
     return { deps, calls };
 }
@@ -443,7 +456,7 @@ test("the busiest screens stay within 40 components", async () => {
     });
     const { fake } = await open(snapshot({ data: full, sessionTotal: 40 }));
     expect(countComponents(fake.lastPayload())).toBeLessThanOrEqual(40);
-    for (const tab of ["biomes", "badges", "sessions"]) {
+    for (const tab of ["biomes", "badges", "sessions", "quality"]) {
         await fake.emit(fake.click(`tab:${tab}`, OWNER));
         expect(countComponents(fake.lastPayload())).toBeLessThanOrEqual(40);
     }
@@ -454,4 +467,96 @@ test("a member who left the server gets a notice and nothing is changed", async 
     await fake.emit(fake.click("setupOnly", OWNER));
     expect(fake.notifies.at(-1)?.content).toBe("That user isn't in this server.");
     expect(calls).toEqual([]);
+});
+
+// --- Quality tab ---
+
+const rareFind = (at: string, status: VoteStatus, id: string): RareFind => ({
+    eventId: 1,
+    biome: "GLITCHED",
+    at: new Date(at),
+    macroMessageId: "m",
+    macroChannelId: "c",
+    vote: {
+        id,
+        status,
+        decidedBy: status === VoteStatus.ADMIN_DENIED ? "a1" : null,
+        channelId: "fc",
+        messageId: "fm",
+        jumpLink: "https://j",
+        real: 2,
+        fake: 9,
+    },
+});
+
+const logRow = (at: string, entry: Pick<MemberLogRow, "kind" | "detail">): MemberLogRow =>
+    ({ id: at, guild_id: "g1", discord_user_id: "u1", by_discord_id: "a1", created_at: new Date(at), ...entry }) as MemberLogRow;
+
+const networkPost = (at: string, origin: string): NetworkPostRow =>
+    ({
+        id: "p1",
+        origin_guild_id: origin,
+        origin_name: "Sol Hunters",
+        biome: "GLITCHED",
+        finder_discord_id: "u1",
+        vote_status: "fake",
+        vote_decided_by: null,
+        published_at: new Date(at),
+        created_at: new Date(at),
+        simulated: false,
+    }) as NetworkPostRow;
+
+function qualitySnapshot() {
+    const finds = [
+        rareFind("2026-10-21T10:00:00Z", VoteStatus.COMMUNITY_FAKE, "v1"),
+        rareFind("2026-10-01T10:00:00Z", VoteStatus.COMMUNITY_REAL, "v2"),
+        rareFind("2026-09-20T10:00:00Z", VoteStatus.COMMUNITY_REAL, "v3"),
+    ];
+    const log = [
+        logRow("2026-10-20T10:00:00Z", { kind: "sessions_deleted", detail: { count: 4 } }),
+        logRow("2026-10-19T10:00:00Z", { kind: "badge_taken", detail: { badge: "GLITCHED" } }),
+        logRow("2026-10-18T10:00:00Z", { kind: "seeds_xp", detail: { seeds: -500, xp: 0 } }),
+        logRow("2026-10-12T10:00:00Z", { kind: "finds_changed", detail: { biome: "GLITCHED", from: 5, to: 2 } }),
+        logRow("2026-10-10T10:00:00Z", { kind: "auto_delete_paused", detail: {} }),
+    ];
+    const quality = buildMemberQuality(finds, [networkPost("2026-10-15T10:00:00Z", "other")], log, new Date("2026-10-25T00:00:00Z"));
+    return snapshot({ data: profile({ rareFinds: finds }), quality });
+}
+
+test("Quality tab: level, rare finds, admin action counts and the newest history first", async () => {
+    const { fake } = await open(qualitySnapshot());
+    await fake.emit(fake.click("tab:quality", OWNER));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("## `truebnuy`'s Quality\n🔴 **Not trusted** · 2 fakes in 4 rare finds");
+    expect(t).toContain("This server `✅ 2 real` `❌ 1 fake`");
+    expect(t).toContain("Network `✅ 0 real` `❌ 1 fake`");
+    expect(t).toContain("🗑️ **4** sessions deleted · 🏅 **1** badge taken · ✂️ **3** finds removed");
+    expect(t.indexOf("❌ **Glitched** voted fake `✅ 2` `❌ 9`")).toBeLessThan(t.indexOf("🗑️ **4 sessions** deleted by <@a1>"));
+    expect(t).toContain("❌ **Glitched** voted fake by the Network\n-# <t:");
+    expect(t).toContain("· Network · from Sol Hunters");
+    expect(t).toContain("🌱 **-500 Seeds** by <@a1>");
+    // 7 rows: 5 on page 1, Review only on the local find (the Network one is another server's).
+    expect(labels(fake.lastPayload()).filter((l) => l === "Review")).toHaveLength(1);
+    await fake.emit(fake.click("next", OWNER));
+    const second = text(fake.lastPayload());
+    expect(second).toContain("✂️ **3 Glitched finds** removed by <@a1>");
+    expect(second).toContain("⏸️ **Auto-delete** paused by <@a1>");
+});
+
+test("Quality tab: Review opens the find's vote as a child and comes back to the tab", async () => {
+    const { fake, calls } = await open(qualitySnapshot());
+    await fake.emit(fake.click("tab:quality", OWNER));
+    await fake.emit(fake.click("review:0", OWNER));
+    expect(calls).toContainEqual(["review", "v1", "g1", OWNER]);
+    expect(labels(fake.lastPayload())).toContain("Back from v1");
+    await fake.emit(fake.click("back", OWNER));
+    expect(text(fake.lastPayload())).toContain("'s Quality");
+});
+
+test("opens on the Quality tab when asked", async () => {
+    const { deps } = fakeDeps({ snap: qualitySnapshot() });
+    const fake = createFakeViewTransport();
+    void fake.run(memberAdminView(member, deps, { tab: "quality" }), undefined, OWNER);
+    await fake.flush();
+    expect(text(fake.lastPayload())).toContain("'s Quality");
 });

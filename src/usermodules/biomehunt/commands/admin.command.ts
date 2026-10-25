@@ -16,7 +16,7 @@ import { openMemberAdmin, resolveTargetMember } from "../views/member-admin.open
 import { defaultQuotasDeps, loadQuotasInput, quotasView } from "../views/quotas.view";
 import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
 import { shopAdminView } from "../views/shop-admin.view";
-import { defaultVoteReviewDeps, voteReviewView } from "../views/vote-review.view";
+import { openVoteReview, reviewVoteChoices } from "../views/vote-review.open";
 
 /**
  * Autocomplete for the `badge` option of `badges set` - only the badges a role can be
@@ -59,9 +59,15 @@ export default defineCommand({
         )
         .addSubcommand((s) =>
             s
-                .setName("review-voting")
-                .setDescription("Review a rare-biome vote's voters and, if needed, override its decision.")
-                .addStringOption((o) => o.setName("id").setDescription("Vote id (shown on the forward message)").setRequired(true)),
+                .setName("review-vote")
+                .setDescription("See who voted on a rare find, here and in the Network, and mark it real or fake.")
+                .addStringOption((o) =>
+                    o
+                        .setName("find")
+                        .setDescription("A recent rare find, or the Vote id on its post")
+                        .setRequired(true)
+                        .setAutocomplete(true),
+                ),
         )
         .addSubcommandGroup((g) =>
             g
@@ -85,6 +91,8 @@ export default defineCommand({
 
     async executeAutocomplete(interaction) {
         const focused = interaction.options.getFocused(true);
+        if (focused.name === "find" && interaction.guild)
+            return interaction.respond(await reviewVoteChoices(interaction.guild, focused.value));
         if (focused.name !== "badge") return interaction.respond([]);
         await interaction.respond(badgeAutocompleteChoices(focused.value));
     },
@@ -105,11 +113,8 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "review-voting") {
-            const voteId = ctx.args.getString("id");
-            if (!voteId) throw new BiomeHuntError("Missing required argument: id");
-            await ctx.defer();
-            await ctx.open(voteReviewView(defaultVoteReviewDeps(ctx.client, voteId)), { voteId, guildId: ctx.guild.id });
+        if (routeKey === "review-vote") {
+            await openVoteReview(ctx, ctx.guild, ctx.args.getString("find", true).trim());
             return;
         }
 

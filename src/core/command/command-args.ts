@@ -1,4 +1,12 @@
-import { type ChatInputCommandInteraction, type Guild, type GuildBasedChannel, GuildMember, type Role, type User } from "discord.js";
+import {
+    type ChatInputCommandInteraction,
+    type CommandInteraction,
+    type Guild,
+    type GuildBasedChannel,
+    GuildMember,
+    type Role,
+    type User,
+} from "discord.js";
 import type { PrefixArgs } from "./prefix-args";
 import { UserFacingError } from "./user-facing-error";
 
@@ -34,6 +42,8 @@ export interface CommandArgs {
     getMember(name: string): Promise<GuildMember | null>;
     getChannel(name: string): Promise<GuildBasedChannel | null>;
     getRole(name: string): Promise<Role | null>;
+    /** The message a message context-menu entry was used on - `null` everywhere else. */
+    getTargetMessageId(): string | null;
 }
 
 const NOT_A_MEMBER = "That user isn't a member of this server.";
@@ -142,6 +152,11 @@ export function slashArgs(interaction: ChatInputCommandInteraction): CommandArgs
             if (!role) throw new UserFacingError(UNKNOWN_ROLE);
             return role as Role;
         },
+        // A message context-menu interaction comes through here too (see command-handler.ts).
+        getTargetMessageId: () => {
+            const raw = interaction as unknown as CommandInteraction;
+            return raw.isMessageContextMenuCommand() ? raw.targetId : null;
+        },
     };
     return args as CommandArgs;
 }
@@ -167,6 +182,7 @@ export function prefixArgs(a: PrefixArgs): CommandArgs {
         getMember: (name: string) => entity(name, () => a.getMember(name), NOT_A_MEMBER),
         getChannel: (name: string) => entity(name, () => a.getChannel(name), UNKNOWN_CHANNEL),
         getRole: (name: string) => entity(name, () => a.getRole(name), UNKNOWN_ROLE),
+        getTargetMessageId: () => null,
     };
     return args as CommandArgs;
 }
