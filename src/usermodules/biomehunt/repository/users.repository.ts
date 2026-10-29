@@ -203,7 +203,7 @@ export async function getChannelNameCandidates(): Promise<ChannelNameCandidate[]
 }
 
 /** SQL predicate over an events alias `e`: the find counts - not fake, and its newest vote isn't still open (a find with no vote counts). */
-const COUNTED_FIND_SQL = `${NOT_FAKE_SQL}
+export const COUNTED_FIND_SQL = `${NOT_FAKE_SQL}
            AND NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.event_id = e.id AND v.status = 'open'
                  AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))`;
 

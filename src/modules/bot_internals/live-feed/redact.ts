@@ -40,7 +40,8 @@ const PATTERNS: readonly (readonly [RegExp, string | typeof maskKeyValue])[] = [
     [/https?:\/\/(?:[\w-]+\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks\/\d+\/[\w-]+(?:\/\S*)?/gi, SECRET_MASK],
     // A webhook id and token pasted without the URL.
     [/\b\d{17,20}\/[\w-]{60,}/g, SECRET_MASK],
-    [/\b[a-z][\w+.-]*:\/\/[^\s:@/]*:[^\s@]+@\S*/gi, SECRET_MASK],
+    // The scheme is capped: unbounded, it was rescanned from every word of `a-a-a-...`, quadratically.
+    [/\b[a-z][\w+.-]{0,31}:\/\/[^\s:@/]*:[^\s@]+@\S*/gi, SECRET_MASK],
     [/(?<![\w-])[\w-]{24,}\.[\w-]{6,7}\.[\w-]{10,}/g, SECRET_MASK],
     [/\bBearer\s+[\w.~+/-]+=*/g, `Bearer ${SECRET_MASK}`],
     [/\bBasic\s+[A-Za-z0-9+/]{8,}=*/g, `Basic ${SECRET_MASK}`],

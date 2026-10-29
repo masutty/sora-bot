@@ -49,7 +49,11 @@ test("openMemberAdmin tells the admin when the user is not in this server and op
 
 test("openMemberAdmin defers publicly and opens the panel when the member is present", async () => {
     const { ctx, calls } = fakeCtx();
-    await openMemberAdmin({ ...ctx, client: {} as never, user: { id: "admin" } } as CommandContext, { id: "g1" } as never, fakeMember("1"));
+    await openMemberAdmin(
+        { ...ctx, client: {} as never, user: { id: "admin" } } as unknown as CommandContext,
+        { id: "g1" } as never,
+        fakeMember("1"),
+    );
     expect(calls.map(([k]) => k)).toEqual(["defer", "open"]);
     expect(calls[0]?.[1]).toBeUndefined();
 });

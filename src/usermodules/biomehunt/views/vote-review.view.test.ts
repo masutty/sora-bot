@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createFakeViewTransport, defineView, type ViewPayload } from "@/define";
-import type { BiomeVoteBallotRow, BiomeVoteRow, NetworkBallotRow, NetworkPostRow } from "../types";
+import type { BiomeVoteBallotRow, BiomeVoteRow, NetworkBallotRow, NetworkPostRow, VoteHistoryRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
 import { type ReviewData, takesBackLine, type VoteReviewDeps, voteReviewView } from "./vote-review.view";
 
@@ -79,16 +79,28 @@ function makePost(overrides: Partial<NetworkPostRow> = {}): NetworkPostRow {
     };
 }
 
-const local = (vote = makeVote(), ballots: BiomeVoteBallotRow[] = []) => ({
+const entry = (kind: "local" | "network", from: string, to: string, by: string | null, n = 1): VoteHistoryRow => ({
+    id: String(n),
+    kind,
+    vote_id: kind === "local" ? VOTE_ID : POST_ID,
+    from_status: from,
+    to_status: to,
+    by_discord_id: by,
+    created_at: new Date(1_700_000_000_000 + n * 1000),
+});
+
+const local = (vote = makeVote(), ballots: BiomeVoteBallotRow[] = [], history: VoteHistoryRow[] = []) => ({
     vote,
     ballots,
+    history,
     finderDiscordId: "finder-1",
     rewards: { seeds: 120, xp: 40, badge: "GLITCHED" },
 });
 
-const network = (post = makePost(), ballots: NetworkBallotRow[] = []) => ({
+const network = (post = makePost(), ballots: NetworkBallotRow[] = [], history: VoteHistoryRow[] = []) => ({
     post,
     ballots,
+    history,
     servers: [
         { guildId: GUILD_ID, name: "Sol Hunters", inviteUrl: null, real: 2, fake: 0 },
         { guildId: "g2", name: "Glitch Society", inviteUrl: "https://discord.gg/x", real: 1, fake: 1 },
@@ -113,6 +125,9 @@ function fakeDeps(world: { data: ReviewData | null }, overrides: Partial<VoteRev
         decideNetwork: async (postId, ownerId, choice) => {
             calls.push(["network", postId, ownerId, choice]);
             return "ok";
+        },
+        markReviewed: async (voteId, status, adminId) => {
+            calls.push(["reviewed", voteId, status, adminId]);
         },
         isOwner: (id) => id === OWNER_ID,
         finderPanel: async (id) => {
@@ -150,7 +165,7 @@ const text = (p: ViewPayload) => [p.content ?? "", ...flatten(p).map((c) => c.co
 const button = (p: ViewPayload, key: string) => flatten(p).find((c) => c.custom_id?.endsWith(`:${key}`));
 const labels = (p: ViewPayload) => flatten(p).flatMap((c) => (c.label ? [c.label] : []));
 
-async function open(data: ReviewData | null, viewer = ADMIN, id = VOTE_ID, opts: { back?: boolean } = {}) {
+async function open(data: ReviewData | null, viewer = ADMIN, id = VOTE_ID, opts: { back?: boolean; queue?: boolean } = {}) {
     const world = { data };
     const { deps, calls } = fakeDeps(world);
     const fake = createFakeViewTransport();
@@ -267,4 +282,51 @@ test("takesBackLine lists what a fake verdict takes back", () => {
     expect(takesBackLine({ seeds: 0, xp: 0, badge: null })).toBe("");
     expect(takesBackLine({ seeds: 1200, xp: 0, badge: null })).toBe("Takes back `1,200 🌱`.");
     expect(takesBackLine({ seeds: 5, xp: 3, badge: null })).toBe("Takes back `5 🌱` and `3 XP`.");
+});
+
+test("local tab: the History block lists 2+ changes oldest first, and is hidden for a single one", async () => {
+    const vote = makeVote({ status: VoteStatus.ADMIN_DENIED, decided_by: "admin-2" });
+    const history = [entry("local", "open", "community_real", null, 1), entry("local", "community_real", "admin_denied", "admin-2", 2)];
+    const { fake } = await open({ local: local(vote, [], history), network: null });
+    const t = text(fake.lastPayload());
+    expect(t).toContain("**History**\n<t:1700000001:R> · Open → Real · the vote\n<t:1700000002:R> · Real → Fake · <@admin-2>");
+
+    const single = await open({ local: local(vote, [], history.slice(0, 1)), network: null });
+    expect(text(single.fake.lastPayload())).not.toContain("History");
+});
+
+test("Network tab: the History block says the Network, and a long history keeps the last 10", async () => {
+    const history = Array.from({ length: 12 }, (_, i) => entry("network", "open", "inconclusive", i === 0 ? null : OWNER_ID, i + 1));
+    const { fake } = await open({ local: null, network: network(makePost(), [], history) }, ADMIN, POST_ID);
+    const t = text(fake.lastPayload());
+    expect(t).toContain("**History**\n+2 earlier\n<t:1700000003:R> · Open → Inconclusive · <@owner-1>");
+    expect(t).not.toContain("<t:1700000002:R>");
+});
+
+test("Looks fine: only from the queue, on a closed vote no admin decided; it records the review and returns", async () => {
+    const plain = await open({ local: local(makeVote({ status: VoteStatus.TIE })), network: null });
+    expect(labels(plain.fake.lastPayload())).not.toContain("Looks fine");
+
+    const voting = await open({ local: local(), network: null }, ADMIN, VOTE_ID, { queue: true });
+    expect(labels(voting.fake.lastPayload())).not.toContain("Looks fine");
+
+    const decided = await open({ local: local(makeVote({ status: VoteStatus.ADMIN_DENIED })), network: null }, ADMIN, VOTE_ID, {
+        queue: true,
+    });
+    expect(labels(decided.fake.lastPayload())).not.toContain("Looks fine");
+
+    const { fake, calls } = await open({ local: local(makeVote({ status: VoteStatus.TIE })), network: null }, ADMIN, VOTE_ID, {
+        back: true,
+        queue: true,
+    });
+    expect(labels(fake.lastPayload())).toEqual(["Mark real", "Mark fake", "Looks fine", "Back", "Jump to post"]);
+    await fake.emit(fake.click("looksFine", ADMIN));
+    expect(calls).toEqual([["reviewed", VOTE_ID, VoteStatus.TIE, ADMIN]]);
+});
+
+test("History: a Looks fine row reads as such", async () => {
+    const vote = makeVote({ status: VoteStatus.TIE });
+    const history = [entry("local", "open", "tie", null, 1), entry("local", "tie", "tie", "admin-2", 2)];
+    const { fake } = await open({ local: local(vote, [], history), network: null });
+    expect(text(fake.lastPayload())).toContain("<t:1700000002:R> · Looks fine · <@admin-2>");
 });

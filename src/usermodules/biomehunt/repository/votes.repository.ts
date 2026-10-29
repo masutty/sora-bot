@@ -153,3 +153,68 @@ export async function getLatestVoteByEventId(eventId: number): Promise<BiomeVote
     ]);
     return result.rows[0] ?? null;
 }
+
+/** One vote in the admin review queue, with what the queue needs to say why it is there. */
+export interface ReviewQueueRow {
+    id: string;
+    biome: string;
+    finderDiscordId: string | null;
+    createdAt: Date;
+    status: VoteStatus;
+    real: number;
+    fake: number;
+    /** An earlier vote of the same finder in this server ended fake. */
+    finderHadFake: boolean;
+}
+
+/**
+ * The server's votes from the last 7 days that closed without an admin's decision and look worth a
+ * second check: a tie, no votes, a verdict won by one ballot, or a finder with an earlier Fake Find.
+ * A vote an admin already looked at (a history row with a `by_discord_id`, e.g. "Looks fine") is
+ * left out. Newest first.
+ */
+export async function getReviewQueue(guildId: string): Promise<ReviewQueueRow[]> {
+    const result = await query<{
+        id: string;
+        biome: string;
+        finder_discord_id: string | null;
+        created_at: Date;
+        status: VoteStatus;
+        real_count: number;
+        fake_count: number;
+        finder_had_fake: boolean;
+    }>(
+        `SELECT q.id, q.biome, q.finder_discord_id, q.created_at, q.status, q.real_count, q.fake_count, q.finder_had_fake
+         FROM (
+             SELECT v.id, v.biome, v.created_at, v.status,
+                    COALESCE(v.finder_discord_id, (SELECT u.discord_user_id FROM bh_users u WHERE u.id = v.finder_user_id)) AS finder_discord_id,
+                    (SELECT COUNT(*) FROM bh_biome_vote_ballots b WHERE b.vote_id = v.id AND b.choice = 'real')::int AS real_count,
+                    (SELECT COUNT(*) FROM bh_biome_vote_ballots b WHERE b.vote_id = v.id AND b.choice = 'fake')::int AS fake_count,
+                    EXISTS (
+                        SELECT 1 FROM bh_biome_votes p
+                        WHERE p.guild_id = v.guild_id AND p.finder_user_id = v.finder_user_id AND p.created_at < v.created_at
+                          AND p.status IN ('community_fake', 'admin_denied')
+                    ) AS finder_had_fake
+             FROM bh_biome_votes v
+             WHERE v.guild_id = $1
+               AND v.created_at > NOW() - INTERVAL '7 days'
+               AND v.status IN ('tie', 'no_votes', 'community_real', 'community_fake')
+               AND NOT EXISTS (
+                   SELECT 1 FROM bh_vote_history h WHERE h.kind = 'local' AND h.vote_id = v.id AND h.by_discord_id IS NOT NULL
+               )
+         ) q
+         WHERE q.status IN ('tie', 'no_votes') OR ABS(q.real_count - q.fake_count) = 1 OR q.finder_had_fake
+         ORDER BY q.created_at DESC`,
+        [guildId],
+    );
+    return result.rows.map((r) => ({
+        id: r.id,
+        biome: r.biome,
+        finderDiscordId: r.finder_discord_id,
+        createdAt: r.created_at,
+        status: r.status,
+        real: r.real_count,
+        fake: r.fake_count,
+        finderHadFake: r.finder_had_fake,
+    }));
+}

@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
+import type { InsertVoteHistoryParams } from "../repository/vote-history.repository";
 import type { BallotWriteResult, BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
 import { adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps } from "./biome-vote.service";
@@ -42,6 +43,7 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         grantBiomeReward: [] as Array<{ guildId: string; userId: number; eventId: number; biome: string }>,
         revertBiomeRewards: [] as Array<{ userId: number; eventIds: number[] }>,
         revokeOrphanedBadges: [] as Array<{ guildId: string; userId: number }>,
+        history: [] as InsertVoteHistoryParams[],
         logged: [] as GuildLogEntry[],
         reported: [] as Array<{ status: VoteStatus; reverted: RevertedRewards }>,
     };
@@ -98,6 +100,9 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
             const updated: BiomeVoteRow = { ...row, status, decided_by: decidedBy, decided_at: new Date() };
             votes.set(voteId, updated);
             return updated;
+        },
+        insertVoteHistory: async (p) => {
+            calls.history.push(p);
         },
         getUserById: async (userId) => users.get(userId) ?? null,
         getRewardsByEventIds: async (eventIds) =>
@@ -421,6 +426,55 @@ test("two concurrent admin decisions on the same vote apply exactly one outcome 
     expect(calls.grantBiomeReward).toHaveLength(0);
 });
 
+// ─── vote history ───────────────────────────────────────────────────────────────────────────────
+
+test("closeDueVotes records open -> result by nobody, and nothing when an admin won the race", async () => {
+    const { deps, calls } = createFakeDeps();
+    const { client } = fakeClient();
+    const vote = await seedOpenVote(deps);
+    await deps.insertBallot(vote.id, "voter-1", VoteChoice.FAKE);
+    await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
+    expect(calls.history).toEqual([{ kind: "local", voteId: vote.id, fromStatus: "open", toStatus: "community_fake", byDiscordId: null }]);
+
+    const raced = createFakeDeps();
+    const racedVote = await seedOpenVote(raced.deps);
+    raced.deps.getBallotsForVote = async () => {
+        await raced.deps.closeVote(racedVote.id, VoteStatus.OPEN, VoteStatus.ADMIN_DENIED, "admin-1");
+        return [];
+    };
+    await closeDueVotes(client, new Date(racedVote.closes_at.getTime() + 1), raced.deps);
+    expect(raced.calls.history).toEqual([]);
+});
+
+test("adminDecide records the status it read -> the new one, by the admin; a lost CAS records nothing", async () => {
+    const { deps, calls } = createFakeDeps();
+    const { client } = fakeClient();
+    const vote = await seedOpenVote(deps);
+    await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
+    await adminDecide(client, vote.id, "admin-2", VoteChoice.FAKE, deps);
+    expect(calls.history.map((h) => [h.fromStatus, h.toStatus, h.byDiscordId])).toEqual([
+        ["open", "admin_confirmed", "admin-1"],
+        ["admin_confirmed", "admin_denied", "admin-2"],
+    ]);
+
+    deps.closeVote = async () => null;
+    await adminDecide(client, vote.id, "admin-3", VoteChoice.REAL, deps);
+    expect(calls.history).toHaveLength(2);
+});
+
+test("a failing history write never undoes the decision", async () => {
+    const { deps } = createFakeDeps();
+    const { client } = fakeClient();
+    const vote = await seedOpenVote(deps);
+    deps.insertVoteHistory = async () => {
+        throw new Error("db down");
+    };
+    expect(await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps)).toEqual({
+        kind: "ok",
+        status: VoteStatus.ADMIN_CONFIRMED,
+    });
+});
+
 // ─── closeDueVotes ──────────────────────────────────────────────────────────────────────────────
 
 test("closeDueVotes resolves an elapsed community_real vote, grants the reward once, and updates the message", async () => {
@@ -522,7 +576,7 @@ test("closeDueVotes renders the tally from a ballot read taken AFTER the close c
     expect(textOfEdit(editCalls[0])).toContain("`✅ 2` `❌ 0`");
 });
 
-test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-review hint, and the vote stays closed", async () => {
+test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-check-vote hint, and the vote stays closed", async () => {
     const logError = spyOn(Logger.prototype, "error").mockImplementation(() => {});
     try {
         const { deps } = createFakeDeps();
@@ -538,7 +592,7 @@ test("applyOutcome failing after the close already committed is logged with the 
         expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.COMMUNITY_REAL); // still closed
         const logged = logError.mock.calls.map((c) => JSON.stringify(c)).join("\n");
         expect(logged).toContain(vote.id);
-        expect(logged).toContain("review");
+        expect(logged).toContain("/admin check-vote");
     } finally {
         logError.mockRestore();
     }
@@ -559,7 +613,7 @@ test("vote outcome failure logs an error with the review command", async () => {
         expect(calls.logged).toHaveLength(1);
         expect(calls.logged[0].kind).toBe("error");
         expect(calls.logged[0].title).toBe("🛑 Something broke");
-        expect(calls.logged[0].body).toContain(`/admin review-vote ${vote.id}`);
+        expect(calls.logged[0].body).toContain(`/admin check-vote ${vote.id}`);
     } finally {
         logError.mockRestore();
     }
@@ -600,7 +654,7 @@ test("reward is granted exactly once even if the vote is somehow closed twice", 
     const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
-    // A later admin re-confirmation (e.g. `/admin review-vote`) must not double-grant.
+    // A later admin re-confirmation (e.g. `/admin check-vote`) must not double-grant.
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
 
     expect(calls.grantBiomeReward).toHaveLength(1);

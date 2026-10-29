@@ -9,9 +9,10 @@ import { getNetworkGuild } from "../repository/network.repository";
 import { getNetworkBallots, getNetworkMirrors, getNetworkPost, getNetworkPostByEventId } from "../repository/network-posts.repository";
 import { countRewardsWithBadge, getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
+import { getVoteHistory, insertVoteHistory } from "../repository/vote-history.repository";
 import { getBallotsForVote, getLatestVoteByEventId, getVoteById } from "../repository/votes.repository";
 import { type AdminDecideResult, adminDecide } from "../services/biome-vote.service";
-import { decideNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
+import { type DecideNetworkVoteResult, decideNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
 import {
     BiomeHuntError,
     type BiomeVoteBallotRow,
@@ -19,6 +20,7 @@ import {
     type NetworkBallotRow,
     type NetworkPostRow,
     VoteChoice,
+    type VoteHistoryRow,
     VoteStatus,
 } from "../types";
 import { serverNameLink } from "./network-mirror.view";
@@ -30,6 +32,8 @@ const GREEN = 0x248046;
 const MAX_MENTIONS = 40;
 /** Servers listed under "Votes by server" before the rest becomes `+N more servers`. */
 const MAX_SERVERS = 10;
+/** History entries listed before the older ones become `+N earlier`. */
+const MAX_HISTORY = 10;
 
 /** What a local find's vote would take back if marked fake. */
 export interface FindRewards {
@@ -44,6 +48,8 @@ export interface LocalSide {
     ballots: BiomeVoteBallotRow[];
     finderDiscordId: string | null;
     rewards: FindRewards;
+    /** Every result change, oldest first. */
+    history: VoteHistoryRow[];
 }
 
 export interface ServerTally {
@@ -61,6 +67,8 @@ export interface NetworkSide {
     servers: ServerTally[];
     /** The Mirror in the viewer's server - `null` when it has none. */
     jumpLink: string | null;
+    /** Every result change, oldest first. */
+    history: VoteHistoryRow[];
 }
 
 export interface ReviewData {
@@ -77,8 +85,10 @@ export interface VoteReviewDeps {
     load(id: string, guildId: string): Promise<ReviewData | null>;
     /** Same CAS/reward semantics as the forward's buttons, message edit included. */
     decideLocal(voteId: string, adminDiscordId: string, choice: VoteChoice): Promise<AdminDecideResult>;
-    /** The bot owner's decision on a Network vote (closes it and edits every Mirror). */
-    decideNetwork(postId: string, ownerId: string, choice: VoteChoice): Promise<"ok" | "already_closed" | "not_found">;
+    /** The bot owner's decision on a Network vote, open or closed (edits every Mirror). */
+    decideNetwork(postId: string, ownerId: string, choice: VoteChoice): Promise<DecideNetworkVoteResult>;
+    /** Records that an admin looked at a closed vote and left it as is (a history row from the status to itself). */
+    markReviewed(voteId: string, status: VoteStatus, adminDiscordId: string): Promise<void>;
     isOwner(discordUserId: string): boolean;
     /** The finder's member panel, opened on Quality - `null` when they aren't in the server. */
     finderPanel(discordUserId: string): Promise<ViewDefinition<unknown, void, undefined> | null>;
@@ -90,9 +100,11 @@ export interface VoteReviewInput {
     guildId: string;
     /** Who opened it - a bot owner also gets Mark real / Mark fake on the Network tab. */
     viewerId: string;
+    /** `network` (`/network check-vote`) opens the Network tab, and fails for a find that never reached the Network. */
+    tab?: Tab;
 }
 
-type Tab = "local" | "network";
+export type Tab = "local" | "network";
 
 interface VoteReviewState extends ReviewData {
     id: string;
@@ -128,6 +140,31 @@ function networkVerdict(post: NetworkPostRow, t: { real: number; fake: number })
     return t.real + t.fake === 0 ? "no_votes" : "tie";
 }
 
+const VERDICT_LABEL: Record<VoteVerdict, string> = { real: "Real", fake: "Fake", tie: "Tie", no_votes: "No votes" };
+
+function localStatusLabel(status: string): string {
+    return status === VoteStatus.OPEN ? "Open" : VERDICT_LABEL[localVoteVerdict(status as Exclude<VoteStatus, VoteStatus.OPEN>)];
+}
+
+function networkStatusLabel(status: string): string {
+    return status === "open" ? "Open" : status === "inconclusive" ? "Inconclusive" : VERDICT_LABEL[status as VoteVerdict];
+}
+
+/**
+ * Who changed the vote's result and when, oldest first - `null` below two entries, since a single one
+ * only repeats the outcome line. Keeps the last `MAX_HISTORY` so it stays under Discord's text limit.
+ */
+function historyBlock(history: VoteHistoryRow[], label: (status: string) => string, ballotsName: string): string | null {
+    if (history.length < 2) return null;
+    const shown = history.slice(-MAX_HISTORY);
+    const lines = shown.map(
+        (h) =>
+            `<t:${unix(h.created_at)}:R> · ${h.from_status === h.to_status ? "Looks fine" : `${label(h.from_status)} → ${label(h.to_status)}`} · ${h.by_discord_id ? `<@${h.by_discord_id}>` : ballotsName}`,
+    );
+    if (history.length > shown.length) lines.unshift(`+${history.length - shown.length} earlier`);
+    return `**History**\n${lines.join("\n")}`;
+}
+
 /** The find's title block: biome name, then who found it (and where, for a find from another server). */
 function header(container: ContainerBuilder, biome: string, line: string): void {
     const text = `## ${formatBiomeName(biome)}\n${line}`;
@@ -159,6 +196,11 @@ function localContainer(side: LocalSide): ContainerBuilder {
         ),
     );
     divider(container);
+    const history = historyBlock(side.history, localStatusLabel, "the vote");
+    if (history) {
+        container.addTextDisplayComponents((td) => td.setContent(history));
+        divider(container);
+    }
     if (ballots.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No votes yet."));
         return container;
@@ -191,6 +233,11 @@ function networkContainer(side: NetworkSide, guildId: string): ContainerBuilder 
         ),
     );
     divider(container);
+    const history = historyBlock(side.history, networkStatusLabel, "the Network");
+    if (history) {
+        container.addTextDisplayComponents((td) => td.setContent(history));
+        divider(container);
+    }
     if (ballots.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No votes yet."));
         return container;
@@ -247,6 +294,13 @@ function confirmContainer(s: VoteReviewState, choice: VoteChoice): ContainerBuil
     return container;
 }
 
+/** Closed by the ballots, no admin decision yet. */
+const isUndecidedClosed = (status: VoteStatus) =>
+    status === VoteStatus.NO_VOTES ||
+    status === VoteStatus.TIE ||
+    status === VoteStatus.COMMUNITY_REAL ||
+    status === VoteStatus.COMMUNITY_FAKE;
+
 /** The current result of the tab's vote - which Mark button is greyed out. */
 function currentChoice(s: VoteReviewState): VoteChoice | null {
     if (s.tab === "local" && s.local) {
@@ -268,15 +322,16 @@ function finderOf(s: VoteReviewState): string | null {
 }
 
 /**
- * `/admin review-vote` (and the "Review vote" message menu): one find's local vote and, when it
- * reached the Network, its Network vote on a second tab. Admins can Mark real / Mark fake the local
- * vote at any time (an early decision, or overriding a closed one) after a confirm step; only a bot
- * owner gets those buttons on the Network tab. `back` is for opening it from the member panel's
- * Quality tab: a Back button instead of "Finder's quality".
+ * `/admin check-vote`, `/network check-vote` and the "Check vote" message menu: one find's local vote
+ * and, when it reached the Network, its Network vote on a second tab. Admins can Mark real / Mark fake
+ * the local vote at any time (an early decision, or overriding a closed one) after a confirm step; only
+ * a bot owner gets those buttons on the Network tab, where they work the same way. `back` is for opening it from the member panel's
+ * Quality tab: a Back button instead of "Finder's quality". `queue` is for opening it from the review
+ * queue: a closed vote no admin decided also gets "Looks fine", which records it as reviewed and returns.
  */
 export function voteReviewView(
     deps: VoteReviewDeps,
-    opts: { back?: boolean } = {},
+    opts: { back?: boolean; queue?: boolean } = {},
 ): ViewDefinition<VoteReviewState, void, VoteReviewInput> {
     async function reload(s: VoteReviewState): Promise<void> {
         const data = await deps.load(s.id, s.guildId);
@@ -301,7 +356,7 @@ export function voteReviewView(
         } else if (s.tab === "network" && s.network && deps.isOwner(c.user.id)) {
             const result = await deps.decideNetwork(s.network.post.id, c.user.id, choice);
             if (result === "not_found") await c.notify("This vote is no longer available.");
-            else if (result === "already_closed") await c.notify("This vote is already closed.");
+            else if (result === "already_decided") await c.notify("This vote was already decided.");
         }
         await reload(s);
     }
@@ -326,6 +381,9 @@ export function voteReviewView(
                 ),
             );
         }
+        if (opts.queue && s.tab === "local" && s.local && isUndecidedClosed(s.local.vote.status)) {
+            buttons.push(kit.button("looksFine", (b) => b.setLabel("Looks fine").setStyle(ButtonStyle.Secondary)));
+        }
         if (opts.back) buttons.push(kit.button("back", (b) => b.setLabel("Back")));
         else if (finderOf(s)) buttons.push(kit.button("finder", (b) => b.setLabel("Finder's quality")));
         const link = jumpLink(s);
@@ -338,8 +396,12 @@ export function voteReviewView(
         initial: async (input) => {
             const data = await deps.load(input.id, input.guildId);
             if (!data || (!data.local && !data.network)) throw new BiomeHuntError("No vote with that id in this server.");
+            if (input.tab === "network" && !data.network) throw new BiomeHuntError("That find didn't reach the Network.");
             const tab: Tab =
-                data.local && (data.local.vote.id === input.id || !data.network || data.network.post.id !== input.id) ? "local" : "network";
+                input.tab ??
+                (data.local && (data.local.vote.id === input.id || !data.network || data.network.post.id !== input.id)
+                    ? "local"
+                    : "network");
             return { ...data, id: input.id, guildId: input.guildId, owner: deps.isOwner(input.viewerId), tab, confirm: null };
         },
         render: (s, kit): ViewPayload => {
@@ -400,6 +462,12 @@ export function voteReviewView(
                 c.state.confirm = null;
             },
             back: (c) => c.done(),
+            looksFine: async (c) => {
+                const vote = c.state.local?.vote;
+                if (c.state.tab !== "local" || !vote || !isUndecidedClosed(vote.status)) return;
+                await deps.markReviewed(vote.id, vote.status, c.user.id);
+                c.done();
+            },
             finder: async (c) => {
                 const finder = finderOf(c.state);
                 if (!finder) return;
@@ -418,8 +486,9 @@ export function voteReviewView(
 // ─── Loading ────────────────────────────────────────────────────────────────
 
 async function loadLocal(vote: BiomeVoteRow): Promise<LocalSide> {
-    const [ballots, finderDiscordId, rewardRows] = await Promise.all([
+    const [ballots, history, finderDiscordId, rewardRows] = await Promise.all([
         getBallotsForVote(vote.id),
+        getVoteHistory("local", vote.id),
         vote.finder_discord_id
             ? Promise.resolve(vote.finder_discord_id)
             : getUserById(vote.finder_user_id).then((u) => u?.discord_user_id ?? null),
@@ -431,11 +500,15 @@ async function loadLocal(vote: BiomeVoteRow): Promise<LocalSide> {
         rewards.xp += r.xp_awarded;
         if (r.badge_awarded && (await countRewardsWithBadge(r.user_id, r.badge_awarded)) <= 1) rewards.badge = r.badge_awarded;
     }
-    return { vote, ballots, finderDiscordId, rewards };
+    return { vote, ballots, finderDiscordId, rewards, history };
 }
 
 async function loadNetwork(client: BotClient, post: NetworkPostRow, guildId: string): Promise<NetworkSide> {
-    const [ballots, mirrors] = await Promise.all([getNetworkBallots(post.id), getNetworkMirrors(post.id)]);
+    const [ballots, mirrors, history] = await Promise.all([
+        getNetworkBallots(post.id),
+        getNetworkMirrors(post.id),
+        getVoteHistory("network", post.id),
+    ]);
     const byGuild = new Map<string, { real: number; fake: number }>();
     for (const b of ballots) {
         const t = byGuild.get(b.guild_id) ?? { real: 0, fake: 0 };
@@ -457,6 +530,7 @@ async function loadNetwork(client: BotClient, post: NetworkPostRow, guildId: str
         post,
         ballots,
         servers,
+        history,
         jumpLink: mirror ? `https://discord.com/channels/${mirror.guild_id}/${mirror.channel_id}/${mirror.message_id}` : null,
     };
 }
@@ -491,6 +565,8 @@ export function defaultVoteReviewDeps(client: BotClient, finderPanel: VoteReview
         load: (id, guildId) => loadReview(client, id, guildId),
         decideLocal: (voteId, adminDiscordId, choice) => adminDecide(client, voteId, adminDiscordId, choice),
         decideNetwork: (postId, ownerId, choice) => decideNetworkVote(postId, ownerId, choice, defaultNetworkVoteDeps(client)),
+        markReviewed: (voteId, status, adminDiscordId) =>
+            insertVoteHistory({ kind: "local", voteId, fromStatus: status, toStatus: status, byDiscordId: adminDiscordId }),
         isOwner: (discordUserId) => config.bot.ownerIds.includes(discordUserId),
         finderPanel,
     };

@@ -62,6 +62,7 @@ function fakeDeps(startingSeeds: number, draws: string[] = ["POPPY", "ROSE_BUSH"
     let seeds = startingSeeds;
     let drawIndex = 0;
     const applyCalls: string[] = [];
+    const recorded: string[] = [];
     const spend = { count: 0 };
     const deps: RerollDeps = {
         spendSeeds: async () => {
@@ -74,10 +75,15 @@ function fakeDeps(startingSeeds: number, draws: string[] = ["POPPY", "ROSE_BUSH"
         applyFlower: async (flower) => {
             applyCalls.push(flower);
         },
+        recordDraw: async (flower) => {
+            const isNew = !recorded.includes(flower);
+            recorded.push(flower);
+            return { isNew };
+        },
         pick: (items) => items[0],
         now: () => 1_000_000_000,
     };
-    return { deps, applyCalls, spend };
+    return { deps, applyCalls, recorded, spend };
 }
 
 function deferred<T>() {
@@ -219,7 +225,7 @@ test("reroll: not enough Seeds on a fresh spend shows the standard error with re
     expect(await resultP).toBeUndefined();
 });
 
-test("reroll: very rare find shows banner, flavor, red button; kept card keeps the banner", async () => {
+test("reroll: very rare find shows banner and flavor; kept card keeps the banner", async () => {
     const { fake, applyCalls } = await open(200, "DANDELION", ["WITHER_ROSE"]);
     await fake.emit(fake.click("confirm", OWNER));
 
@@ -228,7 +234,7 @@ test("reroll: very rare find shows banner, flavor, red button; kept card keeps t
     expect(t).toContain("\u001b[1;33m ★ LEGENDARY FIND ★ \u001b[0m");
     expect(t).toContain("\u001b[33mThis one doesn't grow in just any garden.");
     expect(t).toContain("Legendary · 1 in 33");
-    expect(comp(payload, "again").style).toBe(4);
+    expect(comp(payload, "again").style).toBe(1);
 
     await fake.emit(fake.click("apply", OWNER));
     expect(applyCalls).toEqual(["WITHER_ROSE"]);
@@ -250,40 +256,49 @@ test("reroll: mythical and RNGesus banners use their own tag and flavor color", 
     expect(text(r.fake.lastPayload())).toContain("Rngesus · 1 in 100,000");
 });
 
-test("reroll: Search again on a very rare find asks first - Keep applies it", async () => {
+test("reroll: Search again on a very rare find spends and draws right away", async () => {
     const { fake, applyCalls, spend } = await open(200, "DANDELION", ["WITHER_ROSE", "POPPY"]);
     await fake.emit(fake.click("confirm", OWNER));
-    expect(spend.count).toBe(1);
-    await fake.emit(fake.click("again", OWNER));
-
-    expect(spend.count).toBe(1);
-    const t = text(fake.lastPayload());
-    expect(t).toContain("**Search again and lose your Wither Rose?**");
-    expect(t).toContain(`⏳ Kept ${DEADLINE}\nYou have \`150 🌱\` left.`);
-    expect(t).toContain("LEGENDARY FIND");
-    expect(comp(fake.lastPayload(), "again").style).toBe(4);
-
-    await fake.emit(fake.click("apply", OWNER));
-    expect(applyCalls).toEqual(["WITHER_ROSE"]);
-});
-
-test("reroll: confirming the loss spends and draws a new Flower", async () => {
-    const { fake, applyCalls, spend } = await open(200, "DANDELION", ["WITHER_ROSE", "POPPY"]);
-    await fake.emit(fake.click("confirm", OWNER));
-    await fake.emit(fake.click("again", OWNER));
     await fake.emit(fake.click("again", OWNER));
 
     expect(spend.count).toBe(2);
     const t = text(fake.lastPayload());
     expect(t).toContain("## Poppy");
+    expect(t).not.toContain("lose your");
     expect(t).not.toContain("FIND");
     expect(applyCalls.length).toBe(0);
 });
 
-test("reroll: idle during the loss confirmation still keeps the rare Flower once", async () => {
-    const { fake, applyCalls, resultP } = await open(200, "DANDELION", ["WITHER_ROSE"]);
+test("reroll: every draw is recorded, kept or not", async () => {
+    const { fake, recorded } = await open(200, "DANDELION", ["WITHER_ROSE", "POPPY"]);
     await fake.emit(fake.click("confirm", OWNER));
     await fake.emit(fake.click("again", OWNER));
+    expect(recorded).toEqual(["WITHER_ROSE", "POPPY"]);
+});
+
+test("reroll: the found card says New only on the first time the member got that Flower", async () => {
+    const { fake } = await open(200, "DANDELION", ["POPPY", "POPPY"]);
+    await fake.emit(fake.click("confirm", OWNER));
+    expect(text(fake.lastPayload())).toContain("Common · 1 in 2 · New");
+    await fake.emit(fake.click("again", OWNER));
+    expect(text(fake.lastPayload())).toContain("Common · 1 in 2");
+    expect(text(fake.lastPayload())).not.toContain("New");
+});
+
+test("reroll: a failed record doesn't break the search", async () => {
+    const { fake, deps } = await open(200, "DANDELION", ["POPPY"]);
+    deps.recordDraw = async () => {
+        throw new Error("db down");
+    };
+    await fake.emit(fake.click("confirm", OWNER));
+    const t = text(fake.lastPayload());
+    expect(t).toContain("## Poppy");
+    expect(t).not.toContain("New");
+});
+
+test("reroll: idle on a very rare find still keeps it once", async () => {
+    const { fake, applyCalls, resultP } = await open(200, "DANDELION", ["WITHER_ROSE"]);
+    await fake.emit(fake.click("confirm", OWNER));
     await fake.clock.advance(settings.ui.rerollIdleMs);
 
     expect(await resultP).toBeUndefined();

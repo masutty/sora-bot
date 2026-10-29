@@ -149,6 +149,14 @@ export interface UserBadgeRow {
     awarded_at: Date;
 }
 
+export interface UserFlowerRow {
+    user_id: number;
+    flower: string;
+    times: number;
+    first_at: Date;
+    last_at: Date;
+}
+
 export interface BiomeForwardRow {
     guild_id: string;
     biome: string;
@@ -164,7 +172,7 @@ export interface BiomeDelayedForwardRow extends BiomeForwardRow {
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later
- * via `/admin review-vote`, re-editing the forward message again with the new outcome.
+ * via `/admin check-vote`, re-editing the forward message again with the new outcome.
  * `NO_VOTES` and `TIE` are distinct: 0×0 is "no votes", not a tie - a tie requires at least one
  * vote on each side.
  */
@@ -477,3 +485,21 @@ export type MemberLogRow = MemberLogEntry & {
     by_discord_id: string | null;
     created_at: Date;
 };
+
+/** Which kind of vote a `bh_vote_history` row is about. */
+export type VoteHistoryKind = "local" | "network";
+
+/** One result change of a vote (`bh_vote_history`). */
+export interface VoteHistoryRow {
+    /** BIGSERIAL - pg returns it as a string. */
+    id: string;
+    kind: VoteHistoryKind;
+    /** `bh_biome_votes.id` for `local`, `bh_network_posts.id` for `network`. */
+    vote_id: string;
+    /** A `VoteStatus` for `local`, a Network vote status for `network`. */
+    from_status: string;
+    to_status: string;
+    /** The admin or owner who changed it - `null` when the ballots decided it. */
+    by_discord_id: string | null;
+    created_at: Date;
+}

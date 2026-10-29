@@ -97,6 +97,14 @@ export interface CommandDefinitionBase {
     subcommandModes?: Record<string, CommandModes>;
 
     /**
+     * Subcommands that also exist as top-level commands: `aliases: ["balance"]` on `/bh` adds
+     * `/balance` (and `!balance`), with the subcommand's options, running this command's `run` as
+     * `/bh balance` would. Plain subcommands only. The alias inherits this command's guards and
+     * category, stays out of the help list, and the help shows it next to the subcommand.
+     */
+    aliases?: string[];
+
+    /**
      * Prefix invoked with no or an unknown subcommand: "usage" (default) replies with the
      * auto-generated usage and never calls `run`; "run" calls `run` anyway, with
      * `ctx.args.getSubcommand() === null` (and `getSubcommandGroup()` set for a bare group).

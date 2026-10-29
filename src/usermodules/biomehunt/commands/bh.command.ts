@@ -7,30 +7,83 @@ import { getBalance } from "../services/economy.service";
 import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
 import { buildBalanceReply } from "../views/balance.view";
+import { openHerbariumView } from "../views/herbarium.view";
+import { openLeaderboardView } from "../views/leaderboard.view";
 import { openProfileView } from "../views/profile.view";
 import { openRareFindsView } from "../views/rare-finds.view";
 import { openRerollView } from "../views/reroll.view";
 import { openSessionView } from "../views/session.view";
 import { memberShopView } from "../views/shop.view";
 
-export const PROFILE_DESCRIPTION = "View your hunt profile, or someone else's.";
-export const PROFILE_USER_DESCRIPTION = "Whose profile to view (defaults to yourself)";
-export const REROLL_DESCRIPTION = "Reroll your Flower for 50 Seeds.";
-export const SHOP_DESCRIPTION = "Spend your Seeds in this server's shop.";
-
-/** `/bh profile` and its `/profile` alias. */
-export async function runProfile(ctx: GuildCommandContext): Promise<void> {
+async function runProfile(ctx: GuildCommandContext): Promise<void> {
     // Supplied-but-unresolvable user -> framework error; omitted -> your own profile.
     const target = (await ctx.args.getMember("user")) ?? ctx.member;
     await ctx.defer();
     await openProfileView(ctx, ctx.guild.id, target);
 }
 
-/** `/bh reroll` and its `/reroll` alias. */
-export async function runReroll(ctx: GuildCommandContext): Promise<void> {
+async function runReroll(ctx: GuildCommandContext): Promise<void> {
     await ctx.defer();
     await openRerollView(ctx, ctx.client, ctx.guild.id, ctx.user.id);
 }
+
+async function runHerbarium(ctx: GuildCommandContext): Promise<void> {
+    // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
+    const target = (await ctx.args.getMember("user")) ?? ctx.member;
+    await ctx.defer();
+    await openHerbariumView(ctx, ctx.client, ctx.guild.id, target, ctx.user.id);
+}
+
+async function runBalance(ctx: GuildCommandContext): Promise<void> {
+    // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
+    const target = (await ctx.args.getMember("user")) ?? ctx.member;
+    const balance = await getBalance(ctx.guild.id, target.id);
+    await ctx.reply(buildBalanceReply(target.id, target.id === ctx.user.id, balance));
+}
+
+async function runSession(ctx: GuildCommandContext): Promise<void> {
+    await ctx.defer();
+    await openSessionView(ctx, ctx.guild.id, ctx.args.getInteger("id", true));
+}
+
+async function runRareFinds(ctx: GuildCommandContext): Promise<void> {
+    // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
+    const target = (await ctx.args.getMember("user")) ?? ctx.member;
+    await ctx.defer();
+    await openRareFindsView(ctx, ctx.guild.id, target);
+}
+
+async function runLeaderboard(ctx: GuildCommandContext): Promise<void> {
+    await ctx.defer();
+    await openLeaderboardView(ctx, ctx.guild.id, ctx.user.id);
+}
+
+async function runShop(ctx: GuildCommandContext): Promise<void> {
+    await ctx.defer();
+    // Lazy: the real repositories load only when the shop opens.
+    const { getUserByDiscordId } = await import("../repository/users.repository");
+    const user = await getUserByDiscordId(ctx.guild.id, ctx.user.id);
+    if (!user) {
+        await ctx.reply({
+            ...EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started."),
+            allowedMentions: NO_PINGS,
+        });
+        return;
+    }
+    const { defaultMemberShopDeps } = await import("../services/member-shop-deps.service");
+    await ctx.open(memberShopView(defaultMemberShopDeps(ctx.client, ctx.guild, ctx.member)), { guildId: ctx.guild.id, user });
+}
+
+const HANDLERS: Record<string, (ctx: GuildCommandContext) => Promise<void>> = {
+    profile: runProfile,
+    reroll: runReroll,
+    balance: runBalance,
+    session: runSession,
+    "rare-finds": runRareFinds,
+    herbarium: runHerbarium,
+    shop: runShop,
+    leaderboard: runLeaderboard,
+};
 
 export default defineCommand({
     name: "bh",
@@ -38,17 +91,19 @@ export default defineCommand({
     category: CommandCategory.UTILITY,
     showOnHelp: true,
     guildOnly: true,
+    aliases: ["profile", "reroll", "balance", "session", "rare-finds", "herbarium", "shop", "leaderboard"],
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
         .addSubcommand((sub) =>
             sub
                 .setName("profile")
-                .setDescription(PROFILE_DESCRIPTION)
-                .addUserOption((o) => o.setName("user").setDescription(PROFILE_USER_DESCRIPTION)),
+                .setDescription("View your hunt profile, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose profile to view (defaults to yourself)")),
         )
-        .addSubcommand((sub) => sub.setName("reroll").setDescription(REROLL_DESCRIPTION))
-        .addSubcommand((sub) => sub.setName("shop").setDescription(SHOP_DESCRIPTION))
+        .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds."))
+        .addSubcommand((sub) => sub.setName("shop").setDescription("Spend your Seeds in this server's shop."))
+        .addSubcommand((sub) => sub.setName("leaderboard").setDescription("See who leads this server."))
         .addSubcommand((sub) =>
             sub
                 .setName("session")
@@ -63,62 +118,22 @@ export default defineCommand({
         )
         .addSubcommand((sub) =>
             sub
+                .setName("herbarium")
+                .setDescription("View the Flowers you've collected, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose Herbarium to view (defaults to yourself)")),
+        )
+        .addSubcommand((sub) =>
+            sub
                 .setName("balance")
                 .setDescription("View your Seeds and level, or someone else's.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),
         ),
-    // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
-    // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
-
-        if (sub === "profile") {
-            await runProfile(ctx);
-            return;
-        }
-
-        if (sub === "balance") {
-            // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
-            const target = (await ctx.args.getMember("user")) ?? ctx.member;
-            const balance = await getBalance(ctx.guild.id, target.id);
-            await ctx.reply(buildBalanceReply(target.id, target.id === ctx.user.id, balance));
-            return;
-        }
-
-        if (sub === "session") {
-            await ctx.defer();
-            await openSessionView(ctx, ctx.guild.id, ctx.args.getInteger("id", true));
-            return;
-        }
-
-        if (sub === "rare-finds") {
-            // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
-            const target = (await ctx.args.getMember("user")) ?? ctx.member;
-            await ctx.defer();
-            await openRareFindsView(ctx, ctx.guild.id, target);
-            return;
-        }
-
-        if (sub === "reroll") {
-            await runReroll(ctx);
-            return;
-        }
-
-        if (sub === "shop") {
-            await ctx.defer();
-            // Lazy: the real repositories load only when the shop opens.
-            const { getUserByDiscordId } = await import("../repository/users.repository");
-            const user = await getUserByDiscordId(ctx.guild.id, ctx.user.id);
-            if (!user) {
-                await ctx.reply({
-                    ...EmbedFormatter.info("You don't have a profile yet!\n\nRun `/bh setup` to get started."),
-                    allowedMentions: NO_PINGS,
-                });
-                return;
-            }
-            const { defaultMemberShopDeps } = await import("../services/member-shop-deps.service");
-            await ctx.open(memberShopView(defaultMemberShopDeps(ctx.client, ctx.guild, ctx.member)), { guildId: ctx.guild.id, user });
+        const handler = sub ? HANDLERS[sub] : undefined;
+        if (handler) {
+            await handler(ctx);
             return;
         }
 

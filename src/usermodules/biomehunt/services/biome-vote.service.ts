@@ -7,6 +7,7 @@ import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getBotSetting, setBotSetting } from "../repository/bot-settings.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
+import { insertVoteHistory } from "../repository/vote-history.repository";
 import { closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote } from "../repository/votes.repository";
 import { settings } from "../settings";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
@@ -29,6 +30,7 @@ export interface VoteServiceDeps {
     insertBallot: typeof insertBallot;
     getBallotsForVote: typeof getBallotsForVote;
     closeVote: typeof closeVote;
+    insertVoteHistory: typeof insertVoteHistory;
     getUserById: typeof getUserById;
     getRewardsByEventIds: typeof getRewardsByEventIds;
     grantBiomeReward: typeof grantBiomeReward;
@@ -48,6 +50,7 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         insertBallot,
         getBallotsForVote,
         closeVote,
+        insertVoteHistory,
         getUserById,
         getRewardsByEventIds,
         grantBiomeReward,
@@ -180,9 +183,21 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
     });
 }
 
+/** Records a committed status change; a failed write is logged, never allowed to undo the decision. */
+async function recordChange(vote: BiomeVoteRow, from: VoteStatus, byDiscordId: string | null, deps: VoteServiceDeps): Promise<void> {
+    try {
+        await deps.insertVoteHistory({ kind: "local", voteId: vote.id, fromStatus: from, toStatus: vote.status, byDiscordId });
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)), {
+            voteId: vote.id,
+            note: `Vote ${vote.id} history write failed`,
+        });
+    }
+}
+
 /**
  * Grants the outcome exactly once - `community_real`/`admin_confirmed` grant the reward only if
- * this event doesn't already have one (an admin later re-confirming, e.g. via `/admin review-vote`,
+ * this event doesn't already have one (an admin later re-confirming, e.g. via `/admin check-vote`,
  * must never double-grant); `admin_denied`/`community_fake` revert whatever was granted (safe/no-op
  * if nothing was) - the event is kept but stops counting, and its ledger row is dropped so a later
  * confirm grants again. `no_votes`/`tie` do nothing - the event is kept for a possible later admin review.
@@ -215,7 +230,7 @@ async function applyOutcome(vote: BiomeVoteRow, deps: VoteServiceDeps): Promise<
 /**
  * Applies the outcome, logging (rather than throwing) if it fails - by this point `vote`'s CAS
  * close has ALREADY committed, so a failure here must never look like the vote itself failed to
- * close: it did, just without its grant/revert applied yet. The log line names `/admin review-vote`
+ * close: it did, just without its grant/revert applied yet. The log line names `/admin check-vote`
  * as the recovery path (re-deciding the same way re-applies the outcome, since `applyOutcome` is
  * itself idempotent). A fake/denied outcome that applied is then reported (see `reportFakeFind`).
  */
@@ -226,13 +241,13 @@ async function applyOutcomeSafely(client: BotClient, vote: BiomeVoteRow, deps: V
     } catch (err) {
         logger.error(err instanceof Error ? err : new Error(String(err)), {
             voteId: vote.id,
-            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /admin review-vote ${vote.id}`,
+            note: `Vote ${vote.id} closed as ${vote.status} but its outcome failed to apply - re-apply via /admin check-vote ${vote.id}`,
         });
         const from = vote.finder_discord_id ? ` from <@${vote.finder_discord_id}>` : "";
         await deps.log(client, vote.guild_id, {
             kind: "error",
             title: "🛑 Something broke",
-            body: `**${formatBiomeName(vote.biome)}**${from}: the vote closed as ${vote.status} but its rewards weren't updated. Run \`/admin review-vote ${vote.id}\` to apply them.`,
+            body: `**${formatBiomeName(vote.biome)}**${from}: the vote closed as ${vote.status} but its rewards weren't updated. Run \`/admin check-vote ${vote.id}\` to apply them.`,
         });
     }
     // Outside the try: a report failure is not an outcome failure (and `reportFakeFind` never throws).
@@ -327,7 +342,7 @@ export type AdminDecideResult =
 
 /**
  * An admin's decisive click - real (confirm) or fake (deny), inside OR after the vote's window
- * (an admin overriding a closed vote later, e.g. via `/admin review-vote`, still goes through here).
+ * (an admin overriding a closed vote later, e.g. via `/admin check-vote`, still goes through here).
  * An admin CAN decide on their own find: the admin's word outranks the "no self-vote" rule, which
  * only applies to community ballots (`castBallot`). The close itself is a compare-and-set on the status
  * this call just read (`vote.status`): if another decision (a racing admin click, or
@@ -348,6 +363,7 @@ export async function adminDecide(
     const status = choice === VoteChoice.REAL ? VoteStatus.ADMIN_CONFIRMED : VoteStatus.ADMIN_DENIED;
     const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);
     if (!closed) return { kind: "already_decided" };
+    await recordChange(closed, vote.status, adminDiscordId, deps);
 
     await applyOutcomeSafely(client, closed, deps);
 
@@ -380,6 +396,7 @@ export async function closeDueVotes(
             const status = resolveVote(preCloseBallots);
             const closed = await deps.closeVote(vote.id, VoteStatus.OPEN, status, null);
             if (!closed) continue; // an admin already decided it - don't apply this outcome too
+            await recordChange(closed, VoteStatus.OPEN, null, deps);
 
             await applyOutcomeSafely(client, closed, deps);
 

@@ -17,7 +17,7 @@ import { VoteStatus } from "../types";
 import { localVoteVerdict, voteOutcomeLine } from "./vote-outcome";
 
 export interface VoteRenderInfo {
-    /** Short random code, shown on the message so it can be referenced (e.g. `/admin review-vote`). */
+    /** Short random code, shown on the message so it can be referenced (e.g. `/admin check-vote`). */
     voteId: string;
     status: VoteStatus;
     closesAt: Date;

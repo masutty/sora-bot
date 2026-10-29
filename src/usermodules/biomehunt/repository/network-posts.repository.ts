@@ -154,19 +154,23 @@ export async function getDueOpenNetworkVotes(now: Date): Promise<NetworkPostRow[
     return result.rows;
 }
 
-/** Compare-and-set close: `null` means it was already closed (the worker and an owner raced) - apply nothing. */
-/** `decidedBy` is the bot owner who decided it with a click - `null` when the ballots decided it. */
+/**
+ * Compare-and-set close: `null` means the vote is no longer at `from` (the worker and an owner raced) - apply nothing.
+ * `decidedBy` is the bot owner who decided it - `null` when the ballots decided it. `from` is the status it is
+ * expected at: `open` for a close, the current result for an owner overriding a closed vote.
+ */
 export async function closeNetworkVoteRow(
     id: string,
     status: NetworkVoteStatus,
     closedBy: string | null,
     decidedBy: string | null = null,
+    from: NetworkVoteStatus = "open",
 ): Promise<NetworkPostRow | null> {
     const result = await query<NetworkPostRow>(
         `UPDATE bh_network_posts SET vote_status = $2, vote_closed_by = $3, vote_decided_by = $4
-         WHERE id = $1 AND status = 'published' AND vote_status = 'open'
+         WHERE id = $1 AND status = 'published' AND vote_status = $5
          RETURNING *`,
-        [id, status, closedBy, decidedBy],
+        [id, status, closedBy, decidedBy, from],
     );
     return result.rows[0] ?? null;
 }
@@ -185,6 +189,11 @@ export async function insertNetworkAlert(a: InsertNetworkAlertParams): Promise<v
         `INSERT INTO bh_network_alerts (kind, guild_id, discord_user_id, post_id, details, notified) VALUES ($1, $2, $3, $4, $5, $6)`,
         [a.kind, a.guildId, a.discordUserId, a.postId, a.details, a.notified],
     );
+}
+
+/** Drops a post's alerts of `kind` - a Fake verdict the bot owner overturned no longer counts. */
+export async function deleteNetworkAlertsForPost(kind: NetworkAlertKind, postId: string): Promise<void> {
+    await query(`DELETE FROM bh_network_alerts WHERE kind = $1 AND post_id = $2`, [kind, postId]);
 }
 
 export async function hasNetworkAlert(kind: NetworkAlertKind, discordUserId: string): Promise<boolean> {
@@ -276,12 +285,12 @@ export async function getNetworkPostByEventId(eventId: number): Promise<NetworkP
     return result.rows[0] ?? null;
 }
 
-/** The newest real Network posts that have a Mirror in `guildId`. */
+/** The newest real Network posts `guildId` can see: its own finds, and those with a Mirror there. */
 export async function getRecentNetworkPostsInGuild(guildId: string, limit: number): Promise<NetworkPostRow[]> {
     const result = await query<NetworkPostRow>(
         `SELECT p.* FROM bh_network_posts p
-         JOIN bh_network_mirrors m ON m.post_id = p.id AND m.guild_id = $1
-         WHERE NOT p.simulated
+         WHERE NOT p.simulated AND p.status IN ('published', 'publishing')
+           AND (p.origin_guild_id = $1 OR EXISTS (SELECT 1 FROM bh_network_mirrors m WHERE m.post_id = p.id AND m.guild_id = $1))
          ORDER BY p.created_at DESC LIMIT $2`,
         [guildId, limit],
     );

@@ -183,6 +183,16 @@ CREATE TABLE IF NOT EXISTS bh_user_badges (
     PRIMARY KEY (user_id, badge)
 );
 
+/* Herbarium: every Flower a member has got, with how often and when. Dies with the member's row. */
+CREATE TABLE IF NOT EXISTS bh_user_flowers (
+    user_id  INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    flower   VARCHAR(32) NOT NULL,
+    times    INTEGER NOT NULL DEFAULT 1,
+    first_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, flower)
+);
+
 /* ───────────────────────────────────────────── */
 /* Biome forwards                               */
 /* ───────────────────────────────────────────── */
@@ -253,7 +263,7 @@ ALTER TABLE bh_biome_votes ADD COLUMN IF NOT EXISTS fake_reported_at TIMESTAMPTZ
 
 /*
  * event_id used to be NOT NULL with ON DELETE CASCADE - an admin's deny deletes the underlying
- * event, which used to cascade away the vote AND its ballots too: /admin review-vote <id> would
+ * event, which used to cascade away the vote AND its ballots too: /admin check-vote <id> would
  * then say "No vote with that id.", and the rejected-find stats derivable from the ballot rows
  * were gone. Now nullable with ON DELETE SET NULL: denying still deletes the event, but the vote
  * and its ballots survive with event_id = NULL - applyOutcome (biome-vote.service.ts) skips any
@@ -664,6 +674,20 @@ CREATE TABLE IF NOT EXISTS bh_member_log (
 );
 CREATE INDEX IF NOT EXISTS bh_member_log_member ON bh_member_log (guild_id, discord_user_id, created_at DESC);
 
+/* Every result change of a rare-find vote (local or Network), oldest first on the review screen. No FK:
+   the id points at bh_biome_votes or bh_network_posts depending on kind, and a vote's history stays
+   readable after its row is gone. by_discord_id is null when the ballots decided it. */
+CREATE TABLE IF NOT EXISTS bh_vote_history (
+    id            BIGSERIAL PRIMARY KEY,
+    kind          VARCHAR(8) NOT NULL,
+    vote_id       TEXT NOT NULL,
+    from_status   VARCHAR(20) NOT NULL,
+    to_status     VARCHAR(20) NOT NULL,
+    by_discord_id VARCHAR(20),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bh_vote_history_vote ON bh_vote_history (kind, vote_id, created_at);
+
 `;
 
 /**
@@ -687,4 +711,14 @@ WHERE EXISTS (SELECT 1 FROM bh_biomes b WHERE b.category = 'rare' AND b.enabled)
         )
   )
 ON CONFLICT (user_id, badge) DO NOTHING;
+`;
+
+/**
+ * Puts every member's current Flower in their Herbarium (once) - they had it before the Herbarium
+ * existed. Its own migration, so it runs once: schema changes never re-run it.
+ */
+export const HERBARIUM_BACKFILL = `
+INSERT INTO bh_user_flowers (user_id, flower)
+SELECT id, flower FROM bh_users WHERE flower IS NOT NULL
+ON CONFLICT DO NOTHING;
 `;

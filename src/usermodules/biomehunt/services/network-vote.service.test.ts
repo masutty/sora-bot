@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { MessageCreateOptions, MessageEditOptions } from "discord.js";
 import type { InsertNetworkAlertParams } from "../repository/network-posts.repository";
+import type { InsertVoteHistoryParams } from "../repository/vote-history.repository";
 import {
     type NetworkBallotRow,
     type NetworkGuildRow,
@@ -103,6 +104,8 @@ function createFakeDeps(initial: NetworkPostRow = post(), opts: { bannedUsers?: 
         staff: [] as Array<{ guildId: string; content: string }>,
         ownerDms: [] as MessageCreateOptions[],
         alerts: [] as InsertNetworkAlertParams[],
+        clearedAlerts: [] as Array<{ kind: string; postId: string }>,
+        history: [] as InsertVoteHistoryParams[],
     };
     const deps: NetworkVoteDeps = {
         getNetworkPost: async (id) => (id === current.id ? current : null),
@@ -123,10 +126,13 @@ function createFakeDeps(initial: NetworkPostRow = post(), opts: { bannedUsers?: 
         getNetworkBallots: async () => ballots,
         getDueOpenNetworkVotes: async (now) =>
             current.vote_status === "open" && current.vote_closes_at && current.vote_closes_at <= now ? [current] : [],
-        closeNetworkVoteRow: async (_id, status, closedBy, decidedBy = null) => {
-            if (current.vote_status !== "open") return null;
+        closeNetworkVoteRow: async (_id, status, closedBy, decidedBy = null, from = "open") => {
+            if (current.vote_status !== from) return null;
             current = { ...current, vote_status: status, vote_closed_by: closedBy, vote_decided_by: decidedBy };
             return current;
+        },
+        insertVoteHistory: async (p) => {
+            calls.history.push(p);
         },
         getNetworkMirrors: async () => mirrors,
         editMirror: async (mirror, payload) => {
@@ -140,6 +146,9 @@ function createFakeDeps(initial: NetworkPostRow = post(), opts: { bannedUsers?: 
         },
         insertNetworkAlert: async (a) => {
             calls.alerts.push(a);
+        },
+        deleteNetworkAlertsForPost: async (kind, postId) => {
+            calls.clearedAlerts.push({ kind, postId });
         },
         now: () => clock,
     };
@@ -272,7 +281,48 @@ test("decideNetworkVote: the bot owner's click closes the vote with their choice
     expect(await decideNetworkVote("p1", "owner", FAKE, fake.deps)).toBe("ok");
     expect(fake.current()).toMatchObject({ vote_status: "fake", vote_closed_by: "owner", vote_decided_by: "owner" });
     expect(JSON.stringify(fake.calls.edits[0].payload.components)).toContain("Marked as fake by <@owner>");
-    expect(await decideNetworkVote("p1", "owner", REAL, fake.deps)).toBe("already_closed");
+});
+
+test("decideNetworkVote: the bot owner can change a closed vote, and every Mirror shows the new result", async () => {
+    const fake = createFakeDeps();
+    await castNetworkBallot("p1", "u1", "gB", REAL, false, fake.deps);
+    await closeNetworkVote("p1", null, fake.deps);
+    fake.calls.edits.length = 0;
+    expect(await decideNetworkVote("p1", "owner", FAKE, fake.deps)).toBe("ok");
+    expect(fake.current()).toMatchObject({ vote_status: "fake", vote_decided_by: "owner" });
+    expect(fake.calls.edits).toHaveLength(2);
+    expect(JSON.stringify(fake.calls.edits[0].payload.components)).toContain("Marked as fake by <@owner>");
+});
+
+test("decideNetworkVote: deciding the result it already has changes nothing", async () => {
+    const fake = createFakeDeps();
+    await decideNetworkVote("p1", "owner", FAKE, fake.deps);
+    fake.calls.edits.length = 0;
+    expect(await decideNetworkVote("p1", "owner", FAKE, fake.deps)).toBe("ok");
+    expect(fake.calls.edits).toHaveLength(0);
+    expect(fake.calls.alerts).toHaveLength(1);
+});
+
+test("decideNetworkVote: overturning a Fake verdict drops its alert and tells the origin's staff", async () => {
+    const fake = createFakeDeps();
+    await castNetworkBallot("p1", "u1", "gB", FAKE, false, fake.deps);
+    await closeNetworkVote("p1", null, fake.deps);
+    expect(await decideNetworkVote("p1", "owner", REAL, fake.deps)).toBe("ok");
+    expect(fake.current().vote_status).toBe("real");
+    expect(fake.calls.clearedAlerts).toEqual([{ kind: "fake_verdict", postId: "p1" }]);
+    expect(fake.calls.staff.at(-1)).toMatchObject({ guildId: "gA" });
+    expect(fake.calls.staff.at(-1)?.content).toContain("no longer counts");
+});
+
+test("decideNetworkVote: a decision that lost the race to another one is already_decided", async () => {
+    const fake = createFakeDeps();
+    const close = fake.deps.closeNetworkVoteRow;
+    fake.deps.closeNetworkVoteRow = async (id, status, closedBy, decidedBy, _from) => {
+        await close(id, "real", "other-owner", "other-owner");
+        return close(id, status, closedBy, decidedBy, "open");
+    };
+    expect(await decideNetworkVote("p1", "owner", FAKE, fake.deps)).toBe("already_decided");
+    expect(fake.current()).toMatchObject({ vote_status: "real", vote_decided_by: "other-owner" });
 });
 
 test("decideNetworkVote: a Fake decision warns the origin's staff and records the alert, but DMs no owner", async () => {
@@ -281,4 +331,38 @@ test("decideNetworkVote: a Fake decision warns the origin's staff and records th
     expect(fake.calls.staff[0].content).toContain("The bot owner marked");
     expect(fake.calls.alerts).toHaveLength(1);
     expect(fake.calls.ownerDms).toHaveLength(0);
+});
+
+test("closeNetworkVote records open -> result by whoever closed it; closing twice records once", async () => {
+    const { deps, calls } = createFakeDeps();
+    await closeNetworkVote("p1", null, deps);
+    await closeNetworkVote("p1", "owner-1", deps);
+    expect(calls.history).toEqual([{ kind: "network", voteId: "p1", fromStatus: "open", toStatus: "inconclusive", byDiscordId: null }]);
+
+    const owner = createFakeDeps();
+    await closeNetworkVote("p1", "owner-1", owner.deps);
+    expect(owner.calls.history[0]?.byDiscordId).toBe("owner-1");
+});
+
+test("decideNetworkVote records the status it read -> the new one, by the owner; a lost CAS or a no-op records nothing", async () => {
+    const { deps, calls } = createFakeDeps();
+    await decideNetworkVote("p1", "owner-1", REAL, deps);
+    await decideNetworkVote("p1", "owner-1", FAKE, deps);
+    await decideNetworkVote("p1", "owner-1", FAKE, deps);
+    expect(calls.history.map((h) => [h.fromStatus, h.toStatus, h.byDiscordId])).toEqual([
+        ["open", "real", "owner-1"],
+        ["real", "fake", "owner-1"],
+    ]);
+
+    deps.closeNetworkVoteRow = async () => null;
+    await decideNetworkVote("p1", "owner-2", REAL, deps);
+    expect(calls.history).toHaveLength(2);
+});
+
+test("a failing history write never undoes a Network decision", async () => {
+    const { deps } = createFakeDeps();
+    deps.insertVoteHistory = async () => {
+        throw new Error("db down");
+    };
+    expect(await decideNetworkVote("p1", "owner-1", REAL, deps)).toBe("ok");
 });

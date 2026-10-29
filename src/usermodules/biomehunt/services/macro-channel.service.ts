@@ -18,7 +18,7 @@ import {
 import type { GuildConfigRow } from "../types";
 import { BiomeHuntError } from "../types";
 import { initialChannelName } from "./channel-name.service";
-import { ensureFlower } from "./flower.service";
+import { ensureFlower, recordFlowerSafe } from "./flower.service";
 import { clearLogDedup, describeDiscordError, guildLog } from "./guild-log.service";
 
 const logger = new Logger("biomehunt.services.macro-channel");
@@ -102,7 +102,10 @@ export async function provisionMacroChannel(
 
     const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
     const flower = flowersEnabled ? await ensureFlower(webhook, user.flower, logger) : null;
-    if (flower && !user.flower) await setUserFlower(user.id, flower);
+    if (flower && !user.flower) {
+        await setUserFlower(user.id, flower);
+        await recordFlowerSafe(user.id, flower, logger);
+    }
 
     try {
         await createMacroChannel(user.id, channel.id, webhook.id, encrypt(webhook.url));
@@ -188,7 +191,10 @@ export async function adoptMacroChannel(
 
     const flowersEnabled = await isFlagEnabled(guild.id, "EXPERIMENT_WEBHOOK_FLOWERS");
     const flower = flowersEnabled ? await ensureFlower(webhook, user.flower, logger) : null;
-    if (flower && !user.flower) await setUserFlower(user.id, flower);
+    if (flower && !user.flower) {
+        await setUserFlower(user.id, flower);
+        await recordFlowerSafe(user.id, flower, logger);
+    }
 
     await createMacroChannel(user.id, channel.id, webhookId, encrypt(webhookUrl));
     if (badges) await setNameBadges(user.id, badges);
