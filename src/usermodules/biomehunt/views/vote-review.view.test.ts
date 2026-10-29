@@ -126,6 +126,9 @@ function fakeDeps(world: { data: ReviewData | null }, overrides: Partial<VoteRev
             calls.push(["network", postId, ownerId, choice]);
             return "ok";
         },
+        markReviewed: async (voteId, status, adminId) => {
+            calls.push(["reviewed", voteId, status, adminId]);
+        },
         isOwner: (id) => id === OWNER_ID,
         finderPanel: async (id) => {
             calls.push(["finder", id]);
@@ -162,7 +165,7 @@ const text = (p: ViewPayload) => [p.content ?? "", ...flatten(p).map((c) => c.co
 const button = (p: ViewPayload, key: string) => flatten(p).find((c) => c.custom_id?.endsWith(`:${key}`));
 const labels = (p: ViewPayload) => flatten(p).flatMap((c) => (c.label ? [c.label] : []));
 
-async function open(data: ReviewData | null, viewer = ADMIN, id = VOTE_ID, opts: { back?: boolean } = {}) {
+async function open(data: ReviewData | null, viewer = ADMIN, id = VOTE_ID, opts: { back?: boolean; queue?: boolean } = {}) {
     const world = { data };
     const { deps, calls } = fakeDeps(world);
     const fake = createFakeViewTransport();
@@ -298,4 +301,32 @@ test("Network tab: the History block says the Network, and a long history keeps 
     const t = text(fake.lastPayload());
     expect(t).toContain("**History**\n+2 earlier\n<t:1700000003:R> · Open → Inconclusive · <@owner-1>");
     expect(t).not.toContain("<t:1700000002:R>");
+});
+
+test("Looks fine: only from the queue, on a closed vote no admin decided; it records the review and returns", async () => {
+    const plain = await open({ local: local(makeVote({ status: VoteStatus.TIE })), network: null });
+    expect(labels(plain.fake.lastPayload())).not.toContain("Looks fine");
+
+    const voting = await open({ local: local(), network: null }, ADMIN, VOTE_ID, { queue: true });
+    expect(labels(voting.fake.lastPayload())).not.toContain("Looks fine");
+
+    const decided = await open({ local: local(makeVote({ status: VoteStatus.ADMIN_DENIED })), network: null }, ADMIN, VOTE_ID, {
+        queue: true,
+    });
+    expect(labels(decided.fake.lastPayload())).not.toContain("Looks fine");
+
+    const { fake, calls } = await open({ local: local(makeVote({ status: VoteStatus.TIE })), network: null }, ADMIN, VOTE_ID, {
+        back: true,
+        queue: true,
+    });
+    expect(labels(fake.lastPayload())).toEqual(["Mark real", "Mark fake", "Looks fine", "Back", "Jump to post"]);
+    await fake.emit(fake.click("looksFine", ADMIN));
+    expect(calls).toEqual([["reviewed", VOTE_ID, VoteStatus.TIE, ADMIN]]);
+});
+
+test("History: a Looks fine row reads as such", async () => {
+    const vote = makeVote({ status: VoteStatus.TIE });
+    const history = [entry("local", "open", "tie", null, 1), entry("local", "tie", "tie", "admin-2", 2)];
+    const { fake } = await open({ local: local(vote, [], history), network: null });
+    expect(text(fake.lastPayload())).toContain("<t:1700000002:R> · Looks fine · <@admin-2>");
 });

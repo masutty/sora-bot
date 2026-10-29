@@ -9,7 +9,7 @@ import { getNetworkGuild } from "../repository/network.repository";
 import { getNetworkBallots, getNetworkMirrors, getNetworkPost, getNetworkPostByEventId } from "../repository/network-posts.repository";
 import { countRewardsWithBadge, getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
-import { getVoteHistory } from "../repository/vote-history.repository";
+import { getVoteHistory, insertVoteHistory } from "../repository/vote-history.repository";
 import { getBallotsForVote, getLatestVoteByEventId, getVoteById } from "../repository/votes.repository";
 import { type AdminDecideResult, adminDecide } from "../services/biome-vote.service";
 import { type DecideNetworkVoteResult, decideNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
@@ -87,6 +87,8 @@ export interface VoteReviewDeps {
     decideLocal(voteId: string, adminDiscordId: string, choice: VoteChoice): Promise<AdminDecideResult>;
     /** The bot owner's decision on a Network vote, open or closed (edits every Mirror). */
     decideNetwork(postId: string, ownerId: string, choice: VoteChoice): Promise<DecideNetworkVoteResult>;
+    /** Records that an admin looked at a closed vote and left it as is (a history row from the status to itself). */
+    markReviewed(voteId: string, status: VoteStatus, adminDiscordId: string): Promise<void>;
     isOwner(discordUserId: string): boolean;
     /** The finder's member panel, opened on Quality - `null` when they aren't in the server. */
     finderPanel(discordUserId: string): Promise<ViewDefinition<unknown, void, undefined> | null>;
@@ -157,7 +159,7 @@ function historyBlock(history: VoteHistoryRow[], label: (status: string) => stri
     const shown = history.slice(-MAX_HISTORY);
     const lines = shown.map(
         (h) =>
-            `<t:${unix(h.created_at)}:R> · ${label(h.from_status)} → ${label(h.to_status)} · ${h.by_discord_id ? `<@${h.by_discord_id}>` : ballotsName}`,
+            `<t:${unix(h.created_at)}:R> · ${h.from_status === h.to_status ? "Looks fine" : `${label(h.from_status)} → ${label(h.to_status)}`} · ${h.by_discord_id ? `<@${h.by_discord_id}>` : ballotsName}`,
     );
     if (history.length > shown.length) lines.unshift(`+${history.length - shown.length} earlier`);
     return `**History**\n${lines.join("\n")}`;
@@ -292,6 +294,13 @@ function confirmContainer(s: VoteReviewState, choice: VoteChoice): ContainerBuil
     return container;
 }
 
+/** Closed by the ballots, no admin decision yet. */
+const isUndecidedClosed = (status: VoteStatus) =>
+    status === VoteStatus.NO_VOTES ||
+    status === VoteStatus.TIE ||
+    status === VoteStatus.COMMUNITY_REAL ||
+    status === VoteStatus.COMMUNITY_FAKE;
+
 /** The current result of the tab's vote - which Mark button is greyed out. */
 function currentChoice(s: VoteReviewState): VoteChoice | null {
     if (s.tab === "local" && s.local) {
@@ -317,11 +326,12 @@ function finderOf(s: VoteReviewState): string | null {
  * and, when it reached the Network, its Network vote on a second tab. Admins can Mark real / Mark fake
  * the local vote at any time (an early decision, or overriding a closed one) after a confirm step; only
  * a bot owner gets those buttons on the Network tab, where they work the same way. `back` is for opening it from the member panel's
- * Quality tab: a Back button instead of "Finder's quality".
+ * Quality tab: a Back button instead of "Finder's quality". `queue` is for opening it from the review
+ * queue: a closed vote no admin decided also gets "Looks fine", which records it as reviewed and returns.
  */
 export function voteReviewView(
     deps: VoteReviewDeps,
-    opts: { back?: boolean } = {},
+    opts: { back?: boolean; queue?: boolean } = {},
 ): ViewDefinition<VoteReviewState, void, VoteReviewInput> {
     async function reload(s: VoteReviewState): Promise<void> {
         const data = await deps.load(s.id, s.guildId);
@@ -370,6 +380,9 @@ export function voteReviewView(
                         .setDisabled(current === VoteChoice.FAKE),
                 ),
             );
+        }
+        if (opts.queue && s.tab === "local" && s.local && isUndecidedClosed(s.local.vote.status)) {
+            buttons.push(kit.button("looksFine", (b) => b.setLabel("Looks fine").setStyle(ButtonStyle.Secondary)));
         }
         if (opts.back) buttons.push(kit.button("back", (b) => b.setLabel("Back")));
         else if (finderOf(s)) buttons.push(kit.button("finder", (b) => b.setLabel("Finder's quality")));
@@ -449,6 +462,12 @@ export function voteReviewView(
                 c.state.confirm = null;
             },
             back: (c) => c.done(),
+            looksFine: async (c) => {
+                const vote = c.state.local?.vote;
+                if (c.state.tab !== "local" || !vote || !isUndecidedClosed(vote.status)) return;
+                await deps.markReviewed(vote.id, vote.status, c.user.id);
+                c.done();
+            },
             finder: async (c) => {
                 const finder = finderOf(c.state);
                 if (!finder) return;
@@ -546,6 +565,8 @@ export function defaultVoteReviewDeps(client: BotClient, finderPanel: VoteReview
         load: (id, guildId) => loadReview(client, id, guildId),
         decideLocal: (voteId, adminDiscordId, choice) => adminDecide(client, voteId, adminDiscordId, choice),
         decideNetwork: (postId, ownerId, choice) => decideNetworkVote(postId, ownerId, choice, defaultNetworkVoteDeps(client)),
+        markReviewed: (voteId, status, adminDiscordId) =>
+            insertVoteHistory({ kind: "local", voteId, fromStatus: status, toStatus: status, byDiscordId: adminDiscordId }),
         isOwner: (discordUserId) => config.bot.ownerIds.includes(discordUserId),
         finderPanel,
     };

@@ -16,7 +16,7 @@ import { openMemberAdmin, resolveTargetMember } from "../views/member-admin.open
 import { defaultQuotasDeps, loadQuotasInput, quotasView } from "../views/quotas.view";
 import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
 import { shopAdminView } from "../views/shop-admin.view";
-import { checkVoteChoices, openVoteReview } from "../views/vote-review.open";
+import { checkVoteChoices, openReviewQueue, openVoteReview } from "../views/vote-review.open";
 
 /**
  * Autocomplete for the `badge` option of `badges set` - only the badges a role can be
@@ -60,13 +60,9 @@ export default defineCommand({
         .addSubcommand((s) =>
             s
                 .setName("check-vote")
-                .setDescription("See who voted on a rare find, here and in the Network, and mark it real or fake.")
+                .setDescription("Review recent votes, or see who voted on a rare find and mark it real or fake.")
                 .addStringOption((o) =>
-                    o
-                        .setName("id")
-                        .setDescription("A recent rare find, or the Vote id on its post")
-                        .setRequired(true)
-                        .setAutocomplete(true),
+                    o.setName("id").setDescription("A recent rare find, or the Vote id on its post").setAutocomplete(true),
                 ),
         )
         .addSubcommandGroup((g) =>
@@ -114,7 +110,9 @@ export default defineCommand({
         }
 
         if (routeKey === "check-vote") {
-            await openVoteReview(ctx, ctx.guild, ctx.args.getString("id", true).trim());
+            const id = ctx.args.getString("id")?.trim();
+            if (id) await openVoteReview(ctx, ctx.guild, id);
+            else await openReviewQueue(ctx, ctx.guild);
             return;
         }
 

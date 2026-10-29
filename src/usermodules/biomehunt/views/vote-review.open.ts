@@ -6,6 +6,7 @@ import { getNetworkPostIdByMirrorMessage, getRecentNetworkPostsInGuild } from ".
 import { getRecentGuildVotes, getVoteByMessage } from "../repository/votes.repository";
 import { BiomeHuntError } from "../types";
 import { defaultMemberAdminDeps, memberAdminView } from "./member-admin.view";
+import { defaultReviewQueueDeps, reviewQueueView } from "./review-queue.view";
 import { defaultVoteReviewDeps, type Tab, type VoteReviewDeps, voteReviewView } from "./vote-review.view";
 
 const RECENT = 25;
@@ -23,6 +24,13 @@ export function reviewDepsFor(client: BotClient, guild: Guild, adminId: string):
 export async function openVoteReview(ctx: CommandContext, guild: Guild, id: string, tab?: Tab): Promise<void> {
     await ctx.defer();
     await ctx.open(voteReviewView(reviewDepsFor(ctx.client, guild, ctx.user.id)), { id, guildId: guild.id, viewerId: ctx.user.id, tab });
+}
+
+/** `/admin check-vote` without an id: the server's review queue. */
+export async function openReviewQueue(ctx: CommandContext, guild: Guild): Promise<void> {
+    await ctx.defer();
+    const deps = defaultReviewQueueDeps(reviewDepsFor(ctx.client, guild, ctx.user.id), voteReviewView);
+    await ctx.open(reviewQueueView(deps), { guildId: guild.id, viewerId: ctx.user.id });
 }
 
 /** The vote a forward or Mirror message in `guildId` carries - `null` when it's neither. */
