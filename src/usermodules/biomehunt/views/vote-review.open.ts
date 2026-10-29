@@ -6,7 +6,7 @@ import { getNetworkPostIdByMirrorMessage, getRecentNetworkPostsInGuild } from ".
 import { getRecentGuildVotes, getVoteByMessage } from "../repository/votes.repository";
 import { BiomeHuntError } from "../types";
 import { defaultMemberAdminDeps, memberAdminView } from "./member-admin.view";
-import { defaultVoteReviewDeps, type VoteReviewDeps, voteReviewView } from "./vote-review.view";
+import { defaultVoteReviewDeps, type Tab, type VoteReviewDeps, voteReviewView } from "./vote-review.view";
 
 const RECENT = 25;
 
@@ -19,10 +19,10 @@ export function reviewDepsFor(client: BotClient, guild: Guild, adminId: string):
     });
 }
 
-/** Opens the review of a local vote id or Network post id. Shared by `/admin review-vote` and the "Review vote" message menu. */
-export async function openVoteReview(ctx: CommandContext, guild: Guild, id: string): Promise<void> {
+/** Opens the review of a local vote id or Network post id. Shared by both `check-vote` commands and the "Check vote" message menu. */
+export async function openVoteReview(ctx: CommandContext, guild: Guild, id: string, tab?: Tab): Promise<void> {
     await ctx.defer();
-    await ctx.open(voteReviewView(reviewDepsFor(ctx.client, guild, ctx.user.id)), { id, guildId: guild.id, viewerId: ctx.user.id });
+    await ctx.open(voteReviewView(reviewDepsFor(ctx.client, guild, ctx.user.id)), { id, guildId: guild.id, viewerId: ctx.user.id, tab });
 }
 
 /** The vote a forward or Mirror message in `guildId` carries - `null` when it's neither. */
@@ -39,41 +39,76 @@ function ago(at: Date, now: Date): string {
     return `${Math.round(minutes / 1440)}d ago`;
 }
 
+interface ChoiceRow {
+    id: string;
+    at: Date;
+    label: string;
+}
+
+/** Newest first, filtered by what was typed (id included), as autocomplete choices. */
+function toChoices(rows: ChoiceRow[], typed: string): ApplicationCommandOptionChoiceData<string>[] {
+    const q = typed.trim().toLowerCase();
+    return rows
+        .sort((a, b) => b.at.getTime() - a.at.getTime())
+        .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.includes(q))
+        .slice(0, RECENT)
+        .map((r) => ({ name: r.label.slice(0, 100), value: r.id }));
+}
+
+/** `Glitched · masutty · 5m ago · <tag>`. */
+function choiceLabel(guild: Guild, biome: string, finderId: string | null, at: Date, now: Date, tag: string): string {
+    const finder = finderId
+        ? (guild.members.cache.get(finderId)?.displayName ?? guild.client.users.cache.get(finderId)?.username ?? finderId)
+        : "unknown";
+    return `${formatBiomeName(biome)} · ${finder} · ${ago(at, now)} · ${tag}`;
+}
+
 /**
- * `/admin review-vote find:` choices: the server's newest rare-find votes and the newest Network
+ * `/admin check-vote id:` choices: the server's newest rare-find votes and the newest Network
  * finds mirrored here from other servers (its own Network finds open from their local vote), as
- * `Glitched · masutty · 5m ago · Local`. Filtered by what was typed, id included.
+ * `Glitched · masutty · 5m ago · Local`.
  */
-export async function reviewVoteChoices(
+export async function checkVoteChoices(
     guild: Guild,
     typed: string,
     now = new Date(),
 ): Promise<ApplicationCommandOptionChoiceData<string>[]> {
     const [votes, posts] = await Promise.all([getRecentGuildVotes(guild.id, RECENT), getRecentNetworkPostsInGuild(guild.id, RECENT)]);
-    const name = (id: string | null) =>
-        id ? (guild.members.cache.get(id)?.displayName ?? guild.client.users.cache.get(id)?.username ?? id) : "unknown";
     const rows = [
         ...votes.map((v) => ({
             id: v.id,
             at: v.created_at,
-            label: `${formatBiomeName(v.biome)} · ${name(v.finder_discord_id)} · ${ago(v.created_at, now)} · Local`,
+            label: choiceLabel(guild, v.biome, v.finder_discord_id, v.created_at, now, "Local"),
         })),
         ...posts
             .filter((p) => p.origin_guild_id !== guild.id)
             .map((p) => ({
                 id: p.id,
                 at: p.created_at,
-                label: `${formatBiomeName(p.biome)} · ${name(p.finder_discord_id)} · ${ago(p.created_at, now)} · Network`,
+                label: choiceLabel(guild, p.biome, p.finder_discord_id, p.created_at, now, "Network"),
             })),
-    ].sort((a, b) => b.at.getTime() - a.at.getTime());
-    const q = typed.trim().toLowerCase();
-    return rows
-        .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.includes(q))
-        .slice(0, RECENT)
-        .map((r) => ({ name: r.label.slice(0, 100), value: r.id }));
+    ];
+    return toChoices(rows, typed);
 }
 
-/** The id the "Review vote" message menu was used on, or a clear error. */
+/** `/network check-vote id:` choices: the newest Network finds this server can see, its own included, tagged with their server. */
+export async function networkCheckVoteChoices(
+    guild: Guild,
+    typed: string,
+    now = new Date(),
+): Promise<ApplicationCommandOptionChoiceData<string>[]> {
+    const posts = await getRecentNetworkPostsInGuild(guild.id, RECENT);
+    return toChoices(
+        posts.map((p) => ({
+            id: p.id,
+            at: p.created_at,
+            label: choiceLabel(guild, p.biome, p.finder_discord_id, p.created_at, now, p.origin_name),
+        })),
+        typed,
+    );
+}
+
+/** The id the "Check vote" message menu was used on, or a clear error. */
 export async function requireVoteIdOfMessage(guildId: string, messageId: string | null): Promise<string> {
     const id = messageId ? await voteIdOfMessage(guildId, messageId) : null;
     if (!id) throw new BiomeHuntError("That message isn't a rare find with a vote.");

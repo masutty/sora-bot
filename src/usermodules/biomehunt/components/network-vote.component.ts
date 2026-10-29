@@ -5,6 +5,7 @@ import { defineComponent } from "@/define";
 import {
     type CastNetworkBallotResult,
     castNetworkBallot,
+    type DecideNetworkVoteResult,
     decideNetworkVote,
     defaultNetworkVoteDeps,
 } from "../services/network-vote.service";
@@ -21,7 +22,7 @@ export interface NetworkVoteComponentDeps {
         choice: VoteChoice,
         canVoteOnOwnFind: boolean,
     ) => Promise<CastNetworkBallotResult>;
-    decide: (client: BotClient, postId: string, ownerId: string, choice: VoteChoice) => Promise<"ok" | "already_closed" | "not_found">;
+    decide: (client: BotClient, postId: string, ownerId: string, choice: VoteChoice) => Promise<DecideNetworkVoteResult>;
     ownerIds: () => readonly string[];
 }
 
@@ -63,9 +64,9 @@ ${formatScoreboard(result.scoreboard)}`;
     }
 }
 
-const DECIDE_ANSWER: Record<"ok" | "already_closed" | "not_found", (choice: VoteChoice) => string> = {
+const DECIDE_ANSWER: Record<DecideNetworkVoteResult, (choice: VoteChoice) => string> = {
     ok: (choice) => `Vote decided: marked as **${CHOICE_LABEL[choice]}**.`,
-    already_closed: () => "This vote is already closed.",
+    already_decided: () => "This vote was already decided.",
     not_found: () => "This vote is no longer available.",
 };
 

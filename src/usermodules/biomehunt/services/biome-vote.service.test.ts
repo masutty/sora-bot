@@ -522,7 +522,7 @@ test("closeDueVotes renders the tally from a ballot read taken AFTER the close c
     expect(textOfEdit(editCalls[0])).toContain("`✅ 2` `❌ 0`");
 });
 
-test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-review hint, and the vote stays closed", async () => {
+test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-check-vote hint, and the vote stays closed", async () => {
     const logError = spyOn(Logger.prototype, "error").mockImplementation(() => {});
     try {
         const { deps } = createFakeDeps();
@@ -538,7 +538,7 @@ test("applyOutcome failing after the close already committed is logged with the 
         expect((await deps.getVoteById(vote.id))?.status).toBe(VoteStatus.COMMUNITY_REAL); // still closed
         const logged = logError.mock.calls.map((c) => JSON.stringify(c)).join("\n");
         expect(logged).toContain(vote.id);
-        expect(logged).toContain("review");
+        expect(logged).toContain("/admin check-vote");
     } finally {
         logError.mockRestore();
     }
@@ -559,7 +559,7 @@ test("vote outcome failure logs an error with the review command", async () => {
         expect(calls.logged).toHaveLength(1);
         expect(calls.logged[0].kind).toBe("error");
         expect(calls.logged[0].title).toBe("🛑 Something broke");
-        expect(calls.logged[0].body).toContain(`/admin review-vote ${vote.id}`);
+        expect(calls.logged[0].body).toContain(`/admin check-vote ${vote.id}`);
     } finally {
         logError.mockRestore();
     }
@@ -600,7 +600,7 @@ test("reward is granted exactly once even if the vote is somehow closed twice", 
     const { client } = fakeClient();
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
-    // A later admin re-confirmation (e.g. `/admin review-vote`) must not double-grant.
+    // A later admin re-confirmation (e.g. `/admin check-vote`) must not double-grant.
     await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
 
     expect(calls.grantBiomeReward).toHaveLength(1);

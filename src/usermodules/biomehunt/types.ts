@@ -164,7 +164,7 @@ export interface BiomeDelayedForwardRow extends BiomeForwardRow {
 /**
  * A rare-biome forward's community vote (`bh_biome_votes`). `OPEN` is the only non-final state -
  * every other value is terminal for the community, though an admin can still override one later
- * via `/admin review-vote`, re-editing the forward message again with the new outcome.
+ * via `/admin check-vote`, re-editing the forward message again with the new outcome.
  * `NO_VOTES` and `TIE` are distinct: 0×0 is "no votes", not a tie - a tie requires at least one
  * vote on each side.
  */

@@ -16,6 +16,7 @@ import {
 } from "../services/network-membership.service";
 import { BiomeHuntError, NetworkStatus } from "../types";
 import { buildEligibilityContainer, buildStatusContainer, v2 } from "../views/network.view";
+import { networkCheckVoteChoices, openVoteReview } from "../views/vote-review.open";
 
 export default defineCommand({
     name: "network",
@@ -43,10 +44,29 @@ export default defineCommand({
                 .setName("include")
                 .setDescription("Publish a previously excluded member's finds to the Network again.")
                 .addUserOption((o) => o.setName("user").setDescription("Member").setRequired(true)),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("check-vote")
+                .setDescription("See who voted on a Network find, by server.")
+                .addStringOption((o) =>
+                    o.setName("id").setDescription("A recent Network find, or the id on its post").setRequired(true).setAutocomplete(true),
+                ),
         ),
+
+    async executeAutocomplete(interaction) {
+        const focused = interaction.options.getFocused(true);
+        if (focused.name !== "id" || !interaction.guild) return interaction.respond([]);
+        await interaction.respond(await networkCheckVoteChoices(interaction.guild, focused.value));
+    },
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand() ?? "status";
+        // Not ephemeral like the rest: the same review as `/admin check-vote`.
+        if (sub === "check-vote") {
+            await openVoteReview(ctx, ctx.guild, ctx.args.getString("id", true).trim(), "network");
+            return;
+        }
         await ctx.defer({ ephemeral: true });
 
         switch (sub) {

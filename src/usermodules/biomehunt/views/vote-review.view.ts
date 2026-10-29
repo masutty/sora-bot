@@ -11,7 +11,7 @@ import { countRewardsWithBadge, getRewardsByEventIds } from "../repository/rewar
 import { getUserById } from "../repository/users.repository";
 import { getBallotsForVote, getLatestVoteByEventId, getVoteById } from "../repository/votes.repository";
 import { type AdminDecideResult, adminDecide } from "../services/biome-vote.service";
-import { decideNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
+import { type DecideNetworkVoteResult, decideNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
 import {
     BiomeHuntError,
     type BiomeVoteBallotRow,
@@ -77,8 +77,8 @@ export interface VoteReviewDeps {
     load(id: string, guildId: string): Promise<ReviewData | null>;
     /** Same CAS/reward semantics as the forward's buttons, message edit included. */
     decideLocal(voteId: string, adminDiscordId: string, choice: VoteChoice): Promise<AdminDecideResult>;
-    /** The bot owner's decision on a Network vote (closes it and edits every Mirror). */
-    decideNetwork(postId: string, ownerId: string, choice: VoteChoice): Promise<"ok" | "already_closed" | "not_found">;
+    /** The bot owner's decision on a Network vote, open or closed (edits every Mirror). */
+    decideNetwork(postId: string, ownerId: string, choice: VoteChoice): Promise<DecideNetworkVoteResult>;
     isOwner(discordUserId: string): boolean;
     /** The finder's member panel, opened on Quality - `null` when they aren't in the server. */
     finderPanel(discordUserId: string): Promise<ViewDefinition<unknown, void, undefined> | null>;
@@ -90,9 +90,11 @@ export interface VoteReviewInput {
     guildId: string;
     /** Who opened it - a bot owner also gets Mark real / Mark fake on the Network tab. */
     viewerId: string;
+    /** `network` (`/network check-vote`) opens the Network tab, and fails for a find that never reached the Network. */
+    tab?: Tab;
 }
 
-type Tab = "local" | "network";
+export type Tab = "local" | "network";
 
 interface VoteReviewState extends ReviewData {
     id: string;
@@ -268,10 +270,10 @@ function finderOf(s: VoteReviewState): string | null {
 }
 
 /**
- * `/admin review-vote` (and the "Review vote" message menu): one find's local vote and, when it
- * reached the Network, its Network vote on a second tab. Admins can Mark real / Mark fake the local
- * vote at any time (an early decision, or overriding a closed one) after a confirm step; only a bot
- * owner gets those buttons on the Network tab. `back` is for opening it from the member panel's
+ * `/admin check-vote`, `/network check-vote` and the "Check vote" message menu: one find's local vote
+ * and, when it reached the Network, its Network vote on a second tab. Admins can Mark real / Mark fake
+ * the local vote at any time (an early decision, or overriding a closed one) after a confirm step; only
+ * a bot owner gets those buttons on the Network tab, where they work the same way. `back` is for opening it from the member panel's
  * Quality tab: a Back button instead of "Finder's quality".
  */
 export function voteReviewView(
@@ -301,7 +303,7 @@ export function voteReviewView(
         } else if (s.tab === "network" && s.network && deps.isOwner(c.user.id)) {
             const result = await deps.decideNetwork(s.network.post.id, c.user.id, choice);
             if (result === "not_found") await c.notify("This vote is no longer available.");
-            else if (result === "already_closed") await c.notify("This vote is already closed.");
+            else if (result === "already_decided") await c.notify("This vote was already decided.");
         }
         await reload(s);
     }
@@ -338,8 +340,12 @@ export function voteReviewView(
         initial: async (input) => {
             const data = await deps.load(input.id, input.guildId);
             if (!data || (!data.local && !data.network)) throw new BiomeHuntError("No vote with that id in this server.");
+            if (input.tab === "network" && !data.network) throw new BiomeHuntError("That find didn't reach the Network.");
             const tab: Tab =
-                data.local && (data.local.vote.id === input.id || !data.network || data.network.post.id !== input.id) ? "local" : "network";
+                input.tab ??
+                (data.local && (data.local.vote.id === input.id || !data.network || data.network.post.id !== input.id)
+                    ? "local"
+                    : "network");
             return { ...data, id: input.id, guildId: input.guildId, owner: deps.isOwner(input.viewerId), tab, confirm: null };
         },
         render: (s, kit): ViewPayload => {

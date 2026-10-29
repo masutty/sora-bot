@@ -16,7 +16,7 @@ import { openMemberAdmin, resolveTargetMember } from "../views/member-admin.open
 import { defaultQuotasDeps, loadQuotasInput, quotasView } from "../views/quotas.view";
 import { defaultSettingsDeps, loadSettingsInput, settingsView } from "../views/settings.view";
 import { shopAdminView } from "../views/shop-admin.view";
-import { openVoteReview, reviewVoteChoices } from "../views/vote-review.open";
+import { checkVoteChoices, openVoteReview } from "../views/vote-review.open";
 
 /**
  * Autocomplete for the `badge` option of `badges set` - only the badges a role can be
@@ -59,11 +59,11 @@ export default defineCommand({
         )
         .addSubcommand((s) =>
             s
-                .setName("review-vote")
+                .setName("check-vote")
                 .setDescription("See who voted on a rare find, here and in the Network, and mark it real or fake.")
                 .addStringOption((o) =>
                     o
-                        .setName("find")
+                        .setName("id")
                         .setDescription("A recent rare find, or the Vote id on its post")
                         .setRequired(true)
                         .setAutocomplete(true),
@@ -91,8 +91,8 @@ export default defineCommand({
 
     async executeAutocomplete(interaction) {
         const focused = interaction.options.getFocused(true);
-        if (focused.name === "find" && interaction.guild)
-            return interaction.respond(await reviewVoteChoices(interaction.guild, focused.value));
+        if (focused.name === "id" && interaction.guild)
+            return interaction.respond(await checkVoteChoices(interaction.guild, focused.value));
         if (focused.name !== "badge") return interaction.respond([]);
         await interaction.respond(badgeAutocompleteChoices(focused.value));
     },
@@ -113,8 +113,8 @@ export default defineCommand({
             return;
         }
 
-        if (routeKey === "review-vote") {
-            await openVoteReview(ctx, ctx.guild, ctx.args.getString("find", true).trim());
+        if (routeKey === "check-vote") {
+            await openVoteReview(ctx, ctx.guild, ctx.args.getString("id", true).trim());
             return;
         }
 

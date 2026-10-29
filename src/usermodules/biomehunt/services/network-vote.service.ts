@@ -6,6 +6,7 @@ import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getNetworkGuild, isNetworkBanned } from "../repository/network.repository";
 import {
     closeNetworkVoteRow,
+    deleteNetworkAlertsForPost,
     getDueOpenNetworkVotes,
     getNetworkBallots,
     getNetworkMirrors,
@@ -58,6 +59,7 @@ export interface NetworkVoteDeps {
     notifyStaff: (row: NetworkGuildRow, content: string) => Promise<void>;
     notifyOwners: (payload: MessageCreateOptions) => Promise<void>;
     insertNetworkAlert: typeof insertNetworkAlert;
+    deleteNetworkAlertsForPost: typeof deleteNetworkAlertsForPost;
     now: () => Date;
 }
 
@@ -75,6 +77,7 @@ export function defaultNetworkVoteDeps(client: Client): NetworkVoteDeps {
         notifyStaff: (row, content) => notifyStaff(client, row, content),
         notifyOwners: (payload) => notifyOwners(client, payload),
         insertNetworkAlert,
+        deleteNetworkAlertsForPost,
         now: () => new Date(),
     };
 }
@@ -135,40 +138,54 @@ export async function castNetworkBallot(
     return { kind: written === "inserted" ? "ok" : written, scoreboard };
 }
 
-/** The bot owner's click on a Mirror: decides the vote on the spot and closes it (see `closeNetworkVote`). */
-export function decideNetworkVote(
+export type DecideNetworkVoteResult = "ok" | "already_decided" | "not_found";
+
+/**
+ * The bot owner's decision (a click on a Mirror, or Mark real / Mark fake on the vote's review):
+ * open or closed, the vote's result becomes `choice` - an override of the Network's verdict or of an
+ * earlier decision. A compare-and-set on the status it read keeps two racing decisions (or the
+ * Worker) from both applying. Overturning a Fake verdict drops its alert and tells the origin's staff.
+ */
+export async function decideNetworkVote(
     postId: string,
     ownerId: string,
     choice: VoteChoice,
     deps: NetworkVoteDeps,
-): Promise<"ok" | "already_closed" | "not_found"> {
-    return closeNetworkVote(postId, ownerId, deps, choice);
+): Promise<DecideNetworkVoteResult> {
+    const post = await deps.getNetworkPost(postId);
+    if (!post) return "not_found";
+    const status = choice === VoteChoice.REAL ? "real" : "fake";
+    if (post.vote_status === status) return "ok";
+    const closed = await deps.closeNetworkVoteRow(postId, status, ownerId, ownerId, post.vote_status);
+    if (!closed) return "already_decided";
+    await publishResult(closed, status, deps);
+    if (post.vote_status === "fake") await clearFakeVerdict(closed, deps);
+    return "ok";
 }
 
 /**
- * Closes one Network vote (the Worker when its minute is up, `/network-admin close-vote`, or the bot
- * owner's click with a `decision`): resolves it from the ballots unless decided, closes it with a
- * compare-and-set (so the Worker and an owner never both apply it), edits every Mirror once with the
- * result, and on a Fake verdict warns the origin's staff (and the owners, unless one decided it).
+ * Closes one open Network vote (the Worker when its minute is up, or `/network-admin close-vote`):
+ * resolves it from the ballots, closes it with a compare-and-set (so the Worker and an owner never
+ * both apply it), then publishes the result (see `publishResult`).
  */
 export async function closeNetworkVote(
     postId: string,
     closedBy: string | null,
     deps: NetworkVoteDeps,
-    decision?: VoteChoice,
 ): Promise<"ok" | "already_closed" | "not_found"> {
     const post = await deps.getNetworkPost(postId);
     if (!post) return "not_found";
-    const status = decision
-        ? decision === VoteChoice.REAL
-            ? "real"
-            : "fake"
-        : resolveNetworkVote(await deps.getNetworkBallots(postId)).status;
-    const closed = await deps.closeNetworkVoteRow(postId, status, closedBy, decision ? closedBy : null);
+    const { status } = resolveNetworkVote(await deps.getNetworkBallots(postId));
+    const closed = await deps.closeNetworkVoteRow(postId, status, closedBy);
     if (!closed) return "already_closed";
+    await publishResult(closed, status, deps);
+    return "ok";
+}
 
+/** Edits every Mirror once with the vote's new result, and on a Fake verdict warns the origin's staff (and the owners, unless one decided it). */
+async function publishResult(closed: NetworkPostRow, status: NetworkVoteResult, deps: NetworkVoteDeps): Promise<void> {
     // Read after the close committed - a ballot racing it is either counted here or was rejected.
-    const final = resolveNetworkVote(await deps.getNetworkBallots(postId));
+    const final = resolveNetworkVote(await deps.getNetworkBallots(closed.id));
     // Each Mirror is rebuilt with the ping role it was sent with, so the mention stays visible - an
     // edit never pings again.
     const payloadFor = (mirror: NetworkMirrorRow): MessageEditOptions => ({
@@ -184,10 +201,20 @@ export async function closeNetworkVote(
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
     });
-    for (const mirror of await deps.getNetworkMirrors(postId)) await deps.editMirror(mirror, payloadFor(mirror));
+    for (const mirror of await deps.getNetworkMirrors(closed.id)) await deps.editMirror(mirror, payloadFor(mirror));
 
     if (status === "fake") await reportFakeVerdict(closed, final.scoreboard, deps);
-    return "ok";
+}
+
+async function clearFakeVerdict(post: NetworkPostRow, deps: NetworkVoteDeps): Promise<void> {
+    await deps.deleteNetworkAlertsForPost("fake_verdict", post.id);
+    const origin = await deps.getNetworkGuild(post.origin_guild_id);
+    if (origin) {
+        await deps.notifyStaff(
+            origin,
+            `✅ **The bot owner marked the ${formatBiomeName(post.biome)} find by <@${post.finder_discord_id}> real.** Its Fake verdict no longer counts.`,
+        );
+    }
 }
 
 async function reportFakeVerdict(post: NetworkPostRow, scoreboard: Scoreboard, deps: NetworkVoteDeps): Promise<void> {
