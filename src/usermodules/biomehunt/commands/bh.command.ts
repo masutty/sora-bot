@@ -8,6 +8,7 @@ import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
 import { buildBalanceReply } from "../views/balance.view";
 import { openHerbariumView } from "../views/herbarium.view";
+import { openLeaderboardView } from "../views/leaderboard.view";
 import { openProfileView } from "../views/profile.view";
 import { openRareFindsView } from "../views/rare-finds.view";
 import { openRerollView } from "../views/reroll.view";
@@ -52,6 +53,11 @@ async function runRareFinds(ctx: GuildCommandContext): Promise<void> {
     await openRareFindsView(ctx, ctx.guild.id, target);
 }
 
+async function runLeaderboard(ctx: GuildCommandContext): Promise<void> {
+    await ctx.defer();
+    await openLeaderboardView(ctx, ctx.guild.id, ctx.user.id);
+}
+
 async function runShop(ctx: GuildCommandContext): Promise<void> {
     await ctx.defer();
     // Lazy: the real repositories load only when the shop opens.
@@ -76,6 +82,7 @@ const HANDLERS: Record<string, (ctx: GuildCommandContext) => Promise<void>> = {
     "rare-finds": runRareFinds,
     herbarium: runHerbarium,
     shop: runShop,
+    leaderboard: runLeaderboard,
 };
 
 export default defineCommand({
@@ -84,7 +91,7 @@ export default defineCommand({
     category: CommandCategory.UTILITY,
     showOnHelp: true,
     guildOnly: true,
-    aliases: ["profile", "reroll", "balance", "session", "rare-finds", "herbarium", "shop"],
+    aliases: ["profile", "reroll", "balance", "session", "rare-finds", "herbarium", "shop", "leaderboard"],
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
@@ -96,6 +103,7 @@ export default defineCommand({
         )
         .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds."))
         .addSubcommand((sub) => sub.setName("shop").setDescription("Spend your Seeds in this server's shop."))
+        .addSubcommand((sub) => sub.setName("leaderboard").setDescription("See who leads this server."))
         .addSubcommand((sub) =>
             sub
                 .setName("session")
