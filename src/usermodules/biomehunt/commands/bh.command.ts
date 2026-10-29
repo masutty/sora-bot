@@ -13,55 +13,38 @@ import { openRerollView } from "../views/reroll.view";
 import { openSessionView } from "../views/session.view";
 import { memberShopView } from "../views/shop.view";
 
-export const PROFILE_DESCRIPTION = "View your hunt profile, or someone else's.";
-export const PROFILE_USER_DESCRIPTION = "Whose profile to view (defaults to yourself)";
-export const REROLL_DESCRIPTION = "Reroll your Flower for 50 Seeds.";
-export const SHOP_DESCRIPTION = "Spend your Seeds in this server's shop.";
-export const SESSION_DESCRIPTION = "Inspect one macro session.";
-export const SESSION_ID_DESCRIPTION = "Session id";
-export const RARE_FINDS_DESCRIPTION = "View a member's rare biome finds.";
-export const RARE_FINDS_USER_DESCRIPTION = "Whose rare finds to view (defaults to yourself)";
-export const BALANCE_DESCRIPTION = "View your Seeds and level, or someone else's.";
-export const BALANCE_USER_DESCRIPTION = "Whose balance to view (defaults to yourself)";
-
-/** `/bh profile` and its `/profile` alias. */
-export async function runProfile(ctx: GuildCommandContext): Promise<void> {
+async function runProfile(ctx: GuildCommandContext): Promise<void> {
     // Supplied-but-unresolvable user -> framework error; omitted -> your own profile.
     const target = (await ctx.args.getMember("user")) ?? ctx.member;
     await ctx.defer();
     await openProfileView(ctx, ctx.guild.id, target);
 }
 
-/** `/bh reroll` and its `/reroll` alias. */
-export async function runReroll(ctx: GuildCommandContext): Promise<void> {
+async function runReroll(ctx: GuildCommandContext): Promise<void> {
     await ctx.defer();
     await openRerollView(ctx, ctx.client, ctx.guild.id, ctx.user.id);
 }
 
-/** `/bh balance` and its `/balance` alias. */
-export async function runBalance(ctx: GuildCommandContext): Promise<void> {
+async function runBalance(ctx: GuildCommandContext): Promise<void> {
     // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
     const target = (await ctx.args.getMember("user")) ?? ctx.member;
     const balance = await getBalance(ctx.guild.id, target.id);
     await ctx.reply(buildBalanceReply(target.id, target.id === ctx.user.id, balance));
 }
 
-/** `/bh session` and its `/session` alias. */
-export async function runSession(ctx: GuildCommandContext): Promise<void> {
+async function runSession(ctx: GuildCommandContext): Promise<void> {
     await ctx.defer();
     await openSessionView(ctx, ctx.guild.id, ctx.args.getInteger("id", true));
 }
 
-/** `/bh rare-finds` and its `/rare-finds` alias. */
-export async function runRareFinds(ctx: GuildCommandContext): Promise<void> {
+async function runRareFinds(ctx: GuildCommandContext): Promise<void> {
     // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
     const target = (await ctx.args.getMember("user")) ?? ctx.member;
     await ctx.defer();
     await openRareFindsView(ctx, ctx.guild.id, target);
 }
 
-/** `/bh shop` and its `/shop` alias. */
-export async function runShop(ctx: GuildCommandContext): Promise<void> {
+async function runShop(ctx: GuildCommandContext): Promise<void> {
     await ctx.defer();
     // Lazy: the real repositories load only when the shop opens.
     const { getUserByDiscordId } = await import("../repository/users.repository");
@@ -77,74 +60,57 @@ export async function runShop(ctx: GuildCommandContext): Promise<void> {
     await ctx.open(memberShopView(defaultMemberShopDeps(ctx.client, ctx.guild, ctx.member)), { guildId: ctx.guild.id, user });
 }
 
+const HANDLERS: Record<string, (ctx: GuildCommandContext) => Promise<void>> = {
+    profile: runProfile,
+    reroll: runReroll,
+    balance: runBalance,
+    session: runSession,
+    "rare-finds": runRareFinds,
+    shop: runShop,
+};
+
 export default defineCommand({
     name: "bh",
     description: "Biome hunting commands.",
     category: CommandCategory.UTILITY,
     showOnHelp: true,
     guildOnly: true,
+    aliases: ["profile", "reroll", "balance", "session", "rare-finds", "shop"],
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
         .addSubcommand((sub) =>
             sub
                 .setName("profile")
-                .setDescription(PROFILE_DESCRIPTION)
-                .addUserOption((o) => o.setName("user").setDescription(PROFILE_USER_DESCRIPTION)),
+                .setDescription("View your hunt profile, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose profile to view (defaults to yourself)")),
         )
-        .addSubcommand((sub) => sub.setName("reroll").setDescription(REROLL_DESCRIPTION))
-        .addSubcommand((sub) => sub.setName("shop").setDescription(SHOP_DESCRIPTION))
+        .addSubcommand((sub) => sub.setName("reroll").setDescription("Reroll your Flower for 50 Seeds."))
+        .addSubcommand((sub) => sub.setName("shop").setDescription("Spend your Seeds in this server's shop."))
         .addSubcommand((sub) =>
             sub
                 .setName("session")
-                .setDescription(SESSION_DESCRIPTION)
-                .addIntegerOption((o) => o.setName("id").setDescription(SESSION_ID_DESCRIPTION).setRequired(true).setMinValue(1)),
+                .setDescription("Inspect one macro session.")
+                .addIntegerOption((o) => o.setName("id").setDescription("Session id").setRequired(true).setMinValue(1)),
         )
         .addSubcommand((sub) =>
             sub
                 .setName("rare-finds")
-                .setDescription(RARE_FINDS_DESCRIPTION)
-                .addUserOption((o) => o.setName("user").setDescription(RARE_FINDS_USER_DESCRIPTION)),
+                .setDescription("View a member's rare biome finds.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose rare finds to view (defaults to yourself)")),
         )
         .addSubcommand((sub) =>
             sub
                 .setName("balance")
-                .setDescription(BALANCE_DESCRIPTION)
-                .addUserOption((o) => o.setName("user").setDescription(BALANCE_USER_DESCRIPTION)),
+                .setDescription("View your Seeds and level, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose balance to view (defaults to yourself)")),
         ),
-    // .addSubcommand((sub) => sub.setName("history").setDescription("View your recent activity sessions."))
-    // .addSubcommand((sub) => sub.setName("leaderboard").setDescription("View the server's activity leaderboard.")),
 
     async run(ctx) {
         const sub = ctx.args.getSubcommand();
-
-        if (sub === "profile") {
-            await runProfile(ctx);
-            return;
-        }
-
-        if (sub === "balance") {
-            await runBalance(ctx);
-            return;
-        }
-
-        if (sub === "session") {
-            await runSession(ctx);
-            return;
-        }
-
-        if (sub === "rare-finds") {
-            await runRareFinds(ctx);
-            return;
-        }
-
-        if (sub === "reroll") {
-            await runReroll(ctx);
-            return;
-        }
-
-        if (sub === "shop") {
-            await runShop(ctx);
+        const handler = sub ? HANDLERS[sub] : undefined;
+        if (handler) {
+            await handler(ctx);
             return;
         }
 

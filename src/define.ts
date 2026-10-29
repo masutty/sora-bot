@@ -1,3 +1,4 @@
+import { aliasCommands } from "./core/command/command-aliases";
 import type { CommandContext, GuildCommandContext } from "./core/command/command-context";
 import type { Cog, CommandDefinition, CommandDefinitionBase } from "./types";
 
@@ -67,6 +68,8 @@ export function defineCommand(def: CommandDefinition): CommandDefinition {
 }
 
 // The folder name doesn't matter: a cog is identified only by `name` (unique across all cogs).
+// Each command's `aliases` become commands of the cog here, so loading, conflicts and checks see them.
 export function defineCog(cog: Cog): Cog {
-    return cog;
+    if (!cog.commands) return cog;
+    return { ...cog, commands: cog.commands.flatMap((cmd) => [cmd, ...aliasCommands(cmd)]) };
 }

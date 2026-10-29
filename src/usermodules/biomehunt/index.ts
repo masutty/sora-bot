@@ -1,18 +1,12 @@
 import { defineCog } from "@/define";
 import { Logger } from "@/utils/logging";
 import _admin from "./commands/admin.command";
-import _balance from "./commands/balance.command";
 import _bh from "./commands/bh.command";
 import _checkVote from "./commands/check-vote.command";
 import _manageMember from "./commands/manage-member.command";
 import _network from "./commands/network.command";
 import _networkAdmin from "./commands/network-admin.command";
 import _owner from "./commands/owner.command";
-import _profile from "./commands/profile.command";
-import _rareFinds from "./commands/rare-finds.command";
-import _reroll from "./commands/reroll.command";
-import _session from "./commands/session.command";
-import _shop from "./commands/shop.command";
 import _stats from "./commands/stats.command";
 import { biomeVoteComponent } from "./components/biome-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
@@ -40,22 +34,7 @@ export default defineCog({
     description: "Tracks macro-driven activity, enforces quotas, and automates roles.",
     authors: [{ name: "masutty", id: 188851299255713792n }],
 
-    commands: [
-        _bh,
-        _admin,
-        _owner,
-        _stats,
-        _profile,
-        _reroll,
-        _balance,
-        _session,
-        _rareFinds,
-        _shop,
-        _manageMember,
-        _checkVote,
-        _network,
-        _networkAdmin,
-    ],
+    commands: [_bh, _admin, _owner, _stats, _manageMember, _checkVote, _network, _networkAdmin],
 
     migrations: [BIOMEHUNT_SCHEMA, INFINITY_BADGE_BACKFILL],
 

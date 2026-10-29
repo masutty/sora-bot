@@ -28,8 +28,16 @@ function formatArgList(options: RawOption[] | undefined, useFlagStyle: boolean):
     );
 }
 
-function formatSubcommandLine(invokeName: string, cmdName: string, path: string[], sub: RawOption, useFlagStyle: boolean): string {
-    return `\`${invokeName}${cmdName} ${[...path, sub.name].join(" ")}${formatArgList(sub.options, useFlagStyle)}\` - ${sub.description}`;
+function formatSubcommandLine(
+    invokeName: string,
+    cmdName: string,
+    path: string[],
+    sub: RawOption,
+    useFlagStyle: boolean,
+    alias = false,
+): string {
+    const also = alias ? ` · \`${invokeName}${sub.name}\`` : "";
+    return `\`${invokeName}${cmdName} ${[...path, sub.name].join(" ")}${formatArgList(sub.options, useFlagStyle)}\`${also} - ${sub.description}`;
 }
 
 function addRestrictions(container: ContainerBuilder, cmd: CommandDefinition): void {
@@ -64,7 +72,7 @@ function buildSummaryContainer(invokeName: string, cmd: CommandDefinition, topLe
         addDivider(container);
         const lines = [
             ...groups.map((g) => `\`${invokeName}${cmd.name} ${g.name}\` (group) - ${g.description}`),
-            ...subcommands.map((s) => formatSubcommandLine(invokeName, cmd.name, [], s, useFlagStyle)),
+            ...subcommands.map((s) => formatSubcommandLine(invokeName, cmd.name, [], s, useFlagStyle, cmd.aliases?.includes(s.name))),
         ];
         container.addTextDisplayComponents((td) => td.setContent(["**Subcommands**", ...lines].join("\n")));
     } else if (plainArgs.length) {

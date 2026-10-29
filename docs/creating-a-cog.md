@@ -221,6 +221,8 @@ What the framework already does for you, before `run`:
 > [!NOTE]
 > On prefix, arguments are positional (the last one takes the rest of the line) or named: `!suggest new text:"more voice channels"`.
 
+To also expose a subcommand as its own command, list it in `aliases`: `aliases: ["list"]` adds `/list` and `!list`, with the subcommand's options, and runs the same `run` with `ctx.args.getSubcommand() === "list"`. The help shows it next to `/suggest list`.
+
 ## 5. The persistent button
 
 The suggestion's button has to keep working forever, even after a restart. A View won't do (it lives in memory and expires), so the button is a **persistent component**, and its state lives in the database.
