@@ -13,7 +13,7 @@ import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
 import { networkVoteComponent } from "./components/network-vote.component";
 import { shopManageComponent } from "./components/shop-manage.component";
-import { BIOMEHUNT_SCHEMA, INFINITY_BADGE_BACKFILL } from "./migrations";
+import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL, INFINITY_BADGE_BACKFILL } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity.service";
@@ -36,7 +36,7 @@ export default defineCog({
 
     commands: [_bh, _admin, _owner, _stats, _manageMember, _checkVote, _network, _networkAdmin],
 
-    migrations: [BIOMEHUNT_SCHEMA, INFINITY_BADGE_BACKFILL],
+    migrations: [BIOMEHUNT_SCHEMA, INFINITY_BADGE_BACKFILL, HERBARIUM_BACKFILL],
 
     workers: [
         statusWorker,

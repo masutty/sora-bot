@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BIOMEHUNT_SCHEMA } from "./migrations";
+import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL } from "./migrations";
 
 /** The schema's SQL with its comments stripped - so the rule below checks statements, not prose. */
 const sql = BIOMEHUNT_SCHEMA.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
@@ -46,4 +46,14 @@ test("the shop migration steps are guarded", () => {
     expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS role_window_start/);
     expect(sql).toMatch(/table_name = 'bh_shop_role_grants' AND column_name = 'user_id'/);
     expect(sql).toMatch(/IF fk IS NOT NULL THEN/);
+});
+
+test("the Herbarium backfill is its own migration and never overwrites a row", () => {
+    expect(HERBARIUM_BACKFILL).toContain("INSERT INTO bh_user_flowers");
+    expect(HERBARIUM_BACKFILL).toContain("ON CONFLICT DO NOTHING");
+    expect(sql).not.toMatch(/INSERT\s+INTO\s+bh_user_flowers/i);
+});
+
+test("the Herbarium dies with the member row", () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS bh_user_flowers[\s\S]*?REFERENCES bh_users\(id\) ON DELETE CASCADE/);
 });

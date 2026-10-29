@@ -183,6 +183,16 @@ CREATE TABLE IF NOT EXISTS bh_user_badges (
     PRIMARY KEY (user_id, badge)
 );
 
+/* Herbarium: every Flower a member has got, with how often and when. Dies with the member's row. */
+CREATE TABLE IF NOT EXISTS bh_user_flowers (
+    user_id  INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    flower   VARCHAR(32) NOT NULL,
+    times    INTEGER NOT NULL DEFAULT 1,
+    first_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, flower)
+);
+
 /* ───────────────────────────────────────────── */
 /* Biome forwards                               */
 /* ───────────────────────────────────────────── */
@@ -701,4 +711,14 @@ WHERE EXISTS (SELECT 1 FROM bh_biomes b WHERE b.category = 'rare' AND b.enabled)
         )
   )
 ON CONFLICT (user_id, badge) DO NOTHING;
+`;
+
+/**
+ * Puts every member's current Flower in their Herbarium (once) - they had it before the Herbarium
+ * existed. Its own migration, so it runs once: schema changes never re-run it.
+ */
+export const HERBARIUM_BACKFILL = `
+INSERT INTO bh_user_flowers (user_id, flower)
+SELECT id, flower FROM bh_users WHERE flower IS NOT NULL
+ON CONFLICT DO NOTHING;
 `;

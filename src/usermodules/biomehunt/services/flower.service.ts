@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { ChannelType } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
-import type { Logger } from "@/utils/logging";
+import { Logger } from "@/utils/logging";
 import { FLOWER_META, FLOWERS_BY_RARITY, FlowerRarity, flowerAssetPath, RARITY_CHANCE } from "../constants/flowers.constants";
+import { recordFlower } from "../repository/flowers.repository";
 import { getMacroChannelByUserId, setUserFlower } from "../repository/users.repository";
 import { BiomeHuntError } from "../types";
+
+const logger = new Logger("biomehunt.services.flower");
 
 /**
  * Draws a random Flower key. Rolls each rarity in RARITY_CHANCE order (rarest first); the first
@@ -74,10 +77,21 @@ export async function applyFlowerToWebhook(client: BotClient, userId: number, fl
     await setUserFlower(userId, flower);
 }
 
+/** Adds a Flower the member just got to their Herbarium. A failure is logged and never breaks the caller. */
+export async function recordFlowerSafe(userId: number, flower: string, logger: Logger): Promise<{ isNew: boolean }> {
+    try {
+        return await recordFlower(userId, flower);
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)));
+        return { isNew: false };
+    }
+}
+
 /** Draws a new Flower and applies it immediately - the bot-owner path (`/owner reroll-flower`),
  * which has no roll-again preview step. */
 export async function rerollFlower(client: BotClient, userId: number): Promise<{ flower: string }> {
     const flower = drawRandomFlower();
     await applyFlowerToWebhook(client, userId, flower);
+    await recordFlowerSafe(userId, flower, logger);
     return { flower };
 }

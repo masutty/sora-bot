@@ -7,6 +7,7 @@ import { getBalance } from "../services/economy.service";
 import { provisionMacroChannel } from "../services/macro-channel.service";
 import { BiomeHuntError } from "../types";
 import { buildBalanceReply } from "../views/balance.view";
+import { openHerbariumView } from "../views/herbarium.view";
 import { openProfileView } from "../views/profile.view";
 import { openRareFindsView } from "../views/rare-finds.view";
 import { openRerollView } from "../views/reroll.view";
@@ -23,6 +24,13 @@ async function runProfile(ctx: GuildCommandContext): Promise<void> {
 async function runReroll(ctx: GuildCommandContext): Promise<void> {
     await ctx.defer();
     await openRerollView(ctx, ctx.client, ctx.guild.id, ctx.user.id);
+}
+
+async function runHerbarium(ctx: GuildCommandContext): Promise<void> {
+    // Same target rule as profile: omitted -> yourself; supplied-but-not-a-member -> framework error.
+    const target = (await ctx.args.getMember("user")) ?? ctx.member;
+    await ctx.defer();
+    await openHerbariumView(ctx, ctx.client, ctx.guild.id, target, ctx.user.id);
 }
 
 async function runBalance(ctx: GuildCommandContext): Promise<void> {
@@ -66,6 +74,7 @@ const HANDLERS: Record<string, (ctx: GuildCommandContext) => Promise<void>> = {
     balance: runBalance,
     session: runSession,
     "rare-finds": runRareFinds,
+    herbarium: runHerbarium,
     shop: runShop,
 };
 
@@ -75,7 +84,7 @@ export default defineCommand({
     category: CommandCategory.UTILITY,
     showOnHelp: true,
     guildOnly: true,
-    aliases: ["profile", "reroll", "balance", "session", "rare-finds", "shop"],
+    aliases: ["profile", "reroll", "balance", "session", "rare-finds", "herbarium", "shop"],
 
     options: new SlashCommandBuilder()
         .addSubcommand((sub) => sub.setName("setup").setDescription("Set up your hunt macro channel."))
@@ -98,6 +107,12 @@ export default defineCommand({
                 .setName("rare-finds")
                 .setDescription("View a member's rare biome finds.")
                 .addUserOption((o) => o.setName("user").setDescription("Whose rare finds to view (defaults to yourself)")),
+        )
+        .addSubcommand((sub) =>
+            sub
+                .setName("herbarium")
+                .setDescription("View the Flowers you've collected, or someone else's.")
+                .addUserOption((o) => o.setName("user").setDescription("Whose Herbarium to view (defaults to yourself)")),
         )
         .addSubcommand((sub) =>
             sub

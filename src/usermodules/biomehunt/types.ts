@@ -149,6 +149,14 @@ export interface UserBadgeRow {
     awarded_at: Date;
 }
 
+export interface UserFlowerRow {
+    user_id: number;
+    flower: string;
+    times: number;
+    first_at: Date;
+    last_at: Date;
+}
+
 export interface BiomeForwardRow {
     guild_id: string;
     biome: string;
