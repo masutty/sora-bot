@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { MessageCreateOptions, MessageEditOptions } from "discord.js";
 import type { InsertNetworkAlertParams } from "../repository/network-posts.repository";
+import type { InsertVoteHistoryParams } from "../repository/vote-history.repository";
 import {
     type NetworkBallotRow,
     type NetworkGuildRow,
@@ -104,6 +105,7 @@ function createFakeDeps(initial: NetworkPostRow = post(), opts: { bannedUsers?: 
         ownerDms: [] as MessageCreateOptions[],
         alerts: [] as InsertNetworkAlertParams[],
         clearedAlerts: [] as Array<{ kind: string; postId: string }>,
+        history: [] as InsertVoteHistoryParams[],
     };
     const deps: NetworkVoteDeps = {
         getNetworkPost: async (id) => (id === current.id ? current : null),
@@ -128,6 +130,9 @@ function createFakeDeps(initial: NetworkPostRow = post(), opts: { bannedUsers?: 
             if (current.vote_status !== from) return null;
             current = { ...current, vote_status: status, vote_closed_by: closedBy, vote_decided_by: decidedBy };
             return current;
+        },
+        insertVoteHistory: async (p) => {
+            calls.history.push(p);
         },
         getNetworkMirrors: async () => mirrors,
         editMirror: async (mirror, payload) => {
@@ -326,4 +331,38 @@ test("decideNetworkVote: a Fake decision warns the origin's staff and records th
     expect(fake.calls.staff[0].content).toContain("The bot owner marked");
     expect(fake.calls.alerts).toHaveLength(1);
     expect(fake.calls.ownerDms).toHaveLength(0);
+});
+
+test("closeNetworkVote records open -> result by whoever closed it; closing twice records once", async () => {
+    const { deps, calls } = createFakeDeps();
+    await closeNetworkVote("p1", null, deps);
+    await closeNetworkVote("p1", "owner-1", deps);
+    expect(calls.history).toEqual([{ kind: "network", voteId: "p1", fromStatus: "open", toStatus: "inconclusive", byDiscordId: null }]);
+
+    const owner = createFakeDeps();
+    await closeNetworkVote("p1", "owner-1", owner.deps);
+    expect(owner.calls.history[0]?.byDiscordId).toBe("owner-1");
+});
+
+test("decideNetworkVote records the status it read -> the new one, by the owner; a lost CAS or a no-op records nothing", async () => {
+    const { deps, calls } = createFakeDeps();
+    await decideNetworkVote("p1", "owner-1", REAL, deps);
+    await decideNetworkVote("p1", "owner-1", FAKE, deps);
+    await decideNetworkVote("p1", "owner-1", FAKE, deps);
+    expect(calls.history.map((h) => [h.fromStatus, h.toStatus, h.byDiscordId])).toEqual([
+        ["open", "real", "owner-1"],
+        ["real", "fake", "owner-1"],
+    ]);
+
+    deps.closeNetworkVoteRow = async () => null;
+    await decideNetworkVote("p1", "owner-2", REAL, deps);
+    expect(calls.history).toHaveLength(2);
+});
+
+test("a failing history write never undoes a Network decision", async () => {
+    const { deps } = createFakeDeps();
+    deps.insertVoteHistory = async () => {
+        throw new Error("db down");
+    };
+    expect(await decideNetworkVote("p1", "owner-1", REAL, deps)).toBe("ok");
 });

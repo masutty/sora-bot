@@ -477,3 +477,21 @@ export type MemberLogRow = MemberLogEntry & {
     by_discord_id: string | null;
     created_at: Date;
 };
+
+/** Which kind of vote a `bh_vote_history` row is about. */
+export type VoteHistoryKind = "local" | "network";
+
+/** One result change of a vote (`bh_vote_history`). */
+export interface VoteHistoryRow {
+    /** BIGSERIAL - pg returns it as a string. */
+    id: string;
+    kind: VoteHistoryKind;
+    /** `bh_biome_votes.id` for `local`, `bh_network_posts.id` for `network`. */
+    vote_id: string;
+    /** A `VoteStatus` for `local`, a Network vote status for `network`. */
+    from_status: string;
+    to_status: string;
+    /** The admin or owner who changed it - `null` when the ballots decided it. */
+    by_discord_id: string | null;
+    created_at: Date;
+}

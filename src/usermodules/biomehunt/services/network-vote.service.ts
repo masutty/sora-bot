@@ -14,6 +14,7 @@ import {
     insertNetworkAlert,
     insertNetworkBallot,
 } from "../repository/network-posts.repository";
+import { insertVoteHistory } from "../repository/vote-history.repository";
 import {
     type NetworkBallotRow,
     type NetworkGuildRow,
@@ -53,6 +54,7 @@ export interface NetworkVoteDeps {
     getNetworkBallots: typeof getNetworkBallots;
     getDueOpenNetworkVotes: typeof getDueOpenNetworkVotes;
     closeNetworkVoteRow: typeof closeNetworkVoteRow;
+    insertVoteHistory: typeof insertVoteHistory;
     getNetworkMirrors: typeof getNetworkMirrors;
     /** Edits one Mirror. Must never throw - a deleted message or channel just isn't edited. */
     editMirror: (mirror: NetworkMirrorRow, payload: MessageEditOptions) => Promise<void>;
@@ -72,6 +74,7 @@ export function defaultNetworkVoteDeps(client: Client): NetworkVoteDeps {
         getNetworkBallots,
         getDueOpenNetworkVotes,
         closeNetworkVoteRow,
+        insertVoteHistory,
         getNetworkMirrors,
         editMirror: (mirror, payload) => editMirror(client, mirror, payload),
         notifyStaff: (row, content) => notifyStaff(client, row, content),
@@ -138,6 +141,15 @@ export async function castNetworkBallot(
     return { kind: written === "inserted" ? "ok" : written, scoreboard };
 }
 
+/** Records a committed status change; a failed write is logged, never allowed to undo the decision. */
+async function recordChange(postId: string, from: string, to: string, byDiscordId: string | null, deps: NetworkVoteDeps): Promise<void> {
+    try {
+        await deps.insertVoteHistory({ kind: "network", voteId: postId, fromStatus: from, toStatus: to, byDiscordId });
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)), { postId, note: `Network vote ${postId} history write failed` });
+    }
+}
+
 export type DecideNetworkVoteResult = "ok" | "already_decided" | "not_found";
 
 /**
@@ -158,6 +170,7 @@ export async function decideNetworkVote(
     if (post.vote_status === status) return "ok";
     const closed = await deps.closeNetworkVoteRow(postId, status, ownerId, ownerId, post.vote_status);
     if (!closed) return "already_decided";
+    await recordChange(postId, post.vote_status, status, ownerId, deps);
     await publishResult(closed, status, deps);
     if (post.vote_status === "fake") await clearFakeVerdict(closed, deps);
     return "ok";
@@ -178,6 +191,7 @@ export async function closeNetworkVote(
     const { status } = resolveNetworkVote(await deps.getNetworkBallots(postId));
     const closed = await deps.closeNetworkVoteRow(postId, status, closedBy);
     if (!closed) return "already_closed";
+    await recordChange(postId, "open", status, closedBy, deps);
     await publishResult(closed, status, deps);
     return "ok";
 }

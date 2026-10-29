@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
+import type { InsertVoteHistoryParams } from "../repository/vote-history.repository";
 import type { BallotWriteResult, BiomeRewardRow, BiomeVoteBallotRow, BiomeVoteRow, UserRow } from "../types";
 import { VoteChoice, VoteStatus } from "../types";
 import { adminDecide, castBallot, closeDueVotes, openVote, resolveVote, type VoteServiceDeps } from "./biome-vote.service";
@@ -42,6 +43,7 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
         grantBiomeReward: [] as Array<{ guildId: string; userId: number; eventId: number; biome: string }>,
         revertBiomeRewards: [] as Array<{ userId: number; eventIds: number[] }>,
         revokeOrphanedBadges: [] as Array<{ guildId: string; userId: number }>,
+        history: [] as InsertVoteHistoryParams[],
         logged: [] as GuildLogEntry[],
         reported: [] as Array<{ status: VoteStatus; reverted: RevertedRewards }>,
     };
@@ -98,6 +100,9 @@ function createFakeDeps(seedUsers: UserRow[] = [fakeUser()]) {
             const updated: BiomeVoteRow = { ...row, status, decided_by: decidedBy, decided_at: new Date() };
             votes.set(voteId, updated);
             return updated;
+        },
+        insertVoteHistory: async (p) => {
+            calls.history.push(p);
         },
         getUserById: async (userId) => users.get(userId) ?? null,
         getRewardsByEventIds: async (eventIds) =>
@@ -419,6 +424,55 @@ test("two concurrent admin decisions on the same vote apply exactly one outcome 
     expect(results.filter((r) => r.kind === "already_decided")).toHaveLength(1);
     expect(calls.revertBiomeRewards).toHaveLength(1); // the applied outcome (deny) ran exactly once
     expect(calls.grantBiomeReward).toHaveLength(0);
+});
+
+// ─── vote history ───────────────────────────────────────────────────────────────────────────────
+
+test("closeDueVotes records open -> result by nobody, and nothing when an admin won the race", async () => {
+    const { deps, calls } = createFakeDeps();
+    const { client } = fakeClient();
+    const vote = await seedOpenVote(deps);
+    await deps.insertBallot(vote.id, "voter-1", VoteChoice.FAKE);
+    await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
+    expect(calls.history).toEqual([{ kind: "local", voteId: vote.id, fromStatus: "open", toStatus: "community_fake", byDiscordId: null }]);
+
+    const raced = createFakeDeps();
+    const racedVote = await seedOpenVote(raced.deps);
+    raced.deps.getBallotsForVote = async () => {
+        await raced.deps.closeVote(racedVote.id, VoteStatus.OPEN, VoteStatus.ADMIN_DENIED, "admin-1");
+        return [];
+    };
+    await closeDueVotes(client, new Date(racedVote.closes_at.getTime() + 1), raced.deps);
+    expect(raced.calls.history).toEqual([]);
+});
+
+test("adminDecide records the status it read -> the new one, by the admin; a lost CAS records nothing", async () => {
+    const { deps, calls } = createFakeDeps();
+    const { client } = fakeClient();
+    const vote = await seedOpenVote(deps);
+    await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps);
+    await adminDecide(client, vote.id, "admin-2", VoteChoice.FAKE, deps);
+    expect(calls.history.map((h) => [h.fromStatus, h.toStatus, h.byDiscordId])).toEqual([
+        ["open", "admin_confirmed", "admin-1"],
+        ["admin_confirmed", "admin_denied", "admin-2"],
+    ]);
+
+    deps.closeVote = async () => null;
+    await adminDecide(client, vote.id, "admin-3", VoteChoice.REAL, deps);
+    expect(calls.history).toHaveLength(2);
+});
+
+test("a failing history write never undoes the decision", async () => {
+    const { deps } = createFakeDeps();
+    const { client } = fakeClient();
+    const vote = await seedOpenVote(deps);
+    deps.insertVoteHistory = async () => {
+        throw new Error("db down");
+    };
+    expect(await adminDecide(client, vote.id, "admin-1", VoteChoice.REAL, deps)).toEqual({
+        kind: "ok",
+        status: VoteStatus.ADMIN_CONFIRMED,
+    });
 });
 
 // ─── closeDueVotes ──────────────────────────────────────────────────────────────────────────────

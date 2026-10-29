@@ -7,6 +7,7 @@ import { formatBiomeName, getBiomeMeta } from "../constants/biomes.constants";
 import { getBotSetting, setBotSetting } from "../repository/bot-settings.repository";
 import { getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
+import { insertVoteHistory } from "../repository/vote-history.repository";
 import { closeVote, getBallotsForVote, getOpenVotesPastClose, getVoteById, insertBallot, insertVote } from "../repository/votes.repository";
 import { settings } from "../settings";
 import type { BiomeVoteBallotRow, BiomeVoteRow } from "../types";
@@ -29,6 +30,7 @@ export interface VoteServiceDeps {
     insertBallot: typeof insertBallot;
     getBallotsForVote: typeof getBallotsForVote;
     closeVote: typeof closeVote;
+    insertVoteHistory: typeof insertVoteHistory;
     getUserById: typeof getUserById;
     getRewardsByEventIds: typeof getRewardsByEventIds;
     grantBiomeReward: typeof grantBiomeReward;
@@ -48,6 +50,7 @@ export function defaultVoteServiceDeps(): VoteServiceDeps {
         insertBallot,
         getBallotsForVote,
         closeVote,
+        insertVoteHistory,
         getUserById,
         getRewardsByEventIds,
         grantBiomeReward,
@@ -178,6 +181,18 @@ export async function openVote(params: OpenVoteParams, deps: VoteServiceDeps = d
         lastSeenInServerAt: params.lastSeenInServerAt ?? null,
         closesAt: params.closesAt,
     });
+}
+
+/** Records a committed status change; a failed write is logged, never allowed to undo the decision. */
+async function recordChange(vote: BiomeVoteRow, from: VoteStatus, byDiscordId: string | null, deps: VoteServiceDeps): Promise<void> {
+    try {
+        await deps.insertVoteHistory({ kind: "local", voteId: vote.id, fromStatus: from, toStatus: vote.status, byDiscordId });
+    } catch (err) {
+        logger.error(err instanceof Error ? err : new Error(String(err)), {
+            voteId: vote.id,
+            note: `Vote ${vote.id} history write failed`,
+        });
+    }
 }
 
 /**
@@ -348,6 +363,7 @@ export async function adminDecide(
     const status = choice === VoteChoice.REAL ? VoteStatus.ADMIN_CONFIRMED : VoteStatus.ADMIN_DENIED;
     const closed = await deps.closeVote(voteId, vote.status, status, adminDiscordId);
     if (!closed) return { kind: "already_decided" };
+    await recordChange(closed, vote.status, adminDiscordId, deps);
 
     await applyOutcomeSafely(client, closed, deps);
 
@@ -380,6 +396,7 @@ export async function closeDueVotes(
             const status = resolveVote(preCloseBallots);
             const closed = await deps.closeVote(vote.id, VoteStatus.OPEN, status, null);
             if (!closed) continue; // an admin already decided it - don't apply this outcome too
+            await recordChange(closed, VoteStatus.OPEN, null, deps);
 
             await applyOutcomeSafely(client, closed, deps);
 

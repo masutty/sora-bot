@@ -9,6 +9,7 @@ import { getNetworkGuild } from "../repository/network.repository";
 import { getNetworkBallots, getNetworkMirrors, getNetworkPost, getNetworkPostByEventId } from "../repository/network-posts.repository";
 import { countRewardsWithBadge, getRewardsByEventIds } from "../repository/rewards.repository";
 import { getUserById } from "../repository/users.repository";
+import { getVoteHistory } from "../repository/vote-history.repository";
 import { getBallotsForVote, getLatestVoteByEventId, getVoteById } from "../repository/votes.repository";
 import { type AdminDecideResult, adminDecide } from "../services/biome-vote.service";
 import { type DecideNetworkVoteResult, decideNetworkVote, defaultNetworkVoteDeps } from "../services/network-vote.service";
@@ -19,6 +20,7 @@ import {
     type NetworkBallotRow,
     type NetworkPostRow,
     VoteChoice,
+    type VoteHistoryRow,
     VoteStatus,
 } from "../types";
 import { serverNameLink } from "./network-mirror.view";
@@ -30,6 +32,8 @@ const GREEN = 0x248046;
 const MAX_MENTIONS = 40;
 /** Servers listed under "Votes by server" before the rest becomes `+N more servers`. */
 const MAX_SERVERS = 10;
+/** History entries listed before the older ones become `+N earlier`. */
+const MAX_HISTORY = 10;
 
 /** What a local find's vote would take back if marked fake. */
 export interface FindRewards {
@@ -44,6 +48,8 @@ export interface LocalSide {
     ballots: BiomeVoteBallotRow[];
     finderDiscordId: string | null;
     rewards: FindRewards;
+    /** Every result change, oldest first. */
+    history: VoteHistoryRow[];
 }
 
 export interface ServerTally {
@@ -61,6 +67,8 @@ export interface NetworkSide {
     servers: ServerTally[];
     /** The Mirror in the viewer's server - `null` when it has none. */
     jumpLink: string | null;
+    /** Every result change, oldest first. */
+    history: VoteHistoryRow[];
 }
 
 export interface ReviewData {
@@ -130,6 +138,31 @@ function networkVerdict(post: NetworkPostRow, t: { real: number; fake: number })
     return t.real + t.fake === 0 ? "no_votes" : "tie";
 }
 
+const VERDICT_LABEL: Record<VoteVerdict, string> = { real: "Real", fake: "Fake", tie: "Tie", no_votes: "No votes" };
+
+function localStatusLabel(status: string): string {
+    return status === VoteStatus.OPEN ? "Open" : VERDICT_LABEL[localVoteVerdict(status as Exclude<VoteStatus, VoteStatus.OPEN>)];
+}
+
+function networkStatusLabel(status: string): string {
+    return status === "open" ? "Open" : status === "inconclusive" ? "Inconclusive" : VERDICT_LABEL[status as VoteVerdict];
+}
+
+/**
+ * Who changed the vote's result and when, oldest first - `null` below two entries, since a single one
+ * only repeats the outcome line. Keeps the last `MAX_HISTORY` so it stays under Discord's text limit.
+ */
+function historyBlock(history: VoteHistoryRow[], label: (status: string) => string, ballotsName: string): string | null {
+    if (history.length < 2) return null;
+    const shown = history.slice(-MAX_HISTORY);
+    const lines = shown.map(
+        (h) =>
+            `<t:${unix(h.created_at)}:R> · ${label(h.from_status)} → ${label(h.to_status)} · ${h.by_discord_id ? `<@${h.by_discord_id}>` : ballotsName}`,
+    );
+    if (history.length > shown.length) lines.unshift(`+${history.length - shown.length} earlier`);
+    return `**History**\n${lines.join("\n")}`;
+}
+
 /** The find's title block: biome name, then who found it (and where, for a find from another server). */
 function header(container: ContainerBuilder, biome: string, line: string): void {
     const text = `## ${formatBiomeName(biome)}\n${line}`;
@@ -161,6 +194,11 @@ function localContainer(side: LocalSide): ContainerBuilder {
         ),
     );
     divider(container);
+    const history = historyBlock(side.history, localStatusLabel, "the vote");
+    if (history) {
+        container.addTextDisplayComponents((td) => td.setContent(history));
+        divider(container);
+    }
     if (ballots.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No votes yet."));
         return container;
@@ -193,6 +231,11 @@ function networkContainer(side: NetworkSide, guildId: string): ContainerBuilder 
         ),
     );
     divider(container);
+    const history = historyBlock(side.history, networkStatusLabel, "the Network");
+    if (history) {
+        container.addTextDisplayComponents((td) => td.setContent(history));
+        divider(container);
+    }
     if (ballots.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No votes yet."));
         return container;
@@ -424,8 +467,9 @@ export function voteReviewView(
 // ─── Loading ────────────────────────────────────────────────────────────────
 
 async function loadLocal(vote: BiomeVoteRow): Promise<LocalSide> {
-    const [ballots, finderDiscordId, rewardRows] = await Promise.all([
+    const [ballots, history, finderDiscordId, rewardRows] = await Promise.all([
         getBallotsForVote(vote.id),
+        getVoteHistory("local", vote.id),
         vote.finder_discord_id
             ? Promise.resolve(vote.finder_discord_id)
             : getUserById(vote.finder_user_id).then((u) => u?.discord_user_id ?? null),
@@ -437,11 +481,15 @@ async function loadLocal(vote: BiomeVoteRow): Promise<LocalSide> {
         rewards.xp += r.xp_awarded;
         if (r.badge_awarded && (await countRewardsWithBadge(r.user_id, r.badge_awarded)) <= 1) rewards.badge = r.badge_awarded;
     }
-    return { vote, ballots, finderDiscordId, rewards };
+    return { vote, ballots, finderDiscordId, rewards, history };
 }
 
 async function loadNetwork(client: BotClient, post: NetworkPostRow, guildId: string): Promise<NetworkSide> {
-    const [ballots, mirrors] = await Promise.all([getNetworkBallots(post.id), getNetworkMirrors(post.id)]);
+    const [ballots, mirrors, history] = await Promise.all([
+        getNetworkBallots(post.id),
+        getNetworkMirrors(post.id),
+        getVoteHistory("network", post.id),
+    ]);
     const byGuild = new Map<string, { real: number; fake: number }>();
     for (const b of ballots) {
         const t = byGuild.get(b.guild_id) ?? { real: 0, fake: 0 };
@@ -463,6 +511,7 @@ async function loadNetwork(client: BotClient, post: NetworkPostRow, guildId: str
         post,
         ballots,
         servers,
+        history,
         jumpLink: mirror ? `https://discord.com/channels/${mirror.guild_id}/${mirror.channel_id}/${mirror.message_id}` : null,
     };
 }

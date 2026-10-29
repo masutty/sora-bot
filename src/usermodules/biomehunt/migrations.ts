@@ -664,6 +664,20 @@ CREATE TABLE IF NOT EXISTS bh_member_log (
 );
 CREATE INDEX IF NOT EXISTS bh_member_log_member ON bh_member_log (guild_id, discord_user_id, created_at DESC);
 
+/* Every result change of a rare-find vote (local or Network), oldest first on the review screen. No FK:
+   the id points at bh_biome_votes or bh_network_posts depending on kind, and a vote's history stays
+   readable after its row is gone. by_discord_id is null when the ballots decided it. */
+CREATE TABLE IF NOT EXISTS bh_vote_history (
+    id            BIGSERIAL PRIMARY KEY,
+    kind          VARCHAR(8) NOT NULL,
+    vote_id       TEXT NOT NULL,
+    from_status   VARCHAR(20) NOT NULL,
+    to_status     VARCHAR(20) NOT NULL,
+    by_discord_id VARCHAR(20),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bh_vote_history_vote ON bh_vote_history (kind, vote_id, created_at);
+
 `;
 
 /**
