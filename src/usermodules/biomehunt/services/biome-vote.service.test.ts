@@ -271,6 +271,20 @@ test("castBallot lets a voter switch to the other choice once, then locks it - a
     expect(await deps.getBallotsForVote(vote.id)).toEqual([expect.objectContaining({ choice: VoteChoice.FAKE, changed: true })]);
 });
 
+test("castBallot refreshes the card on a switch too - the live count follows the voter to the other side", async () => {
+    const { deps } = createFakeDeps();
+    const vote = await seedOpenVote(deps);
+    const { client, editCalls } = fakeClient();
+
+    await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps);
+    await castBallot(client, vote.id, "voter-1", VoteChoice.FAKE, deps);
+
+    expect(editCalls).toHaveLength(2);
+    const last = JSON.stringify(editCalls[1]);
+    expect(last).toContain('"label":"0"');
+    expect(last).toContain('"label":"1"');
+});
+
 test("castBallot rejects a vote that no longer exists, and one that's already closed", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
@@ -298,7 +312,7 @@ test("castBallot maps an insert-time 'closed' race (vote closed between the read
     expect(await castBallot(client, vote.id, "voter-1", VoteChoice.REAL, deps)).toEqual({ kind: "closed" });
 });
 
-test("castBallot on success re-edits the forward message with the updated (still-hidden) vote count", async () => {
+test("castBallot on success re-edits the forward message with the live vote count", async () => {
     const { deps } = createFakeDeps();
     const vote = await seedOpenVote(deps);
     const { client, editCalls } = fakeClient();
@@ -328,7 +342,6 @@ test("castBallot re-reads the vote right before rendering - a vote that closed b
     expect(editCalls).toHaveLength(1);
     const rendered = textOfEdit(editCalls[0]);
     expect(rendered).toContain("Marked as fake by <@admin-1>");
-    expect(rendered).not.toContain("voting closes <t:");
 });
 
 // ─── adminDecide ────────────────────────────────────────────────────────────────────────────────
@@ -573,7 +586,7 @@ test("closeDueVotes renders the tally from a ballot read taken AFTER the close c
 
     await closeDueVotes(client, new Date(vote.closes_at.getTime() + 1), deps);
 
-    expect(textOfEdit(editCalls[0])).toContain("`✅ 2` `❌ 0`");
+    expect(JSON.stringify(editCalls[0])).toContain('"label":"2"');
 });
 
 test("applyOutcome failing after the close already committed is logged with the vote id and a re-apply-via-check-vote hint, and the vote stays closed", async () => {

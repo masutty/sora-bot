@@ -21,6 +21,7 @@ function createFakeDeps(
     delayed: BiomeDelayedForwardRow | null = null,
 ) {
     const openVoteCalls: Array<{ jumpLink: string; channelId: string; messageId: string; closesAt: Date }> = [];
+    const casualCalls: Array<{ id: string; biome: string; messageId: string; findCount: number | null }> = [];
     const scheduled: DelayedForwardJob[] = [];
     const deps: ForwardServiceDeps = {
         getForwardConfig: async () => forward,
@@ -33,13 +34,17 @@ function createFakeDeps(
             openVoteCalls.push(params);
             return params as never;
         },
+        openCasualVote: async (params) => {
+            casualCalls.push(params);
+            return params as never;
+        },
         voteWindowMs: async () => 120_000,
         scheduleDelayedForward: (job) => {
             scheduled.push(job);
         },
         log: async () => {},
     };
-    return { deps, openVoteCalls, scheduled };
+    return { deps, openVoteCalls, casualCalls, scheduled };
 }
 
 /** A minimal fake channel/client - `send` returns a fixed message id/channel id, matching what `forwardBiome` needs to open a vote. */
@@ -110,7 +115,6 @@ test("forwardBiome: the vote closes after the configured local duration - the sa
     const closesAt = openVoteCalls[0].closesAt.getTime();
     expect(closesAt).toBeGreaterThanOrEqual(before + 120_000);
     expect(closesAt).toBeLessThanOrEqual(Date.now() + 120_000);
-    expect(JSON.stringify(sent[0])).toContain(`<t:${Math.floor(closesAt / 1000)}:R>`);
 });
 
 test("forwardBiome does nothing for a non-'started' event, a null biome, or when no forward is configured - same guards as before the refactor", async () => {
@@ -201,7 +205,9 @@ test("forwardBiome dry run (null event id): pings nobody, opens no vote, and the
     expect(openVoteCalls).toHaveLength(0);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ allowedMentions: { parse: [], roles: [] } });
-    expect(JSON.stringify(sent[0])).not.toContain("biomehunt:vote:");
+    // The vote buttons keep the card's layout but are disabled at 0/0, and no vote row exists.
+    expect(JSON.stringify(sent[0])).toContain("biomehunt:vote:preview:real");
+    expect(JSON.stringify(sent[0])).not.toContain('"disabled":false');
     // No event was inserted, so both counts are bumped to read like the real find would.
     expect(scheduled[0]).toMatchObject({ dryRun: true, voteId: null, stats: { findCount: 4, serverFindCount: 42 } });
 });
@@ -350,4 +356,31 @@ test("setDelayedForward rejects a non-rare biome before touching the DB", async 
     await expect(setDelayedForward("g1", "HELL", "delayed-channel", null, 30)).rejects.toThrow(
         new BiomeHuntError("Delayed forwards are only for rare biomes."),
     );
+});
+
+test("forwardBiome: a regular biome gets casual vote buttons - no rare vote, no closing - and a rare one gets no casual vote", async () => {
+    const regular = createFakeDeps({ guild_id: "g1", biome: "HELL", channel_id: "forward-channel", role_id: null });
+    const sent: unknown[] = [];
+    await forwardBiome(
+        fakeClient(sent),
+        "guild1",
+        42,
+        { ...STARTED, biome: "HELL" },
+        10,
+        "https://discord.com/channels/guild1/x",
+        regular.deps,
+    );
+
+    expect(regular.openVoteCalls).toHaveLength(0);
+    expect(regular.casualCalls).toEqual([
+        expect.objectContaining({ id: "vote0001", biome: "HELL", messageId: "sent-msg-1", findCount: 3 }),
+    ]);
+    const body = JSON.stringify(sent[0]);
+    expect(body).toContain("biomehunt:casual-vote:vote0001:real");
+    expect(body).not.toContain("biomehunt:forward-info");
+
+    const rare = createFakeDeps();
+    await forwardBiome(fakeClient(), "guild1", 42, STARTED, 10, "https://discord.com/channels/guild1/x", rare.deps);
+    expect(rare.openVoteCalls).toHaveLength(1);
+    expect(rare.casualCalls).toHaveLength(0);
 });

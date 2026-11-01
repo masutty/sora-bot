@@ -17,6 +17,22 @@ export function formatTime(seconds: number): string {
     return [d && `${d}d`, h && `${h}h`, m && `${m}m`, s && `${s}s`].filter(Boolean).join(" ") || "?s";
 }
 
+/** 1 → "1st", 2 → "2nd", 11 → "11th", 112 → "112th". */
+export function ordinal(n: number): string {
+    const lastTwo = n % 100;
+    if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
+    switch (n % 10) {
+        case 1:
+            return `${n}st`;
+        case 2:
+            return `${n}nd`;
+        case 3:
+            return `${n}rd`;
+        default:
+            return `${n}th`;
+    }
+}
+
 export function formatCodeblock(code: string, language: string = "txt"): string {
     return `\`\`\`${language}\n${code}\n\`\`\``;
 }

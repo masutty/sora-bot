@@ -223,6 +223,23 @@ export interface BiomeVoteRow {
     decided_at: Date | null;
 }
 
+/** The Real/Fake buttons on a regular forward - never closes, decides or rewards anything (`bh_casual_votes`). */
+export interface CasualVoteRow {
+    id: string;
+    guild_id: string;
+    channel_id: string;
+    message_id: string;
+    biome: string;
+    /** The forward's render inputs, captured when it was sent - every edit rebuilds the same card. */
+    role_id: string | null;
+    server_link: string | null;
+    jump_link: string;
+    finder_discord_id: string | null;
+    find_count: number | null;
+    server_find_count: number | null;
+    created_at: Date;
+}
+
 export interface BiomeVoteBallotRow {
     vote_id: string;
     /** Raw Discord user id (not `bh_users.id`) - a voter need not have a hunter profile. */

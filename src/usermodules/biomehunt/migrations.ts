@@ -688,6 +688,33 @@ CREATE TABLE IF NOT EXISTS bh_vote_history (
 );
 CREATE INDEX IF NOT EXISTS bh_vote_history_vote ON bh_vote_history (kind, vote_id, created_at);
 
+/* The Real/Fake buttons on a regular (non-rare) forward. Not a rare-find vote: it never closes, decides or
+   touches rewards, stats or the review screens - it only keeps who clicked what so the live count survives
+   a restart. The card's render inputs are stored, like bh_biome_votes does, so every edit rebuilds the same card. */
+CREATE TABLE IF NOT EXISTS bh_casual_votes (
+    id                VARCHAR(16) PRIMARY KEY,
+    guild_id          VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    channel_id        VARCHAR(20) NOT NULL,
+    message_id        VARCHAR(20) NOT NULL,
+    biome             VARCHAR(64) NOT NULL,
+    role_id           VARCHAR(20),
+    server_link       TEXT,
+    jump_link         TEXT NOT NULL,
+    finder_discord_id VARCHAR(20),
+    find_count        INTEGER,
+    server_find_count INTEGER,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bh_casual_vote_ballots (
+    vote_id    VARCHAR(16) NOT NULL REFERENCES bh_casual_votes(id) ON DELETE CASCADE,
+    user_id    VARCHAR(20) NOT NULL,
+    choice     VARCHAR(8) NOT NULL,
+    changed    BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (vote_id, user_id)
+);
+
 `;
 
 /**

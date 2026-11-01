@@ -43,14 +43,14 @@ function fakeDeps(result: CastNetworkBallotResult) {
 const client = {} as BotClient;
 const board = { real: 2, fake: 1 };
 
-test("net-vote: a click casts for the clicked server and answers privately with the scoreboard", async () => {
+test("net-vote: a click casts for the clicked server and answers privately with a short confirmation", async () => {
     const { deps, casts } = fakeDeps({ kind: "ok", scoreboard: board });
     const { interaction, log, replies } = fakeInteraction("gB");
     await networkVoteComponent(deps).handle(interaction as never, ["p1", "fake"], client);
     expect(casts).toEqual([{ postId: "p1", userId: "u1", guildId: "gB", choice: VoteChoice.FAKE, canVoteOnOwnFind: false }]);
     expect(log).toEqual(["deferReply", "editReply"]);
     expect(replies[0]).toContain("Vote recorded");
-    expect(replies[0]).toContain("✅ Real **2** · ❌ Fake **1**");
+    expect(replies[0]).not.toContain("Real **");
 });
 
 test("net-vote: the finder is told they can't vote on their own find", async () => {
