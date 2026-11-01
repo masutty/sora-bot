@@ -8,9 +8,10 @@ import {
     type DecideNetworkVoteResult,
     decideNetworkVote,
     defaultNetworkVoteDeps,
+    scheduleMirrorRefresh,
 } from "../services/network-vote.service";
 import { VoteChoice } from "../types";
-import { formatScoreboard, NETWORK_VOTE_PREFIX } from "../views/network-mirror.view";
+import { NETWORK_VOTE_PREFIX } from "../views/network-mirror.view";
 
 /** Injected so tests never touch the DB - `networkVoteComponent()` wires the real service. */
 export interface NetworkVoteComponentDeps {
@@ -28,8 +29,12 @@ export interface NetworkVoteComponentDeps {
 
 export function defaultNetworkVoteComponentDeps(): NetworkVoteComponentDeps {
     return {
-        cast: (client, postId, userId, guildId, choice, canVoteOnOwnFind) =>
-            castNetworkBallot(postId, userId, guildId, choice, canVoteOnOwnFind, defaultNetworkVoteDeps(client)),
+        cast: async (client, postId, userId, guildId, choice, canVoteOnOwnFind) => {
+            const deps = defaultNetworkVoteDeps(client);
+            const result = await castNetworkBallot(postId, userId, guildId, choice, canVoteOnOwnFind, deps);
+            if (result.kind === "ok" || result.kind === "changed") scheduleMirrorRefresh(postId, deps);
+            return result;
+        },
         decide: (client, postId, ownerId, choice) => decideNetworkVote(postId, ownerId, choice, defaultNetworkVoteDeps(client)),
         ownerIds: () => config.bot.ownerIds,
     };
@@ -40,17 +45,13 @@ const CHOICE_LABEL: Record<VoteChoice, string> = { [VoteChoice.REAL]: "Real", [V
 function answer(result: CastNetworkBallotResult, choice: VoteChoice): string {
     switch (result.kind) {
         case "ok":
-            return `Vote recorded!
-${formatScoreboard(result.scoreboard)}`;
+            return "Vote recorded!";
         case "changed":
-            return `Vote changed to **${CHOICE_LABEL[choice]}**. You can't change it again.
-${formatScoreboard(result.scoreboard)}`;
+            return `Vote changed to **${CHOICE_LABEL[choice]}**. You can't change it again.`;
         case "unchanged":
-            return `You already voted **${CHOICE_LABEL[choice]}** on this find.
-${formatScoreboard(result.scoreboard)}`;
+            return `You already voted **${CHOICE_LABEL[choice]}** on this find.`;
         case "change_locked":
-            return `You already changed your vote once - it can't change again.
-${formatScoreboard(result.scoreboard)}`;
+            return "You already changed your vote once - it can't change again.";
         case "finder":
             return "You can't vote on your own find.";
         case "banned":
@@ -73,8 +74,8 @@ const DECIDE_ANSWER: Record<DecideNetworkVoteResult, (choice: VoteChoice) => str
 /**
  * `biomehunt:net-vote:<postId>:<real|fake>` - the Network's Real/Fake on a Mirror. A bot owner's click
  * decides the vote on the spot; anyone else's is one ballot (an admin or owner of the server they
- * click in may vote on their own find). Mirrors are only edited once (at close), so the clicker sees
- * the current scoreboard in a private reply instead. `deferReply` runs before any DB work (Discord's 3s window).
+ * click in may vote on their own find). A ballot queues a refresh of every Mirror's live count (see
+ * `scheduleMirrorRefresh`), so the reply is just a short confirmation. `deferReply` runs before any DB work (Discord's 3s window).
  */
 export function networkVoteComponent(deps: NetworkVoteComponentDeps = defaultNetworkVoteComponentDeps()) {
     return defineComponent({

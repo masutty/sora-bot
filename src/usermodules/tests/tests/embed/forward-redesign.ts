@@ -7,8 +7,10 @@ import {
     getEnabledBiomes,
     MAX_DISCORD_CHOICES,
 } from "@/usermodules/biomehunt/constants/biomes.constants";
+import { CASUAL_VOTE_PREFIX } from "@/usermodules/biomehunt/services/casual-vote.service";
 import { VoteStatus } from "@/usermodules/biomehunt/types";
 import { buildForwardContainer, type ForwardBadges, type VoteRenderInfo } from "@/usermodules/biomehunt/views/forward-post.view";
+import { buildMirrorContainer, type MirrorVoteInfo } from "@/usermodules/biomehunt/views/network-mirror.view";
 import { NO_PINGS } from "@/utils/format";
 import type { TestCase } from "../../registry";
 
@@ -25,52 +27,81 @@ const FAKE_SERVER_LINK = "https://www.roblox.com/games/15532962292";
 interface Scenario {
     label: string;
     description: string;
-    vote?: Omit<VoteRenderInfo, "voteId" | "closesAt" | "decidedByUserId">;
+    vote?: Omit<VoteRenderInfo, "voteId" | "decidedByUserId">;
     badges?: ForwardBadges;
     firstFind?: boolean;
     noServerLink?: boolean;
+    /** Render the Network Mirror of the picked biome instead of the local card. */
+    network?: { vote: MirrorVoteInfo; originName?: string; home?: boolean };
 }
 
 const SCENARIOS: Record<string, Scenario> = {
-    plain: { label: "Regular find", description: "Non-rare biome, no vote - the most common forward" },
+    plain: {
+        label: "Regular find",
+        description: "Casual vote buttons: a live count, nothing is decided",
+        vote: { status: VoteStatus.OPEN, tally: { real: 3, fake: 1 }, prefix: CASUAL_VOTE_PREFIX, hideId: true },
+    },
     "vote-open": {
         label: "Vote - open",
         description: "Rare biome right after it's found",
-        vote: { status: VoteStatus.OPEN, voteCount: 2 },
+        vote: { status: VoteStatus.OPEN, tally: { real: 2, fake: 0 } },
     },
     "vote-real": {
         label: "Vote - ruled real",
         description: "Community voted real",
-        vote: { status: VoteStatus.COMMUNITY_REAL, voteCount: 5, tally: { real: 4, fake: 1 } },
+        vote: { status: VoteStatus.COMMUNITY_REAL, tally: { real: 4, fake: 1 } },
     },
     "vote-fake": {
         label: "Vote - ruled fake",
         description: "Community voted fake",
-        vote: { status: VoteStatus.COMMUNITY_FAKE, voteCount: 5, tally: { real: 1, fake: 4 } },
+        vote: { status: VoteStatus.COMMUNITY_FAKE, tally: { real: 1, fake: 4 } },
     },
     "vote-tie": {
         label: "Vote - tie",
         description: "Same number of real/fake votes",
-        vote: { status: VoteStatus.TIE, voteCount: 4, tally: { real: 2, fake: 2 } },
+        vote: { status: VoteStatus.TIE, tally: { real: 2, fake: 2 } },
     },
     "vote-none": {
         label: "Vote - no votes",
         description: "Nobody voted before it closed",
-        vote: { status: VoteStatus.NO_VOTES, voteCount: 0 },
+        vote: { status: VoteStatus.NO_VOTES, tally: { real: 0, fake: 0 } },
     },
     "vote-admin-real": {
         label: "Vote - admin confirmed",
         description: "An administrator ruled it real",
-        vote: { status: VoteStatus.ADMIN_CONFIRMED, voteCount: 1, tally: { real: 1, fake: 0 } },
+        vote: { status: VoteStatus.ADMIN_CONFIRMED, tally: { real: 1, fake: 0 } },
     },
     "vote-admin-fake": {
         label: "Vote - admin denied",
         description: "An administrator ruled it fake",
-        vote: { status: VoteStatus.ADMIN_DENIED, voteCount: 1, tally: { real: 0, fake: 1 } },
+        vote: { status: VoteStatus.ADMIN_DENIED, tally: { real: 0, fake: 1 } },
     },
     delayed: { label: "Delayed forward", description: "Sent to the delayed channel (⏳ + ?)", badges: { delayed: true } },
     simulated: { label: "Simulated (dry run)", description: "/owner simulate-biome - banner + 🧪", badges: { simulated: true } },
     first: { label: "First find ever", description: "Their first, and the server's first", firstFind: true },
+    "net-open": {
+        label: "Network - vote open",
+        description: "A Network Mirror with the live count",
+        network: { vote: { status: "open", scoreboard: { real: 5, fake: 1 } } },
+    },
+    "net-real": {
+        label: "Network - ruled real",
+        description: "A closed Network vote",
+        network: { vote: { status: "real", scoreboard: { real: 12, fake: 3 } } },
+    },
+    "net-long": {
+        label: "Network - long server name",
+        description: "The origin name is cut to 18 characters",
+        network: {
+            vote: { status: "open", scoreboard: { real: 0, fake: 0 } },
+            originName: "The Official Community Hub of the Very Long Named Server",
+        },
+    },
+    "net-home": {
+        label: "Network - home",
+        description: "The origin's own server: Home badge, no ping",
+        network: { vote: { status: "open", scoreboard: { real: 2, fake: 0 } }, home: true },
+    },
     "no-link": { label: "No private server link", description: "Macro didn't send a server link", noServerLink: true },
 };
 
@@ -79,9 +110,24 @@ function buildPreview(biome: string, scenario: Scenario, finderId: string) {
     const vote: VoteRenderInfo | undefined = scenario.vote && {
         ...scenario.vote,
         voteId: FAKE_VOTE_ID,
-        closesAt: new Date(now + 52_000),
         decidedByUserId: finderId,
     };
+    if (scenario.network) {
+        return buildMirrorContainer({
+            post: {
+                id: FAKE_VOTE_ID,
+                biome,
+                origin_name: scenario.network.originName ?? "illusion.",
+                origin_icon_url: null,
+                invite_url: "https://discord.gg/preview",
+                server_link: FAKE_SERVER_LINK,
+            },
+            roleId: FAKE_ROLE_ID,
+            vote: scenario.network.vote,
+            home: scenario.network.home,
+            flavorText: getBiomeMeta(biome)?.flavorText,
+        });
+    }
     return buildForwardContainer({
         biome,
         roleId: FAKE_ROLE_ID,
@@ -90,7 +136,7 @@ function buildPreview(biome: string, scenario: Scenario, finderId: string) {
         finderDiscordId: finderId,
         findCount: scenario.firstFind ? 1 : 3,
         serverFindCount: scenario.firstFind ? 1 : 41,
-        lastSeenInServerAt: scenario.firstFind ? null : new Date(now - 2 * 86_400_000 - 5 * 3_600_000),
+        sentAt: new Date(now - 2 * 3_600_000),
         vote,
         badges: scenario.badges,
         // Preview only for now - real forwards don't pass it yet.

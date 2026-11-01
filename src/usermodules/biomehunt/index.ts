@@ -9,6 +9,7 @@ import _networkAdmin from "./commands/network-admin.command";
 import _owner from "./commands/owner.command";
 import _stats from "./commands/stats.command";
 import { biomeVoteComponent } from "./components/biome-vote.component";
+import { casualVoteComponent } from "./components/casual-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
 import { networkReviewComponent } from "./components/network-review.component";
 import { networkVoteComponent } from "./components/network-vote.component";
@@ -50,7 +51,14 @@ export default defineCog({
         shopRolesWorker,
     ],
 
-    components: [biomeVoteComponent(), forwardInfoComponent(), networkReviewComponent(), networkVoteComponent(), shopManageComponent()],
+    components: [
+        biomeVoteComponent(),
+        casualVoteComponent(),
+        forwardInfoComponent(),
+        networkReviewComponent(),
+        networkVoteComponent(),
+        shopManageComponent(),
+    ],
 
     events: {
         async guildMemberAdd(_client, member) {

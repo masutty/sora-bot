@@ -1,3 +1,4 @@
+import { emojiMarkdown, VOTE_EMOJIS } from "../constants/vote-emojis.constants";
 import { type RareFind, VoteStatus } from "../types";
 
 export interface VoteTally {
@@ -35,6 +36,25 @@ export function voteOutcomeLine(o: VoteOutcome): string {
             return o.decidedBy
                 ? `❌ Marked as fake by <@${o.decidedBy}>`
                 : `❌ Marked as fake by ${o.voters ?? "community voting"}${chips}`;
+    }
+}
+
+/**
+ * How a closed vote ended, as the one bullet on a forward card or Network Mirror: our own filled
+ * icon, then who decided - no counts, the buttons carry them. `/admin check-vote` keeps
+ * `voteOutcomeLine`.
+ */
+export function voteResultLine(o: VoteOutcome): string {
+    const by = o.decidedBy ? `<@${o.decidedBy}>` : (o.voters ?? "community voting");
+    switch (o.verdict) {
+        case "no_votes":
+            return "*Vote expired with no votes*";
+        case "tie":
+            return "⚖️ Tied vote";
+        case "real":
+            return `${emojiMarkdown(VOTE_EMOJIS.realFilled)} Marked as real by ${by}`;
+        case "fake":
+            return `${emojiMarkdown(VOTE_EMOJIS.fakeFilled)} Marked as fake by ${by}`;
     }
 }
 

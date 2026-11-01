@@ -23,7 +23,7 @@ import {
     NetworkStatus,
     VoteChoice,
 } from "../types";
-import { buildMirrorContainer, formatScoreboard, type Scoreboard, serverNameLink } from "../views/network-mirror.view";
+import { buildMirrorContainer, formatScoreboard, type MirrorVoteInfo, type Scoreboard, serverNameLink } from "../views/network-mirror.view";
 import { notifyStaff } from "./network-membership.service";
 import { notifyOwners } from "./owner-dm.service";
 
@@ -196,26 +196,66 @@ export async function closeNetworkVote(
     return "ok";
 }
 
-/** Edits every Mirror once with the vote's new result, and on a Fake verdict warns the origin's staff (and the owners, unless one decided it). */
-async function publishResult(closed: NetworkPostRow, status: NetworkVoteResult, deps: NetworkVoteDeps): Promise<void> {
-    // Read after the close committed - a ballot racing it is either counted here or was rejected.
-    const final = resolveNetworkVote(await deps.getNetworkBallots(closed.id));
-    // Each Mirror is rebuilt with the ping role it was sent with, so the mention stays visible - an
-    // edit never pings again.
-    const payloadFor = (mirror: NetworkMirrorRow): MessageEditOptions => ({
+/**
+ * Each Mirror rebuilt with the ping role it was sent with, so the mention stays visible - an edit
+ * never pings again.
+ */
+function mirrorPayload(post: NetworkPostRow, mirror: NetworkMirrorRow, vote: MirrorVoteInfo): MessageEditOptions {
+    return {
         components: [
             buildMirrorContainer({
-                post: closed,
+                post,
                 roleId: mirror.role_id,
-                home: mirror.guild_id === closed.origin_guild_id,
-                vote: { status, scoreboard: final.scoreboard, decidedBy: closed.vote_decided_by },
-                flavorText: getBiomeMeta(closed.biome)?.flavorText,
+                home: mirror.guild_id === post.origin_guild_id,
+                vote,
+                flavorText: getBiomeMeta(post.biome)?.flavorText,
             }),
         ],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: NO_PINGS,
-    });
-    for (const mirror of await deps.getNetworkMirrors(closed.id)) await deps.editMirror(mirror, payloadFor(mirror));
+    };
+}
+
+/** How long after a ballot the Mirrors are refreshed - a burst of ballots becomes one edit per Mirror. */
+const MIRROR_REFRESH_DELAY_MS = 3000;
+const pendingRefresh = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Queues one trailing edit of every Mirror of `postId` with its live count (a further ballot before it fires just waits for it). */
+export function scheduleMirrorRefresh(postId: string, deps: NetworkVoteDeps): void {
+    if (pendingRefresh.has(postId)) return;
+    const timer = setTimeout(() => {
+        pendingRefresh.delete(postId);
+        refreshOpenMirrors(postId, deps).catch((err) =>
+            logger.error(err instanceof Error ? err : new Error(String(err)), { postId, note: "Network Mirror count refresh failed" }),
+        );
+    }, MIRROR_REFRESH_DELAY_MS);
+    pendingRefresh.set(postId, timer);
+}
+
+/** The vote just closed or was decided - its result edit replaces any queued count refresh. */
+function cancelMirrorRefresh(postId: string): void {
+    const timer = pendingRefresh.get(postId);
+    if (timer) clearTimeout(timer);
+    pendingRefresh.delete(postId);
+}
+
+/** Edits every Mirror of an open vote with its live count - exported for tests; callers go through `scheduleMirrorRefresh`. */
+export async function refreshOpenMirrors(postId: string, deps: NetworkVoteDeps): Promise<void> {
+    const post = await deps.getNetworkPost(postId);
+    if (!post || post.vote_status !== "open") return;
+    const { scoreboard } = resolveNetworkVote(await deps.getNetworkBallots(postId));
+    for (const mirror of await deps.getNetworkMirrors(postId)) {
+        await deps.editMirror(mirror, mirrorPayload(post, mirror, { status: "open", scoreboard }));
+    }
+}
+
+/** Edits every Mirror once with the vote's new result, and on a Fake verdict warns the origin's staff (and the owners, unless one decided it). */
+async function publishResult(closed: NetworkPostRow, status: NetworkVoteResult, deps: NetworkVoteDeps): Promise<void> {
+    cancelMirrorRefresh(closed.id);
+    // Read after the close committed - a ballot racing it is either counted here or was rejected.
+    const final = resolveNetworkVote(await deps.getNetworkBallots(closed.id));
+    const vote = { status, scoreboard: final.scoreboard, decidedBy: closed.vote_decided_by };
+    for (const mirror of await deps.getNetworkMirrors(closed.id)) await deps.editMirror(mirror, mirrorPayload(closed, mirror, vote));
 
     if (status === "fake") await reportFakeVerdict(closed, final.scoreboard, deps);
 }

@@ -10,8 +10,9 @@ import { getUserById } from "../repository/users.repository";
 import { getVoteById } from "../repository/votes.repository";
 import { settings } from "../settings";
 import { type BiomeDelayedForwardRow, type BiomeForwardRow, BiomeHuntError, type ParsedEvent, VoteStatus } from "../types";
-import { buildForwardContainer, type ForwardFindStats, forwardMentions } from "../views/forward-post.view";
+import { buildForwardContainer, type ForwardFindStats, forwardMentions, type VoteRenderInfo } from "../views/forward-post.view";
 import { getVoteWindowMs, newVoteId, openVote } from "./biome-vote.service";
+import { CASUAL_VOTE_PREFIX, openCasualVote } from "./casual-vote.service";
 import { clearLogDedup, describeDiscordError, type GuildLogEntry, guildLog } from "./guild-log.service";
 
 const logger = new Logger("biomehunt.services.forward");
@@ -29,6 +30,8 @@ export interface ForwardServiceDeps {
     getUserById: typeof getUserById;
     newVoteId: typeof newVoteId;
     openVote: typeof openVote;
+    /** The Real/Fake buttons on a regular (non-rare) forward - they never decide anything. */
+    openCasualVote: typeof openCasualVote;
     /** The local vote's current duration (`getVoteWindowMs("local")`). */
     voteWindowMs: () => Promise<number>;
     scheduleDelayedForward: typeof scheduleDelayedForward;
@@ -59,6 +62,7 @@ export function defaultForwardServiceDeps(): ForwardServiceDeps {
         getUserById,
         newVoteId,
         openVote,
+        openCasualVote,
         voteWindowMs: () => getVoteWindowMs("local"),
         scheduleDelayedForward,
         log: logToGuild,
@@ -182,6 +186,7 @@ async function sendLiveForward(
     const dryRun = eventId === null;
     const isRare = getBiomeMeta(biome)?.category === "rare";
     const voteId = isRare && !dryRun ? deps.newVoteId() : null;
+    const casualId = !isRare && !dryRun ? deps.newVoteId() : null;
     const closesAt = new Date(now.getTime() + (voteId ? await deps.voteWindowMs() : 0));
 
     const container = buildForwardContainer({
@@ -191,7 +196,7 @@ async function sendLiveForward(
         jumpLink,
         ...stats,
         sentAt: now,
-        vote: voteId ? { voteId, status: VoteStatus.OPEN, closesAt, voteCount: 0 } : undefined,
+        vote: liveVote(voteId, casualId, dryRun),
         badges: dryRun ? { simulated: true } : undefined,
         flavorText: getBiomeMeta(biome)?.flavorText,
     });
@@ -203,6 +208,22 @@ async function sendLiveForward(
             flags: MessageFlags.IsComponentsV2,
             allowedMentions: forwardMentions(forward.role_id, dryRun),
         });
+        if (casualId) {
+            await deps.openCasualVote({
+                id: casualId,
+                guildId,
+                channelId: sent.channelId,
+                messageId: sent.id,
+                biome,
+                roleId: forward.role_id,
+                serverLink: parsed.serverLink,
+                jumpLink,
+                finderDiscordId: stats.finderDiscordId ?? null,
+                findCount: stats.findCount ?? null,
+                serverFindCount: stats.serverFindCount ?? null,
+            });
+            return null;
+        }
         if (!voteId) return null;
         await deps.openVote({
             voteId,
@@ -226,6 +247,17 @@ async function sendLiveForward(
         if (!sent) await deps.log(client, guildId, forwardFailure(biome, stats.finderDiscordId ?? null, forward.channel_id, err));
         return null;
     }
+}
+
+/**
+ * The Real/Fake buttons of a live forward: a rare find's vote, a regular find's casual vote, or - for
+ * a dry run, which opens no vote at all - the buttons disabled at 0/0 so the card keeps its real layout.
+ */
+function liveVote(voteId: string | null, casualId: string | null, dryRun: boolean): VoteRenderInfo | undefined {
+    const tally = { real: 0, fake: 0 };
+    if (voteId) return { voteId, status: VoteStatus.OPEN, tally };
+    if (casualId) return { voteId: casualId, status: VoteStatus.OPEN, tally, prefix: CASUAL_VOTE_PREFIX, hideId: true };
+    return dryRun ? { voteId: "preview", status: VoteStatus.NO_VOTES, tally, hideId: true } : undefined;
 }
 
 /** Injected so tests never touch the DB or wait on a real timer - `defaultDelayedForwardDeps` wires the real ones. */

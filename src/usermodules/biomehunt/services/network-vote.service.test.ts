@@ -16,6 +16,7 @@ import {
     closeNetworkVote,
     decideNetworkVote,
     type NetworkVoteDeps,
+    refreshOpenMirrors,
     resolveNetworkVote,
 } from "./network-vote.service";
 
@@ -211,7 +212,7 @@ test("closeDueNetworkVotes: a Fake verdict edits every Mirror once, pings the or
 
     expect(fake.current().vote_status).toBe("fake");
     expect(fake.calls.edits.map((e) => e.mirror.message_id).sort()).toEqual(["m1", "m2"]);
-    expect(JSON.stringify(fake.calls.edits[0].payload.components)).not.toContain("net-vote");
+    expect(JSON.stringify(fake.calls.edits[0].payload.components)).toContain('"disabled":true');
     expect(fake.calls.staff).toHaveLength(1);
     expect(fake.calls.staff[0].guildId).toBe("gA");
     expect(fake.calls.ownerDms).toHaveLength(1);
@@ -271,8 +272,8 @@ test("closeNetworkVote: the origin's own Mirror keeps its Home badge after the c
     mirrors.push({ post_id: "p1", guild_id: "gA", channel_id: "net-gA", message_id: "m3", role_id: null });
     await closeNetworkVote("p1", "owner", fake.deps);
     const byMessage = new Map(fake.calls.edits.map((e) => [e.mirror.message_id, JSON.stringify(e.payload.components)]));
-    expect(byMessage.get("m3")).toContain("biomehunt:forward-info:0:0:1:1");
-    expect(byMessage.get("m1")).toContain('biomehunt:forward-info:0:0:1"');
+    expect(byMessage.get("m3")).toContain("biomehunt:forward-info:0:0:1:1:p1");
+    expect(byMessage.get("m1")).toContain("biomehunt:forward-info:0:0:1:0:p1");
 });
 
 test("decideNetworkVote: the bot owner's click closes the vote with their choice, whatever the ballots say", async () => {
@@ -365,4 +366,23 @@ test("a failing history write never undoes a Network decision", async () => {
         throw new Error("db down");
     };
     expect(await decideNetworkVote("p1", "owner-1", REAL, deps)).toBe("ok");
+});
+
+test("refreshOpenMirrors: every Mirror of an open vote gets the live count, and a closed vote is left alone", async () => {
+    const fake = createFakeDeps();
+    await castNetworkBallot("p1", "u1", "gB", REAL, false, fake.deps);
+    await castNetworkBallot("p1", "u2", "gC", FAKE, false, fake.deps);
+    await castNetworkBallot("p1", "u3", "gC", FAKE, false, fake.deps);
+
+    await refreshOpenMirrors("p1", fake.deps);
+    expect(fake.calls.edits.map((e) => e.mirror.message_id).sort()).toEqual(["m1", "m2"]);
+    const body = JSON.stringify(fake.calls.edits[0].payload.components);
+    expect(body).toContain('"label":"1"');
+    expect(body).toContain('"label":"2"');
+    expect(body).toContain('"disabled":false');
+
+    await closeNetworkVote("p1", "owner", fake.deps);
+    fake.calls.edits.length = 0;
+    await refreshOpenMirrors("p1", fake.deps);
+    expect(fake.calls.edits).toHaveLength(0);
 });

@@ -115,22 +115,17 @@ function tallyOf(ballots: Array<Pick<BiomeVoteBallotRow, "choice">>): { real: nu
 }
 
 /**
- * The render info for `vote`'s CURRENT status - `open` hides the tally (just a live count);
- * anything else shows the real/fake split and, for an admin decision, who decided. Shared by
- * every call site so a re-read right before rendering (see `castBallot`) always renders whichever
- * state it actually finds, not an assumption baked in earlier.
+ * The render info for `vote`'s CURRENT status - the live real/fake tally in every state (an open
+ * vote shows it too), and for an admin decision, who decided. Shared by every call site so a
+ * re-read right before rendering (see `castBallot`) always renders whichever state it actually
+ * finds, not an assumption baked in earlier.
  */
 function renderInfoFor(vote: BiomeVoteRow, ballots: Array<Pick<BiomeVoteBallotRow, "choice">>): VoteRenderInfo {
-    if (vote.status === VoteStatus.OPEN) {
-        return { voteId: vote.id, status: VoteStatus.OPEN, closesAt: vote.closes_at, voteCount: ballots.length };
-    }
     return {
         voteId: vote.id,
         status: vote.status,
-        closesAt: vote.closes_at,
-        voteCount: ballots.length,
         tally: tallyOf(ballots),
-        decidedByUserId: vote.decided_by ?? undefined,
+        decidedByUserId: vote.status === VoteStatus.OPEN ? undefined : (vote.decided_by ?? undefined),
     };
 }
 
@@ -300,8 +295,7 @@ export type CastBallotResult =
 /**
  * Casts one community ballot. Rejects the finder voting on their own find and a vote that's
  * already closed; a voter can switch to the other choice once, then it's locked. A first ballot
- * re-edits the forward message with the new (still-hidden) tally count - a switch leaves the
- * count as it was, so it doesn't.
+ * and a switch both re-edit the forward message with the new live tally.
  */
 export async function castBallot(
     client: BotClient,
@@ -321,18 +315,17 @@ export async function castBallot(
     // window between the `getVoteById` read above and this write (a `closeDueVotes`/`adminDecide`
     // closing the vote in between yields "closed" here, not a recorded ballot on a dead vote).
     const written = await deps.insertBallot(voteId, discordUserId, choice);
-    if (written !== "inserted") return { kind: written };
+    if (written !== "inserted" && written !== "changed") return { kind: written };
 
     // Re-read the vote right before rendering - it may have closed in the tiny window between the
     // insert above and this refresh (an admin decision, or the closing worker). Rendering the
     // OPEN state unconditionally here would overwrite an already-closed message with a stale
-    // "N votes • closes <t:R>" - `renderInfoFor` picks the right shape for whatever status this
-    // finds, open or not.
+    // open card - `renderInfoFor` picks the right shape for whatever status this finds, open or not.
     const current = (await deps.getVoteById(voteId)) ?? vote;
     const ballots = await deps.getBallotsForVote(voteId);
     await refreshVoteMessage(client, current, renderInfoFor(current, ballots));
 
-    return { kind: "ok" };
+    return { kind: written === "changed" ? "changed" : "ok" };
 }
 
 export type AdminDecideResult =
