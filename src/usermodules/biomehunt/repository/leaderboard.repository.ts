@@ -26,7 +26,7 @@ const SQL: Record<LeaderboardMetric, string> = {
                             ELSE GREATEST(0, EXTRACT(EPOCH FROM s.ended_at - GREATEST(s.started_at, NOW() - $2::int * INTERVAL '1 day'))) END) AS value
             FROM bh_activity_sessions s
             JOIN bh_users u ON u.id = s.user_id
-            WHERE u.guild_id = $1
+            WHERE u.guild_id = $1 AND s.counted
             GROUP BY u.discord_user_id`,
     seeds: `SELECT u.discord_user_id, SUM(r.seeds_awarded) AS value
             FROM bh_biome_rewards r

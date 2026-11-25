@@ -11,6 +11,7 @@ const SESSION_ROW = {
     started_at: new Date("2026-01-01T10:00:00Z"),
     ended_at: new Date("2026-01-01T11:00:00Z"),
     duration_seconds: 3600,
+    counted: true,
 };
 
 mock.module("../repository/activity.repository", () => ({
@@ -43,6 +44,7 @@ const session: ActivitySessionRow = {
     started_at: SESSION_ROW.started_at,
     ended_at: SESSION_ROW.ended_at,
     duration_seconds: 3600,
+    counted: true,
 };
 
 const find = (biome: string) => ({ biome, at: new Date("2026-01-01T10:30:00Z"), vote: null }) as unknown as RareFind;

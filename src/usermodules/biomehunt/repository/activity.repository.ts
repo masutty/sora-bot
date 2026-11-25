@@ -64,6 +64,21 @@ export async function extendSession(client: PoolClient, sessionId: number, at: D
     return sessionRow(result.rows[0]);
 }
 
+/** Takes a session out of every stat and quota - it was recorded during a pause that does not count. */
+export async function setSessionUncounted(client: PoolClient, sessionId: number): Promise<void> {
+    await client.query(`UPDATE bh_activity_sessions SET counted = false WHERE id = $1`, [sessionId]);
+}
+
+/** Marks the user's latest session uncounted, only while it is still running (the user is `active`). */
+export async function markCurrentSessionUncounted(userId: number): Promise<void> {
+    await query(
+        `UPDATE bh_activity_sessions SET counted = false
+         WHERE id = (SELECT id FROM bh_activity_sessions WHERE user_id = $1 ORDER BY started_at DESC LIMIT 1)
+           AND EXISTS (SELECT 1 FROM bh_users WHERE id = $1 AND current_status = 'active')`,
+        [userId],
+    );
+}
+
 /**
  * Sums the portion of each session that actually falls within the last `windowHours` - not the
  * full `duration_seconds` of every session that merely *started* inside the window. A long
@@ -77,7 +92,7 @@ export async function getActiveSecondsInWindow(userId: number, windowHours: numb
              LEAST(ended_at, NOW()) - GREATEST(started_at, NOW() - ($2 || ' hours')::interval)
          )))) AS total
          FROM bh_activity_sessions
-         WHERE user_id = $1 AND ended_at >= NOW() - ($2 || ' hours')::interval`,
+         WHERE user_id = $1 AND counted AND ended_at >= NOW() - ($2 || ' hours')::interval`,
         [userId, windowHours],
     );
     return Number(result.rows[0]?.total ?? 0);
@@ -92,7 +107,7 @@ export async function getActiveSecondsBetween(userId: number, start: Date, end: 
              LEAST(ended_at, $3) - GREATEST(started_at, $2)
          )))) AS total
          FROM bh_activity_sessions
-         WHERE user_id = $1 AND ended_at >= $2 AND started_at <= $3`,
+         WHERE user_id = $1 AND counted AND ended_at >= $2 AND started_at <= $3`,
         [userId, start, end],
     );
     return Number(result.rows[0]?.total ?? 0);
@@ -116,7 +131,7 @@ export async function getGuildActiveSecondsBetween(
                 SUM(GREATEST(0, EXTRACT(EPOCH FROM (LEAST(s.ended_at, $3) - GREATEST(s.started_at, $2)))))
                     FILTER (WHERE s.id IS NOT NULL) AS total
          FROM bh_users u
-         LEFT JOIN bh_activity_sessions s ON s.user_id = u.id AND s.ended_at >= $2 AND s.started_at <= $3
+         LEFT JOIN bh_activity_sessions s ON s.user_id = u.id AND s.counted AND s.ended_at >= $2 AND s.started_at <= $3
          WHERE u.guild_id = $1 AND u.paused_at IS NULL
          GROUP BY u.id, u.discord_user_id`,
         [guildId, start, end],
@@ -317,7 +332,7 @@ export async function getLeaderboard(
                 COUNT(s.id) AS session_count
          FROM bh_users u
          JOIN bh_activity_sessions s ON s.user_id = u.id
-         WHERE u.guild_id = $1 AND s.ended_at >= NOW() - ($2 || ' hours')::interval
+         WHERE u.guild_id = $1 AND s.counted AND s.ended_at >= NOW() - ($2 || ' hours')::interval
          GROUP BY u.discord_user_id
          ORDER BY active_seconds DESC
          LIMIT $3`,
@@ -384,7 +399,7 @@ export async function getGuildSessionOverview(guildId: string): Promise<GuildSes
                 COUNT(DISTINCT s.user_id) AS distinct_users
          FROM bh_activity_sessions s
          JOIN bh_users u ON u.id = s.user_id
-         WHERE u.guild_id = $1`,
+         WHERE u.guild_id = $1 AND s.counted`,
         [guildId],
     );
     const row = result.rows[0];
@@ -410,7 +425,7 @@ export async function getLongestSessions(guildId: string, limit: number): Promis
         `SELECT s.id, u.discord_user_id, s.started_at, s.ended_at, s.duration_seconds
          FROM bh_activity_sessions s
          JOIN bh_users u ON u.id = s.user_id
-         WHERE u.guild_id = $1
+         WHERE u.guild_id = $1 AND s.counted
          ORDER BY s.duration_seconds DESC
          LIMIT $2`,
         [guildId, limit],
@@ -430,7 +445,7 @@ export async function getUserLongestSessionRank(
     userId: number,
 ): Promise<{ rank: number; totalSessions: number; longestSeconds: number } | null> {
     const longest = await query<{ duration_seconds: number }>(
-        `SELECT MAX(duration_seconds) AS duration_seconds FROM bh_activity_sessions WHERE user_id = $1`,
+        `SELECT MAX(duration_seconds) AS duration_seconds FROM bh_activity_sessions WHERE user_id = $1 AND counted`,
         [userId],
     );
     const longestSeconds = longest.rows[0]?.duration_seconds;
@@ -439,9 +454,9 @@ export async function getUserLongestSessionRank(
     const result = await query<{ rank: string; total: string }>(
         `SELECT
              (SELECT COUNT(*) + 1 FROM bh_activity_sessions s2 JOIN bh_users u2 ON u2.id = s2.user_id
-              WHERE u2.guild_id = $1 AND s2.duration_seconds > $2) AS rank,
+              WHERE u2.guild_id = $1 AND s2.counted AND s2.duration_seconds > $2) AS rank,
              (SELECT COUNT(*) FROM bh_activity_sessions s3 JOIN bh_users u3 ON u3.id = s3.user_id
-              WHERE u3.guild_id = $1) AS total`,
+              WHERE u3.guild_id = $1 AND s3.counted) AS total`,
         [guildId, longestSeconds],
     );
     return { rank: Number(result.rows[0].rank), totalSessions: Number(result.rows[0].total), longestSeconds };
@@ -558,7 +573,7 @@ export async function getGuildMacroSeconds(guildId: string): Promise<{ week: num
         `SELECT ${clipped(7)} AS week, ${clipped(30)} AS month, COALESCE(SUM(s.duration_seconds), 0) AS all_time
          FROM bh_activity_sessions s
          JOIN bh_users u ON u.id = s.user_id
-         WHERE u.guild_id = $1`,
+         WHERE u.guild_id = $1 AND s.counted`,
         [guildId],
     );
     const row = result.rows[0];

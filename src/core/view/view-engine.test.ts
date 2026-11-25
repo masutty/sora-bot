@@ -210,6 +210,19 @@ test("8. idle timeout renews on accepted clicks and expires without them: before
     expect(await result).toBeUndefined();
 });
 
+test("fixedTimeout: clicks do not renew the clock; it expires TIMEOUT after the start", async () => {
+    const result = start(defineView({ ...counter, fixedTimeout: true }), 1);
+    await fake.flush();
+
+    await fake.clock.advance(TIMEOUT - 100);
+    await fake.emit(fake.click("inc", OWNER));
+    expect(fake.closed).toBe(0);
+    await fake.clock.advance(100);
+
+    expect(fake.closed).toBe(1);
+    expect(await result).toBeUndefined();
+});
+
 test("9. onExpire as a function: its payload is the final one", async () => {
     const result = start(defineView({ ...counter, onExpire: (s: { n: number }) => ({ content: `expired at ${s.n}` }) }), 3);
     await fake.flush();

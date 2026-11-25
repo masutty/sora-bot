@@ -13,6 +13,7 @@ function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
         activity_grace_until: null,
         activity_grace_biome: null,
         paused_at: null,
+        auto_delete_clock_from: null,
         created_at: new Date(),
         seeds: 0,
         xp: 0,

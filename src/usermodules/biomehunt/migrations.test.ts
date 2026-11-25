@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL } from "./migrations";
+import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL, PAUSE_BACKFILL } from "./migrations";
 
 /** The schema's SQL with its comments stripped - so the rule below checks statements, not prose. */
 const sql = BIOMEHUNT_SCHEMA.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
@@ -56,4 +56,19 @@ test("the Herbarium backfill is its own migration and never overwrites a row", (
 
 test("the Herbarium dies with the member row", () => {
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS bh_user_flowers[\s\S]*?REFERENCES bh_users\(id\) ON DELETE CASCADE/);
+});
+
+test("the schema creates bh_pauses with one active pause per member", () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS bh_pauses/);
+    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS bh_pauses_one_active[^;]*WHERE ended_at IS NULL/);
+    expect(sql).toMatch(/ALTER TABLE bh_activity_sessions ADD COLUMN IF NOT EXISTS counted BOOLEAN NOT NULL DEFAULT TRUE/);
+    expect(sql).toMatch(/ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS auto_delete_clock_from/);
+});
+
+test("the pause backfill is its own guarded migration and never touches bh_guild_flags", () => {
+    expect(PAUSE_BACKFILL).toContain("INSERT INTO bh_pauses");
+    expect(PAUSE_BACKFILL).toMatch(/NOT EXISTS \(SELECT 1 FROM bh_data_migrations WHERE name = 'pause-legacy-backfill'\)/);
+    expect(PAUSE_BACKFILL).toMatch(/INSERT INTO bh_data_migrations \(name\) VALUES \('pause-legacy-backfill'\)/);
+    expect(PAUSE_BACKFILL).not.toMatch(/bh_guild_flags/);
+    expect(sql).not.toMatch(/INSERT\s+INTO\s+bh_pauses/i);
 });

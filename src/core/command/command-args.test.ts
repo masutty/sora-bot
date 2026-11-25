@@ -168,3 +168,37 @@ test("requireSnowflake accepts Discord ids only", () => {
     expect(() => requireSnowflake("123")).toThrow(UserFacingError);
     expect(requireSnowflake(" 188851299255713792 ")).toBe("188851299255713792");
 });
+
+describe("namedOnly prefix options", () => {
+    const b = new SlashCommandBuilder()
+        .setName("x")
+        .setDescription("x")
+        .addSubcommand((s) =>
+            s
+                .setName("note")
+                .setDescription("n")
+                .addUserOption((o) => o.setName("user").setDescription("u").setRequired(true))
+                .addStringOption((o) => o.setName("text").setDescription("t").setRequired(true))
+                .addStringOption((o) => o.setName("until").setDescription("d")),
+        );
+    const run = (tokens: string[], namedOnly?: string[]) =>
+        new PrefixArgs(tokens, [], null, fakeClient(), deriveSubcommandSchema(b, new Set(namedOnly)));
+
+    test("a named-only option never takes a positional slot, so the free text stays whole", () => {
+        const a = run(["note", "1", "free", "text", "here"], ["note:until"]);
+        expect(a.getString("text")).toBe("free text here");
+        expect(a.getString("until")).toBeNull();
+    });
+
+    test("a named-only option is still filled by name, anywhere", () => {
+        const a = run(["note", "1", "until:3d", "free", "text"], ["note:until"]);
+        expect(a.getString("text")).toBe("free text");
+        expect(a.getString("until")).toBe("3d");
+    });
+
+    test("without the marker the old behavior is unchanged", () => {
+        const a = run(["note", "1", "free", "text", "here"]);
+        expect(a.getString("text")).toBe("free");
+        expect(a.getString("until")).toBe("text here");
+    });
+});

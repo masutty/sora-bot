@@ -112,6 +112,12 @@ export interface CommandDefinitionBase {
     onMissingSubcommand?: "usage" | "run";
 
     /**
+     * Prefix form only: options (`"<subcommand>:<option>"`) that are never filled by position, only as
+     * `name:value`. Keeps the last positional option greedy for free text (`!cmd sub @u any words`).
+     */
+    prefixNamedOnly?: string[];
+
+    /**
      * Autocomplete handler - called while the user types in an option with
      * `.setAutocomplete(true)` (e.g. an option whose choices come from an external API, so they
      * can't be fixed via `.addChoices()` at registration time). Without a handler, that option

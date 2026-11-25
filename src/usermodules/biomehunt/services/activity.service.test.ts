@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
-import { effectiveLastActivity, NO_GRACE, nextActivityGrace } from "./activity.service";
+import type { PauseRow } from "../repository/pauses.repository";
+import { effectiveLastActivity, NO_GRACE, nextActivityGrace, shouldMarkUncounted } from "./activity.service";
 
 const MIN = 60_000;
 const t0 = new Date("2026-10-17T12:00:00Z");
@@ -43,4 +44,12 @@ test("activity is measured from the later of the last message and the grace end"
     expect(effectiveLastActivity(at(130), at(120))).toEqual(at(130));
     expect(effectiveLastActivity(t0, null)).toEqual(t0);
     expect(effectiveLastActivity(null, null)).toBeNull();
+});
+
+const pause = (counts: boolean) => ({ counts }) as PauseRow;
+
+test("a session is marked uncounted only under an active pause that does not count", () => {
+    expect(shouldMarkUncounted(pause(false))).toBe(true);
+    expect(shouldMarkUncounted(pause(true))).toBe(false);
+    expect(shouldMarkUncounted(null)).toBe(false);
 });

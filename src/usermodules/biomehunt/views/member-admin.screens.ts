@@ -128,19 +128,21 @@ function adminBox(s: MemberAdminState, data: ProfileData, kit: RenderKit): Conta
         `**Macro channel**\n${channel ? `<#${channel.channelId}> · webhook ${channel.webhookWorking ? "working" : "not working"}` : "No channel"}`,
         kit.button("manage", (b) => b.setLabel("Manage")),
     );
-    if (s.autoDelete) {
-        const paused = data.user.paused_at !== null;
-        divider();
-        addRow(
-            container,
-            paused
-                ? "**Auto-delete** · paused\nTheir channel is never auto-deleted."
-                : `**Auto-delete**\nDeletes the channel ${formatHours(s.deleteAfterS)} after they go inactive.`,
-            kit.button(paused ? "resume" : "pause", (b) =>
-                b.setLabel(paused ? "Resume" : "Pause").setStyle(paused ? ButtonStyle.Success : ButtonStyle.Secondary),
-            ),
-        );
-    }
+    const pause = s.pause;
+    const paused = pause !== null;
+    let pauseText = "**Pause**";
+    if (pause) pauseText = `**Paused**${by(pause.by_discord_id)} <t:${unix(pause.started_at)}:R>`;
+    else if (s.autoDelete)
+        pauseText = `**Auto-delete**
+Deletes the channel ${formatHours(s.deleteAfterS)} after they go inactive.`;
+    divider();
+    addRow(
+        container,
+        pauseText,
+        kit.button(paused ? "resume" : "pause", (b) =>
+            b.setLabel(paused ? "Resume" : "Pause").setStyle(paused ? ButtonStyle.Success : ButtonStyle.Secondary),
+        ),
+    );
     if (data.economyEnabled) {
         divider();
         addRow(
@@ -268,6 +270,10 @@ function logLine(row: MemberLogRow): string {
             return `🗑️ **${plural(row.detail.count, "session")}** deleted${by(row.by_discord_id)}`;
         case "reset":
             return `♻️ **Progress reset**${by(row.by_discord_id)}`;
+        case "paused":
+            return `⏸️ **Paused**${by(row.by_discord_id)}`;
+        case "unpaused":
+            return `▶️ **Unpaused**${by(row.by_discord_id)}`;
         case "auto_delete_paused":
             return `⏸️ **Auto-delete** paused${by(row.by_discord_id)}`;
         case "auto_delete_resumed":
