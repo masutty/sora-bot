@@ -1,4 +1,5 @@
 import { UserFacingError } from "@/define";
+import type { PauseEndReason } from "./repository/pauses.repository";
 
 export type ActivityStatus = "active" | "idle" | "inactive";
 
@@ -70,6 +71,8 @@ export interface UserRow {
     /** The timed biome that set `activity_grace_until` - its Ended clears the grace. */
     activity_grace_biome: string | null;
     paused_at: Date | null;
+    /** When the auto-delete clock last restarted (a pause ended). */
+    auto_delete_clock_from: Date | null;
     created_at: Date;
     seeds: number;
     xp: number;
@@ -116,6 +119,8 @@ export interface ActivitySessionRow {
     started_at: Date;
     ended_at: Date;
     duration_seconds: number;
+    /** False when a pause that does not count made this session. */
+    counted: boolean;
 }
 
 export interface QuotaRoleRow {
@@ -486,6 +491,8 @@ export type MemberLogEntry =
     | { kind: "finds_changed"; detail: { biome: string; from: number; to: number } }
     | { kind: "sessions_deleted"; detail: { count: number } }
     | { kind: "reset"; detail: { sessions: number; finds: number; badges: number; seeds: number; xp: number } }
+    | { kind: "paused"; detail: { message: string; count: boolean } }
+    | { kind: "unpaused"; detail: { reason: PauseEndReason } }
     | {
           kind: "auto_delete_paused" | "auto_delete_resumed" | "channel_set_up" | "unlinked" | "deleted_everything";
           detail: Record<string, never>;

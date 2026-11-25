@@ -3,9 +3,11 @@ import type { GuildMember } from "discord.js";
 import { createFakeViewTransport, defineView, type ViewPayload } from "@/define";
 import { NO_PINGS } from "@/utils/format";
 import { getAwardableBadges } from "../constants/badges.constants";
+import type { PauseRow } from "../repository/pauses.repository";
 import type { ResetTotals } from "../services/member.service";
 import { buildMemberQuality } from "../services/member-quality.service";
 import { type ActivitySessionRow, type MemberLogRow, type NetworkPostRow, type RareFind, type UserRow, VoteStatus } from "../types";
+import { qualityEventText } from "./member-admin.screens";
 import { type MemberAdminDeps, type MemberAdminSnapshot, memberAdminView } from "./member-admin.view";
 import type { ProfileData } from "./stats-builders";
 
@@ -69,6 +71,7 @@ const user = (over: Partial<UserRow> = {}): UserRow => ({
     activity_grace_until: null,
     activity_grace_biome: null,
     paused_at: null,
+    auto_delete_clock_from: null,
     created_at: new Date("2026-09-03T00:00:00Z"),
     seeds: 1240,
     xp: 6340,
@@ -83,6 +86,7 @@ const sessions = (count: number): ActivitySessionRow[] =>
         started_at: new Date("2026-10-18T05:02:00Z"),
         ended_at: new Date("2026-10-18T07:15:00Z"),
         duration_seconds: 7980,
+        counted: true,
     }));
 
 const profile = (over: Partial<ProfileData> = {}): ProfileData => ({
@@ -111,12 +115,19 @@ const snapshot = (over: Partial<MemberAdminSnapshot> = {}): MemberAdminSnapshot 
     sessionTotal: 12,
     badgeRoles: { GLITCHED: "r1" },
     quality: buildMemberQuality([], [], []),
+    pause: null,
     ...over,
 });
 
 const PREVIEW: ResetTotals = { sessions: 38, finds: 22, badges: 3, seeds: 1240, xp: 6340 };
 
-function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; canAssign?: boolean; present?: boolean }) {
+function fakeDeps(world: {
+    pauseReply?: string;
+    snap: MemberAdminSnapshot;
+    preview?: ResetTotals;
+    canAssign?: boolean;
+    present?: boolean;
+}) {
     const calls: unknown[][] = [];
     const rec =
         <T>(name: string, ret?: T) =>
@@ -126,7 +137,7 @@ function fakeDeps(world: { snap: MemberAdminSnapshot; preview?: ResetTotals; can
         };
     const deps: MemberAdminDeps = {
         load: async () => structuredClone(world.snap),
-        pause: rec("pause"),
+        pause: rec("pause", world.pauseReply ?? "Paused."),
         unpause: rec("unpause"),
         grant: rec("grant"),
         setup: rec("setup", "Setup complete."),
@@ -191,22 +202,84 @@ test("profile tab shows the Admin box", async () => {
     expect(labels(fake.lastPayload())).not.toContain("Quotas");
 });
 
-test("pause row hidden while AUTO_DELETE_ENABLED is off", async () => {
+test("the pause row stays with AUTO_DELETE_ENABLED off, and Pause opens the modal", async () => {
     const { fake } = await open(snapshot({ autoDelete: false }));
     expect(text(fake.lastPayload())).not.toContain("Auto-delete");
-    expect(labels(fake.lastPayload())).not.toContain("Pause");
+    expect(text(fake.lastPayload())).toContain("**Pause**");
+    expect(labels(fake.lastPayload())).toContain("Pause");
+    await fake.emit(fake.click("pause", OWNER));
+    expect(fake.modals.at(-1)?.spec.fields.map((f) => f.key)).toEqual(["message"]);
 });
 
-test("pause flips to Resume", async () => {
+const activePause = (over: Partial<PauseRow> = {}): PauseRow => ({
+    id: 5,
+    user_id: 1,
+    kind: "forced",
+    message: "Back soon",
+    by_discord_id: "admin1",
+    counts: false,
+    notify: "now",
+    until: { kind: "interaction" },
+    notice_sent_at: null,
+    started_at: new Date("2026-10-20T10:00:00Z"),
+    ended_at: null,
+    ended_reason: null,
+    ...over,
+});
+
+test("the Pause button opens a modal with one message field", async () => {
+    const { fake } = await open();
+    await fake.emit(fake.click("pause", OWNER));
+    const fields = fake.modals.at(-1)?.spec.fields ?? [];
+    expect(fields.map((f) => f.key)).toEqual(["message"]);
+});
+
+test("a dismissed pause modal does nothing", async () => {
+    const { fake, calls } = await open();
+    fake.modalResult = async () => null;
+    await fake.emit(fake.click("pause", OWNER));
+    expect(calls).toEqual([]);
+});
+
+test("a submitted pause message pauses with the command defaults", async () => {
     const world = { snap: snapshot() };
     const { deps, calls } = fakeDeps(world);
     const fake = createFakeViewTransport();
     void fake.run(memberAdminView(member, deps), undefined, OWNER);
     await fake.flush();
-    world.snap = snapshot({ data: profile({ user: user({ paused_at: new Date() }) }) });
-    await fake.emit(fake.click("pause", OWNER));
-    expect(calls).toEqual([["pause"]]);
-    expect(text(fake.lastPayload())).toContain("**Auto-delete** · paused\nTheir channel is never auto-deleted.");
+    world.snap = snapshot({ pause: activePause(), data: profile({ user: user({ paused_at: new Date() }) }) });
+    await submitForm(fake, "pause", { message: "  Back soon  " });
+    expect(calls).toEqual([["pause", "Back soon"]]);
+    expect(text(fake.lastPayload())).toContain("**Paused** by <@admin1> <t:1792490400:R>");
+    expect(labels(fake.lastPayload())).toContain("Resume");
+});
+
+test("a pause whose Notice failed tells the admin", async () => {
+    const world = { snap: snapshot(), pauseReply: "<@u1> is paused. Notice could not be sent." };
+    const { deps } = fakeDeps(world);
+    const fake = createFakeViewTransport();
+    void fake.run(memberAdminView(member, deps), undefined, OWNER);
+    await fake.flush();
+    await submitForm(fake, "pause", { message: "Back soon" });
+    expect(fake.notifies.at(-1)?.content).toContain("Notice could not be sent");
+});
+
+test("a blank pause message is refused", async () => {
+    const { fake, calls } = await open();
+    await submitForm(fake, "pause", { message: "   " });
+    expect(calls).toEqual([]);
+    expect(fake.notifies.at(-1)?.content).toContain("message");
+});
+
+test("Resume unpauses", async () => {
+    const { fake, calls } = await open(snapshot({ pause: activePause() }));
+    await fake.emit(fake.click("resume", OWNER));
+    expect(calls).toEqual([["unpause"]]);
+});
+
+test("the pause row works while auto-delete is off, and names no one for a migrated pause", async () => {
+    const { fake } = await open(snapshot({ autoDelete: false, pause: activePause({ by_discord_id: null }) }));
+    expect(text(fake.lastPayload())).toContain("**Paused** <t:1792490400:R>");
     expect(labels(fake.lastPayload())).toContain("Resume");
 });
 
@@ -541,6 +614,13 @@ test("Quality tab: level, rare finds, admin action counts and the newest history
     const second = text(fake.lastPayload());
     expect(second).toContain("✂️ **3 Glitched finds** removed by <@a1>");
     expect(second).toContain("⏸️ **Auto-delete** paused by <@a1>");
+});
+
+test("History renders the pause and unpause log kinds", () => {
+    const render = (entry: Parameters<typeof logRow>[1]) =>
+        qualityEventText({ type: "log", at: new Date("2026-10-10T10:00:00Z"), log: logRow("2026-10-10T10:00:00Z", entry) } as never, "g1");
+    expect(render({ kind: "paused", detail: { message: "Back soon", count: false } })).toContain("⏸️ **Paused** by <@a1>");
+    expect(render({ kind: "unpaused", detail: { reason: "admin" } })).toContain("▶️ **Unpaused** by <@a1>");
 });
 
 test("Quality tab: Review opens the find's vote as a child and comes back to the tab", async () => {

@@ -22,6 +22,7 @@ const session = (id: number, from: string, to: string): ActivitySessionRow => ({
     started_at: new Date(from),
     ended_at: new Date(to),
     duration_seconds: 3600,
+    counted: true,
 });
 
 const contentOf = (c: ReturnType<typeof buildRareFindsPage>) =>

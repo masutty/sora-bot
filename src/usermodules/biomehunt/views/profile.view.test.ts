@@ -25,6 +25,7 @@ function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
         activity_grace_until: null,
         activity_grace_biome: null,
         paused_at: null,
+        auto_delete_clock_from: null,
         created_at: new Date("2024-01-01T00:00:00Z"),
         seeds: 0,
         xp: 0,
@@ -41,6 +42,7 @@ function fakeSessions(count: number): ActivitySessionRow[] {
         started_at: new Date(Date.now() - (count - i) * 3_600_000),
         ended_at: new Date(Date.now() - (count - i) * 3_600_000 + 60_000),
         duration_seconds: 60,
+        counted: true,
     }));
 }
 

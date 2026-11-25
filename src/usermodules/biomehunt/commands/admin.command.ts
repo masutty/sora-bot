@@ -9,6 +9,7 @@ import { MAX_DISCORD_CHOICES } from "../constants/biomes.constants";
 import { runEzSetupFlow } from "../flows/ez-setup.flow";
 import { getGuildFlags } from "../repository/flags.repository";
 import { listBadges, setBadges } from "../services/badge.service";
+import { defaultPauseDeps, forcePause, unpauseByAdmin } from "../services/pause.service";
 import { type Badge, BiomeHuntError } from "../types";
 import { defaultFlagsDeps, flagsView } from "../views/flags.view";
 import { defaultForwardsDeps, forwardsView } from "../views/forwards.view";
@@ -38,6 +39,41 @@ function requireBadge(slug: string | null): Badge {
     return badge;
 }
 
+type PauseInput = Parameters<typeof forcePause>[1];
+
+/** Lowercases and turns `_`/`-` into spaces so `session_end`, `Session-End` and `session end` all match. */
+function normalizeChoice(raw: string): string {
+    return raw.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+
+/** Maps the `/admin pause` options (slash or prefix) to the `forcePause` input. Pure: no Discord calls. */
+export function parsePauseOptions(
+    args: Pick<CommandArgs, "getString" | "getBoolean">,
+    target: { guildId: string; discordUserId: string; byDiscordId: string },
+): PauseInput {
+    const message = args.getString("message")?.trim();
+    if (!message) throw new BiomeHuntError("Missing required argument: message");
+    if (message.length > 1000) throw new BiomeHuntError("The message can have at most 1000 characters.");
+
+    const notifyRaw = normalizeChoice(args.getString("notify") ?? "now");
+    if (notifyRaw !== "now" && notifyRaw !== "session end") throw new BiomeHuntError("`notify` must be `now` or `session end`.");
+
+    const untilRaw0 = (args.getString("until") ?? "interaction").trim();
+    const untilRaw = normalizeChoice(untilRaw0);
+    let until: PauseInput["until"];
+    if (untilRaw === "interaction") until = { kind: "interaction" };
+    else if (untilRaw === "session" || untilRaw === "session end") until = { kind: "session_end" };
+    else until = { kind: "time", duration: untilRaw0 };
+
+    return {
+        ...target,
+        message,
+        count: args.getBoolean("count") ?? false,
+        notify: notifyRaw === "now" ? "now" : "session_end",
+        until,
+    };
+}
+
 export default defineCommand({
     name: "admin",
     description: "Biome hunting admin commands.",
@@ -46,6 +82,7 @@ export default defineCommand({
     adminOnly: true,
     guildOnly: true,
     onMissingSubcommand: "run",
+    prefixNamedOnly: ["pause:count", "pause:notify", "pause:until"],
 
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -77,6 +114,29 @@ export default defineCommand({
                         .addRoleOption((o) => o.setName("role").setDescription("Role to grant (leave empty to unconfigure)")),
                 )
                 .addSubcommand((s) => s.setName("list").setDescription("List all badges and their current role configuration.")),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("pause")
+                .setDescription("Pause a member and tell them in their Macro Channel.")
+                .addUserOption((o) => o.setName("user").setDescription("Member to pause").setRequired(true))
+                .addStringOption((o) => o.setName("message").setDescription("What the member is told").setRequired(true).setMaxLength(1000))
+                .addBooleanOption((o) => o.setName("count").setDescription("Sessions keep counting (default: no)"))
+                .addStringOption((o) =>
+                    o
+                        .setName("notify")
+                        .setDescription("When the member is told (default: now)")
+                        .addChoices({ name: "now", value: "now" }, { name: "session end", value: "session end" }),
+                )
+                .addStringOption((o) =>
+                    o.setName("until").setDescription("interaction, session end or a time like 3d (default: interaction)"),
+                ),
+        )
+        .addSubcommand((s) =>
+            s
+                .setName("unpause")
+                .setDescription("End a member's pause.")
+                .addUserOption((o) => o.setName("user").setDescription("Member to unpause").setRequired(true)),
         )
         .addSubcommand((s) =>
             s
@@ -155,7 +215,7 @@ export default defineCommand({
         }
 
         await ctx.defer();
-        await ctx.reply(toReplyPayload(await runSubcommand(routeKey, ctx.guild, ctx.client, ctx.args)));
+        await ctx.reply(toReplyPayload(await runSubcommand(routeKey, ctx.guild, ctx.client, ctx.args, ctx.user.id)));
     },
 });
 
@@ -164,7 +224,13 @@ async function idOf(entity: Promise<{ id: string } | null>): Promise<string | nu
     return (await entity)?.id ?? null;
 }
 
-async function runSubcommand(sub: string, guild: Guild, _client: BotClient, args: CommandArgs): Promise<string | ContainerBuilder> {
+async function runSubcommand(
+    sub: string,
+    guild: Guild,
+    client: BotClient,
+    args: CommandArgs,
+    invokerId: string,
+): Promise<string | ContainerBuilder> {
     const guildId = guild.id;
 
     switch (sub) {
@@ -175,6 +241,17 @@ async function runSubcommand(sub: string, guild: Guild, _client: BotClient, args
         }
         case "badges-list":
             return listBadges(guildId);
+        case "pause": {
+            const user = await args.getUser("user");
+            if (!user) throw new BiomeHuntError("Missing required argument: user");
+            const input = parsePauseOptions(args, { guildId, discordUserId: user.id, byDiscordId: invokerId });
+            return forcePause(defaultPauseDeps(client), input);
+        }
+        case "unpause": {
+            const user = await args.getUser("user");
+            if (!user) throw new BiomeHuntError("Missing required argument: user");
+            return unpauseByAdmin(guildId, user.id);
+        }
         default:
             throw new BiomeHuntError(`Unknown subcommand: ${sub}`);
     }

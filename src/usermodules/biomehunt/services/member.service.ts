@@ -17,8 +17,6 @@ import {
     deleteUserCascade,
     getUserByDiscordId,
     getUserById,
-    pauseUser,
-    unpauseUser,
     wipeUserProgress,
 } from "../repository/users.repository";
 import { type Badge, BiomeHuntError } from "../types";
@@ -155,18 +153,6 @@ export async function setBiomeCount(userId: number, biome: string, count: number
     const current = await getBiomeCountForUser(userId, biome);
     if (count > current) await incrementMemberBiome(user.guild_id, user.discord_user_id, biome, count - current);
     else if (count < current) await decrementMemberBiome(user.guild_id, user.discord_user_id, biome, current - count);
-}
-
-export async function pauseMember(guildId: string, discordUserId: string): Promise<string> {
-    const paused = await pauseUser(guildId, discordUserId);
-    if (!paused) throw new BiomeHuntError("That user has no data.");
-    return `<@${discordUserId}> is now exempt from inactivity auto-delete.`;
-}
-
-export async function unpauseMember(guildId: string, discordUserId: string): Promise<string> {
-    const unpaused = await unpauseUser(guildId, discordUserId);
-    if (!unpaused) throw new BiomeHuntError("That user has no data.");
-    return `<@${discordUserId}> is no longer exempt from inactivity auto-delete.`;
 }
 
 export async function decrementMemberBiome(guildId: string, discordUserId: string, biome: string, amount: number): Promise<string> {

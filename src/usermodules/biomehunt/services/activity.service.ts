@@ -13,8 +13,10 @@ import {
     getLatestSessionForUser,
     insertEventIfNew,
     openNewSession,
+    setSessionUncounted,
 } from "../repository/activity.repository";
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { getActivePause, type PauseRow } from "../repository/pauses.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import { getMacroChannelByUserId, getUserById, lookupChannel, touchLastActivity, updateUserStatus } from "../repository/users.repository";
 import type { ActivityGrace, ActivityStatus, ParsedEvent } from "../types";
@@ -126,14 +128,16 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     const lastActivity = effectiveLastActivity(user.last_activity_at, user.activity_grace_until);
     const deltaSeconds = lastActivity ? (now.getTime() - lastActivity.getTime()) / 1000 : Number.POSITIVE_INFINITY;
 
+    const markUncounted = shouldMarkUncounted(await getActivePause(entry.userId));
     await transaction(async (client) => {
+        let session: { id: number };
         if (deltaSeconds > guildConfig.session_gap_threshold_s) {
-            await openNewSession(client, entry.userId, now);
+            session = await openNewSession(client, entry.userId, now);
         } else {
             const latest = await getLatestSession(client, entry.userId);
-            if (latest) await extendSession(client, latest.id, now);
-            else await openNewSession(client, entry.userId, now);
+            session = latest ? await extendSession(client, latest.id, now) : await openNewSession(client, entry.userId, now);
         }
+        if (markUncounted) await setSessionUncounted(client, session.id);
     });
 
     const currentGrace = { until: user.activity_grace_until, biome: user.activity_grace_biome };
@@ -142,6 +146,11 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     if (user.current_status !== "active") {
         await transitionUser(entry.userId, entry.guildId, "active");
     }
+}
+
+/** A pause that does not count keeps the member's sessions out of every stat and quota while it lasts. */
+export function shouldMarkUncounted(pause: PauseRow | null): boolean {
+    return pause !== null && !pause.counts;
 }
 
 /** Posts a summary of a user's just-finished session (duration + biome breakdown) to their macro channel. */

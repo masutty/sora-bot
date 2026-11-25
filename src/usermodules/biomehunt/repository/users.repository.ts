@@ -96,22 +96,6 @@ export async function resetActivityState(userId: number): Promise<void> {
     );
 }
 
-export async function pauseUser(guildId: string, discordUserId: string): Promise<boolean> {
-    const result = await query(`UPDATE bh_users SET paused_at = NOW() WHERE guild_id = $1 AND discord_user_id = $2`, [
-        guildId,
-        discordUserId,
-    ]);
-    return (result.rowCount ?? 0) > 0;
-}
-
-export async function unpauseUser(guildId: string, discordUserId: string): Promise<boolean> {
-    const result = await query(`UPDATE bh_users SET paused_at = NULL WHERE guild_id = $1 AND discord_user_id = $2`, [
-        guildId,
-        discordUserId,
-    ]);
-    return (result.rowCount ?? 0) > 0;
-}
-
 export async function deleteUserCascade(userId: number): Promise<{ channelId: string; webhookId: string } | null> {
     const channel = await query<{ channel_id: string; webhook_id: string }>(
         `SELECT channel_id, webhook_id FROM bh_user_macro_channels WHERE user_id = $1`,

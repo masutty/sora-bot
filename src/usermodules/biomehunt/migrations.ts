@@ -124,6 +124,32 @@ CREATE TABLE IF NOT EXISTS bh_activity_sessions (
 
 CREATE INDEX IF NOT EXISTS bh_activity_sessions_user ON bh_activity_sessions(user_id, started_at DESC);
 
+/* A session counts toward quota and stats unless a pause that does not count made it. */
+ALTER TABLE bh_activity_sessions ADD COLUMN IF NOT EXISTS counted BOOLEAN NOT NULL DEFAULT TRUE;
+
+/* When the auto-delete clock last restarted (a pause ended) - NULL = never restarted. */
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS auto_delete_clock_from TIMESTAMPTZ;
+
+/* Pauses: one active row per member (ended_at IS NULL). A new pause ends the old one as 'replaced'. */
+CREATE TABLE IF NOT EXISTS bh_pauses (
+    id             BIGSERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    kind           VARCHAR(10) NOT NULL DEFAULT 'forced',        /* forced | self */
+    message        TEXT,
+    by_discord_id  VARCHAR(20),
+    counts         BOOLEAN NOT NULL DEFAULT TRUE,
+    notify         VARCHAR(12) NOT NULL DEFAULT 'now',           /* now | session_end */
+    until_kind     VARCHAR(12) NOT NULL DEFAULT 'interaction',   /* interaction | session_end | time */
+    until_at       TIMESTAMPTZ,                                  /* set only when until_kind = 'time' */
+    notice_sent_at TIMESTAMPTZ,
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at       TIMESTAMPTZ,
+    ended_reason   VARCHAR(12)                                   /* member | admin | expired | session_end | replaced */
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS bh_pauses_one_active ON bh_pauses(user_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS bh_pauses_due ON bh_pauses(until_at) WHERE ended_at IS NULL AND until_kind = 'time';
+
 /* ───────────────────────────────────────────── */
 /* Biome rewards (Seeds/XP/badge ledger)        */
 /* ───────────────────────────────────────────── */
@@ -748,4 +774,21 @@ export const HERBARIUM_BACKFILL = `
 INSERT INTO bh_user_flowers (user_id, flower)
 SELECT id, flower FROM bh_users WHERE flower IS NOT NULL
 ON CONFLICT DO NOTHING;
+`;
+
+/**
+ * Gives every member who was already paused a pause row (once): forced, no message, counts, ends on
+ * their next interaction, notice already treated as sent. Its own migration, so schema changes never re-run it.
+ */
+export const PAUSE_BACKFILL = `
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM bh_data_migrations WHERE name = 'pause-legacy-backfill') THEN
+        INSERT INTO bh_pauses (user_id, kind, message, counts, until_kind, started_at, notice_sent_at)
+        SELECT id, 'forced', NULL, TRUE, 'interaction', paused_at, paused_at
+        FROM bh_users WHERE paused_at IS NOT NULL
+        ON CONFLICT DO NOTHING;
+        INSERT INTO bh_data_migrations (name) VALUES ('pause-legacy-backfill');
+    END IF;
+END $$;
 `;

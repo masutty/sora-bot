@@ -7,6 +7,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState } from "../repository/users.repository";
 import { effectiveLastActivity, reportSessionEnd, transitionUser } from "../services/activity.service";
+import { defaultPauseDeps, expireDueTimedPauses, onSessionEnded } from "../services/pause.service";
 import { evaluateRollingRewards, runFixedRewardSweep } from "../services/quota.service";
 import { settings } from "../settings";
 import type { ActivityStatus } from "../types";
@@ -16,6 +17,12 @@ const logger = new Logger("biomehunt.workers.status");
 /** True once a member has been inactive for the full delete delay, counted from the end of their last session. */
 export function shouldAutoDelete(secondsSinceSessionEnd: number, inactiveS: number, deleteAfterS: number): boolean {
     return secondsSinceSessionEnd > inactiveS + deleteAfterS;
+}
+
+/** Caps the time since the session end at the time since the auto-delete clock restarted (end of a forced pause). */
+export function secondsSinceAutoDeleteClock(secondsSinceSessionEnd: number, clockFrom: Date | null, now: number): number {
+    if (!clockFrom) return secondsSinceSessionEnd;
+    return Math.min(secondsSinceSessionEnd, (now - clockFrom.getTime()) / 1000);
 }
 
 /** Idle and inactive thresholds count from the end of the session: last activity plus the session gap. */
@@ -36,6 +43,10 @@ async function tick(client: BotClient): Promise<void> {
 
     const users = await getUsersForStatusSweep();
     const now = Date.now();
+
+    await expireDueTimedPauses(defaultPauseDeps(client), new Date(now)).catch((err) =>
+        logger.error(err instanceof Error ? err : new Error(String(err))),
+    );
 
     for (const user of users) {
         // Bot isn't (or isn't yet) in this guild - skip entirely rather than doing pointless work
@@ -61,10 +72,16 @@ async function tick(client: BotClient): Promise<void> {
         if (newStatus !== user.current_status) {
             await transitionUser(user.id, user.guild_id, newStatus);
 
-            if (wasActive && newStatus !== "active" && (await isFlagEnabled(user.guild_id, "REPORT_SESSION_ON_END"))) {
-                await reportSessionEnd(client, user.id).catch((err) =>
+            if (wasActive && newStatus !== "active") {
+                await onSessionEnded(defaultPauseDeps(client), user.id).catch((err) =>
                     logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }),
                 );
+
+                if (await isFlagEnabled(user.guild_id, "REPORT_SESSION_ON_END")) {
+                    await reportSessionEnd(client, user.id).catch((err) =>
+                        logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }),
+                    );
+                }
             }
         }
 
@@ -75,7 +92,11 @@ async function tick(client: BotClient): Promise<void> {
         const shouldDelete =
             newStatus === "inactive" &&
             user.paused_at === null &&
-            shouldAutoDelete(secondsSinceSessionEnd, guildConfig.inactive_threshold_s, guildConfig.delete_inactive_after_s) &&
+            shouldAutoDelete(
+                secondsSinceAutoDeleteClock(secondsSinceSessionEnd, user.auto_delete_clock_from, now),
+                guildConfig.inactive_threshold_s,
+                guildConfig.delete_inactive_after_s,
+            ) &&
             (await isFlagEnabled(user.guild_id, "AUTO_DELETE_ENABLED"));
 
         if (shouldDelete) {

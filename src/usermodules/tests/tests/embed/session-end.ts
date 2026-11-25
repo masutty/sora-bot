@@ -14,6 +14,7 @@ const FAKE_SESSION: ActivitySessionRow = {
     started_at: new Date(Date.now() - FAKE_DURATION_SECONDS * 1000),
     ended_at: new Date(),
     duration_seconds: FAKE_DURATION_SECONDS,
+    counted: true,
 };
 
 /** Every biome registered right now, so this preview always covers whatever's currently

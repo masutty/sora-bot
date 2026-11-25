@@ -11,6 +11,7 @@ import { getGuildBadgeRoles, getUserBadges } from "../repository/badges.reposito
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { insertMemberLog } from "../repository/member-log.repository";
+import { getActivePause, type PauseRow } from "../repository/pauses.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
 import { awardBadge, takeBadge } from "../services/badge.service";
 import { grantEconomy } from "../services/economy.service";
@@ -18,14 +19,13 @@ import {
     deleteMemberEverything,
     deleteSessions,
     forceSetupMember,
-    pauseMember,
     type ResetTotals,
     resetMemberProgress,
     setBiomeCount,
     unlinkMember,
-    unpauseMember,
 } from "../services/member.service";
 import { loadMemberQuality, type MemberQuality } from "../services/member-quality.service";
+import { defaultPauseDeps, forcePause, unpauseByAdmin } from "../services/pause.service";
 import { BiomeHuntError, type MemberLogEntry } from "../types";
 import {
     badgeOnPage,
@@ -72,12 +72,15 @@ export interface MemberAdminSnapshot {
     badgeRoles: Record<string, string>;
     /** The Quality tab - `null` when the member has no profile. */
     quality: MemberQuality | null;
+    /** The member's active Pause - `null` when not paused or without a profile. */
+    pause: PauseRow | null;
 }
 
 /** What the View needs that would otherwise be a DB/Discord call, injected so its tests never hit any of them. */
 export interface MemberAdminDeps {
     load(): Promise<MemberAdminSnapshot>;
-    pause(): Promise<void>;
+    /** A Forced Pause with the `/admin pause` defaults (not counted, Notice now, until the member presses the button). */
+    pause(message: string): Promise<string>;
     unpause(): Promise<void>;
     /** Adds the given amounts (negative takes away). */
     grant(seeds: number, xp: number): Promise<void>;
@@ -161,15 +164,25 @@ export function defaultMemberAdminDeps(client: BotClient, guild: Guild, member: 
                 sessionTotal: data ? await countSessionsForUser(data.user.id) : 0,
                 badgeRoles: Object.fromEntries(roles.map((r) => [r.badge, r.role_id])),
                 quality: data ? await loadMemberQuality(guild.id, member.id, data.rareFinds) : null,
+                pause: data ? await getActivePause(data.user.id) : null,
             };
         },
-        pause: async () => {
-            await pauseMember(guild.id, member.id);
-            await log({ kind: "auto_delete_paused", detail: {} });
+        pause: async (message) => {
+            const reply = await forcePause(defaultPauseDeps(client), {
+                guildId: guild.id,
+                discordUserId: member.id,
+                message,
+                count: false,
+                notify: "now",
+                until: { kind: "interaction" },
+                byDiscordId: adminId,
+            });
+            await log({ kind: "paused", detail: { message, count: false } });
+            return reply;
         },
         unpause: async () => {
-            await unpauseMember(guild.id, member.id);
-            await log({ kind: "auto_delete_resumed", detail: {} });
+            await unpauseByAdmin(guild.id, member.id);
+            await log({ kind: "unpaused", detail: { reason: "admin" } });
         },
         grant: async (seeds, xp) => {
             await grantEconomy(guild.id, member.id, seeds || null, xp || null);
@@ -407,8 +420,26 @@ export function memberAdminView(
 
     // --- Profile tab ---
 
-    const togglePause = (pause: boolean) => async (c: Ctx) => {
-        if (await attempt(c, () => (pause ? deps.pause() : deps.unpause()))) await reload(c.state);
+    const pause = async (c: Ctx) => {
+        const values = await c.modal({
+            title: `Pause ${name}`.slice(0, 45),
+            fields: [{ key: "message", label: "Message to the member", style: "paragraph", required: true, maxLength: 1000 }],
+        });
+        if (!values) return;
+        const message = (values.message ?? "").trim();
+        if (!message) {
+            await c.notify("Nothing was done. Write a message.");
+            return;
+        }
+        const result = await attempt(c, () => deps.pause(message));
+        if (!result) return;
+        await reload(c.state);
+        if (result.value?.includes("Notice could not be sent")) await c.notify(result.value);
+    };
+
+    const resume = async (c: Ctx) => {
+        await attempt(c, () => deps.unpause());
+        await reload(c.state); // also drops a stale Resume button when the pause had already ended
     };
 
     const adjust = async (c: Ctx) => {
@@ -702,8 +733,8 @@ export function memberAdminView(
             },
 
             manage: goTo("channel"),
-            pause: togglePause(true),
-            resume: togglePause(false),
+            pause,
+            resume,
             adjust,
             danger: goTo("danger"),
 
