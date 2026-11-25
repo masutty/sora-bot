@@ -19,6 +19,8 @@ interface ArgSchema {
     name: string;
     type: ArgType;
     required: boolean;
+    /** Never filled by position in prefix form, only by `name:value` (see `prefixNamedOnly`). */
+    namedOnly?: boolean;
 }
 
 interface SubcommandSchema {
@@ -67,11 +69,13 @@ function subcommandKey(group: string | null, name: string): string {
     return group ? `${group}:${name}` : name;
 }
 
-function optionsOf(opt: RawOption): ArgSchema[] {
+function optionsOf(opt: RawOption, key: string, namedOnly: ReadonlySet<string>): ArgSchema[] {
     return (opt.options ?? []).flatMap((child): ArgSchema[] => {
         const type = OPTION_TYPE_MAP[child.type];
         if (!type) return [];
-        return [{ name: child.name, type, required: child.required ?? false }];
+        const schema: ArgSchema = { name: child.name, type, required: child.required ?? false };
+        if (namedOnly.has(`${key}:${child.name}`)) schema.namedOnly = true;
+        return [schema];
     });
 }
 
@@ -80,19 +84,25 @@ function optionsOf(opt: RawOption): ArgSchema[] {
  * Returns a map keyed by subcommand name (or `"<group>:<name>"` for
  * subcommands nested in a subcommand group) → its arg schemas.
  * Used by PrefixArgs when the builder has subcommands.
+ * `namedOnly` lists `"<subcommand>:<option>"` (or `"<group>:<subcommand>:<option>"`) keys that
+ * prefix form accepts only as `name:value`, so they never take a positional slot.
  */
-export function deriveSubcommandSchema(builder: AnyBuilder): Map<string, SubcommandSchema> {
+export function deriveSubcommandSchema(builder: AnyBuilder, namedOnly: ReadonlySet<string> = new Set()): Map<string, SubcommandSchema> {
     const json = builder.toJSON() as { options?: RawOption[] };
     const map = new Map<string, SubcommandSchema>();
     if (!json.options?.length) return map;
 
     for (const opt of json.options) {
         if (opt.type === SUB_COMMAND) {
-            map.set(subcommandKey(null, opt.name), { name: opt.name, group: null, options: optionsOf(opt) });
+            map.set(subcommandKey(null, opt.name), { name: opt.name, group: null, options: optionsOf(opt, opt.name, namedOnly) });
         } else if (opt.type === SUB_COMMAND_GROUP) {
             for (const sub of opt.options ?? []) {
                 if (sub.type !== SUB_COMMAND) continue;
-                map.set(subcommandKey(opt.name, sub.name), { name: sub.name, group: opt.name, options: optionsOf(sub) });
+                map.set(subcommandKey(opt.name, sub.name), {
+                    name: sub.name,
+                    group: opt.name,
+                    options: optionsOf(sub, subcommandKey(opt.name, sub.name), namedOnly),
+                });
             }
         }
     }
@@ -222,7 +232,7 @@ export class PrefixArgs {
             this.activeSchema = schema;
             ({ positional: this.activeRaw, named: this.named } = extractNamed(positional, schema));
         }
-        this.positionalSchema = this.activeSchema.filter((a) => !this.named.has(a.name));
+        this.positionalSchema = this.activeSchema.filter((a) => !a.namedOnly && !this.named.has(a.name));
     }
 
     /**

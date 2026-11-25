@@ -210,7 +210,7 @@ export function registerCommandHandlers(client: BotClient): void {
         if (selectHandler(command, "prefix").kind === "none") return; // Command doesn't support prefix
 
         const schema = command.options ? deriveSchema(command.options) : [];
-        const subcommandMap = command.options ? deriveSubcommandSchema(command.options) : undefined;
+        const subcommandMap = command.options ? deriveSubcommandSchema(command.options, new Set(command.prefixNamedOnly)) : undefined;
         const args = new PrefixArgs(rawArgs, schema, message.guild, client, subcommandMap);
         const started = Date.now();
         const ctx: CommandContext = createPrefixContext(message, args, client, prefix, {
