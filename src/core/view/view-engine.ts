@@ -293,6 +293,8 @@ export function createViewSession(transport: ViewTransport, invoker: User, clock
     /** The session's idle clock: its duration is the ROOT's, whoever is on top. Starts once the first render is sent. */
     function armTimer() {
         if (!sent || ended) return;
+        // `fixedTimeout`: the first arm is the only one - interactions and text never renew it (a postponed expiry still re-arms).
+        if (stack[0]?.def.fixedTimeout && timer !== null && !expirePostponed) return;
         stopTimer();
         expirePostponed = false; // a fresh timer supersedes any earlier postponement.
         const viewMs = stack[0]?.def.timeoutMs ?? config.ui.viewTimeoutMs;

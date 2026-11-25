@@ -152,6 +152,11 @@ export interface ViewDefinition<S, R = void, I = void> {
      */
     timeoutMs?: number;
     /**
+     * ROOT ONLY. When true, `timeoutMs` counts from the session start and is never renewed by
+     * interactions or typed text. Default false (idle timeout).
+     */
+    fixedTimeout?: boolean;
+    /**
      * The session's final screen on expiry - ROOT ONLY (ignored on a child). Default "strip":
      * removes the interactive components of the screen currently shown (root or child), keeps the
      * content and Link buttons. "disable": keeps them, with buttons/selects disabled (Link buttons
