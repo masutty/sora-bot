@@ -74,6 +74,22 @@ function componentsToEmbedLike(components: ReadonlyArray<unknown>): EmbedLike | 
     };
 }
 
+/** "Merchant" anywhere in the report, or a merchant's name in its title - account names sit outside the title. */
+const MERCHANT_TEXT = /\bmerchant\b/i;
+const MERCHANT_TITLE = /\b(?:mari|jester|rin)\b/i;
+
+function embedOf(message: WebhookMessageLike): EmbedLike | null {
+    return message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
+}
+
+/** A merchant report: no biome in it, but proof that this macro and the bot understand each other. */
+export function isMerchantReport(message: WebhookMessageLike): boolean {
+    const embed = embedOf(message);
+    if (!embed) return false;
+    const texts = [embed.title, embed.description, ...(embed.fields?.flatMap((f) => [f.name, f.value]) ?? [])];
+    return texts.some((text) => text && MERCHANT_TEXT.test(text)) || MERCHANT_TITLE.test(embed.title ?? "");
+}
+
 export interface MessageInspection {
     /** What was parsed: the first embed, a ComponentsV2 body, or nothing readable. */
     input: "embed" | "components" | "none";
@@ -81,14 +97,14 @@ export interface MessageInspection {
     footer: string | null;
     steps: ExtractionStep[];
     serverLink: string | null;
+    merchant: boolean;
     event: ParsedEvent | null;
 }
 
 /** The one parse path: detection reads `event`, `/owner parse` shows the rest. */
 export function inspectMessage(message: WebhookMessageLike): MessageInspection {
-    const first = message.embeds[0];
-    const embed = first ?? (message.components ? componentsToEmbedLike(message.components) : null);
-    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, event: null };
+    const embed = embedOf(message);
+    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, merchant: false, event: null };
 
     logger.verbose("Detecting macro type...");
     const parser = detectMacroParser(embed.footer?.text);
@@ -103,11 +119,12 @@ export function inspectMessage(message: WebhookMessageLike): MessageInspection {
     const serverLink = parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined);
 
     return {
-        input: first ? "embed" : "components",
+        input: message.embeds[0] ? "embed" : "components",
         parserId: parser.id,
         footer: embed.footer?.text ?? null,
         steps,
         serverLink,
+        merchant: isMerchantReport(message),
         event: biome
             ? {
                   biome,

@@ -55,6 +55,7 @@ export function buildParseReport(inspection: MessageInspection, source: ParseRep
         `- Biome: ${event ? `\`${event.biome}\` (${event.eventType ?? "no event type"})` : "none"}`,
         `- Server link: ${inspection.serverLink ? `\`${inspection.serverLink.slice(0, 200)}\`` : "none"}`,
         `- ${mark(isStart)} Biome start`,
+        `- ${mark(inspection.merchant)} Merchant`,
         `- Recorded: ${describeRecorded(source.recorded)}`,
     ];
 

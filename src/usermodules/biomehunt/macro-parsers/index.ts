@@ -4,4 +4,4 @@
  */
 export { detectMacroParser } from "./macro-parser.registry";
 export { type BiomeExtraction, type EmbedLike, type ExtractionStep, MacroParser } from "./types";
-export { inspectMessage, type MessageInspection, parseEvent, type WebhookMessageLike } from "./webhook-event.parser";
+export { inspectMessage, isMerchantReport, type MessageInspection, parseEvent, type WebhookMessageLike } from "./webhook-event.parser";

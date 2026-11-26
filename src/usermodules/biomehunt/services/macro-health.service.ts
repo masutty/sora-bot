@@ -1,5 +1,6 @@
 import type { Message } from "discord.js";
 import { config } from "@/config";
+import { isMerchantReport } from "../macro-parsers";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import {
@@ -39,8 +40,9 @@ function defaultMacroHealthDeps(): MacroHealthDeps {
 }
 
 /**
- * Warns a member whose macro keeps posting without a readable biome start. Only a start resets the
- * count: it is the one event stats show, so a macro that is read as sessions alone still gets the warning.
+ * Warns a member whose macro is incompatible: it keeps posting, and neither a biome start (the one
+ * event stats show) nor a merchant report is read from it. A compatible macro that is failing is
+ * a different problem, not covered here.
  */
 export async function trackMacroHealth(
     message: Message,
@@ -51,7 +53,7 @@ export async function trackMacroHealth(
     // Plain text isn't a macro report.
     if (message.embeds.length === 0 && message.components.length === 0) return;
 
-    if (parsed?.eventType === "started") {
+    if (parsed?.eventType === "started" || isMerchantReport(message)) {
         await deps.resetUnreadEmbeds(entry.userId);
         return;
     }

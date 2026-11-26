@@ -5,7 +5,7 @@ import { type MacroHealthDeps, trackMacroHealth } from "./macro-health.service";
 
 const entry = { userId: 1, guildId: "g", webhookId: "w" };
 
-function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; embeds?: number } = {}) {
+function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; embeds?: number; embed?: object } = {}) {
     const calls: string[] = [];
     const log = (call: string) => async () => {
         calls.push(call);
@@ -24,7 +24,7 @@ function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; 
         ownerIds: ["42"],
     };
     const message = {
-        embeds: Array(options.embeds ?? 1).fill({}),
+        embeds: Array(options.embeds ?? 1).fill(options.embed ?? {}),
         components: [],
         channel: {
             isSendable: () => true,
@@ -44,6 +44,20 @@ test("a biome start resets the count and never warns", async () => {
     const { calls, run } = setup();
     await run(event("started"));
     expect(calls).toEqual(["reset"]);
+});
+
+test("a merchant report resets the count like a biome start", async () => {
+    for (const embed of [{ title: "Merchant Detected" }, { title: "🃏 Jester has arrived!" }, { description: "**Merchant:** Mari" }]) {
+        const { calls, run } = setup({ embed });
+        await run(null);
+        expect(calls).toEqual(["reset"]);
+    }
+});
+
+test("an account named after a merchant is not a merchant report", async () => {
+    const { calls, run } = setup({ embed: { title: "Status Update", description: "**Account:** `mari`" } });
+    await run(null);
+    expect(calls).toEqual(["record", "claim", "send"]);
 });
 
 test("unreadable, ended and untyped reads all count toward the warning", async () => {

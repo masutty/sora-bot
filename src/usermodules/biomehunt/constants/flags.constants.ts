@@ -51,7 +51,7 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
     },
     WARN_INCOMPATIBLE_MACRO: {
         description: "Tells a member in their macro channel when their macro keeps posting but no biome start can be read from it.",
-        default: true,
+        default: false,
     },
 };
 
