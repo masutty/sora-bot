@@ -112,7 +112,7 @@ export interface CommandDefinitionBase {
     onMissingSubcommand?: "usage" | "run";
 
     /**
-     * Prefix form only: options (`"<subcommand>:<option>"`) that are never filled by position, only as
+     * Prefix form only: options (`"<subcommand>:<option>"`, or `"<option>"` on a command without subcommands) that are never filled by position, only as
      * `name:value`. Keeps the last positional option greedy for free text (`!cmd sub @u any words`).
      */
     prefixNamedOnly?: string[];

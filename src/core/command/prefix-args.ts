@@ -53,15 +53,16 @@ type RawOption = {
 
 /**
  * Derives a flat arg schema from a builder (no subcommands).
- * Used by command-handler.ts for regular commands.
+ * Used by command-handler.ts for regular commands. `namedOnly` lists option names that prefix form
+ * accepts only as `name:value`, so they never take a positional slot.
  */
-export function deriveSchema(builder: AnyBuilder): ArgSchema[] {
+export function deriveSchema(builder: AnyBuilder, namedOnly: ReadonlySet<string> = new Set()): ArgSchema[] {
     const json = builder.toJSON() as { options?: RawOption[] };
     if (!json.options?.length) return [];
     return json.options.flatMap((opt): ArgSchema[] => {
         const type = OPTION_TYPE_MAP[opt.type];
         if (!type) return [];
-        return [{ name: opt.name, type, required: opt.required ?? false }];
+        return [{ name: opt.name, type, required: opt.required ?? false, ...(namedOnly.has(opt.name) && { namedOnly: true }) }];
     });
 }
 
@@ -285,6 +286,11 @@ export class PrefixArgs {
 
     getString(name: string): string | null {
         return this.getRaw(name);
+    }
+
+    /** True if this arg was given as `name:value`, so positional parsing (weight, duration...) must not touch it. */
+    isNamed(name: string): boolean {
+        return this.named.has(name);
     }
 
     /** True if the invoker supplied a value for this arg at all - even one that won't parse. */

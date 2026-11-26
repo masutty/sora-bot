@@ -8,7 +8,7 @@ import {
     SeparatorSpacingSize,
 } from "discord.js";
 import { paginationRow, type RenderKit, type ViewRender } from "@/define";
-import { type FormattedReply, NO_PINGS } from "@/utils/format";
+import { cut, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { formatHexColor } from "../services/color";
 import type { PostStatus } from "../services/post-status";
 import type { TrackerOverview } from "../services/tracker-config.service";
@@ -32,12 +32,6 @@ function newContainer(color = 0x5865f2): { container: ContainerBuilder; divider:
 }
 
 const row = (...buttons: ButtonBuilder[]) => new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-
-/** Cuts a text to `max` characters with "…" and flattens line breaks, so it fits in one subtext line. */
-export function cut(text: string, max: number): string {
-    const flat = text.replace(/\s*\n\s*/g, " ").trim();
-    return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
-}
 
 const robloxLink = (id: string) => `[View on Roblox](https://www.roblox.com/badges/${id})`;
 

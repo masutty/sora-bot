@@ -1,5 +1,6 @@
 import { ChannelType, type Client, type GuildTextBasedChannel, PermissionFlagsBits } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
+import { roleProblem } from "@/utils/member-hierarchy";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import {
@@ -14,7 +15,7 @@ import { getItem, getShop } from "../repository/shop.repository";
 import type { PurchaseRow } from "../types";
 import { buildSalePost } from "../views/shop-purchase.view";
 import { describeDiscordError, guildLog } from "./guild-log.service";
-import { roleProblem, type ShopDeps } from "./shop.service";
+import type { ShopDeps } from "./shop.service";
 
 const UNKNOWN_MEMBER = 10007;
 

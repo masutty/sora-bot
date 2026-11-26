@@ -103,3 +103,9 @@ export function channelMention(id: string): string {
 export function userMention(id: string): string {
     return `<@${id}>`;
 }
+
+/** Cuts a text to `max` characters with "…" and flattens line breaks, so it fits in one subtext line. */
+export function cut(text: string, max: number): string {
+    const flat = text.replace(/\s*\n\s*/g, " ").trim();
+    return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}

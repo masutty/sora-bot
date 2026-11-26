@@ -13,6 +13,8 @@ export interface Answerable {
     followUp(body: object): Promise<unknown>;
     showModal?(modal: object): Promise<unknown>;
     isFromMessage?(): boolean;
+    replied?: boolean;
+    deferred?: boolean;
 }
 
 /** How an interaction was answered. "updated"/"deferred": its token edits the View's message; "replied": it edits an ephemeral reply. */
@@ -34,7 +36,7 @@ interface Entry {
 export interface InteractionAnswers {
     /** Unanswered → `update`; updated/deferred → `editReply`; replied/modal, or a submit not from a message → `editMessage`. */
     render(i: Answerable, payload: object, editMessage: (payload: object) => Promise<unknown>): Promise<void>;
-    /** Unanswered → `deferUpdate`; otherwise nothing. */
+    /** Unanswered → `deferUpdate`; otherwise nothing (also when a handler already answered through `c.raw`). */
     acknowledge(i: Answerable): Promise<void>;
     /** Unanswered → ephemeral `reply`; otherwise ephemeral `followUp`. */
     notify(i: Answerable, content: string): Promise<void>;
@@ -83,7 +85,7 @@ export function createInteractionAnswers(): InteractionAnswers {
 
         acknowledge(i) {
             return enqueue(i, async (entry) => {
-                if (entry.state !== "none" || !canUpdate(i)) return;
+                if (entry.state !== "none" || !canUpdate(i) || i.replied || i.deferred) return;
                 await i.deferUpdate();
                 entry.state = "deferred";
                 editor = i;

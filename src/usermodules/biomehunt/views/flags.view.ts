@@ -1,5 +1,7 @@
-import { type ActionRowBuilder, type ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, SeparatorSpacingSize } from "discord.js";
+import { type ActionRowBuilder, type ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags } from "discord.js";
 import {
+    addDivider,
+    addItems,
     confirm,
     defineView,
     type HandlerContext,
@@ -62,28 +64,24 @@ function confirmBody(flag: FlagName, enable: boolean): string[] {
 
 function flagsContainer(state: FlagsState, kit: RenderKit): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
-    const addDivider = () => container.addSeparatorComponents((sep) => sep.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-
     container.addTextDisplayComponents((td) => td.setContent("**Flags**\nTurn optional features on or off for this server."));
-    addDivider();
+    addDivider(container);
 
     const from = state.page * FLAGS_PER_PAGE;
-    MENU_FLAGS.slice(from, from + FLAGS_PER_PAGE).forEach((flag, i) => {
-        if (i > 0) addDivider();
-        const on = state.flags[flag];
-        container.addSectionComponents((section) =>
-            section
+    return addItems(
+        container,
+        MENU_FLAGS.slice(from, from + FLAGS_PER_PAGE).map((flag) => {
+            const on = state.flags[flag];
+            return {
                 // The current state as an inline-code emoji, then the key and its default.
-                .addTextDisplayComponents((td) => td.setContent(`\`${on ? "✅" : "❌"}\` **${flag}** (default: ${defaultLabel(flag)})`))
-                .setButtonAccessory(
-                    kit.button(`toggle:${flag}`, (b) =>
-                        b.setLabel(on ? "Turn off" : "Turn on").setStyle(on ? ButtonStyle.Danger : ButtonStyle.Success),
-                    ),
+                text: `\`${on ? "✅" : "❌"}\` **${flag}** (default: ${defaultLabel(flag)})`,
+                button: kit.button(`toggle:${flag}`, (b) =>
+                    b.setLabel(on ? "Turn off" : "Turn on").setStyle(on ? ButtonStyle.Danger : ButtonStyle.Success),
                 ),
-        );
-        container.addTextDisplayComponents((td) => td.setContent(descriptionLines(flag)));
-    });
-    return container;
+                note: descriptionLines(flag),
+            };
+        }),
+    );
 }
 
 /**

@@ -1,14 +1,14 @@
 import { ButtonStyle, type Guild } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { confirm, defineView, type HandlerContext, paginationHandlers, type ViewDefinition } from "@/define";
-import { EmbedFormatter } from "@/utils/format";
+import { cut, EmbedFormatter } from "@/utils/format";
 import { formatHexColor } from "../services/color";
 import { canMention, type PostStatus, postStatus } from "../services/post-status";
 import { type BadgePreview, defaultTrackerConfig, type TrackerConfig, type TrackerOverview } from "../services/tracker-config.service";
 import { settings } from "../settings";
 import { BadgeTrackerError } from "../types";
 import { AWARD_COLOR } from "./award-post";
-import { badgePages, cut, renderTrackerSettings } from "./settings.screens";
+import { badgePages, renderTrackerSettings } from "./settings.screens";
 
 export { renderOverviewReadOnly, renderTrackerSettings } from "./settings.screens";
 

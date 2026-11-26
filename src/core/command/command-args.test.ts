@@ -202,3 +202,40 @@ describe("namedOnly prefix options", () => {
         expect(a.getString("until")).toBe("text here");
     });
 });
+
+describe("namedOnly on a command without subcommands", () => {
+    const flat = new SlashCommandBuilder()
+        .setName("x")
+        .setDescription("x")
+        .addUserOption((o) => o.setName("user").setDescription("u").setRequired(true))
+        .addStringOption((o) => o.setName("until").setDescription("d"))
+        .addStringOption((o) => o.setName("text").setDescription("t"));
+    const run = (tokens: string[], namedOnly?: string[]) =>
+        new PrefixArgs(tokens, deriveSchema(flat, new Set(namedOnly)), null, fakeClient());
+
+    test("a named-only option never takes a positional slot, so the free text stays whole", () => {
+        const a = run(["1", "free", "text"], ["until"]);
+        expect(a.getString("text")).toBe("free text");
+        expect(a.getString("until")).toBeNull();
+    });
+
+    test("it is still filled by name, and without the marker nothing changes", () => {
+        expect(run(["1", "until:3d", "free"], ["until"]).getString("until")).toBe("3d");
+        expect(run(["1", "free", "text"]).getString("until")).toBe("free");
+    });
+});
+
+describe("isNamed", () => {
+    const flat = new SlashCommandBuilder()
+        .setName("x")
+        .setDescription("x")
+        .addUserOption((o) => o.setName("user").setDescription("u").setRequired(true))
+        .addStringOption((o) => o.setName("reason").setDescription("r"));
+
+    test("true only for an option typed as name:value", () => {
+        const named = new PrefixArgs(["1", "reason:spam"], deriveSchema(flat), null, fakeClient());
+        expect(named.isNamed("reason")).toBe(true);
+        expect(named.isNamed("user")).toBe(false);
+        expect(new PrefixArgs(["1", "spam"], deriveSchema(flat), null, fakeClient()).isNamed("reason")).toBe(false);
+    });
+});
