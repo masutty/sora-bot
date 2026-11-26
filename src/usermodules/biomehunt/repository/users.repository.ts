@@ -91,9 +91,47 @@ export async function touchLastActivity(userId: number, when: Date, grace: Activ
  */
 export async function resetActivityState(userId: number): Promise<void> {
     await query(
-        `UPDATE bh_users SET last_activity_at = NULL, activity_grace_until = NULL, activity_grace_biome = NULL, current_status = 'inactive' WHERE id = $1`,
+        `UPDATE bh_users SET last_activity_at = NULL, activity_grace_until = NULL, activity_grace_biome = NULL, current_status = 'inactive',
+             unread_embeds = 0, unread_since = NULL, unread_last_at = NULL, macro_warned_at = NULL WHERE id = $1`,
         [userId],
     );
+}
+
+/** Counts one more unread embed. After `gapS` of silence the count starts over: that is a new macro run. */
+export async function recordUnreadEmbed(userId: number, gapS: number): Promise<void> {
+    // Every SET expression reads the row as it was before this UPDATE.
+    await query(
+        `UPDATE bh_users SET
+             unread_embeds = CASE WHEN unread_last_at >= NOW() - make_interval(secs => $2) THEN unread_embeds + 1 ELSE 1 END,
+             unread_since = CASE WHEN unread_last_at >= NOW() - make_interval(secs => $2) THEN unread_since ELSE NOW() END,
+             unread_last_at = NOW()
+         WHERE id = $1`,
+        [userId, gapS],
+    );
+}
+
+/** Forgets the unread embeds and re-arms the warning - a biome start was read. */
+export async function resetUnreadEmbeds(userId: number): Promise<void> {
+    await query(
+        `UPDATE bh_users SET unread_embeds = 0, unread_since = NULL, unread_last_at = NULL, macro_warned_at = NULL
+         WHERE id = $1 AND (unread_embeds > 0 OR macro_warned_at IS NOT NULL)`,
+        [userId],
+    );
+}
+
+/** True once per streak: only for the call that marks a member past both thresholds as warned. */
+export async function claimMacroWarning(userId: number, minEmbeds: number, minSpanS: number): Promise<boolean> {
+    const result = await query(
+        `UPDATE bh_users SET macro_warned_at = NOW()
+         WHERE id = $1 AND macro_warned_at IS NULL AND unread_embeds >= $2 AND unread_since <= NOW() - make_interval(secs => $3)`,
+        [userId, minEmbeds, minSpanS],
+    );
+    return (result.rowCount ?? 0) > 0;
+}
+
+/** Gives the claim back when the warning could not be sent, so a later embed tries again. */
+export async function releaseMacroWarning(userId: number): Promise<void> {
+    await query(`UPDATE bh_users SET macro_warned_at = NULL WHERE id = $1`, [userId]);
 }
 
 export async function deleteUserCascade(userId: number): Promise<{ channelId: string; webhookId: string } | null> {

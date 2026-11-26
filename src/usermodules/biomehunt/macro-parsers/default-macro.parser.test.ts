@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
 import { DefaultMacroParser } from "./default-macro.parser";
 import { JJaramParser } from "./jjaram.parser";
+import { MultiscopeParser } from "./multiscope.parser";
+import { isMerchantReport, parseEvent } from "./webhook-event.parser";
 
 const parser = new DefaultMacroParser("test");
 
@@ -61,6 +63,50 @@ test("a known biome in the middle of an unknown name doesn't match alone", () =>
     expect(new JJaramParser().extractBiome({ title: "Hell Gate Biome Started" })).toEqual({ biome: null, eventType: null });
 });
 
+test("MultiScope's name-first title is parsed from the whole webhook message", () => {
+    const parse = (title: string) => parseEvent({ webhookId: "1", embeds: [{ title, footer: { text: "MultiScope | v0.9.9.1-Stable" } }] });
+
+    expect(parse("🌀 WINDY Biome Started")).toMatchObject({ biome: "WINDY", eventType: "started", macroType: "multiscope" });
+    expect(parse("🌧️ RAINY Biome Ended")).toMatchObject({ biome: "RAINY", eventType: "ended" });
+    expect(parse("📊 Status Update: MultiScope Started")).toBeNull();
+});
+
+test("MultiScope still matches the anchor-first format", () => {
+    expect(new MultiscopeParser().extractBiome({ title: "Biome Started - SAND STORM" })).toEqual({
+        biome: "SANDSTORM",
+        eventType: "started",
+    });
+});
+
+test("MultiScope's name-first title with trailing text falls through to the name-first pattern", () => {
+    expect(new MultiscopeParser().extractBiome({ title: "🌀 WINDY Biome Started at 9:28" })).toEqual({
+        biome: "WINDY",
+        eventType: "started",
+    });
+});
+
 test("an unknown name still reports no biome", () => {
     expect(parser.extractBiome({ title: "Biome Started - Not A Real Biome" })).toEqual({ biome: null, eventType: null });
+});
+
+test("a Coteab merchant embed is a merchant report with no biome", () => {
+    const arrival = "> ## Mari has arrived!\n> ### [Join Server](https://www.roblox.com/share?code=abc&type=Server)";
+    const message = {
+        webhookId: "1",
+        embeds: [
+            {
+                description: arrival,
+                footer: { text: "Coteab Macro v2.2.1" },
+                thumbnail: { url: "https://i.postimg.cc/RZh2pw0j/mari.png" },
+                fields: [
+                    { name: "Detected Merchant Items", value: "No items detected" },
+                    { name: "Detection Source", value: "LOGS" },
+                ],
+            },
+        ],
+    };
+    expect(isMerchantReport(message)).toBe(true);
+    expect(parseEvent(message)).toBeNull();
+    // The arrival line alone is enough.
+    expect(isMerchantReport({ webhookId: "1", embeds: [{ description: arrival }] })).toBe(true);
 });

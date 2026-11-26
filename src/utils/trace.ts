@@ -36,6 +36,9 @@ export function newTraceRef(): string {
     return n.toString(36).padStart(8, "0").slice(-8);
 }
 
+/** The subtext line that shows a ref to a user, named and copyable; `/bot trace <id>` looks it up. */
+export const errorIdLine = (ref: string) => `-# Error ID: \`${ref}\``;
+
 /** `ref=k3f9a2x1.2:back /bh balance u=masutty(1888...) g=1234...` - only the fields that are set. */
 export function formatTrace(trace: TraceContext | undefined): string {
     if (!trace) return "";

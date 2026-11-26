@@ -97,12 +97,12 @@ test("flags menu no longer lists the two auto-delete flags", async () => {
 
 test("flags: paginates MENU_FLAGS - the flags past the first page are on page 2", async () => {
     const { fake } = await open();
-    expect(MENU_FLAGS.length).toBe(FLAGS_PER_PAGE + 1);
+    expect(MENU_FLAGS.length).toBe(FLAGS_PER_PAGE + 2);
     expect(toggleCount(fake.lastPayload())).toBe(FLAGS_PER_PAGE);
     expect(comp(fake.lastPayload(), "jump")).toMatchObject({ label: "1 / 2" });
     expect(() => comp(fake.lastPayload(), "toggle:RARE_COUNT_IN_CHANNEL_NAME")).toThrow();
     await fake.emit(fake.click("next", OWNER));
-    expect(toggleCount(fake.lastPayload())).toBe(1);
+    expect(toggleCount(fake.lastPayload())).toBe(2);
     expect(comp(fake.lastPayload(), "toggle:RARE_COUNT_IN_CHANNEL_NAME")).toMatchObject({ label: "Turn on" });
 });
 

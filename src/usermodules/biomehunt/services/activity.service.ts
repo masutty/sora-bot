@@ -3,7 +3,7 @@ import type { BotClient } from "@/core/bot-client";
 import { transaction } from "@/database/connection";
 import { Logger } from "@/utils/logging";
 import { getBiomeMeta, rewardsOnDetection } from "../constants/biomes.constants";
-import { parseEvent } from "../macro-parsers";
+import { isMerchantReport, parseEvent } from "../macro-parsers";
 import {
     extendSession,
     getActiveSecondsBetween,
@@ -18,12 +18,20 @@ import {
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { getActivePause, type PauseRow } from "../repository/pauses.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
-import { getMacroChannelByUserId, getUserById, lookupChannel, touchLastActivity, updateUserStatus } from "../repository/users.repository";
+import {
+    type ChannelIndexEntry,
+    getMacroChannelByUserId,
+    getUserById,
+    lookupChannel,
+    touchLastActivity,
+    updateUserStatus,
+} from "../repository/users.repository";
 import type { ActivityGrace, ActivityStatus, ParsedEvent } from "../types";
 import { buildSessionEndContainer } from "../views/session-end.view";
 import { RECENT_ACTIVITY_WINDOW_HOURS } from "../views/stats-builders";
 import { grantBiomeReward } from "./biome-reward.service";
 import { checkAndForward } from "./forward.service";
+import { trackMacroHealth } from "./macro-health.service";
 import { scheduleNetworkPostSafely } from "./network-publish.service";
 import { quotaDayWindow } from "./quota.service";
 
@@ -89,13 +97,18 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     }
 
     const parsed = parseEvent(message);
-    if (!parsed) {
-        logger.verbose(`No biome event parsed for message ${message.id}`);
-        return;
-    }
-
+    // Before the early return: unreadable embeds are what the warning counts.
+    await trackMacroHealth(message, entry, parsed).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     const now = new Date();
 
+    if (parsed) await recordBiomeEvent(message, entry, parsed, now);
+    // A merchant report is no find, but it proves the macro is hunting: it counts as macro time.
+    else if (isMerchantReport(message)) await recordActivity(entry, { biome: null, eventType: null }, now);
+    else logger.verbose(`No biome or merchant parsed for message ${message.id}`);
+}
+
+/** Stores the find, rewards and forwards it, and counts it as activity. A message seen before does nothing. */
+async function recordBiomeEvent(message: Message, entry: ChannelIndexEntry, parsed: ParsedEvent, now: Date): Promise<void> {
     const eventId = await transaction((client) =>
         insertEventIfNew(client, entry.userId, message.id, parsed.biome, parsed.macroType, parsed.eventType, parsed.eventTimestamp),
     );
@@ -123,6 +136,14 @@ export async function processIncomingMessage(message: Message): Promise<void> {
         });
     }
 
+    await recordActivity(entry, parsed, now);
+}
+
+/** Opens or extends the member's session and marks them active. */
+async function recordActivity(entry: ChannelIndexEntry, event: Pick<ParsedEvent, "biome" | "eventType">, now: Date): Promise<void> {
+    const user = await getUserById(entry.userId);
+    if (!user) return;
+
     const guildConfig = await getOrCreateGuildConfig(entry.guildId);
     // Measured from the end of a running timed biome too, so a long admin event doesn't split the session.
     const lastActivity = effectiveLastActivity(user.last_activity_at, user.activity_grace_until);
@@ -141,7 +162,7 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     });
 
     const currentGrace = { until: user.activity_grace_until, biome: user.activity_grace_biome };
-    await touchLastActivity(entry.userId, now, nextActivityGrace(currentGrace, parsed, now));
+    await touchLastActivity(entry.userId, now, nextActivityGrace(currentGrace, event, now));
 
     if (user.current_status !== "active") {
         await transitionUser(entry.userId, entry.guildId, "active");

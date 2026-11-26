@@ -2,7 +2,7 @@ import { ComponentType } from "discord.js";
 import { Logger } from "@/utils/logging";
 import type { ParsedEvent } from "../types";
 import { detectMacroParser } from "./macro-parser.registry";
-import type { EmbedLike } from "./types";
+import type { EmbedLike, ExtractionStep } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers.webhook-event");
 
@@ -74,9 +74,52 @@ function componentsToEmbedLike(components: ReadonlyArray<unknown>): EmbedLike | 
     };
 }
 
-export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
-    const embed = message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
-    if (!embed) return null;
+/**
+ * What marks a merchant report. Narrow on purpose, since it counts as macro time: a settings dump
+ * saying "Merchant: ON", or an account named after a merchant, must not match.
+ */
+const MERCHANT_ARRIVAL = /\b(?:mari|jester|rin)\s+has arrived\b/i;
+const MERCHANT_TITLE = /\b(?:mari|jester|rin|merchant (?:detected|has arrived))\b/i;
+const MERCHANT_FIELD = /^detected merchant\b/i;
+
+function embedOf(message: WebhookMessageLike): EmbedLike | null {
+    return message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
+}
+
+/** The id of the macro with its own parser that sent the report, or `null` for any other. */
+export function detectedMacro(message: WebhookMessageLike): string | null {
+    const embed = embedOf(message);
+    const id = embed ? detectMacroParser(embed.footer?.text).id : "unknown";
+    return id === "unknown" ? null : id;
+}
+
+/** A merchant report: no biome in it, but proof that the macro is hunting and the bot understands it. */
+export function isMerchantReport(message: WebhookMessageLike): boolean {
+    const embed = embedOf(message);
+    if (!embed) return false;
+    const texts = [embed.title, embed.description, ...(embed.fields?.map((f) => f.value) ?? [])];
+    return (
+        MERCHANT_TITLE.test(embed.title ?? "") ||
+        texts.some((text) => text && MERCHANT_ARRIVAL.test(text)) ||
+        (embed.fields?.some((f) => f.name && MERCHANT_FIELD.test(f.name)) ?? false)
+    );
+}
+
+export interface MessageInspection {
+    /** What was parsed: the first embed, a ComponentsV2 body, or nothing readable. */
+    input: "embed" | "components" | "none";
+    parserId: string | null;
+    footer: string | null;
+    steps: ExtractionStep[];
+    serverLink: string | null;
+    merchant: boolean;
+    event: ParsedEvent | null;
+}
+
+/** The one parse path: detection reads `event`, `/owner parse` shows the rest. */
+export function inspectMessage(message: WebhookMessageLike): MessageInspection {
+    const embed = embedOf(message);
+    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, merchant: false, event: null };
 
     logger.verbose("Detecting macro type...");
     const parser = detectMacroParser(embed.footer?.text);
@@ -86,14 +129,29 @@ export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
         logger.warn(`Webhook ${message.webhookId} has unknown macro type: ${embed.footer?.text}`);
     }
 
-    const { biome, eventType } = parser.extractBiome(embed);
-    if (!biome) return null;
+    const steps: ExtractionStep[] = [];
+    const { biome, eventType } = parser.extractBiome(embed, steps);
+    const serverLink = parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined);
 
     return {
-        biome,
-        macroType: parser.id,
-        eventType,
-        eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
-        serverLink: parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined),
+        input: message.embeds[0] ? "embed" : "components",
+        parserId: parser.id,
+        footer: embed.footer?.text ?? null,
+        steps,
+        serverLink,
+        merchant: isMerchantReport(message),
+        event: biome
+            ? {
+                  biome,
+                  macroType: parser.id,
+                  eventType,
+                  eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
+                  serverLink,
+              }
+            : null,
     };
+}
+
+export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
+    return inspectMessage(message).event;
 }

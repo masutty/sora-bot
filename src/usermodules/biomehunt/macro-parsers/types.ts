@@ -21,6 +21,15 @@ export interface BiomeExtraction {
     eventType: "started" | "ended" | null;
 }
 
+/** One text a parser looked at and what it got from it - what `/owner parse` shows. */
+export interface ExtractionStep {
+    source: string;
+    text: string;
+    outcome: "matched" | "unknown-biome" | "no-match";
+    biome?: string;
+    eventType?: "started" | "ended" | null;
+}
+
 /**
  * One subclass per macro (see the sibling files). Each macro can announce biomes in its own
  * way - different field, different phrasing, some don't announce "Ended" at all - so every
@@ -32,6 +41,7 @@ export interface BiomeExtraction {
 export abstract class MacroParser {
     constructor(readonly id: string) {}
 
-    abstract extractBiome(embed: EmbedLike): BiomeExtraction;
+    /** Pass `steps` to have every text looked at recorded in it. */
+    abstract extractBiome(embed: EmbedLike, steps?: ExtractionStep[]): BiomeExtraction;
     abstract extractServerLink(embed: EmbedLike, components?: ReadonlyArray<unknown>): string | null;
 }
