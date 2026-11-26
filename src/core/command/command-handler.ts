@@ -121,6 +121,9 @@ function usageFor(def: CommandDefinition, invokePrefix: string, group: string | 
  * A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip
  * with the invocation id as a "ref", so a user's screenshot leads straight to the log lines.
  */
+/** The line under a failed command's message: the trace ref, named for users and copyable; `/bot trace <id>` looks it up. */
+const errorIdLine = (ref: string) => `-# Error ID: \`${ref}\``;
+
 async function reportFailure(
     err: unknown,
     ref: string,
@@ -129,13 +132,13 @@ async function reportFailure(
 ): Promise<string> {
     const view = describeCommandError(err);
     if (view.kind === "user") {
-        // Show what was parsed: a user error is often a misparse (e.g. `biome:X` typed on prefix,
-        // which is positional), and seeing the args makes that obvious at a glance.
-        await reply(errorReply(argsText ? `${view.message}\n-# args: ${argsText}` : view.message)).catch(() => {});
+        // The user sees the ref, like any failure; what was parsed goes to the log under that ref,
+        // so a misparse (e.g. `biome:X` typed on prefix, which is positional) is still easy to spot.
+        await reply(errorReply(`${view.message}\n${errorIdLine(ref)}`)).catch(() => {});
         return `user-error: ${view.message}${argsText ? ` (args: ${argsText})` : ""}`;
     }
     logger.error(err instanceof Error ? err : new Error(String(err)));
-    await reply(errorReply(`${getFailureQuip()}\n-# ref: \`${ref}\``)).catch(() => {});
+    await reply(errorReply(`${getFailureQuip()}\n${errorIdLine(ref)}`)).catch(() => {});
     return "error";
 }
 
@@ -176,12 +179,14 @@ async function runInvocation(
     reply: (payload: ReplyPayload) => Promise<unknown>,
 ): Promise<void> {
     await runWithTrace(trace, async () => {
-        commandLogger.info("invoked");
+        const argsText = safe(() => ctx.args.describe());
+        // Always "invoked with ...", so a trace can tell "no arguments" from an older log that never recorded them.
+        commandLogger.info(`invoked with ${argsText || "no arguments"}`);
         let outcome = "ok";
         try {
             await dispatchIt();
         } catch (err) {
-            outcome = await reportFailure(err, trace.ref, safe(() => ctx.args.describe()) ?? "", reply);
+            outcome = await reportFailure(err, trace.ref, argsText ?? "", reply);
         } finally {
             // "ok in 12ms" / "user-error: <message> (args: ...) in 12ms" / "error in 12ms"
             const [kind, ...detail] = outcome.split(": ");
@@ -209,8 +214,9 @@ export function registerCommandHandlers(client: BotClient): void {
         if (effectiveMode(command, null) === "slash") return;
         if (selectHandler(command, "prefix").kind === "none") return; // Command doesn't support prefix
 
-        const schema = command.options ? deriveSchema(command.options) : [];
-        const subcommandMap = command.options ? deriveSubcommandSchema(command.options, new Set(command.prefixNamedOnly)) : undefined;
+        const namedOnly = new Set(command.prefixNamedOnly);
+        const schema = command.options ? deriveSchema(command.options, namedOnly) : [];
+        const subcommandMap = command.options ? deriveSubcommandSchema(command.options, namedOnly) : undefined;
         const args = new PrefixArgs(rawArgs, schema, message.guild, client, subcommandMap);
         const started = Date.now();
         const ctx: CommandContext = createPrefixContext(message, args, client, prefix, {

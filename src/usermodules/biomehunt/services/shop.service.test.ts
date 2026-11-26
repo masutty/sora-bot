@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PurchaseRow, ShopItemRow } from "../types";
-import { blockerLabel, buyBlocker, deliverFlow, purchaseItem, refundFlow, roleProblem, type ShopDeps } from "./shop.service";
+import { blockerLabel, buyBlocker, deliverFlow, purchaseItem, refundFlow, type ShopDeps } from "./shop.service";
 
 const item = (over: Partial<ShopItemRow> = {}): ShopItemRow => ({
     id: 1,
@@ -46,20 +46,6 @@ describe("blockerLabel", () => {
         expect(blockerLabel({ kind: "has_role" })).toBe("You have this role");
         expect(blockerLabel({ kind: "limit", max: 1 })).toBe("Limit reached (1)");
     });
-});
-
-describe("roleProblem", () => {
-    const above = "⚠️ The bot can't give <@&r1> - move the bot's role above it.";
-    test("missing role", () => expect(roleProblem(null, "g1", 10, true)).toBe("⚠️ That role no longer exists."));
-    test("managed role", () => expect(roleProblem({ managed: true, id: "r1", position: 1 }, "g1", 10, true)).toBe(above));
-    test("everyone role", () =>
-        expect(roleProblem({ managed: false, id: "g1", position: 0 }, "g1", 10, true)).toBe(above.replace("r1", "g1")));
-    test("role above the bot", () => expect(roleProblem({ managed: false, id: "r1", position: 10 }, "g1", 10, true)).toBe(above));
-    test("no Manage Roles", () =>
-        expect(roleProblem({ managed: false, id: "r1", position: 1 }, "g1", 10, false)).toBe(
-            "⚠️ The bot needs Manage Roles to give <@&r1>.",
-        ));
-    test("giveable", () => expect(roleProblem({ managed: false, id: "r1", position: 1 }, "g1", 10, true)).toBeNull());
 });
 
 function fakeDeps(over: Partial<ShopDeps> = {}) {

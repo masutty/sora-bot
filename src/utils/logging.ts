@@ -62,7 +62,7 @@ const consoleTransport = new winston.transports.Console({
 });
 
 // Rotation knobs, shared by both rotated files below.
-const LOG_RETENTION_DAYS = process.env.LOG_RETENTION_DAYS ?? "14";
+export const LOG_RETENTION_DAYS = process.env.LOG_RETENTION_DAYS ?? "14";
 
 // Optional extra rotation trigger by size (e.g. "20m") - unset means date-based rotation only.
 const LOG_MAX_SIZE = process.env.LOG_MAX_SIZE;

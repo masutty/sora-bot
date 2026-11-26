@@ -22,7 +22,7 @@ test("attachments are refused", () => {
     const attachments = new Collection([["1", {}]]);
     expect(validateCapture(msg({ attachments }))).toEqual({
         ok: false,
-        reason: "Stickies are text only. Send it again without attachments.",
+        reason: "Stickies are text only, so send it again without attachments.",
     });
 });
 

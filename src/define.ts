@@ -26,6 +26,7 @@ export {
     navRow,
     type StepResult,
 } from "./core/view/flow";
+export { addDivider, addItems, type Item } from "./core/view/item-list";
 export { type PaginateOptions, type PaginationHandlersOptions, paginate, paginationHandlers, paginationRow } from "./core/view/paginate";
 export { type RunViewOptions, runView } from "./core/view/run-view";
 export { type TabRender, type TabSpec, type TabsOptions, tabs } from "./core/view/tabs";

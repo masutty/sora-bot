@@ -120,9 +120,13 @@ test("the list shows used/limit and one line per sticky", async () => {
     const { fake } = setup([row("c1"), row("c2", { mode: "nobots", delay_seconds: 300 }), row("c3")]);
     await fake.flush();
     const t = text(fake.lastPayload());
-    expect(t).toContain("**Stickies · 3/5**");
-    expect(t).toContain("<#c1> · All messages · 1 hour");
-    expect(t).toContain("<#c2> · No bots · 5 min");
+    expect(t).toContain("**Stickies (3/5)**");
+    expect(t).toContain("**<#c1>:** All messages, 1 hour");
+    expect(t).toContain("**<#c2>:** No bots, 5 min");
+    expect(t).not.toContain("·");
+    expect(nodes(fake.lastPayload()).filter((n) => n.type === 9)).toHaveLength(3);
+    expect(byKey(fake.lastPayload(), "open:1")).toMatchObject({ label: "Open" });
+    expect(byKey(fake.lastPayload(), "open:3")).toBeUndefined();
     expect(byKey(fake.lastPayload(), "create")?.disabled).toBe(false);
 });
 
@@ -138,23 +142,64 @@ test("Create is disabled at the limit", async () => {
     expect(byKey(fake.lastPayload(), "create")?.disabled).toBe(true);
 });
 
-test("picking a sticky opens its detail", async () => {
+test("Open shows the detail as Mode, Delay and Content rows with Back and Delete", async () => {
     const { fake } = setup([row("c1")]);
     await fake.flush();
-    await fake.emit(fake.click("pick", OWNER, ["c1"]));
-    expect(text(fake.lastPayload())).toContain("**Sticky · <#c1>**");
-    expect(text(fake.lastPayload())).toContain("Read the rules");
+    await fake.emit(fake.click("open:0", OWNER));
+    expect(text(fake.lastPayload())).toContain("**<#c1>**");
+    const t = text(fake.lastPayload());
+    expect(t).toContain("Read the rules");
+    expect(t).toContain("**Mode:** All messages");
+    expect(t).toContain("**Delay:** 1 hour");
+    expect(t).toContain("**Content**");
+    for (const key of ["changeMode", "changeDelay"]) expect(byKey(fake.lastPayload(), key)).toMatchObject({ label: "Change" });
+    expect(byKey(fake.lastPayload(), "editContent")).toMatchObject({ label: "Edit" });
+    expect(byKey(fake.lastPayload(), "delete")).toMatchObject({ label: "Delete", style: 4 });
+    expect(byKey(fake.lastPayload(), "back")).toBeDefined();
 });
 
-test("the mode and delay selects save at once", async () => {
+test("more than 5 stickies paginate and Open follows the page", async () => {
+    const { fake } = setup(Array.from({ length: 7 }, (_, i) => row(`c${i + 1}`)));
+    await fake.flush();
+    expect(byKey(fake.lastPayload(), "jump")).toMatchObject({ label: "1 / 2" });
+    expect(text(fake.lastPayload())).not.toContain("<#c6>");
+    await fake.emit(fake.click("next", OWNER));
+    expect(text(fake.lastPayload())).toContain("**<#c6>:**");
+    await fake.emit(fake.click("open:1", OWNER));
+    expect(text(fake.lastPayload())).toContain("**<#c7>**");
+});
+
+test("Open is refused when the user cannot manage that channel", async () => {
+    const { fake } = setup([row("c1")], { access: () => "user_cannot_manage" });
+    await fake.flush();
+    await fake.emit(fake.click("open:0", OWNER));
+    expect(fake.notifies[0]?.content).toBeDefined();
+    expect(text(fake.lastPayload())).toContain("**Stickies (1/5)**");
+});
+
+test("Change opens the select, which saves at once and returns to the detail", async () => {
     const { fake, log } = setup([row("c1")]);
     await fake.flush();
-    await fake.emit(fake.click("pick", OWNER, ["c1"]));
-    await fake.emit(fake.click("mode", OWNER, ["nobots"]));
-    await fake.emit(fake.click("delay", OWNER, ["300"]));
-    expect(log).toEqual(["mode c1 nobots", "delay c1 300"]);
+    await fake.emit(fake.click("open:0", OWNER));
+    await fake.emit(fake.click("changeMode", OWNER));
     const options = byKey(fake.lastPayload(), "mode")?.options as { value: string; default?: boolean }[];
-    expect(options.find((o) => o.value === "nobots")?.default).toBe(true);
+    expect(options.find((o) => o.value === "all")?.default).toBe(true);
+    await fake.emit(fake.click("mode", OWNER, ["nobots"]));
+    expect(text(fake.lastPayload())).toContain("**Mode:** No bots");
+    await fake.emit(fake.click("changeDelay", OWNER));
+    await fake.emit(fake.click("delay", OWNER, ["300"]));
+    expect(text(fake.lastPayload())).toContain("**Delay:** 5 min");
+    expect(log).toEqual(["mode c1 nobots", "delay c1 300"]);
+});
+
+test("Back on a select returns to the detail without saving", async () => {
+    const { fake, log } = setup([row("c1")]);
+    await fake.flush();
+    await fake.emit(fake.click("open:0", OWNER));
+    await fake.emit(fake.click("changeDelay", OWNER));
+    await fake.emit(fake.click("detail", OWNER));
+    expect(text(fake.lastPayload())).toContain("**Delay:** 1 hour");
+    expect(log).toEqual([]);
 });
 
 test("a channel that already has a sticky is refused", async () => {
@@ -184,7 +229,7 @@ test("capture creates the sticky in the chosen channel and shows its detail", as
     expect(fake.textListening).toBe(true);
     await fake.emit(message(OWNER, "Welcome"));
     expect(log).toEqual(["create c9 Welcome"]);
-    expect(text(fake.lastPayload())).toContain("**Sticky · <#c9>**");
+    expect(text(fake.lastPayload())).toContain("**<#c9>**");
 });
 
 test("the channel step lists only eligible channels, sorted by position, as a string select", async () => {
@@ -233,7 +278,7 @@ test("a failed post is told after the sticky is saved", async () => {
     await fake.emit(fake.click("channel", OWNER, ["c9"]));
     await fake.emit(message(OWNER, "Welcome"));
     expect(fake.notifies[0]?.content).toContain("but I couldn't post it");
-    expect(text(fake.lastPayload())).toContain("**Sticky · <#c9>**");
+    expect(text(fake.lastPayload())).toContain("**<#c9>**");
 });
 
 test("capture with an attachment is refused and stays on capture", async () => {
@@ -260,7 +305,7 @@ test("a StickyError from create is told and capture stays", async () => {
 test("Edit replaces the text of the open sticky", async () => {
     const { fake, log } = setup([row("c1")]);
     await fake.flush();
-    await fake.emit(fake.click("pick", OWNER, ["c1"]));
+    await fake.emit(fake.click("open:0", OWNER));
     await fake.emit(fake.click("editContent", OWNER));
     await fake.emit(message(OWNER, "New text"));
     expect(log).toEqual(["edit c1 New text"]);
@@ -270,16 +315,16 @@ test("Edit replaces the text of the open sticky", async () => {
 test("Cancel on capture goes back to the sticky", async () => {
     const { fake } = setup([row("c1")]);
     await fake.flush();
-    await fake.emit(fake.click("pick", OWNER, ["c1"]));
+    await fake.emit(fake.click("open:0", OWNER));
     await fake.emit(fake.click("editContent", OWNER));
     await fake.emit(fake.click("cancel", OWNER));
-    expect(text(fake.lastPayload())).toContain("**Sticky · <#c1>**");
+    expect(text(fake.lastPayload())).toContain("**<#c1>**");
 });
 
 test("Delete asks first, then removes and returns to the list", async () => {
     const { fake, log } = setup([row("c1")]);
     await fake.flush();
-    await fake.emit(fake.click("pick", OWNER, ["c1"]));
+    await fake.emit(fake.click("open:0", OWNER));
     await fake.emit(fake.click("delete", OWNER));
     expect(text(fake.lastPayload())).toContain("Delete this sticky?");
     expect(log).toEqual([]);

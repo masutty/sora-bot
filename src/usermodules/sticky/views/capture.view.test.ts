@@ -98,7 +98,7 @@ test("30 seconds without a message cancels", async () => {
     await fake.flush();
     await fake.clock.advance(30_000);
     expect(await result).toBeUndefined();
-    expect(JSON.stringify(fake.lastPayload())).toContain("No message in 30 seconds. Cancelled.");
+    expect(JSON.stringify(fake.lastPayload())).toContain("Cancelled because no message came in 30 seconds.");
 });
 
 test("Cancel ends with false", async () => {

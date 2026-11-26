@@ -63,8 +63,8 @@ test("shows the default limit and the known guilds with usage", async () => {
     const t = text(fake.lastPayload());
     expect(t).toContain("**Sticky settings**");
     expect(t).toContain("Default limit: 5");
-    expect(t).toContain("Alpha · 3/5");
-    expect(t).toContain("Beta · 1/9 (custom)");
+    expect(t).toContain("Alpha: 3/5");
+    expect(t).toContain("Beta: 1/9 (custom)");
 });
 
 test("guilds the bot is not in are hidden", async () => {
@@ -95,7 +95,7 @@ test("the guild limit sets an override", async () => {
     await fake.flush();
     await submit(fake, "guildLimit", { guild: G1, limit: "12" });
     expect(calls).toEqual([["setGuildLimit", G1, 12]]);
-    expect(text(fake.lastPayload())).toContain("Alpha · 3/12 (custom)");
+    expect(text(fake.lastPayload())).toContain("Alpha: 3/12 (custom)");
 });
 
 test("an empty limit clears the override", async () => {
@@ -103,7 +103,7 @@ test("an empty limit clears the override", async () => {
     await fake.flush();
     await submit(fake, "guildLimit", { guild: G2, limit: "" });
     expect(calls).toEqual([["setGuildLimit", G2, null]]);
-    expect(text(fake.lastPayload())).toContain("Beta · 1/5");
+    expect(text(fake.lastPayload())).toContain("Beta: 1/5");
     expect(text(fake.lastPayload())).not.toContain("(custom)");
 });
 

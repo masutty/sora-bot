@@ -28,6 +28,8 @@ export interface CommandArgs {
     getSubcommandGroup(): string | null;
     /** True if the invoker supplied a value for this option (even an invalid one). */
     has(name: string): boolean;
+    /** True if the option was typed as `name:value` in prefix form. Always false on slash, where every option is separate. */
+    isNamed(name: string): boolean;
     /** What was parsed, as `name=`value`` pairs (empty when nothing) - appended to user-error replies and logs. */
     describe(): string;
     getString(name: string, required: true): string;
@@ -116,6 +118,7 @@ export function slashArgs(interaction: ChatInputCommandInteraction): CommandArgs
         getSubcommandGroup: () => o.getSubcommandGroup(false),
         describe: () => describeSlashOptions(o.data ?? []),
         has,
+        isNamed: () => false,
         getString: (name: string, required?: boolean) =>
             primitive<string>(name, "string", slashValue(o, name, "string"), has(name), required),
         getInteger: (name: string, required?: boolean) =>
@@ -174,6 +177,7 @@ export function prefixArgs(a: PrefixArgs): CommandArgs {
         getSubcommandGroup: () => a.getSubcommandGroup(),
         describe: () => a.describe(),
         has: (name: string) => a.has(name),
+        isNamed: (name: string) => a.isNamed(name),
         getString: (name: string, required?: boolean) => primitive(name, "string", a.getString(name), a.has(name), required),
         getInteger: (name: string, required?: boolean) => primitive(name, "integer", a.getInteger(name), a.has(name), required),
         getNumber: (name: string, required?: boolean) => primitive(name, "number", a.getNumber(name), a.has(name), required),

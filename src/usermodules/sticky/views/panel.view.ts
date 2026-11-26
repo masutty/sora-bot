@@ -1,21 +1,21 @@
 import { ButtonStyle } from "discord.js";
-import { confirm, defineView, type HandlerContext, type ViewDefinition } from "@/define";
+import { confirm, defineView, type HandlerContext, paginationHandlers, type ViewDefinition } from "@/define";
 import { EmbedFormatter } from "@/utils/format";
 import { validateCapture } from "../services/capture";
 import { accessMessage, type ChannelAccess } from "../services/channel-access";
 import { type SaveOutcome, type StickyService, savedLine } from "../services/sticky.service";
 import { StickyError, type StickyMode } from "../types";
-import { renderPanel } from "./panel.screens";
+import { pageCount, renderPanel, STICKIES_PER_PAGE } from "./panel.screens";
 
-export type PanelScreen = "list" | "detail" | "pickChannel" | "capture";
+export type PanelScreen = "list" | "detail" | "mode" | "delay" | "pickChannel" | "capture";
 
 type Overview = Awaited<ReturnType<StickyService["overview"]>>;
 
 export interface PanelState {
     screen: PanelScreen;
+    /** Page of the list screen (0-based). */
+    page: number;
     overview: Overview;
-    /** Channel id -> name, for the list select's labels. */
-    names: Record<string, string>;
     /** The sticky in detail, or the channel being captured. */
     channelId: string | null;
     /** Whether the capture creates a sticky or replaces the text of `channelId`'s. */
@@ -38,8 +38,6 @@ export interface PanelDeps {
     userId: string;
     service: StickyService;
     access(channelId: string): ChannelAccess;
-    /** Channel name for the list select; defaults to the id. */
-    channelName?(channelId: string): string | undefined;
     /** Text and announcement channels of the server; without it the pickChannel screen uses a channel select. */
     channels?(): PanelChannel[];
 }
@@ -54,8 +52,11 @@ export function stickyPanelView(deps: PanelDeps): ViewDefinition<PanelState, voi
 
     async function reload(s: PanelState): Promise<void> {
         s.overview = await service.overview(guildId);
-        s.names = Object.fromEntries(s.overview.stickies.map((x) => [x.channel_id, deps.channelName?.(x.channel_id) ?? x.channel_id]));
-        if (s.screen === "detail" && !s.overview.stickies.some((x) => x.channel_id === s.channelId)) {
+        s.page = Math.min(s.page, pageCount(s.overview.stickies.length) - 1);
+        if (
+            (s.screen === "detail" || s.screen === "mode" || s.screen === "delay") &&
+            !s.overview.stickies.some((x) => x.channel_id === s.channelId)
+        ) {
             Object.assign(s, { screen: "list", channelId: null });
         }
     }
@@ -94,12 +95,24 @@ export function stickyPanelView(deps: PanelDeps): ViewDefinition<PanelState, voi
         Object.assign(c.state, { screen: "list", channelId: null });
     };
 
+    /** Opens the sticky of slot `i` on the list's current page. */
+    const open = (i: number) => async (c: Ctx) => {
+        const channelId = c.state.overview.stickies[c.state.page * STICKIES_PER_PAGE + i]?.channel_id;
+        if (!channelId) return;
+        if (deps.access(channelId) === "user_cannot_manage") {
+            await c.notify(accessMessage.user_cannot_manage(channelId));
+            return;
+        }
+        Object.assign(c.state, { screen: "detail", channelId });
+    };
+
     const change = (apply: (channelId: string, value: string) => Promise<unknown>) => async (c: Ctx) => {
         const { channelId } = c.state;
         const value = c.values[0];
         if (!channelId || !value) return;
         await attempt(c, () => apply(channelId, value));
         await reload(c.state);
+        if (c.state.screen === "mode" || c.state.screen === "delay") c.state.screen = "detail";
     };
 
     return defineView<PanelState, void, void>({
@@ -107,8 +120,8 @@ export function stickyPanelView(deps: PanelDeps): ViewDefinition<PanelState, voi
         initial: async () => {
             const state: PanelState = {
                 screen: "list",
+                page: 0,
                 overview: await service.overview(guildId),
-                names: {},
                 channelId: null,
                 capturing: "create",
                 eligible: null,
@@ -120,14 +133,16 @@ export function stickyPanelView(deps: PanelDeps): ViewDefinition<PanelState, voi
         deleteTextInput: true,
         render: renderPanel,
         on: {
-            pick: async (c) => {
-                const channelId = c.values[0];
-                if (!channelId) return;
-                if (deps.access(channelId) === "user_cannot_manage") {
-                    await c.notify(accessMessage.user_cannot_manage(channelId));
-                    return;
-                }
-                Object.assign(c.state, { screen: "detail", channelId });
+            ...paginationHandlers<PanelState>({ pages: (s) => pageCount(s.overview.stickies.length) }),
+            ...Object.fromEntries(Array.from({ length: STICKIES_PER_PAGE }, (_, i) => [`open:${i}`, open(i)])),
+            changeMode: (c) => {
+                c.state.screen = "mode";
+            },
+            changeDelay: (c) => {
+                c.state.screen = "delay";
+            },
+            detail: (c) => {
+                c.state.screen = "detail";
             },
             back: toList,
             create: (c) => {

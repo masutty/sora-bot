@@ -38,20 +38,6 @@ export function blockerLabel(b: BuyBlocker): string {
     }
 }
 
-/** The warning line for a role the bot cannot give, or null when it can. */
-export function roleProblem(
-    role: { managed: boolean; id: string; position: number } | null,
-    guildId: string,
-    botTopPosition: number,
-    botCanManageRoles: boolean,
-): string | null {
-    if (!role) return "⚠️ That role no longer exists.";
-    if (role.managed || role.id === guildId || role.position >= botTopPosition)
-        return `⚠️ The bot can't give <@&${role.id}> - move the bot's role above it.`;
-    if (!botCanManageRoles) return `⚠️ The bot needs Manage Roles to give <@&${role.id}>.`;
-    return null;
-}
-
 /** What the shop flows need from the database and Discord, injected so tests use neither. */
 export interface ShopDeps {
     now(): Date;

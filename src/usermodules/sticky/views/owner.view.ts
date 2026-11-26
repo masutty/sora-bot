@@ -69,7 +69,7 @@ export function ownerView(deps: OwnerDeps): ViewDefinition<OwnerState, void, voi
                 const name = deps.guildName(id);
                 if (name === null) return [];
                 const custom = s.overrides[id];
-                return [`${name} · ${s.used[id] ?? 0}/${custom ?? s.defaultLimit}${custom === undefined ? "" : " (custom)"}`];
+                return [`${name}: ${s.used[id] ?? 0}/${custom ?? s.defaultLimit}${custom === undefined ? "" : " (custom)"}`];
             });
             const container = new ContainerBuilder()
                 .setAccentColor(settings.accentColor)

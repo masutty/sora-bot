@@ -7,7 +7,7 @@ export type CaptureResult = { ok: true; content: string } | { ok: false; reason:
 export function validateCapture(
     message: Pick<Message, "content" | "attachments" | "stickers" | "poll" | "messageSnapshots">,
 ): CaptureResult {
-    if (message.attachments.size > 0) return { ok: false, reason: "Stickies are text only. Send it again without attachments." };
+    if (message.attachments.size > 0) return { ok: false, reason: "Stickies are text only, so send it again without attachments." };
     if (message.stickers.size > 0 || message.poll || message.messageSnapshots.size > 0) {
         return { ok: false, reason: "Stickies are text only." };
     }
