@@ -16,18 +16,21 @@ import {
     rewardsOnDetection,
 } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
-import { insertEventIfNew } from "../repository/activity.repository";
+import { inspectMessage } from "../macro-parsers";
+import { getEventByMessageId, insertEventIfNew } from "../repository/activity.repository";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfig } from "../repository/forwards.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
-import { getUserByDiscordId, getUsersByDiscordId } from "../repository/users.repository";
+import { getUserByDiscordId, getUsersByDiscordId, lookupChannel } from "../repository/users.repository";
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
 import { setVoteWindow, VOTE_WINDOW_MAX_S, VOTE_WINDOW_MIN_S, type VoteKind } from "../services/biome-vote.service";
 import { rerollFlower } from "../services/flower.service";
 import { forwardBiome } from "../services/forward.service";
+import { fetchReferencedMessage } from "../services/message-reference.service";
 import { parseRelayGuildIds } from "../services/network-publish.service";
 import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
+import { buildParseReport } from "../views/parse-report.view";
 import { biomeAdminSubcommandGroup, respondBiomeAdminAutocomplete, runBiomeAdminSubcommand } from "./biome-admin";
 import { relaySimulationToNetwork, runSimulateNetworkMirror } from "./network-admin";
 
@@ -119,6 +122,14 @@ export default defineCommand({
         )
         .addSubcommand((s) =>
             s
+                .setName("parse")
+                .setDescription("Shows how a macro message is parsed - nothing is recorded.")
+                .addStringOption((o) =>
+                    o.setName("message").setDescription("Message link, or its ID if it's in this channel").setRequired(true),
+                ),
+        )
+        .addSubcommand((s) =>
+            s
                 .setName("vote-duration")
                 .setDescription("Shows or sets how long new votes stay open - for every server.")
                 .addStringOption((o) =>
@@ -188,6 +199,11 @@ export default defineCommand({
             return;
         }
 
+        if (sub === "parse") {
+            await runParseMessage(ctx);
+            return;
+        }
+
         if (sub === "vote-duration") {
             const type = ctx.args.getString("type", true);
             // Prefix invocations don't enforce the slash option's choices.
@@ -199,6 +215,18 @@ export default defineCommand({
         await runStaleCleanup(ctx, ctx.client, ctx.args.getString("guild_id"));
     },
 });
+
+async function runParseMessage(ctx: CommandContext): Promise<void> {
+    const channelId = ctx.raw.kind === "prefix" ? ctx.raw.message.channelId : ctx.raw.interaction.channelId;
+    const message = await fetchReferencedMessage(ctx.client, ctx.args.getString("message", true), channelId);
+    const report = buildParseReport(inspectMessage(message), {
+        webhookId: message.webhookId,
+        tracked: lookupChannel(message.channelId),
+        url: message.url,
+        recorded: await getEventByMessageId(message.id),
+    });
+    await ctx.reply({ embeds: [report], allowedMentions: NO_PINGS });
+}
 
 interface RecalculateUserArgs {
     guildId: string;

@@ -49,6 +49,10 @@ export const FLAG_DEFINITIONS: Record<FlagName, FlagDefinition> = {
             "Puts each member's finds in their macro channel name, like `🔥3🌸1・masutty` - for the biomes set to show there. Changes show up within a few minutes.",
         default: false,
     },
+    WARN_INCOMPATIBLE_MACRO: {
+        description: "Tells a member in their macro channel when their macro keeps posting but no biome start can be read from it.",
+        default: true,
+    },
 };
 
 export const ALL_FLAGS: FlagName[] = Object.keys(FLAG_DEFINITIONS) as FlagName[];

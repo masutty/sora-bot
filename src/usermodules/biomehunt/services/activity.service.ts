@@ -24,6 +24,7 @@ import { buildSessionEndContainer } from "../views/session-end.view";
 import { RECENT_ACTIVITY_WINDOW_HOURS } from "../views/stats-builders";
 import { grantBiomeReward } from "./biome-reward.service";
 import { checkAndForward } from "./forward.service";
+import { trackMacroHealth } from "./macro-health.service";
 import { scheduleNetworkPostSafely } from "./network-publish.service";
 import { quotaDayWindow } from "./quota.service";
 
@@ -89,6 +90,8 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     }
 
     const parsed = parseEvent(message);
+    // Before the early return: unreadable embeds are what the warning counts.
+    await trackMacroHealth(message, entry, parsed).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     if (!parsed) {
         logger.verbose(`No biome event parsed for message ${message.id}`);
         return;

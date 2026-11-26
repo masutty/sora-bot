@@ -21,7 +21,8 @@ export type FlagName =
     | "EXPERIMENT_WEBHOOK_FLOWERS"
     | "EXPERIMENT_BIOME_ECONOMY"
     | "REPORT_FAKE_FINDS"
-    | "RARE_COUNT_IN_CHANNEL_NAME";
+    | "RARE_COUNT_IN_CHANNEL_NAME"
+    | "WARN_INCOMPATIBLE_MACRO";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).

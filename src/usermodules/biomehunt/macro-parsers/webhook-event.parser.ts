@@ -2,7 +2,7 @@ import { ComponentType } from "discord.js";
 import { Logger } from "@/utils/logging";
 import type { ParsedEvent } from "../types";
 import { detectMacroParser } from "./macro-parser.registry";
-import type { EmbedLike } from "./types";
+import type { EmbedLike, ExtractionStep } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers.webhook-event");
 
@@ -74,9 +74,21 @@ function componentsToEmbedLike(components: ReadonlyArray<unknown>): EmbedLike | 
     };
 }
 
-export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
-    const embed = message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
-    if (!embed) return null;
+export interface MessageInspection {
+    /** What was parsed: the first embed, a ComponentsV2 body, or nothing readable. */
+    input: "embed" | "components" | "none";
+    parserId: string | null;
+    footer: string | null;
+    steps: ExtractionStep[];
+    serverLink: string | null;
+    event: ParsedEvent | null;
+}
+
+/** The one parse path: detection reads `event`, `/owner parse` shows the rest. */
+export function inspectMessage(message: WebhookMessageLike): MessageInspection {
+    const first = message.embeds[0];
+    const embed = first ?? (message.components ? componentsToEmbedLike(message.components) : null);
+    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, event: null };
 
     logger.verbose("Detecting macro type...");
     const parser = detectMacroParser(embed.footer?.text);
@@ -86,14 +98,28 @@ export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
         logger.warn(`Webhook ${message.webhookId} has unknown macro type: ${embed.footer?.text}`);
     }
 
-    const { biome, eventType } = parser.extractBiome(embed);
-    if (!biome) return null;
+    const steps: ExtractionStep[] = [];
+    const { biome, eventType } = parser.extractBiome(embed, steps);
+    const serverLink = parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined);
 
     return {
-        biome,
-        macroType: parser.id,
-        eventType,
-        eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
-        serverLink: parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined),
+        input: first ? "embed" : "components",
+        parserId: parser.id,
+        footer: embed.footer?.text ?? null,
+        steps,
+        serverLink,
+        event: biome
+            ? {
+                  biome,
+                  macroType: parser.id,
+                  eventType,
+                  eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
+                  serverLink,
+              }
+            : null,
     };
+}
+
+export function parseEvent(message: WebhookMessageLike): ParsedEvent | null {
+    return inspectMessage(message).event;
 }

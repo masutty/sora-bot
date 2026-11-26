@@ -11,6 +11,14 @@ export const NOT_FAKE_SQL = `NOT EXISTS (SELECT 1 FROM bh_biome_votes v WHERE v.
               AND v.status IN ('community_fake','admin_denied')
               AND v.created_at = (SELECT MAX(v2.created_at) FROM bh_biome_votes v2 WHERE v2.event_id = e.id))`;
 
+export interface RecordedEvent {
+    id: number;
+    biome: string | null;
+    macro_type: string | null;
+    event_type: string | null;
+    received_at: Date;
+}
+
 export async function insertEventIfNew(
     client: PoolClient,
     userId: number,
@@ -260,6 +268,15 @@ export async function clearBiomeEvents(userId: number, biome: string): Promise<n
         biome,
     ]);
     return result.rows.map((r) => r.id);
+}
+
+/** The event a macro message was recorded as, or `null` if it never was (or was removed since). */
+export async function getEventByMessageId(discordMessageId: string): Promise<RecordedEvent | null> {
+    const result = await query<RecordedEvent>(
+        `SELECT id, biome, macro_type, event_type, received_at FROM bh_activity_events WHERE discord_message_id = $1`,
+        [discordMessageId],
+    );
+    return result.rows[0] ?? null;
 }
 
 /** False once the event is gone - e.g. removed by an admin's biome-count correction. */

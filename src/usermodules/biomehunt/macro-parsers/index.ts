@@ -3,5 +3,5 @@
  * here, never from an individual parser file.
  */
 export { detectMacroParser } from "./macro-parser.registry";
-export { type BiomeExtraction, type EmbedLike, MacroParser } from "./types";
-export { parseEvent, type WebhookMessageLike } from "./webhook-event.parser";
+export { type BiomeExtraction, type EmbedLike, type ExtractionStep, MacroParser } from "./types";
+export { inspectMessage, type MessageInspection, parseEvent, type WebhookMessageLike } from "./webhook-event.parser";

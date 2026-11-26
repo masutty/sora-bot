@@ -25,6 +25,11 @@ export const settings = {
         /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it - until an owner sets another (`/owner vote-duration`). */
         windowMs: 60_000,
     },
+    macroWarning: {
+        /** Webhook embeds without a readable biome start, and the time they must span, before the member is warned - both, so a webhook test or a macro that just started never is. */
+        minUnreadEmbeds: 10,
+        minSpanS: 3600,
+    },
     delayedForward: {
         /** The only delays `/admin forwarding` offers - past 60s a delayed ping loses its point. */
         delayChoicesS: [5, 10, 15, 20, 25, 30, 45, 60],

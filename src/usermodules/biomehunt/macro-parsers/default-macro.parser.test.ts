@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
 import { DefaultMacroParser } from "./default-macro.parser";
 import { JJaramParser } from "./jjaram.parser";
+import { MultiscopeParser } from "./multiscope.parser";
+import { parseEvent } from "./webhook-event.parser";
 
 const parser = new DefaultMacroParser("test");
 
@@ -59,6 +61,28 @@ test("an apostrophe stays inside the word, so THE NULL'S EXISTENCE is never read
 test("a known biome in the middle of an unknown name doesn't match alone", () => {
     expect(parser.extractBiome({ title: "Biome Started - The Hell Gate" })).toEqual({ biome: null, eventType: null });
     expect(new JJaramParser().extractBiome({ title: "Hell Gate Biome Started" })).toEqual({ biome: null, eventType: null });
+});
+
+test("MultiScope's name-first title is parsed from the whole webhook message", () => {
+    const parse = (title: string) => parseEvent({ webhookId: "1", embeds: [{ title, footer: { text: "MultiScope | v0.9.9.1-Stable" } }] });
+
+    expect(parse("🌀 WINDY Biome Started")).toMatchObject({ biome: "WINDY", eventType: "started", macroType: "multiscope" });
+    expect(parse("🌧️ RAINY Biome Ended")).toMatchObject({ biome: "RAINY", eventType: "ended" });
+    expect(parse("📊 Status Update: MultiScope Started")).toBeNull();
+});
+
+test("MultiScope still matches the anchor-first format", () => {
+    expect(new MultiscopeParser().extractBiome({ title: "Biome Started - SAND STORM" })).toEqual({
+        biome: "SANDSTORM",
+        eventType: "started",
+    });
+});
+
+test("MultiScope's name-first title with trailing text falls through to the name-first pattern", () => {
+    expect(new MultiscopeParser().extractBiome({ title: "🌀 WINDY Biome Started at 9:28" })).toEqual({
+        biome: "WINDY",
+        eventType: "started",
+    });
 });
 
 test("an unknown name still reports no biome", () => {

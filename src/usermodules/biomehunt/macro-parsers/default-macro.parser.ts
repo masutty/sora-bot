@@ -1,6 +1,6 @@
 import { Logger } from "@/utils/logging";
 import { isKnownBiome, normalizeBiomeName } from "../constants/biomes.constants";
-import { type BiomeExtraction, type EmbedLike, MacroParser } from "./types";
+import { type BiomeExtraction, type EmbedLike, type ExtractionStep, MacroParser } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers");
 
@@ -21,8 +21,11 @@ const BIOME_WORD = "[A-Za-z0-9_]+(?:['’-][A-Za-z0-9_]+)*";
  */
 export const BIOME_WORDS_PATTERN = String.raw`(?<words>${BIOME_WORD}(?:\s+${BIOME_WORD}){0,${MAX_BIOME_NAME_WORDS - 1}})`;
 
-/** Matches "Biome Started/Ended - NAME" (or "NAME Biome Started/Ended" if a subclass reorders it). */
-const DEFAULT_BIOME_REGEX = new RegExp(String.raw`Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*` + BIOME_WORDS_PATTERN, "i");
+/** Matches "Biome Started/Ended - NAME". */
+export const DEFAULT_BIOME_REGEX = new RegExp(String.raw`Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*` + BIOME_WORDS_PATTERN, "i");
+
+/** Matches "NAME Biome Started/Ended" - the biome name comes before the anchor, not after. */
+export const NAME_FIRST_BIOME_REGEX = new RegExp(BIOME_WORDS_PATTERN + String.raw`\s+Biome\s+(?<event>Started|Ended)\b`, "i");
 
 const DEFAULT_THUMBNAIL_REGEX = /\/([A-Z_]+)\.png$/i;
 
@@ -57,8 +60,9 @@ export interface MacroParserRegexes {
      * tokens around the biome name - build it from `BIOME_WORDS_PATTERN`). The relative order of `words` and "Biome
      * Started/Ended" in the string is up to the macro's format - e.g. JJaram reports
      * "NAME Biome Started/Ended" instead of the common "Biome Started/Ended - NAME".
+     * A macro that uses more than one format passes a list - the first that finds a known biome in a text wins.
      */
-    biomeRegex?: RegExp;
+    biomeRegex?: RegExp | RegExp[];
     thumbnailRegex?: RegExp;
     robloxLinkRegex?: RegExp;
 }
@@ -73,23 +77,27 @@ export interface MacroParserRegexes {
  * the format differs more fundamentally.
  */
 export class DefaultMacroParser extends MacroParser {
-    protected readonly biomeRegex: RegExp;
+    protected readonly biomeRegexes: RegExp[];
     protected readonly thumbnailRegex: RegExp;
     protected readonly robloxLinkRegex: RegExp;
 
     constructor(id: string, regexes?: MacroParserRegexes) {
         super(id);
-        this.biomeRegex = regexes?.biomeRegex ?? DEFAULT_BIOME_REGEX;
+        this.biomeRegexes = [regexes?.biomeRegex ?? DEFAULT_BIOME_REGEX].flat();
         this.thumbnailRegex = regexes?.thumbnailRegex ?? DEFAULT_THUMBNAIL_REGEX;
         this.robloxLinkRegex = regexes?.robloxLinkRegex ?? DEFAULT_ROBLOX_LINK_REGEX;
     }
 
-    extractBiome(embed: EmbedLike): BiomeExtraction {
-        const candidates = [embed.title, embed.description, ...(embed.fields?.map((f) => f.value) ?? [])];
+    extractBiome(embed: EmbedLike, steps?: ExtractionStep[]): BiomeExtraction {
+        const candidates = [
+            { source: "title", text: embed.title },
+            { source: "description", text: embed.description },
+            ...(embed.fields?.map((f, i) => ({ source: `field ${i + 1}`, text: f.value })) ?? []),
+        ];
 
         logger.verbose(`Parsing embed (${candidates.length} candidate(s))`);
 
-        for (const text of candidates) {
+        for (const { source, text } of candidates) {
             if (!text) continue;
 
             logger.verbose(`Candidate: ${JSON.stringify(text)}`);
@@ -97,27 +105,34 @@ export class DefaultMacroParser extends MacroParser {
             const cleaned = stripMarkdown(text);
             logger.verbose(`Cleaned: ${JSON.stringify(cleaned)}`);
 
-            const match = cleaned.match(this.biomeRegex);
-            if (!match?.groups) {
-                logger.verbose("No regex match.");
-                continue;
+            let unknownName: string | null = null;
+            for (const regex of this.biomeRegexes) {
+                const match = cleaned.match(regex);
+                if (!match?.groups) continue;
+
+                logger.verbose(`Regex matched: ${JSON.stringify(match)}`);
+
+                const eventType: "started" | "ended" = match.groups.event.toLowerCase() === "started" ? "started" : "ended";
+                const words = match.groups.words.trim().split(/\s+/);
+
+                // The name sits right after the anchor ("Biome Started - NAME"), unless the regex puts it first ("NAME Biome Started").
+                const nameBeforeAnchor = match[0].startsWith(match.groups.words);
+                const biome = findBiomeInWords(words, nameBeforeAnchor);
+                if (biome) {
+                    steps?.push({ source, text, outcome: "matched", biome, eventType });
+                    logger.verbose(`Matched biome "${biome}" (${eventType})`);
+                    return { biome, eventType };
+                }
+                unknownName ??= normalizeBiomeName(words.join(" "));
             }
 
-            logger.verbose(`Regex matched: ${JSON.stringify(match)}`);
-
-            const eventType: "started" | "ended" = match.groups.event.toLowerCase() === "started" ? "started" : "ended";
-            const words = match.groups.words.trim().split(/\s+/);
-
-            // The name sits right after the anchor ("Biome Started - NAME"), unless the regex puts it first ("NAME Biome Started").
-            const nameBeforeAnchor = match[0].startsWith(match.groups.words);
-            const biome = findBiomeInWords(words, nameBeforeAnchor);
-            if (biome) {
-                logger.verbose(`Matched biome "${biome}" (${eventType})`);
-                return { biome, eventType };
+            if (unknownName !== null) {
+                steps?.push({ source, text, outcome: "unknown-biome", biome: unknownName });
+                logger.warn(`Unknown biome: ${unknownName}`);
+                return { biome: null, eventType: null };
             }
-
-            logger.warn(`Unknown biome: ${normalizeBiomeName(words.join(" "))}`);
-            return { biome: null, eventType: null };
+            steps?.push({ source, text, outcome: "no-match" });
+            logger.verbose("No regex match.");
         }
 
         // fallback → thumbnail
@@ -133,12 +148,15 @@ export class DefaultMacroParser extends MacroParser {
                 logger.verbose(`Thumbnail resolved biome "${biome}"`);
 
                 if (isKnownBiome(biome)) {
+                    steps?.push({ source: "thumbnail", text: thumb, outcome: "matched", biome, eventType: null });
                     logger.verbose(`Matched biome "${biome}" from thumbnail`);
                     return { biome, eventType: null };
                 }
 
+                steps?.push({ source: "thumbnail", text: thumb, outcome: "unknown-biome", biome });
                 logger.warn(`Unknown biome "${biome}" from thumbnail`);
             } else {
+                steps?.push({ source: "thumbnail", text: thumb, outcome: "no-match" });
                 logger.verbose("Thumbnail regex did not match.");
             }
         } else {
