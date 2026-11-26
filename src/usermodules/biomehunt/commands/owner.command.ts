@@ -125,7 +125,7 @@ export default defineCommand({
                 .setName("parse")
                 .setDescription("Shows how a macro message is parsed - nothing is recorded.")
                 .addStringOption((o) =>
-                    o.setName("message").setDescription("Message link, or its ID if it's in this channel").setRequired(true),
+                    o.setName("message").setDescription("Message link, or its ID if it's in this channel (prefix: or reply to it)"),
                 ),
         )
         .addSubcommand((s) =>
@@ -218,7 +218,9 @@ export default defineCommand({
 
 async function runParseMessage(ctx: CommandContext): Promise<void> {
     const channelId = ctx.raw.kind === "prefix" ? ctx.raw.message.channelId : ctx.raw.interaction.channelId;
-    const message = await fetchReferencedMessage(ctx.client, ctx.args.getString("message", true), channelId);
+    const reply = ctx.raw.kind === "prefix" ? ctx.raw.message.reference : null;
+    const replied = reply?.messageId ? { channelId: reply.channelId, messageId: reply.messageId } : null;
+    const message = await fetchReferencedMessage(ctx.client, ctx.args.getString("message"), channelId, replied);
     const report = buildParseReport(inspectMessage(message), {
         webhookId: message.webhookId,
         tracked: lookupChannel(message.channelId),

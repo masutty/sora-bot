@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { inspectMessage } from "../macro-parsers";
-import { parseMessageReference } from "../services/message-reference.service";
+import { fetchReferencedMessage, parseMessageReference } from "../services/message-reference.service";
 import { buildParseReport } from "./parse-report.view";
 
 const source = {
@@ -40,4 +40,27 @@ test("a message reference is a link, or an id in the current channel", () => {
     expect(parseMessageReference("https://ptb.discord.com/channels/1/2/3", "9")).toEqual({ channelId: "2", messageId: "3" });
     expect(parseMessageReference(id, "9")).toEqual({ channelId: "9", messageId: id });
     expect(parseMessageReference("nope", "9")).toBeNull();
+});
+
+test("with nothing typed the replied-to message is used, and typed input wins over it", async () => {
+    const fetched: string[] = [];
+    const client = {
+        channels: {
+            fetch: async (channelId: string) => ({
+                isTextBased: () => true,
+                messages: {
+                    fetch: async (messageId: string) => {
+                        fetched.push(`${channelId}/${messageId}`);
+                        return {};
+                    },
+                },
+            }),
+        },
+    } as unknown as Parameters<typeof fetchReferencedMessage>[0];
+    const replied = { channelId: "4", messageId: "5" };
+
+    await fetchReferencedMessage(client, null, "9", replied);
+    await fetchReferencedMessage(client, "https://discord.com/channels/1/2/3", "9", replied);
+    expect(fetched).toEqual(["4/5", "2/3"]);
+    await expect(fetchReferencedMessage(client, null, "9")).rejects.toThrow("Reply to a message");
 });
