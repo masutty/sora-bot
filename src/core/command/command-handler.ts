@@ -4,7 +4,7 @@ import { getGuildPrefix } from "@/database/guild.repository";
 import type { CommandDefinition } from "@/types";
 import { Logger } from "@/utils/logging";
 import { getFailureQuip } from "@/utils/quips";
-import { newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
+import { errorIdLine, newTraceRef, runWithTrace, type TraceContext } from "@/utils/trace";
 import type { BotClient } from "../bot-client";
 import { checkGuards } from "../guards";
 import { botBanReply } from "../moderation/bot-ban";
@@ -121,9 +121,6 @@ function usageFor(def: CommandDefinition, invokePrefix: string, group: string | 
  * A failure after dispatch started: UserFacingError -> its message; anything else -> logged + quip
  * with the invocation id as a "ref", so a user's screenshot leads straight to the log lines.
  */
-/** The line under a failed command's message: the trace ref, named for users and copyable; `/bot trace <id>` looks it up. */
-const errorIdLine = (ref: string) => `-# Error ID: \`${ref}\``;
-
 async function reportFailure(
     err: unknown,
     ref: string,

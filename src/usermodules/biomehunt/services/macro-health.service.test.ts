@@ -22,6 +22,7 @@ function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; 
         isFlagEnabled: async () => options.flag ?? true,
         sessionGapS: async () => 1200,
         discordUserId: async () => "7",
+        logMacroWarning: log("log"),
         ownerIds: ["42"],
     };
     const message = {
@@ -53,32 +54,51 @@ test("a biome start or end resets the count and never warns", async () => {
 test("a recognized macro is reported as failing, an unrecognized one as incompatible", async () => {
     const known = setup({ embed: { footer: { text: "MultiScope | v0.9.9.1-Stable" } } });
     await known.run(null);
-    expect(known.sent[0]).toContain("Macro error");
+    expect(known.sent[0]).toContain("I can't get any biomes or merchants");
+    expect(known.sent[0]).toMatch(/-# Error ID: `[0-9a-z]{8}`/);
 
     const unknown = setup({ embed: { footer: { text: "Some Macro" } } });
     await unknown.run(null);
-    expect(unknown.sent[0]).toContain("Incompatible macro");
+    expect(unknown.sent[0]).toContain("I can't recognize your macro!");
 });
 
 test("a merchant report resets the count like a biome start", async () => {
-    for (const embed of [{ title: "Merchant Detected" }, { title: "🃏 Jester has arrived!" }, { description: "**Merchant:** Mari" }]) {
+    const merchants = [
+        { title: "Merchant Detected" },
+        { title: "🃏 Jester has arrived!" },
+        { description: "> ## Rin has arrived!" },
+        { fields: [{ name: "Detected Merchant Items", value: "No items detected" }] },
+    ];
+    for (const embed of merchants) {
         const { calls, run } = setup({ embed });
         await run(null);
         expect(calls).toEqual(["reset"]);
     }
 });
 
+test("a report that only mentions merchants is not a merchant report", async () => {
+    const mentions = [
+        { title: "Status Update", description: "**Merchant detection:** ON" },
+        { title: "Merchant Settings", fields: [{ name: "Auto Merchant", value: "Enabled" }] },
+    ];
+    for (const embed of mentions) {
+        const { calls, run } = setup({ embed });
+        await run(null);
+        expect(calls).toEqual(["record", "claim", "send", "log"]);
+    }
+});
+
 test("an account named after a merchant is not a merchant report", async () => {
     const { calls, run } = setup({ embed: { title: "Status Update", description: "**Account:** `mari`" } });
     await run(null);
-    expect(calls).toEqual(["record", "claim", "send"]);
+    expect(calls).toEqual(["record", "claim", "send", "log"]);
 });
 
 test("unreadable and untyped reads count toward the warning", async () => {
     for (const parsed of [null, event(null)]) {
         const { calls, run } = setup();
         await run(parsed);
-        expect(calls).toEqual(["record", "claim", "send"]);
+        expect(calls).toEqual(["record", "claim", "send", "log"]);
     }
 });
 

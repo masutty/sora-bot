@@ -1,6 +1,8 @@
 import type { Message } from "discord.js";
 import { config } from "@/config";
-import { isKnownMacro, isMerchantReport } from "../macro-parsers";
+import { Logger } from "@/utils/logging";
+import { currentTrace, newTraceRef } from "@/utils/trace";
+import { detectedMacro, isMerchantReport } from "../macro-parsers";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import {
@@ -14,6 +16,9 @@ import {
 import { settings } from "../settings";
 import type { ParsedEvent } from "../types";
 import { macroWarningPayload } from "../views/macro-warning.view";
+import { logMacroWarning } from "./macro-warning-log.service";
+
+const logger = new Logger("biomehunt.services.macro-health");
 
 export interface MacroHealthDeps {
     resetUnreadEmbeds: typeof resetUnreadEmbeds;
@@ -23,6 +28,7 @@ export interface MacroHealthDeps {
     isFlagEnabled: typeof isFlagEnabled;
     sessionGapS: (guildId: string) => Promise<number>;
     discordUserId: (userId: number) => Promise<string | null>;
+    logMacroWarning: typeof logMacroWarning;
     ownerIds: readonly string[];
 }
 
@@ -35,6 +41,7 @@ function defaultMacroHealthDeps(): MacroHealthDeps {
         isFlagEnabled,
         sessionGapS: async (guildId) => (await getOrCreateGuildConfig(guildId)).session_gap_threshold_s,
         discordUserId: async (userId) => (await getUserById(userId))?.discord_user_id ?? null,
+        logMacroWarning,
         ownerIds: config.bot.ownerIds,
     };
 }
@@ -66,7 +73,14 @@ export async function trackMacroHealth(
     try {
         const memberId = await deps.discordUserId(entry.userId);
         if (!memberId || !message.channel.isSendable()) throw new Error("Could not send the incompatible macro warning");
-        await message.channel.send(macroWarningPayload(isKnownMacro(message) ? "failing" : "incompatible", memberId, deps.ownerIds));
+        const macro = detectedMacro(message);
+        // The trace of this message event: its ref is on every log line written from here.
+        const ref = currentTrace()?.ref ?? newTraceRef();
+        await message.channel.send(macroWarningPayload(macro, memberId, deps.ownerIds, ref));
+        // The warning is out - a failed snapshot must not release the claim and send it again.
+        await deps
+            .logMacroWarning(message, { entry, memberId, macro })
+            .catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     } catch (err) {
         await deps.releaseMacroWarning(entry.userId);
         throw err;
