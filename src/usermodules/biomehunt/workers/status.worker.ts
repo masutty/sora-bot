@@ -7,6 +7,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import { deleteMacroChannelOnly, deleteUserCascade, getUsersForStatusSweep, resetActivityState } from "../repository/users.repository";
 import { effectiveLastActivity, reportSessionEnd, transitionUser } from "../services/activity.service";
+import { defaultAutoDeleteNoticeDeps, notifyAutoDelete } from "../services/auto-delete-notice.service";
 import { defaultPauseDeps, expireDueTimedPauses, onSessionEnded } from "../services/pause.service";
 import { evaluateRollingRewards, runFixedRewardSweep } from "../services/quota.service";
 import { settings } from "../settings";
@@ -115,6 +116,10 @@ async function tick(client: BotClient): Promise<void> {
                     await grantUserBadge(user.id, "DELETED");
                     await resetActivityState(user.id);
                 }
+                await notifyAutoDelete(
+                    { guildId: user.guild_id, discordUserId: user.discord_user_id, hardWipe },
+                    defaultAutoDeleteNoticeDeps(client),
+                ).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err)), { userId: user.id }));
             }
         }
     }
