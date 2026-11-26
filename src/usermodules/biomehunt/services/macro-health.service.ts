@@ -1,6 +1,6 @@
 import type { Message } from "discord.js";
 import { config } from "@/config";
-import { isMerchantReport } from "../macro-parsers";
+import { isKnownMacro, isMerchantReport } from "../macro-parsers";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import {
@@ -40,9 +40,8 @@ function defaultMacroHealthDeps(): MacroHealthDeps {
 }
 
 /**
- * Warns a member whose macro is incompatible: it keeps posting, and neither a biome start (the one
- * event stats show) nor a merchant report is read from it. A compatible macro that is failing is
- * a different problem, not covered here.
+ * Warns a member whose macro keeps posting while neither a biome start/end nor a merchant report is
+ * read from it. A recognized macro is failing; an unrecognized one is incompatible.
  */
 export async function trackMacroHealth(
     message: Message,
@@ -53,20 +52,21 @@ export async function trackMacroHealth(
     // Plain text isn't a macro report.
     if (message.embeds.length === 0 && message.components.length === 0) return;
 
-    if (parsed?.eventType === "started" || isMerchantReport(message)) {
+    // A biome without an event type (thumbnail only) is not enough: stats never count it.
+    if (parsed?.eventType || isMerchantReport(message)) {
         await deps.resetUnreadEmbeds(entry.userId);
         return;
     }
 
     await deps.recordUnreadEmbed(entry.userId, await deps.sessionGapS(entry.guildId));
-    if (!(await deps.isFlagEnabled(entry.guildId, "WARN_INCOMPATIBLE_MACRO"))) return;
+    if (!(await deps.isFlagEnabled(entry.guildId, "WARN_MACRO_PROBLEMS"))) return;
     const { minUnreadEmbeds, minSpanS } = settings.macroWarning;
     if (!(await deps.claimMacroWarning(entry.userId, minUnreadEmbeds, minSpanS))) return;
 
     try {
         const memberId = await deps.discordUserId(entry.userId);
         if (!memberId || !message.channel.isSendable()) throw new Error("Could not send the incompatible macro warning");
-        await message.channel.send(macroWarningPayload(memberId, deps.ownerIds));
+        await message.channel.send(macroWarningPayload(isKnownMacro(message) ? "failing" : "incompatible", memberId, deps.ownerIds));
     } catch (err) {
         await deps.releaseMacroWarning(entry.userId);
         throw err;

@@ -74,12 +74,19 @@ function componentsToEmbedLike(components: ReadonlyArray<unknown>): EmbedLike | 
     };
 }
 
-/** "Merchant" anywhere in the report, or a merchant's name in its title - account names sit outside the title. */
+/** "Merchant" or an arrival line anywhere in the report, or a merchant's name in its title - account names sit outside the title. */
 const MERCHANT_TEXT = /\bmerchant\b/i;
+const MERCHANT_ARRIVAL = /\b(?:mari|jester|rin)\s+has arrived\b/i;
 const MERCHANT_TITLE = /\b(?:mari|jester|rin)\b/i;
 
 function embedOf(message: WebhookMessageLike): EmbedLike | null {
     return message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
+}
+
+/** Whether the report comes from a macro with its own parser. */
+export function isKnownMacro(message: WebhookMessageLike): boolean {
+    const embed = embedOf(message);
+    return embed !== null && detectMacroParser(embed.footer?.text).id !== "unknown";
 }
 
 /** A merchant report: no biome in it, but proof that this macro and the bot understand each other. */
@@ -87,7 +94,9 @@ export function isMerchantReport(message: WebhookMessageLike): boolean {
     const embed = embedOf(message);
     if (!embed) return false;
     const texts = [embed.title, embed.description, ...(embed.fields?.flatMap((f) => [f.name, f.value]) ?? [])];
-    return texts.some((text) => text && MERCHANT_TEXT.test(text)) || MERCHANT_TITLE.test(embed.title ?? "");
+    return (
+        texts.some((text) => text && (MERCHANT_TEXT.test(text) || MERCHANT_ARRIVAL.test(text))) || MERCHANT_TITLE.test(embed.title ?? "")
+    );
 }
 
 export interface MessageInspection {

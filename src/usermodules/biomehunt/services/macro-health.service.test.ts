@@ -7,6 +7,7 @@ const entry = { userId: 1, guildId: "g", webhookId: "w" };
 
 function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; embeds?: number; embed?: object } = {}) {
     const calls: string[] = [];
+    const sent: string[] = [];
     const log = (call: string) => async () => {
         calls.push(call);
     };
@@ -28,22 +29,35 @@ function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; 
         components: [],
         channel: {
             isSendable: () => true,
-            send: async (payload: { allowedMentions: unknown }) => {
+            send: async (payload: { allowedMentions: unknown; components: unknown }) => {
                 if (options.sendFails) throw new Error("no access");
                 expect(payload.allowedMentions).toEqual({ users: ["7"] });
                 calls.push("send");
+                sent.push(JSON.stringify(payload.components));
             },
         },
     } as unknown as Message;
-    return { calls, run: (parsed: ParsedEvent | null) => trackMacroHealth(message, entry, parsed, deps) };
+    return { calls, sent, run: (parsed: ParsedEvent | null) => trackMacroHealth(message, entry, parsed, deps) };
 }
 
 const event = (eventType: ParsedEvent["eventType"]) => ({ biome: "WINDY", eventType }) as ParsedEvent;
 
-test("a biome start resets the count and never warns", async () => {
-    const { calls, run } = setup();
-    await run(event("started"));
-    expect(calls).toEqual(["reset"]);
+test("a biome start or end resets the count and never warns", async () => {
+    for (const eventType of ["started", "ended"] as const) {
+        const { calls, run } = setup();
+        await run(event(eventType));
+        expect(calls).toEqual(["reset"]);
+    }
+});
+
+test("a recognized macro is reported as failing, an unrecognized one as incompatible", async () => {
+    const known = setup({ embed: { footer: { text: "MultiScope | v0.9.9.1-Stable" } } });
+    await known.run(null);
+    expect(known.sent[0]).toContain("Macro error");
+
+    const unknown = setup({ embed: { footer: { text: "Some Macro" } } });
+    await unknown.run(null);
+    expect(unknown.sent[0]).toContain("Incompatible macro");
 });
 
 test("a merchant report resets the count like a biome start", async () => {
@@ -60,8 +74,8 @@ test("an account named after a merchant is not a merchant report", async () => {
     expect(calls).toEqual(["record", "claim", "send"]);
 });
 
-test("unreadable, ended and untyped reads all count toward the warning", async () => {
-    for (const parsed of [null, event("ended"), event(null)]) {
+test("unreadable and untyped reads count toward the warning", async () => {
+    for (const parsed of [null, event(null)]) {
         const { calls, run } = setup();
         await run(parsed);
         expect(calls).toEqual(["record", "claim", "send"]);

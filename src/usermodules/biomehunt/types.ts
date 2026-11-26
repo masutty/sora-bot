@@ -22,7 +22,7 @@ export type FlagName =
     | "EXPERIMENT_BIOME_ECONOMY"
     | "REPORT_FAKE_FINDS"
     | "RARE_COUNT_IN_CHANNEL_NAME"
-    | "WARN_INCOMPATIBLE_MACRO";
+    | "WARN_MACRO_PROBLEMS";
 
 /**
  * Thrown for expected, user-facing failures (bad input, missing config, etc).

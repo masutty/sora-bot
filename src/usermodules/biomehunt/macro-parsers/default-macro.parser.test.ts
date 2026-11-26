@@ -3,7 +3,7 @@ import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants
 import { DefaultMacroParser } from "./default-macro.parser";
 import { JJaramParser } from "./jjaram.parser";
 import { MultiscopeParser } from "./multiscope.parser";
-import { parseEvent } from "./webhook-event.parser";
+import { isMerchantReport, parseEvent } from "./webhook-event.parser";
 
 const parser = new DefaultMacroParser("test");
 
@@ -87,4 +87,26 @@ test("MultiScope's name-first title with trailing text falls through to the name
 
 test("an unknown name still reports no biome", () => {
     expect(parser.extractBiome({ title: "Biome Started - Not A Real Biome" })).toEqual({ biome: null, eventType: null });
+});
+
+test("a Coteab merchant embed is a merchant report with no biome", () => {
+    const arrival = "> ## Mari has arrived!\n> ### [Join Server](https://www.roblox.com/share?code=abc&type=Server)";
+    const message = {
+        webhookId: "1",
+        embeds: [
+            {
+                description: arrival,
+                footer: { text: "Coteab Macro v2.2.1" },
+                thumbnail: { url: "https://i.postimg.cc/RZh2pw0j/mari.png" },
+                fields: [
+                    { name: "Detected Merchant Items", value: "No items detected" },
+                    { name: "Detection Source", value: "LOGS" },
+                ],
+            },
+        ],
+    };
+    expect(isMerchantReport(message)).toBe(true);
+    expect(parseEvent(message)).toBeNull();
+    // The arrival line alone is enough.
+    expect(isMerchantReport({ webhookId: "1", embeds: [{ description: arrival }] })).toBe(true);
 });
