@@ -17,7 +17,6 @@ const RED = 0xda373c;
 export interface StickyCommandDeps {
     service: StickyService;
     access(channelId: string): ChannelAccess;
-    channelName?(channelId: string): string | undefined;
     channels?(): PanelChannel[];
 }
 
@@ -30,7 +29,6 @@ export function defaultStickyDeps(ctx: GuildCommandContext): StickyCommandDeps {
             if (!channel || !me) return "not_text";
             return channelAccess(channel, ctx.member, me);
         },
-        channelName: (channelId) => ctx.guild.channels.cache.get(channelId)?.name,
         channels: () =>
             [...ctx.guild.channels.cache.values()]
                 .filter((ch) => ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildAnnouncement)
@@ -168,7 +166,6 @@ export async function runSticky(ctx: GuildCommandContext, deps: StickyCommandDep
                     userId: ctx.user.id,
                     service,
                     access: deps.access,
-                    channelName: deps.channelName,
                     channels: deps.channels,
                 }),
                 undefined,

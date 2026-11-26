@@ -141,8 +141,8 @@ describe("runSticky", () => {
         const t = setup({ sub: "list", stickies: [row("c1")] });
         await runSticky(t.ctx, t.deps);
         const reply = t.replies[0] as { content: string; components?: unknown };
-        expect(reply.content).toContain("**Stickies · 1/5**");
-        expect(reply.content).toContain("<#c1> · All messages · 1 hour");
+        expect(reply.content).toContain("**Stickies (1/5)**");
+        expect(reply.content).toContain("- <#c1>\n> All messages, 1 hour");
         expect(reply.components).toBeUndefined();
     });
 });

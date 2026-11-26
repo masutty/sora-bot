@@ -34,7 +34,7 @@ export function captureView(opts: CaptureOptions): ViewDefinition<CaptureState, 
         fixedTimeout: true,
         access: "invoker",
         deleteTextInput: true,
-        onExpire: () => EmbedFormatter.warn("No message in 30 seconds. Cancelled."),
+        onExpire: () => EmbedFormatter.warn("Cancelled because no message came in 30 seconds."),
         render: (state, kit) => {
             if (state.phase === "saved") return { ...text(state.line), acceptText: false };
             if (state.phase === "cancelled") return { ...text("Cancelled."), acceptText: false };
