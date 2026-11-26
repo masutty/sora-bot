@@ -43,6 +43,7 @@ const msg = (channelId: string, extra: object = {}) => ({
     guild: {},
     channelId,
     author: { id: "u", bot: false },
+    content: "hello",
     webhookId: null,
     ...extra,
 });
@@ -80,7 +81,7 @@ test("messageCreate in a sticky channel asks the reposter with the bot id", asyn
     const t = setup();
     stickyCache.set(row);
     await t.events.messageCreate(client, msg("c1"));
-    expect(t.messages).toEqual([["c1", { authorId: "u", authorIsBot: false, webhookId: null }, "bot"]]);
+    expect(t.messages).toEqual([["c1", { authorId: "u", authorIsBot: false, webhookId: null, content: "hello" }, "bot"]]);
 });
 
 test("messageDelete tells the reposter only for sticky channels", async () => {

@@ -17,6 +17,7 @@ interface MessageLike {
     channelId: string;
     author: { id: string; bot: boolean };
     webhookId: string | null;
+    content: string;
 }
 
 /** Gateway handlers of the sticky cog, with the reposter and the database injected. */
@@ -25,7 +26,12 @@ export function createStickyEvents(deps: StickyEventDeps) {
         async messageCreate(client: BotClient, message: MessageLike): Promise<void> {
             if (!message.guild) return;
             if (!stickyCache.get(message.channelId) || !client.user) return;
-            const author: MessageAuthor = { authorId: message.author.id, authorIsBot: message.author.bot, webhookId: message.webhookId };
+            const author: MessageAuthor = {
+                authorId: message.author.id,
+                authorIsBot: message.author.bot,
+                webhookId: message.webhookId,
+                content: message.content,
+            };
             try {
                 await deps.reposter(client).onMessage(message.channelId, author, client.user.id);
             } catch (err) {

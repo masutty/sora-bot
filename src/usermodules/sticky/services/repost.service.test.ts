@@ -7,7 +7,7 @@ import { stickyCache } from "./sticky-cache";
 const T0 = new Date("2026-11-24T12:00:00Z");
 const minutesAgo = (n: number) => new Date(T0.getTime() - n * 60_000);
 const BOT = "bot";
-const human = { authorId: "u1", authorIsBot: false, webhookId: null };
+const human = { authorId: "u1", authorIsBot: false, webhookId: null, content: "hi" };
 
 function sticky(over: Partial<StickyRow> = {}): StickyRow {
     return {
@@ -68,12 +68,16 @@ beforeEach(() => {
     };
 });
 
-test("countsForRepost ignores the bot itself and, in nobots, any bot or webhook", () => {
-    expect(countsForRepost({ authorId: BOT, authorIsBot: true, webhookId: null }, "all", BOT)).toBe(false);
-    expect(countsForRepost({ authorId: "b2", authorIsBot: true, webhookId: null }, "all", BOT)).toBe(true);
-    expect(countsForRepost({ authorId: "b2", authorIsBot: true, webhookId: null }, "nobots", BOT)).toBe(false);
-    expect(countsForRepost({ authorId: "w", authorIsBot: false, webhookId: "wh" }, "nobots", BOT)).toBe(false);
-    expect(countsForRepost(human, "nobots", BOT)).toBe(true);
+test("countsForRepost ignores the sticky's own post and, in nobots, any bot or webhook", () => {
+    const all = { mode: "all" as const, content: "rules" };
+    const nobots = { mode: "nobots" as const, content: "rules" };
+    expect(countsForRepost({ authorId: BOT, authorIsBot: true, webhookId: null, content: "rules" }, all, BOT)).toBe(false);
+    expect(countsForRepost({ authorId: BOT, authorIsBot: true, webhookId: null, content: "" }, all, BOT)).toBe(true);
+    expect(countsForRepost({ authorId: BOT, authorIsBot: true, webhookId: null, content: "" }, nobots, BOT)).toBe(false);
+    expect(countsForRepost({ authorId: "b2", authorIsBot: true, webhookId: null, content: "" }, all, BOT)).toBe(true);
+    expect(countsForRepost({ authorId: "b2", authorIsBot: true, webhookId: null, content: "" }, nobots, BOT)).toBe(false);
+    expect(countsForRepost({ authorId: "w", authorIsBot: false, webhookId: "wh", content: "" }, nobots, BOT)).toBe(false);
+    expect(countsForRepost(human, nobots, BOT)).toBe(true);
 });
 
 test("delayPassed is true without a posted message or timestamp", () => {
@@ -83,20 +87,20 @@ test("delayPassed is true without a posted message or timestamp", () => {
     expect(delayPassed(sticky({ last_posted_at: minutesAgo(60) }), T0)).toBe(true);
 });
 
-test("the bot's own message does not repost; another bot does in all mode", async () => {
+test("the sticky's own post does not repost; another post of the same bot does in all mode", async () => {
     stickyCache.set(sticky());
     const r = createReposter(h.deps);
-    await r.onMessage("c1", { authorId: BOT, authorIsBot: true, webhookId: null }, BOT);
+    await r.onMessage("c1", { authorId: BOT, authorIsBot: true, webhookId: null, content: "rules" }, BOT);
     expect(h.sent).toHaveLength(0);
-    await r.onMessage("c1", { authorId: "b2", authorIsBot: true, webhookId: null }, BOT);
+    await r.onMessage("c1", { authorId: BOT, authorIsBot: true, webhookId: null, content: "" }, BOT);
     expect(h.sent).toHaveLength(1);
 });
 
 test("nobots ignores other bots and webhooks", async () => {
     stickyCache.set(sticky({ mode: "nobots" }));
     const r = createReposter(h.deps);
-    await r.onMessage("c1", { authorId: "b2", authorIsBot: true, webhookId: null }, BOT);
-    await r.onMessage("c1", { authorId: "w", authorIsBot: false, webhookId: "wh" }, BOT);
+    await r.onMessage("c1", { authorId: "b2", authorIsBot: true, webhookId: null, content: "" }, BOT);
+    await r.onMessage("c1", { authorId: "w", authorIsBot: false, webhookId: "wh", content: "" }, BOT);
     expect(h.sent).toHaveLength(0);
 });
 

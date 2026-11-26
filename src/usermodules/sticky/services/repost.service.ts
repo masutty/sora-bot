@@ -3,19 +3,24 @@ import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
 import { Logger } from "@/utils/logging";
 import { updateSticky } from "../repository/stickies.repository";
-import type { StickyMode, StickyRow } from "../types";
+import type { StickyRow } from "../types";
 import { stickyCache } from "./sticky-cache";
 
 export interface MessageAuthor {
     authorId: string;
     authorIsBot: boolean;
     webhookId: string | null;
+    content: string;
 }
 
-/** The bot's own messages never count; `nobots` also ignores every other bot and webhook. */
-export function countsForRepost(msg: MessageAuthor, mode: StickyMode, botUserId: string): boolean {
-    if (msg.authorId === botUserId) return false;
-    if (mode === "nobots" && (msg.authorIsBot || msg.webhookId !== null)) return false;
+/**
+ * The sticky's own post never counts (else a repost triggers a repost), but the bot's other
+ * messages do - another module of the same bot may post in the channel. `nobots` ignores every
+ * bot and webhook, this one included.
+ */
+export function countsForRepost(msg: MessageAuthor, sticky: Pick<StickyRow, "mode" | "content">, botUserId: string): boolean {
+    if (msg.authorId === botUserId && msg.content === sticky.content) return false;
+    if (sticky.mode === "nobots" && (msg.authorIsBot || msg.webhookId !== null)) return false;
     return true;
 }
 
@@ -101,7 +106,7 @@ export function createReposter(deps: RepostDeps): Reposter {
         async onMessage(channelId, msg, botUserId) {
             const sticky = stickyCache.get(channelId);
             if (!sticky || locks.has(channelId)) return;
-            if (!countsForRepost(msg, sticky.mode, botUserId)) return;
+            if (!countsForRepost(msg, sticky, botUserId)) return;
             const now = deps.now();
             if (!delayPassed(sticky, now)) return;
             const failed = failedAt.get(channelId);
