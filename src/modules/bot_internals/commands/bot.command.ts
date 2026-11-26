@@ -9,12 +9,14 @@ import { getPoolStats, query } from "@/database/connection";
 import { defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
 import { EmbedFormatter } from "@/utils/format";
-import { getLogLevels, LOG_LEVELS, Logger, type LogLevel, setLogLevel } from "@/utils/logging";
+import { getLogLevels, LOG_LEVELS, LOG_RETENTION_DAYS, Logger, type LogLevel, setLogLevel } from "@/utils/logging";
 import { getEventLoopLag, getEventLoopLagDetail } from "@/utils/metrics";
+import { diskTraceSources, findTraceLines, normalizeTraceId } from "@/utils/trace-lookup";
 import { getBuildInfo } from "@/utils/version";
 import { classifyLiveArgs, type Destination, parseFilter } from "../live-feed/filter";
 import { type FeedSurface, liveFeed } from "../live-feed/live-feed";
 import type { FeedPayload } from "../live-feed/render";
+import { traceView } from "../views/trace.view";
 import { buildWorkersContainer } from "../views/workers.view";
 import { addUserSubcommands, runUserSubcommand, USER_SUBCOMMANDS } from "./bot-user";
 
@@ -22,7 +24,7 @@ const logger = new Logger("admin.commands.bot");
 
 // Pure-read subcommands (as opposed to reload/log-set/sync/shutdown, which change state) -
 // these get a neutral embed instead of a green success checkmark, since nothing was "done".
-const READONLY_SUBCOMMANDS = new Set(["commands", "servers", "ping", "memory", "db", "event-loop", "uptime", "invite"]);
+const READONLY_SUBCOMMANDS = new Set(["commands", "servers", "ping", "memory", "db", "event-loop", "uptime", "invite", "trace"]);
 
 export default defineCommand({
     name: "bot",
@@ -100,6 +102,12 @@ export default defineCommand({
             .addSubcommand((sub) => sub.setName("sync").setDescription("Sync slash commands with Discord."))
             .addSubcommand((sub) => sub.setName("status").setDescription("Show bot status."))
             .addSubcommand((sub) => sub.setName("workers").setDescription("Lists the background workers and how their last run went."))
+            .addSubcommand((sub) =>
+                sub
+                    .setName("trace")
+                    .setDescription("Shows every log line of one Error ID.")
+                    .addStringOption((o) => o.setName("id").setDescription("Error ID").setRequired(true)),
+            )
             .addSubcommand((sub) => sub.setName("shutdown").setDescription("Shut down the bot gracefully."))
             .addSubcommand((sub) => sub.setName("uptime").setDescription("Shows how long the process has been running."))
             .addSubcommand((sub) =>
@@ -149,6 +157,11 @@ export default defineCommand({
         if (routeKey === "workers") {
             const container = buildWorkersContainer(listWorkerStats(), ctx.mode === "slash");
             await ctx.reply({ flags: MessageFlags.IsComponentsV2, components: [container] }, { ephemeral: true });
+            return;
+        }
+
+        if (routeKey === "trace") {
+            await runTrace(ctx);
             return;
         }
 
@@ -301,6 +314,21 @@ async function runSubcommand(sub: string, { name, level, target }: SubcommandArg
         default:
             throw new Error(`Unknown subcommand: ${sub}`);
     }
+}
+
+// ─── Trace ──────────────────────────────────────────────────────────────────────
+
+async function runTrace(ctx: CommandContext): Promise<void> {
+    // Scanning the log files can outlast Discord's 3 s window.
+    await ctx.defer({ ephemeral: true });
+    const id = normalizeTraceId(ctx.args.getString("id") ?? "");
+    const days = Number(LOG_RETENTION_DAYS) || 14;
+    const lines = await findTraceLines(id, diskTraceSources(days));
+    if (lines.length === 0) {
+        await ctx.reply(EmbedFormatter.plain(`No log lines for Error ID \`${id}\` in the last ${days} days of logs.`));
+        return;
+    }
+    await ctx.open(traceView(), { id, lines }, { ephemeral: true });
 }
 
 // ─── Live log feed ──────────────────────────────────────────────────────────────
