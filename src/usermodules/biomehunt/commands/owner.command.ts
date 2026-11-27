@@ -22,15 +22,16 @@ import { getDelayedForwardConfig } from "../repository/delayed-forwards.reposito
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfig } from "../repository/forwards.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
-import { getUserByDiscordId, getUsersByDiscordId, lookupChannel } from "../repository/users.repository";
+import { getUserByDiscordId, getUserById, getUsersByDiscordId, lookupChannel } from "../repository/users.repository";
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
 import { setVoteWindow, VOTE_WINDOW_MAX_S, VOTE_WINDOW_MIN_S, type VoteKind } from "../services/biome-vote.service";
+import { loadFindRecord } from "../services/find-record.service";
 import { rerollFlower } from "../services/flower.service";
 import { forwardBiome } from "../services/forward.service";
 import { fetchReferencedMessage } from "../services/message-reference.service";
 import { parseRelayGuildIds } from "../services/network-publish.service";
 import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
-import { buildParseReport } from "../views/parse-report.view";
+import { parseReportView } from "../views/parse-report.view";
 import { biomeAdminSubcommandGroup, respondBiomeAdminAutocomplete, runBiomeAdminSubcommand } from "./biome-admin";
 import { relaySimulationToNetwork, runSimulateNetworkMirror } from "./network-admin";
 
@@ -221,13 +222,20 @@ async function runParseMessage(ctx: CommandContext): Promise<void> {
     const reply = ctx.raw.kind === "prefix" ? ctx.raw.message.reference : null;
     const replied = reply?.messageId ? { channelId: reply.channelId, messageId: reply.messageId } : null;
     const message = await fetchReferencedMessage(ctx.client, ctx.args.getString("message"), channelId, replied);
-    const report = buildParseReport(inspectMessage(message), {
+    const raw = { embeds: message.embeds.map((e) => e.toJSON()), components: message.components.map((c) => c.toJSON()) };
+    const tracked = lookupChannel(message.channelId);
+    const recorded = await getEventByMessageId(message.id);
+    await ctx.open(parseReportView(), {
+        inspection: inspectMessage(message),
         webhookId: message.webhookId,
-        tracked: lookupChannel(message.channelId),
+        tracked,
+        memberId: tracked ? ((await getUserById(tracked.userId))?.discord_user_id ?? null) : null,
         url: message.url,
-        recorded: await getEventByMessageId(message.id),
+        messageId: message.id,
+        recorded,
+        record: await loadFindRecord(message.url, recorded, tracked?.userId ?? null),
+        raw: JSON.stringify(raw, null, 2),
     });
-    await ctx.reply({ embeds: [report], allowedMentions: NO_PINGS });
 }
 
 interface RecalculateUserArgs {

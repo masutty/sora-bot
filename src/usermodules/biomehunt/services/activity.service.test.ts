@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants/biomes.constants";
+import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry, setNormalBiome } from "../constants/biomes.constants";
 import type { PauseRow } from "../repository/pauses.repository";
 import { effectiveLastActivity, NO_GRACE, nextActivityGrace, shouldMarkUncounted } from "./activity.service";
 
@@ -52,4 +52,11 @@ test("a session is marked uncounted only under an active pause that does not cou
     expect(shouldMarkUncounted(pause(false))).toBe(true);
     expect(shouldMarkUncounted(pause(true))).toBe(false);
     expect(shouldMarkUncounted(null)).toBe(false);
+});
+
+test("a timed biome serving as the normal one grants no grace and drops a running one", () => {
+    setNormalBiome("STARFALL");
+    const admin = nextActivityGrace(NO_GRACE, { biome: "ADMINEVENT", eventType: "started" }, t0);
+    expect(nextActivityGrace(admin, { biome: "STARFALL", eventType: "started" }, at(5))).toEqual(NO_GRACE);
+    setNormalBiome("NORMAL");
 });

@@ -7,6 +7,7 @@ import {
     getBiomeMeta,
     resetBiomeRegistry,
     setBiomeRegistry,
+    setNormalBiome,
 } from "../constants/biomes.constants";
 import type { BiomeAdminDeps } from "../services/biome-admin.service";
 import { biomeListView, buildCategoryTable } from "./biome-list.view";
@@ -40,7 +41,10 @@ async function openCard(category: string, biome: string) {
     return fake;
 }
 
-afterEach(() => resetBiomeRegistry());
+afterEach(() => {
+    resetBiomeRegistry();
+    setNormalBiome("NORMAL");
+});
 
 type Json = { custom_id?: string; content?: string; components?: Json[]; accessory?: Json; media?: { url?: string } };
 
@@ -143,6 +147,25 @@ test("the card edits the biome in place: selects, toggles and the details form",
 
     await fake.emit(fake.click("edit:enabled", OWNER));
     expect(getBiomeMeta("HELL")?.enabled).toBe(false);
+});
+
+test("the card's toggle makes the biome the normal one, and the list says which it is", async () => {
+    const saved: string[] = [];
+    const fake = createFakeViewTransport();
+    const store = { get: async () => null, set: async (_key: string, value: string) => void saved.push(value) };
+    void fake.run(biomeListView(createFakeDeps(), store), undefined, OWNER);
+    await fake.flush();
+    expect(text(fake.lastPayload())).toContain("Normal biome: **Normal**");
+
+    await fake.emit(fake.click("category", OWNER, ["weather"]));
+    await fake.emit(fake.click("biome", OWNER, ["SNOWY"]));
+    await fake.emit(fake.click("edit:normal", OWNER));
+    await fake.emit(fake.click("back", OWNER));
+    expect(text(fake.lastPayload())).toContain("Normal biome: **Snowy**");
+
+    await fake.emit(fake.click("biome", OWNER, ["SNOWY"]));
+    await fake.emit(fake.click("edit:normal", OWNER));
+    expect(saved).toEqual(["SNOWY", "NORMAL"]);
 });
 
 test("a bad value in the form is answered privately and changes nothing", async () => {

@@ -2,7 +2,7 @@ import type { Message } from "discord.js";
 import { config } from "@/config";
 import { Logger } from "@/utils/logging";
 import { currentTrace, newTraceRef } from "@/utils/trace";
-import { detectedMacro, isMerchantReport } from "../macro-parsers";
+import { detectedMacro, type MessageInspection } from "../macro-parsers";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
 import {
@@ -14,7 +14,6 @@ import {
     resetUnreadEmbeds,
 } from "../repository/users.repository";
 import { settings } from "../settings";
-import type { ParsedEvent } from "../types";
 import { macroWarningPayload } from "../views/macro-warning.view";
 import { logMacroWarning } from "./macro-warning-log.service";
 
@@ -47,20 +46,20 @@ function defaultMacroHealthDeps(): MacroHealthDeps {
 }
 
 /**
- * Warns a member whose macro keeps posting while neither a biome start/end nor a merchant report is
- * read from it. A recognized macro is failing; an unrecognized one is incompatible.
+ * Warns a member whose macro keeps posting while neither a biome start/end nor a checkpoint (merchant,
+ * Normal biome) is read from it. A recognized macro is failing; an unrecognized one is incompatible.
  */
 export async function trackMacroHealth(
     message: Message,
     entry: ChannelIndexEntry,
-    parsed: ParsedEvent | null,
+    read: Pick<MessageInspection, "event" | "checkpoint">,
     deps: MacroHealthDeps = defaultMacroHealthDeps(),
 ): Promise<void> {
     // Plain text isn't a macro report.
     if (message.embeds.length === 0 && message.components.length === 0) return;
 
     // A biome without an event type (thumbnail only) is not enough: stats never count it.
-    if (parsed?.eventType || isMerchantReport(message)) {
+    if (read.event?.eventType || read.checkpoint) {
         await deps.resetUnreadEmbeds(entry.userId);
         return;
     }

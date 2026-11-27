@@ -467,3 +467,22 @@ export function describeAnsiColor(code: string | undefined): string {
     ];
     return words.filter((w) => w !== null).join(" ") || "None";
 }
+
+/** What macros report when no biome is up. Never a find, whatever the current normal biome is. */
+export const NORMAL_BIOME = "NORMAL";
+
+let seasonalNormalBiome = NORMAL_BIOME;
+
+/** The biome the game currently shows between biomes (e.g. Snowy at Christmas) - set with "/owner biome normal". */
+export function getNormalBiome(): string {
+    return seasonalNormalBiome;
+}
+
+export function setNormalBiome(biome: string): void {
+    seasonalNormalBiome = biome;
+}
+
+/** A normal biome is never a find: it only shows the macro is running. */
+export function isNormalBiome(biome: string): boolean {
+    return biome === NORMAL_BIOME || biome === seasonalNormalBiome;
+}

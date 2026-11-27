@@ -11,9 +11,12 @@ import {
     BIOME_CATEGORY_LABELS,
     type BiomeEntry,
     describeAnsiColor,
+    formatBiomeName,
     getAllBiomes,
     getBiomeMeta,
+    getNormalBiome,
     MAX_DISCORD_CHOICES,
+    NORMAL_BIOME,
     parseAnsiCode,
 } from "../constants/biomes.constants";
 import {
@@ -27,6 +30,7 @@ import {
     NO_BIOME_CHANGES,
     setBiomeActive,
 } from "../services/biome-admin.service";
+import { configureNormalBiome, type NormalBiomeStore } from "../services/normal-biome.service";
 import { type BiomeCategory, BiomeHuntError } from "../types";
 
 const ANSI_RESET = "\u001b[0m";
@@ -103,7 +107,7 @@ function buildListContainer(): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(LIST_ACCENT);
     container.addTextDisplayComponents((td) =>
         td.setContent(
-            `### Biomes · ${enabled} enabled · ${all.length - enabled} disabled\n-# Display name · detection name · color · duration`,
+            `### Biomes · ${enabled} enabled · ${all.length - enabled} disabled\nNormal biome: **${formatBiomeName(getNormalBiome())}**\n-# Display name · detection name · color · duration`,
         ),
     );
     for (const category of ALL_BIOME_CATEGORIES) {
@@ -133,6 +137,7 @@ const colorOptions = (colors: readonly AnsiColorOption[], current: number | null
 
 /** The open card's editing controls: selects for the fixed-choice fields, buttons for the rest (forms and toggles). */
 function editorRows(e: BiomeEntry, kit: RenderKit) {
+    const normal = getNormalBiome() === e.key;
     const style = parseAnsiCode(e.ansiColor);
     const toggle = (on: boolean) => (on ? ButtonStyle.Primary : ButtonStyle.Secondary);
     return [
@@ -172,6 +177,13 @@ function editorRows(e: BiomeEntry, kit: RenderKit) {
             kit.button("edit:enabled", (b) =>
                 b.setLabel(e.enabled ? "Disable" : "Enable").setStyle(e.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
             ),
+            kit.button("edit:normal", (b) =>
+                b
+                    .setLabel(`Normal biome: ${normal ? "on" : "off"}`)
+                    .setStyle(toggle(normal))
+                    // A disabled biome isn't recognized, so it can't be made the normal one.
+                    .setDisabled(!normal && !e.enabled),
+            ),
             kit.button("back", (b) => b.setLabel("Back")),
         ),
     ];
@@ -184,7 +196,10 @@ function editorRows(e: BiomeEntry, kit: RenderKit) {
  * through `/owner biome edit`'s own validation (a bad value is answered privately and changes
  * nothing). Always reads the live registry.
  */
-export function biomeListView(deps: BiomeAdminDeps = defaultBiomeAdminDeps()): ViewDefinition<BiomeListState, void, void> {
+export function biomeListView(
+    deps: BiomeAdminDeps = defaultBiomeAdminDeps(),
+    normalStore?: NormalBiomeStore,
+): ViewDefinition<BiomeListState, void, void> {
     /** Applies one change to the open biome; a validation error is shown only to the clicker. */
     async function edit(c: ListContext, change: Partial<Omit<EditBiomeInput, "biome">>): Promise<void> {
         if (!c.state.selected) return;
@@ -253,6 +268,10 @@ export function biomeListView(deps: BiomeAdminDeps = defaultBiomeAdminDeps()): V
             "edit:bold": (c) => edit(c, { ansi: { ...NO_BIOME_CHANGES.ansi, bold: !parseAnsiCode(selectedEntry(c)?.ansiColor).bold } }),
             "edit:badge": (c) => edit(c, { hasBadge: selectedEntry(c)?.hasBadge !== true }),
             "edit:channel-name": (c) => edit(c, { showInChannelName: selectedEntry(c)?.showInChannelName !== true }),
+            "edit:normal": async (c) => {
+                const e = selectedEntry(c);
+                if (e) await configureNormalBiome(getNormalBiome() === e.key ? NORMAL_BIOME : e.key, normalStore);
+            },
             "edit:enabled": async (c) => {
                 const e = selectedEntry(c);
                 if (e) await setBiomeActive(e.key, !e.enabled, deps);

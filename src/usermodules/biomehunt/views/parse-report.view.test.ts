@@ -1,38 +1,89 @@
 import { expect, test } from "bun:test";
+import { createFakeViewTransport } from "@/define";
 import { inspectMessage } from "../macro-parsers";
 import { fetchReferencedMessage, parseMessageReference } from "../services/message-reference.service";
-import { buildParseReport } from "./parse-report.view";
+import { type ParseReportData, parseReportView } from "./parse-report.view";
 
-const source = {
-    webhookId: "w",
-    tracked: { userId: 1, guildId: "g", webhookId: "w" },
-    url: "https://discord.com/channels/1/2/3",
-    recorded: null,
-};
-const report = (title: string) =>
-    buildParseReport(inspectMessage({ webhookId: "w", embeds: [{ title, footer: { text: "MultiScope | v0.9.9.1-Stable" } }] }), source)
-        .data;
+const OWNER = "1";
 
-test("a read biome start shows the parser and the matched text", () => {
-    const { description, color } = report("🌀 WINDY Biome Started");
-    expect(description).toContain("Parser: `multiscope`");
-    expect(description).toContain("**title** ✅ `WINDY` (started)");
-    expect(description).toContain("✅ Biome start");
-    expect(color).toBe(0x248046);
+async function open(title: string, overrides: Partial<ParseReportData> = {}) {
+    const inspection = inspectMessage({
+        webhookId: "w",
+        embeds: [{ title, description: "https://www.roblox.com/share?code=secret123&type=Server", footer: { text: "MultiScope" } }],
+    });
+    const fake = createFakeViewTransport();
+    void fake.run(
+        parseReportView(),
+        {
+            inspection,
+            webhookId: "w",
+            tracked: { userId: 1, guildId: "g", webhookId: "w" },
+            url: "https://discord.com/channels/1/2/3",
+            messageId: "3",
+            memberId: "7",
+            recorded: null,
+            record: { session: null, reward: null, vote: null, casual: null, network: null },
+            raw: "{}",
+            ...overrides,
+        },
+        OWNER,
+    );
+    await fake.flush();
+    return fake;
+}
+
+const shown = (fake: Awaited<ReturnType<typeof open>>) => JSON.stringify(fake.lastPayload());
+
+test("the first page shows the verdict, parser and server link, with a Join button", async () => {
+    const payload = shown(await open("🌀 WINDY Biome Started"));
+    expect(payload).toContain("✅ Biome start");
+    expect(payload).toContain("**Parser:** `multiscope`");
+    expect(payload).toContain("**Server link:** `https://www.roblox.com/share?code=secret123");
+    expect(payload).toContain("Join server");
 });
 
-test("an unreadable message shows why", () => {
-    const { description, color } = report("📊 Status Update: MultiScope Started");
-    expect(description).toContain("**title** ❌ no match");
-    expect(description).toContain("Biome: none");
-    expect(color).toBe(0xda373c);
+test("the Find page shows the event, the session and what the member got", async () => {
+    const at = new Date(1_000_000);
+    const recorded = { id: 5, biome: "WINDY", macro_type: "multiscope", event_type: null, received_at: at };
+    const record = {
+        session: { id: 9, user_id: 1, started_at: at, ended_at: at, duration_seconds: 60, counted: true },
+        reward: { event_id: 5, user_id: 1, biome: "WINDY", seeds_awarded: 3, xp_awarded: 4, badge_awarded: null, awarded_at: at },
+        vote: null,
+        casual: null,
+        network: null,
+    };
+    const fake = await open("x", { recorded, record });
+    await fake.emit(fake.click("tab:find", OWNER));
+    const payload = shown(fake);
+    expect(payload).toContain("**Event:** `#5` `WINDY` (no event type)");
+    expect(payload).toContain("**Session:** `#9`");
+    expect(payload).toContain("**Seeds:** 3");
 });
 
-test("shows what the bot stored for the message", () => {
-    const recorded = { id: 5, biome: "WINDY", macro_type: "multiscope", event_type: null, received_at: new Date(1_000_000) };
-    const { description } = buildParseReport(inspectMessage({ webhookId: "w", embeds: [] }), { ...source, recorded }).data;
-    expect(description).toContain("Recorded: `#5` `WINDY` (no event type, multiscope) <t:1000:T>");
-    expect(report("x").description).toContain("Recorded: no");
+test("the Votes page shows the vote result, or that there is none", async () => {
+    const row = { id: "abc", guild_id: "1", channel_id: "2", message_id: "3", status: "admin_denied", decided_by: "8" };
+    const record = {
+        session: null,
+        reward: null,
+        vote: { row: row as never, tally: { real: 2, fake: 5 } },
+        casual: null,
+        network: null,
+    };
+    const fake = await open("x", { record });
+    await fake.emit(fake.click("tab:votes", OWNER));
+    const payload = shown(fake);
+    expect(payload).toContain("`abc` admin denied");
+    expect(payload).toContain("✅ 2 real, ❌ 5 fake");
+    expect(payload).toContain("**Decided by:** <@8>");
+    expect(payload).toContain("Not sent to the Network");
+});
+
+test("Texts read lists what the parser looked at", async () => {
+    const fake = await open("📊 Status Update");
+    await fake.emit(fake.click("tab:texts", OWNER));
+    const payload = shown(fake);
+    expect(payload).toContain("**title** ❌ no match");
+    expect(payload).toContain("code=secret123");
 });
 
 test("a message reference is a link, or an id in the current channel", () => {

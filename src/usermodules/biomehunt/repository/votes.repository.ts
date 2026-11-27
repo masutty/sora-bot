@@ -146,6 +146,14 @@ export async function getVoteByMessage(guildId: string, messageId: string): Prom
     return result.rows[0] ?? null;
 }
 
+/** The newest vote whose forward came from this macro message. */
+export async function getVoteByJumpLink(jumpLink: string): Promise<BiomeVoteRow | null> {
+    const result = await query<BiomeVoteRow>(`SELECT * FROM bh_biome_votes WHERE jump_link = $1 ORDER BY created_at DESC LIMIT 1`, [
+        jumpLink,
+    ]);
+    return result.rows[0] ?? null;
+}
+
 /** The newest vote opened on an event - `null` when the find had none. */
 export async function getLatestVoteByEventId(eventId: number): Promise<BiomeVoteRow | null> {
     const result = await query<BiomeVoteRow>(`SELECT * FROM bh_biome_votes WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1`, [

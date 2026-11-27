@@ -2,8 +2,8 @@ import { type Message, MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { transaction } from "@/database/connection";
 import { Logger } from "@/utils/logging";
-import { getBiomeMeta, rewardsOnDetection } from "../constants/biomes.constants";
-import { isMerchantReport, parseEvent } from "../macro-parsers";
+import { getBiomeMeta, isNormalBiome, rewardsOnDetection } from "../constants/biomes.constants";
+import { inspectMessage } from "../macro-parsers";
 import {
     extendSession,
     getActiveSecondsBetween,
@@ -60,7 +60,8 @@ export function effectiveLastActivity(lastActivityAt: Date | null, graceUntil: D
 export function nextActivityGrace(current: ActivityGrace, event: Pick<ParsedEvent, "biome" | "eventType">, now: Date): ActivityGrace {
     if (!event.biome) return current;
     if (event.eventType === "started") {
-        const durationS = getBiomeMeta(event.biome)?.durationS;
+        // A timed biome serving as the normal one has nothing to wait for.
+        const durationS = isNormalBiome(event.biome) ? undefined : getBiomeMeta(event.biome)?.durationS;
         return durationS ? { until: new Date(now.getTime() + durationS * 1000), biome: event.biome } : NO_GRACE;
     }
     if (event.eventType === "ended" && current.biome === event.biome) return NO_GRACE;
@@ -96,15 +97,16 @@ export async function processIncomingMessage(message: Message): Promise<void> {
         return;
     }
 
-    const parsed = parseEvent(message);
+    const inspection = inspectMessage(message);
+    const { event: parsed, checkpoint } = inspection;
     // Before the early return: unreadable embeds are what the warning counts.
-    await trackMacroHealth(message, entry, parsed).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
+    await trackMacroHealth(message, entry, inspection).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     const now = new Date();
 
     if (parsed) await recordBiomeEvent(message, entry, parsed, now);
-    // A merchant report is no find, but it proves the macro is hunting: it counts as macro time.
-    else if (isMerchantReport(message)) await recordActivity(entry, { biome: null, eventType: null }, now);
-    else logger.verbose(`No biome or merchant parsed for message ${message.id}`);
+    // A checkpoint is no find, but it proves the macro is hunting: it counts as macro time.
+    else if (checkpoint) await recordActivity(entry, checkpoint, now);
+    else logger.verbose(`No biome or checkpoint parsed for message ${message.id}`);
 }
 
 /** Stores the find, rewards and forwards it, and counts it as activity. A message seen before does nothing. */

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Message } from "discord.js";
+import { inspectMessage } from "../macro-parsers";
 import type { ParsedEvent } from "../types";
 import { type MacroHealthDeps, trackMacroHealth } from "./macro-health.service";
 
@@ -38,7 +39,9 @@ function setup(options: { flag?: boolean; claim?: boolean; sendFails?: boolean; 
             },
         },
     } as unknown as Message;
-    return { calls, sent, run: (parsed: ParsedEvent | null) => trackMacroHealth(message, entry, parsed, deps) };
+    const { checkpoint } = inspectMessage({ webhookId: "w", embeds: message.embeds });
+    const run = (event: ParsedEvent | null) => trackMacroHealth(message, entry, { event, checkpoint }, deps);
+    return { calls, sent, run };
 }
 
 const event = (eventType: ParsedEvent["eventType"]) => ({ biome: "WINDY", eventType }) as ParsedEvent;
@@ -74,6 +77,12 @@ test("a merchant report resets the count like a biome start", async () => {
         await run(null);
         expect(calls).toEqual(["reset"]);
     }
+});
+
+test("a Normal biome report resets the count", async () => {
+    const { calls, run } = setup({ embed: { description: "> ### Biome Started - NORMAL" } });
+    await run(null);
+    expect(calls).toEqual(["reset"]);
 });
 
 test("a report that only mentions merchants is not a merchant report", async () => {

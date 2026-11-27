@@ -1,5 +1,6 @@
 import { ComponentType } from "discord.js";
 import { Logger } from "@/utils/logging";
+import { isNormalBiome } from "../constants/biomes.constants";
 import type { ParsedEvent } from "../types";
 import { detectMacroParser } from "./macro-parser.registry";
 import type { EmbedLike, ExtractionStep } from "./types";
@@ -94,7 +95,7 @@ export function detectedMacro(message: WebhookMessageLike): string | null {
 }
 
 /** A merchant report: no biome in it, but proof that the macro is hunting and the bot understands it. */
-export function isMerchantReport(message: WebhookMessageLike): boolean {
+function isMerchantReport(message: WebhookMessageLike): boolean {
     const embed = embedOf(message);
     if (!embed) return false;
     const texts = [embed.title, embed.description, ...(embed.fields?.map((f) => f.value) ?? [])];
@@ -105,6 +106,12 @@ export function isMerchantReport(message: WebhookMessageLike): boolean {
     );
 }
 
+/**
+ * A report that is no find but shows the macro is hunting: it counts as macro time. A merchant one
+ * carries no biome; a Normal one carries it, so a running timed biome ends.
+ */
+export type Checkpoint = { kind: "merchant" | "normal" } & Pick<ParsedEvent, "eventType"> & { biome: string | null };
+
 export interface MessageInspection {
     /** What was parsed: the first embed, a ComponentsV2 body, or nothing readable. */
     input: "embed" | "components" | "none";
@@ -112,14 +119,15 @@ export interface MessageInspection {
     footer: string | null;
     steps: ExtractionStep[];
     serverLink: string | null;
-    merchant: boolean;
+    /** A find. Never set together with `checkpoint`. */
     event: ParsedEvent | null;
+    checkpoint: Checkpoint | null;
 }
 
-/** The one parse path: detection reads `event`, `/owner parse` shows the rest. */
+/** The one parse path: detection reads `event` and `checkpoint`, `/owner parse` shows the rest. */
 export function inspectMessage(message: WebhookMessageLike): MessageInspection {
     const embed = embedOf(message);
-    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, merchant: false, event: null };
+    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, event: null, checkpoint: null };
 
     logger.verbose("Detecting macro type...");
     const parser = detectMacroParser(embed.footer?.text);
@@ -133,22 +141,31 @@ export function inspectMessage(message: WebhookMessageLike): MessageInspection {
     const { biome, eventType } = parser.extractBiome(embed, steps);
     const serverLink = parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined);
 
+    const normal = biome !== null && isNormalBiome(biome);
+    const checkpoint: Checkpoint | null =
+        normal && eventType
+            ? { kind: "normal", biome, eventType }
+            : isMerchantReport(message)
+              ? { kind: "merchant", biome: null, eventType: null }
+              : null;
+
     return {
         input: message.embeds[0] ? "embed" : "components",
         parserId: parser.id,
         footer: embed.footer?.text ?? null,
         steps,
         serverLink,
-        merchant: isMerchantReport(message),
-        event: biome
-            ? {
-                  biome,
-                  macroType: parser.id,
-                  eventType,
-                  eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
-                  serverLink,
-              }
-            : null,
+        checkpoint,
+        event:
+            biome && !normal
+                ? {
+                      biome,
+                      macroType: parser.id,
+                      eventType,
+                      eventTimestamp: embed.timestamp ? new Date(embed.timestamp) : (message.createdAt ?? null),
+                      serverLink,
+                  }
+                : null,
     };
 }
 
