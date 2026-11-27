@@ -3,6 +3,7 @@ import { Logger } from "@/utils/logging";
 import { isNormalBiome } from "../constants/biomes.constants";
 import type { ParsedEvent } from "../types";
 import { detectMacroParser } from "./macro-parser.registry";
+import { readMerchant } from "./merchant.reader";
 import type { EmbedLike, ExtractionStep } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers.webhook-event");
@@ -75,48 +76,37 @@ function componentsToEmbedLike(components: ReadonlyArray<unknown>): EmbedLike | 
     };
 }
 
-/**
- * What marks a merchant report. Narrow on purpose, since it counts as macro time: a settings dump
- * saying "Merchant: ON", or an account named after a merchant, must not match.
- */
-const MERCHANT_ARRIVAL = /\b(?:mari|jester|rin)\s+has arrived\b/i;
-const MERCHANT_TITLE = /\b(?:mari|jester|rin|merchant (?:detected|has arrived))\b/i;
-const MERCHANT_FIELD = /^detected merchant\b/i;
-
 function embedOf(message: WebhookMessageLike): EmbedLike | null {
     return message.embeds[0] ?? (message.components ? componentsToEmbedLike(message.components) : null);
 }
 
+/** Where a macro names itself: the footer, the author, or both - so a macro moving its name keeps working. */
+const signatureOf = (embed: EmbedLike) => [embed.footer?.text, embed.author?.name].filter(Boolean).join(" ");
+
 /** The id of the macro with its own parser that sent the report, or `null` for any other. */
 export function detectedMacro(message: WebhookMessageLike): string | null {
     const embed = embedOf(message);
-    const id = embed ? detectMacroParser(embed.footer?.text).id : "unknown";
+    const id = embed ? detectMacroParser(signatureOf(embed)).id : "unknown";
     return id === "unknown" ? null : id;
-}
-
-/** A merchant report: no biome in it, but proof that the macro is hunting and the bot understands it. */
-function isMerchantReport(message: WebhookMessageLike): boolean {
-    const embed = embedOf(message);
-    if (!embed) return false;
-    const texts = [embed.title, embed.description, ...(embed.fields?.map((f) => f.value) ?? [])];
-    return (
-        MERCHANT_TITLE.test(embed.title ?? "") ||
-        texts.some((text) => text && MERCHANT_ARRIVAL.test(text)) ||
-        (embed.fields?.some((f) => f.name && MERCHANT_FIELD.test(f.name)) ?? false)
-    );
 }
 
 /**
  * A report that is no find but shows the macro is hunting: it counts as macro time. A merchant one
  * carries no biome; a Normal one carries it, so a running timed biome ends.
  */
-export type Checkpoint = { kind: "merchant" | "normal" } & Pick<ParsedEvent, "eventType"> & { biome: string | null };
+export type Checkpoint = Pick<ParsedEvent, "eventType"> & {
+    kind: "merchant" | "normal";
+    biome: string | null;
+    /** The merchant clearly named in the report - only then is it recorded and forwarded. */
+    merchant: string | null;
+};
 
 export interface MessageInspection {
     /** What was parsed: the first embed, a ComponentsV2 body, or nothing readable. */
     input: "embed" | "components" | "none";
     parserId: string | null;
     footer: string | null;
+    author: string | null;
     steps: ExtractionStep[];
     serverLink: string | null;
     /** A find. Never set together with `checkpoint`. */
@@ -127,14 +117,15 @@ export interface MessageInspection {
 /** The one parse path: detection reads `event` and `checkpoint`, `/owner parse` shows the rest. */
 export function inspectMessage(message: WebhookMessageLike): MessageInspection {
     const embed = embedOf(message);
-    if (!embed) return { input: "none", parserId: null, footer: null, steps: [], serverLink: null, event: null, checkpoint: null };
+    if (!embed)
+        return { input: "none", parserId: null, footer: null, author: null, steps: [], serverLink: null, event: null, checkpoint: null };
 
     logger.verbose("Detecting macro type...");
-    const parser = detectMacroParser(embed.footer?.text);
+    const parser = detectMacroParser(signatureOf(embed));
     logger.verbose(`Detected macro type: ${parser.id ?? "undefined?"}`);
 
     if (parser.id === "unknown") {
-        logger.warn(`Webhook ${message.webhookId} has unknown macro type: ${embed.footer?.text}`);
+        logger.warn(`Webhook ${message.webhookId} has unknown macro type: ${signatureOf(embed)}`);
     }
 
     const steps: ExtractionStep[] = [];
@@ -142,17 +133,19 @@ export function inspectMessage(message: WebhookMessageLike): MessageInspection {
     const serverLink = parser.extractServerLink(embed, message.components ? flattenActionRows(message.components) : undefined);
 
     const normal = biome !== null && isNormalBiome(biome);
+    const merchant = readMerchant(embed);
     const checkpoint: Checkpoint | null =
         normal && eventType
-            ? { kind: "normal", biome, eventType }
-            : isMerchantReport(message)
-              ? { kind: "merchant", biome: null, eventType: null }
+            ? { kind: "normal", biome, eventType, merchant: null }
+            : merchant
+              ? { kind: "merchant", biome: null, eventType: null, merchant: merchant.name }
               : null;
 
     return {
         input: message.embeds[0] ? "embed" : "components",
         parserId: parser.id,
         footer: embed.footer?.text ?? null,
+        author: embed.author?.name ?? null,
         steps,
         serverLink,
         checkpoint,

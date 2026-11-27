@@ -3,6 +3,7 @@ import { query } from "@/database/connection";
 import { getAllBiomes } from "../constants/biomes.constants";
 import type { ActivityGrace, ActivityStatus, UserMacroChannelRow, UserRow } from "../types";
 import { NOT_FAKE_SQL } from "./activity.repository";
+import { deleteMerchantEventsForUser } from "./merchant-events.repository";
 
 export interface ChannelIndexEntry {
     userId: number;
@@ -350,6 +351,7 @@ export async function wipeUserProgress(client: PoolClient, userId: number): Prom
         userId,
     ]);
     const sessions = await client.query(`DELETE FROM bh_activity_sessions WHERE user_id = $1`, [userId]);
+    await deleteMerchantEventsForUser(client, userId);
     await client.query(`UPDATE bh_users SET seeds = 0, xp = 0 WHERE id = $1`, [userId]);
     return {
         sessions: sessions.rowCount ?? 0,

@@ -6,6 +6,11 @@ export interface EmbedLike {
     } | null;
     timestamp?: string | null;
 
+    /** Some macros (e.g. MMacro) name themselves here instead of the footer. */
+    author?: {
+        name?: string | null;
+    } | null;
+
     thumbnail?: {
         url?: string | null;
     } | null;

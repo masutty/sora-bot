@@ -16,6 +16,7 @@ import type { getUserBadges } from "../repository/badges.repository";
 import { getGuildUserCounts, getUsersByGuildStatus } from "../repository/users.repository";
 import { badgeEmojis, findsInSession } from "../services/rare-finds.service";
 import type { ActivitySessionRow, ActivityStatus, BiomeCategory, RareFind, UserRow } from "../types";
+import { merchantBlock } from "./session-end.view";
 
 export const SESSIONS_PER_PAGE = 10;
 export const USERS_PER_PAGE = 10;
@@ -40,6 +41,7 @@ export interface ProfileData {
     quotaDayStart: Date;
     quotaDayEnd: Date;
     biomes: Array<{ biome: string; count: number }>;
+    merchants?: Array<{ merchant: string; count: number }>;
     channelId: string | null;
     flower: string | null;
     quotaSummaryLines: string[];
@@ -182,8 +184,14 @@ export function buildBiomesTabContainer(member: GuildMember, data: ProfileData):
     const container = baseContainer(0x5865f2);
     container.addTextDisplayComponents((td) => td.setContent(`## \`${member.user.username}\`'s Biomes`));
 
+    const merchants = data.merchants ?? [];
+    const addMerchants = () => {
+        if (merchants.length > 0) container.addTextDisplayComponents((td) => td.setContent(merchantBlock("Merchants", merchants)));
+    };
+
     if (biomes.length === 0) {
         container.addTextDisplayComponents((td) => td.setContent("No biomes discovered yet."));
+        addMerchants();
         return container;
     }
 
@@ -210,6 +218,7 @@ export function buildBiomesTabContainer(member: GuildMember, data: ProfileData):
         );
     }
 
+    addMerchants();
     return container;
 }
 

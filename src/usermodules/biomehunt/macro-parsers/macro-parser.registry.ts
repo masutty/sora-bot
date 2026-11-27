@@ -5,6 +5,7 @@ import { EggsolParser } from "./eggsol.parser";
 import { FishsolParser } from "./fishsol.parser";
 import { JJaramParser } from "./jjaram.parser";
 import { MaxstellarParser } from "./maxstellar.parser";
+import { MmacroParser } from "./mmacro.parser";
 import { MultiscopeParser } from "./multiscope.parser";
 import { SolRichParser } from "./sol-rich.parser";
 import { SoraMinimalParser } from "./sora-minimal.parser";
@@ -23,6 +24,7 @@ const KNOWN_PARSERS: MacroParser[] = [
     new SoraMinimalParser(),
     new SolRichParser(),
     new FishsolParser(),
+    new MmacroParser(),
 ];
 
 /** Picks the macro's parser class by matching its id against the webhook embed's footer text. */

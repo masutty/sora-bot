@@ -1,4 +1,5 @@
 import { type BiomeCategory, BiomeHuntError } from "../types";
+import { isMerchantTarget, merchantKeyOf, merchantOfTarget } from "./merchants.constants";
 
 export const ALL_BIOME_CATEGORIES: BiomeCategory[] = ["biome", "weather", "rare", "event", "admin"];
 
@@ -280,10 +281,16 @@ export function isKnownBiome(biome: string): boolean {
 }
 
 export function getBiomeIconUrl(biome: string): string | undefined {
-    return registry.get(biome)?.iconUrl;
+    return merchantOfTarget(biome)?.iconUrl ?? registry.get(biome)?.iconUrl;
+}
+
+/** The one-line style text under a find's name on its forward card. */
+export function getBiomeFlavorText(biome: string): string | undefined {
+    return merchantOfTarget(biome)?.flavorText ?? registry.get(biome)?.flavorText;
 }
 
 export function formatBiomeName(biome: string): string {
+    if (isMerchantTarget(biome)) return merchantOfTarget(biome)?.label ?? merchantKeyOf(biome);
     const known = registry.get(biome)?.label;
     if (known) return known;
     return biome.charAt(0) + biome.slice(1).toLowerCase();
@@ -319,6 +326,7 @@ export function getBiomesByCategory(category: BiomeCategory): string[] {
  * targets. Used wherever an admin can quick-apply a forward to a whole group at once.
  */
 export function resolveBiomeSelector(selector: string): string[] {
+    if (isMerchantTarget(selector)) return [selector];
     if (selector === "ALL") return getEnabledBiomes().map((e) => e.key);
     if (selector.startsWith("CAT:")) {
         const category = selector.slice(4) as BiomeCategory;
@@ -379,6 +387,8 @@ export function biomeAutocompleteChoices(
 const DEFAULT_BIOME_COLOR = 0x5865f2;
 
 export function getBiomeColor(biome: string): number {
+    const merchant = merchantOfTarget(biome);
+    if (merchant) return merchant.color;
     return registry.get(biome)?.color ?? DEFAULT_BIOME_COLOR;
 }
 

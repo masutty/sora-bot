@@ -550,6 +550,47 @@ ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS macro_warned_at TIMESTAMPTZ;
 /* The last time a member regenerated their webhook - on the user row, so a channel reset doesn't clear the cooldown. */
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS webhook_regenerated_at TIMESTAMPTZ;
 
+/* Merchants: their own registry, finds and forward configs, so no biome query ever sees them. */
+CREATE TABLE IF NOT EXISTS bh_merchants (
+    merchant    VARCHAR(40) PRIMARY KEY,
+    label       VARCHAR(60) NOT NULL,
+    color       INTEGER NOT NULL,
+    flavor_text TEXT,
+    icon_url    TEXT,
+    emoji       VARCHAR(80),
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bh_merchant_events (
+    id                 BIGSERIAL PRIMARY KEY,
+    user_id            INTEGER NOT NULL REFERENCES bh_users(id) ON DELETE CASCADE,
+    discord_message_id VARCHAR(20) NOT NULL UNIQUE,
+    merchant           VARCHAR(40) NOT NULL,
+    macro_type         VARCHAR(100),
+    server_link        TEXT,
+    received_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bh_merchant_events_user ON bh_merchant_events (user_id, merchant, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS bh_merchant_forwards (
+    guild_id   VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    merchant   VARCHAR(40) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    role_id    VARCHAR(20),
+    PRIMARY KEY (guild_id, merchant)
+);
+
+CREATE TABLE IF NOT EXISTS bh_merchant_delayed_forwards (
+    guild_id   VARCHAR(20) NOT NULL REFERENCES bh_guilds(guild_id) ON DELETE CASCADE,
+    merchant   VARCHAR(40) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    role_id    VARCHAR(20),
+    delay_s    INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, merchant)
+);
+
 /* Daily rewards (mode F) are always a 24h window - fixes rows stored with another window. */
 UPDATE bh_quota_roles SET quota_window_hours = 24 WHERE mode = 'F' AND quota_window_hours <> 24;
 

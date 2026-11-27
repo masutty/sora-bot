@@ -1,7 +1,7 @@
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { NO_PINGS } from "@/utils/format";
-import { getBiomeMeta } from "../constants/biomes.constants";
+import { getBiomeFlavorText } from "../constants/biomes.constants";
 import {
     getCasualTally,
     getCasualVote,
@@ -32,7 +32,7 @@ export const openCasualVote = (params: InsertCasualVoteParams): Promise<CasualVo
 export function casualVoteCard(vote: CasualVoteRow, tally: { real: number; fake: number }, sentAt?: Date) {
     return buildForwardContainer({
         biome: vote.biome,
-        flavorText: getBiomeMeta(vote.biome)?.flavorText,
+        flavorText: getBiomeFlavorText(vote.biome),
         roleId: vote.role_id,
         serverLink: vote.server_link,
         jumpLink: vote.jump_link,

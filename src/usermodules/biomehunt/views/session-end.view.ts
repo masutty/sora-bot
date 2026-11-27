@@ -1,6 +1,7 @@
 import { ContainerBuilder, SeparatorSpacingSize } from "discord.js";
 import { formatCodeblock, formatTime } from "@/utils/format";
 import { formatBiomeName, getBiomeAnsiColor } from "../constants/biomes.constants";
+import { getMerchant } from "../constants/merchants.constants";
 import type { ActivitySessionRow } from "../types";
 
 function addDivider(container: ContainerBuilder): void {
@@ -12,6 +13,13 @@ const ANSI_RESET = "\u001b[0m";
 /** Per-biome ANSI color, from `getBiomeMeta(biome)?.ansiColor` - set with `/owner biome add|edit ansi_color:`. */
 export function ansiBiomeLine(biome: string, count: number): string {
     return `${getBiomeAnsiColor(biome)}${formatBiomeName(biome)}${ANSI_RESET}: ${count}`;
+}
+
+/** "Merchants found (3)" over a code block, the same shape as the biome blocks. */
+export function merchantBlock(title: string, merchants: Array<{ merchant: string; count: number }>): string {
+    const total = merchants.reduce((sum, m) => sum + m.count, 0);
+    const lines = merchants.map(({ merchant, count }) => `${getMerchant(merchant)?.label ?? merchant}: ${count}`).join("\n");
+    return `**${title} (${total})**\n${formatCodeblock(lines, "ansi")}`;
 }
 
 /** Aggregate macro time shown next to the finished session - same numbers as the profile's Quotas tab. */
@@ -29,6 +37,7 @@ export function buildSessionEndContainer(
     session: ActivitySessionRow,
     biomes: Array<{ biome: string; count: number }>,
     totals: SessionEndTotals,
+    merchants: Array<{ merchant: string; count: number }> = [],
 ): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(0x5865f2);
 
@@ -41,6 +50,10 @@ export function buildSessionEndContainer(
             ? formatCodeblock(biomes.map((b) => ansiBiomeLine(b.biome, b.count)).join("\n"), "ansi")
             : "*No biomes recorded.*";
     container.addTextDisplayComponents((td) => td.setContent(`**Biomes found**\n${biomesBody}`));
+
+    if (merchants.length > 0) {
+        container.addTextDisplayComponents((td) => td.setContent(merchantBlock("Merchants found", merchants)));
+    }
 
     addDivider(container);
     container.addTextDisplayComponents((td) =>

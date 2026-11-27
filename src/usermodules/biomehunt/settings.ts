@@ -25,6 +25,10 @@ export const settings = {
         /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it - until an owner sets another (`/owner vote-duration`). */
         windowMs: 60_000,
     },
+    merchant: {
+        /** The same merchant from the same member inside this window is one arrival (macros report it more than once). */
+        dedupWindowS: 180,
+    },
     webhook: {
         /** A member can regenerate their macro webhook once in this window. */
         regenerationCooldownS: 24 * 3600,
