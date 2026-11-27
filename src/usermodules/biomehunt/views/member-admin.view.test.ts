@@ -76,6 +76,7 @@ const user = (over: Partial<UserRow> = {}): UserRow => ({
     seeds: 1240,
     xp: 6340,
     flower: null,
+    webhook_regenerated_at: null,
     ...over,
 });
 

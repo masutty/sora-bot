@@ -547,6 +547,9 @@ ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS unread_since TIMESTAMPTZ;
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS unread_last_at TIMESTAMPTZ;
 ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS macro_warned_at TIMESTAMPTZ;
 
+/* The last time a member regenerated their webhook - on the user row, so a channel reset doesn't clear the cooldown. */
+ALTER TABLE bh_users ADD COLUMN IF NOT EXISTS webhook_regenerated_at TIMESTAMPTZ;
+
 /* Daily rewards (mode F) are always a 24h window - fixes rows stored with another window. */
 UPDATE bh_quota_roles SET quota_window_hours = 24 WHERE mode = 'F' AND quota_window_hours <> 24;
 

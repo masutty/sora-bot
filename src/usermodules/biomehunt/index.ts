@@ -8,6 +8,7 @@ import _network from "./commands/network.command";
 import _networkAdmin from "./commands/network-admin.command";
 import _owner from "./commands/owner.command";
 import _stats from "./commands/stats.command";
+import _webhook from "./commands/webhook.command";
 import { biomeVoteComponent } from "./components/biome-vote.component";
 import { casualVoteComponent } from "./components/casual-vote.component";
 import { forwardInfoComponent } from "./components/forward-info.component";
@@ -15,6 +16,7 @@ import { networkReviewComponent } from "./components/network-review.component";
 import { networkVoteComponent } from "./components/network-vote.component";
 import { pauseNoticeComponent } from "./components/pause-notice.component";
 import { shopManageComponent } from "./components/shop-manage.component";
+import { webhookComponent } from "./components/webhook.component";
 import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL, INFINITY_BADGE_BACKFILL, PAUSE_BACKFILL } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
@@ -37,7 +39,7 @@ export default defineCog({
     description: "Tracks macro-driven activity, enforces quotas, and automates roles.",
     authors: [{ name: "masutty", id: 188851299255713792n }],
 
-    commands: [_bh, _admin, _owner, _stats, _manageMember, _checkVote, _network, _networkAdmin],
+    commands: [_bh, _admin, _owner, _stats, _manageMember, _checkVote, _network, _networkAdmin, _webhook],
 
     migrations: [BIOMEHUNT_SCHEMA, INFINITY_BADGE_BACKFILL, HERBARIUM_BACKFILL, PAUSE_BACKFILL],
 
@@ -61,6 +63,7 @@ export default defineCog({
         networkVoteComponent(),
         pauseNoticeComponent(),
         shopManageComponent(),
+        webhookComponent(),
     ],
 
     events: {

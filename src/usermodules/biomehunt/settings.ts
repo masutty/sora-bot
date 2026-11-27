@@ -25,6 +25,10 @@ export const settings = {
         /** How long a rare-biome community vote stays open before `closeDueVotes` resolves it - until an owner sets another (`/owner vote-duration`). */
         windowMs: 60_000,
     },
+    webhook: {
+        /** A member can regenerate their macro webhook once in this window. */
+        regenerationCooldownS: 24 * 3600,
+    },
     macroWarning: {
         /** Webhook embeds without a readable biome start, and the time they must span, before the member is warned - both, so a webhook test or a macro that just started never is. */
         minUnreadEmbeds: 10,

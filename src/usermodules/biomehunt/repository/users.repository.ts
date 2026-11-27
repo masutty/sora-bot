@@ -287,6 +287,34 @@ export async function getMacroChannelByUserId(userId: number): Promise<UserMacro
     return result.rows[0] ?? null;
 }
 
+/**
+ * Starts the regeneration cooldown if it isn't running, atomically (two clicks, one wins).
+ * `previous` is what to restore if the regeneration fails; `null` result: still cooling down.
+ */
+export async function claimWebhookRegeneration(userId: number, cooldownS: number): Promise<{ previous: Date | null } | null> {
+    const result = await query<{ previous: Date | null }>(
+        `UPDATE bh_users u SET webhook_regenerated_at = NOW()
+         FROM (SELECT id, webhook_regenerated_at AS previous FROM bh_users WHERE id = $1 FOR UPDATE) old
+         WHERE u.id = old.id AND (old.previous IS NULL OR old.previous <= NOW() - make_interval(secs => $2))
+         RETURNING old.previous`,
+        [userId, cooldownS],
+    );
+    return result.rows[0] ?? null;
+}
+
+export async function setWebhookRegeneratedAt(userId: number, at: Date | null): Promise<void> {
+    await query(`UPDATE bh_users SET webhook_regenerated_at = $2 WHERE id = $1`, [userId, at]);
+}
+
+/** Points the member's macro channel at another webhook. */
+export async function replaceMacroWebhook(userId: number, webhookId: string, encryptedWebhookUrl: string): Promise<void> {
+    await query(`UPDATE bh_user_macro_channels SET webhook_id = $2, webhook_url = $3 WHERE user_id = $1`, [
+        userId,
+        webhookId,
+        encryptedWebhookUrl,
+    ]);
+}
+
 /** Reroll: swaps the user's Flower in place. Never touches the webhook's id/token/URL - callers
  * only edit the already-existing Discord webhook's name/avatar to match. */
 export async function setUserFlower(userId: number, flower: string): Promise<UserRow | null> {

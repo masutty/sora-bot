@@ -80,6 +80,7 @@ export interface UserRow {
     /** Sticks to the user, not the macro channel - survives soft-delete/reset-channel. Only
      * `/bh reroll` and `/owner reroll-flower` are allowed to change it once set. */
     flower: string | null;
+    webhook_regenerated_at: Date | null;
 }
 
 export interface UserMacroChannelRow {
