@@ -12,7 +12,7 @@ import {
     VoteChoice,
 } from "../types";
 
-/** How long before an event its session may have ended and still be its session: the event is stored just after the session is written. */
+/** How far a session's edges may be from a message's time and still hold it: the two are written moments apart. */
 const SESSION_SLACK_MS = 60_000;
 
 export interface Tally {
@@ -42,12 +42,14 @@ export async function loadFindRecord(
     jumpLink: string,
     recorded: RecordedEvent | null,
     userId: number | null,
-    /** When the message's merchant find was stored, for a message with no biome event. */
-    merchantAt?: Date,
+    /** The message's own time: finds the session of a report that stored no biome event (a merchant, a Normal biome). */
+    messageAt: Date,
 ): Promise<FindRecord> {
-    const at = recorded?.received_at ?? merchantAt;
+    const at = recorded?.received_at ?? messageAt;
     const [sessions, rewards, vote, casualRow, post] = await Promise.all([
-        at && userId !== null ? getSessionsCovering(userId, new Date(at.getTime() - SESSION_SLACK_MS), at) : [],
+        userId !== null
+            ? getSessionsCovering(userId, new Date(at.getTime() - SESSION_SLACK_MS), new Date(at.getTime() + SESSION_SLACK_MS))
+            : [],
         recorded ? getRewardsByEventIds([recorded.id]) : [],
         (async () => (recorded ? await getLatestVoteByEventId(recorded.id) : null) ?? (await getVoteByJumpLink(jumpLink)))(),
         getCasualVoteByJumpLink(jumpLink),

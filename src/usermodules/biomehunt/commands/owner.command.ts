@@ -307,7 +307,7 @@ async function runParseMessage(ctx: CommandContext): Promise<void> {
         url: message.url,
         messageId: message.id,
         recorded,
-        record: await loadFindRecord(message.url, recorded, tracked?.userId ?? null, merchantEvent?.received_at),
+        record: await loadFindRecord(message.url, recorded, tracked?.userId ?? null, message.createdAt),
         merchantEvent,
         raw: JSON.stringify(raw, null, 2),
     });
