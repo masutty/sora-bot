@@ -49,6 +49,14 @@ export async function getCasualVote(id: string): Promise<CasualVoteRow | null> {
  * that); any later switch, or the same choice again, writes nothing. A casual vote never closes, so
  * the result is never `closed`.
  */
+/** The newest casual vote whose forward came from this macro message. */
+export async function getCasualVoteByJumpLink(jumpLink: string): Promise<CasualVoteRow | null> {
+    const result = await query<CasualVoteRow>(`SELECT * FROM bh_casual_votes WHERE jump_link = $1 ORDER BY created_at DESC LIMIT 1`, [
+        jumpLink,
+    ]);
+    return result.rows[0] ?? null;
+}
+
 export async function insertCasualBallot(voteId: string, userId: string, choice: VoteChoice): Promise<BallotWriteResult> {
     const result = await query<{ inserted: boolean | null; still_open: boolean; previous: VoteChoice | null }>(
         `WITH up AS (

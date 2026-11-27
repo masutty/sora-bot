@@ -1,5 +1,5 @@
 import { Logger } from "@/utils/logging";
-import { isKnownBiome, normalizeBiomeName } from "../constants/biomes.constants";
+import { isKnownBiome, isNormalBiome, normalizeBiomeName } from "../constants/biomes.constants";
 import { type BiomeExtraction, type EmbedLike, type ExtractionStep, MacroParser } from "./types";
 
 const logger = new Logger("biomehunt.macro-parsers");
@@ -41,7 +41,7 @@ function findBiomeInWords(words: string[], fromEnd: boolean): string | null {
     for (let length = words.length; length >= 1; length--) {
         const span = fromEnd ? words.slice(words.length - length) : words.slice(0, length);
         const candidate = normalizeBiomeName(span.join(" "));
-        if (isKnownBiome(candidate)) return candidate;
+        if (isKnownBiome(candidate) || isNormalBiome(candidate)) return candidate;
     }
     return null;
 }

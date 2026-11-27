@@ -3,7 +3,7 @@ import { getAllBiomes, resetBiomeRegistry, setBiomeRegistry } from "../constants
 import { DefaultMacroParser } from "./default-macro.parser";
 import { JJaramParser } from "./jjaram.parser";
 import { MultiscopeParser } from "./multiscope.parser";
-import { isMerchantReport, parseEvent } from "./webhook-event.parser";
+import { inspectMessage, parseEvent } from "./webhook-event.parser";
 
 const parser = new DefaultMacroParser("test");
 
@@ -105,8 +105,34 @@ test("a Coteab merchant embed is a merchant report with no biome", () => {
             },
         ],
     };
-    expect(isMerchantReport(message)).toBe(true);
+    expect(inspectMessage(message).checkpoint?.kind).toBe("merchant");
     expect(parseEvent(message)).toBeNull();
     // The arrival line alone is enough.
-    expect(isMerchantReport({ webhookId: "1", embeds: [{ description: arrival }] })).toBe(true);
+    expect(inspectMessage({ webhookId: "1", embeds: [{ description: arrival }] }).checkpoint?.kind).toBe("merchant");
+});
+
+const fishsol = (biome: string) => ({
+    webhookId: "1",
+    embeds: [
+        {
+            description: `> ### Biome Started - ${biome}\n> ### [Join Server](https://www.roblox.com/share?code=abc&type=Server)`,
+            footer: { text: "FishSol v2.1" },
+            thumbnail: { url: `https://purestellenium.github.io/biome_thumb/${biome}.png` },
+        },
+    ],
+});
+
+test("a FishSol find is read by its own parser", () => {
+    expect(inspectMessage(fishsol("WINDY"))).toMatchObject({
+        parserId: "fishsol",
+        event: { biome: "WINDY", eventType: "started", serverLink: "https://www.roblox.com/share?code=abc&type=Server" },
+        checkpoint: null,
+    });
+});
+
+test("the Normal biome is a checkpoint, never a find", () => {
+    expect(inspectMessage(fishsol("NORMAL"))).toMatchObject({
+        event: null,
+        checkpoint: { kind: "normal", biome: "NORMAL", eventType: "started" },
+    });
 });

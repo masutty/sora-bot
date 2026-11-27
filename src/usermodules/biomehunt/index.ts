@@ -19,6 +19,7 @@ import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL, INFINITY_BADGE_BACKFILL, PAUSE_BA
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity.service";
+import { loadNormalBiome } from "./services/normal-biome.service";
 import { channelNameWorker } from "./workers/channel-name.worker";
 import { counterWorker } from "./workers/counter.worker";
 import { networkDailyWorker } from "./workers/network-daily.worker";
@@ -80,6 +81,7 @@ export default defineCog({
         logger.info("Loading biome registry...");
         await seedDefaultBiomes();
         await loadBiomeRegistry();
+        await loadNormalBiome();
 
         logger.info("Loading channel index...");
         await loadChannelIndex();

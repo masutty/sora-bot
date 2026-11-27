@@ -1,6 +1,6 @@
 import type { Message } from "discord.js";
 import { Logger } from "@/utils/logging";
-import { inspectMessage, isMerchantReport } from "../macro-parsers";
+import { inspectMessage } from "../macro-parsers";
 import type { ChannelIndexEntry } from "../repository/users.repository";
 
 const logger = new Logger("biomehunt.services.macro-warning-log");
@@ -31,10 +31,10 @@ export async function logMacroWarning(message: Message, { entry, memberId, macro
     const recent = await message.channel.messages.fetch({ limit: SNAPSHOT_SIZE });
     for (const received of [...recent.values()].reverse()) {
         if (received.webhookId !== entry.webhookId) continue;
-        const { parserId, event } = inspectMessage(received);
+        const { parserId, event, checkpoint } = inspectMessage(received);
         logger.info(
             `Received ${received.url} at ${received.createdAt.toISOString()}: parser=${parserId ?? "none"} ` +
-                `biome=${event?.biome ?? "none"} event=${event?.eventType ?? "none"} merchant=${isMerchantReport(received)}`,
+                `biome=${event?.biome ?? "none"} event=${event?.eventType ?? "none"} checkpoint=${checkpoint?.kind ?? "none"}`,
             { embeds: received.embeds.map((e) => e.toJSON()), components: received.components.map((c) => c.toJSON()) },
         );
     }

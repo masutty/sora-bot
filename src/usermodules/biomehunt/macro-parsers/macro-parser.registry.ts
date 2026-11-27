@@ -2,6 +2,7 @@ import { Logger } from "@/utils/logging";
 import { CoteabParser } from "./coteab.parser";
 import { DroidscopeParser } from "./droidscope.parser";
 import { EggsolParser } from "./eggsol.parser";
+import { FishsolParser } from "./fishsol.parser";
 import { JJaramParser } from "./jjaram.parser";
 import { MaxstellarParser } from "./maxstellar.parser";
 import { MultiscopeParser } from "./multiscope.parser";
@@ -21,6 +22,7 @@ const KNOWN_PARSERS: MacroParser[] = [
     new JJaramParser(),
     new SoraMinimalParser(),
     new SolRichParser(),
+    new FishsolParser(),
 ];
 
 /** Picks the macro's parser class by matching its id against the webhook embed's footer text. */

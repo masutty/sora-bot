@@ -16,6 +16,7 @@ import {
     type BiomeEntry,
     biomeAutocompleteChoices,
     getAllBiomes,
+    NORMAL_BIOME,
 } from "../constants/biomes.constants";
 import { MAX_BIOME_NAME_WORDS } from "../macro-parsers/default-macro.parser";
 import { type AnsiInput, addBiome, CLEAR_VALUE, editBiome, setBiomeActive } from "../services/biome-admin.service";
@@ -27,6 +28,7 @@ import {
     planBiomeImport,
 } from "../services/biome-config.service";
 import { channelBadgeEmoji } from "../services/channel-name.service";
+import { configureNormalBiome } from "../services/normal-biome.service";
 import { BiomeHuntError } from "../types";
 import { biomeListView, buildBiomeCard } from "../views/biome-list.view";
 
@@ -133,6 +135,12 @@ export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder)
                 .setDescription("Turns a disabled biome back on.")
                 .addStringOption((o) => o.setName("biome").setDescription("Biome").setRequired(true).setAutocomplete(true)),
         )
+        .addSubcommand((s) =>
+            s
+                .setName("normal")
+                .setDescription("Shows or sets the biome that counts as normal (macro time only, never a find).")
+                .addStringOption((o) => o.setName("biome").setDescription("Biome (NORMAL to go back)").setAutocomplete(true)),
+        )
         .addSubcommand((s) => s.setName("list").setDescription("Lists every registered biome."))
         .addSubcommand((s) =>
             s.setName("export").setDescription("Downloads every biome as a JSON file - for /owner biome import on another bot."),
@@ -158,7 +166,10 @@ export function biomeAdminSubcommandGroup(g: SlashCommandSubcommandGroupBuilder)
 export async function respondBiomeAdminAutocomplete(interaction: AutocompleteInteraction, typed: string): Promise<void> {
     const sub = interaction.options.getSubcommand(false);
     const which = sub === "disable" ? "enabled" : sub === "enable" ? "disabled" : "all";
-    await interaction.respond(biomeAutocompleteChoices(typed, { which }));
+    const choices = biomeAutocompleteChoices(typed, { which });
+    // NORMAL isn't in the registry, but it is how the normal biome goes back to the default.
+    const offerDefault = sub === "normal" && NORMAL_BIOME.includes(typed.trim().toUpperCase());
+    await interaction.respond(offerDefault ? [{ name: "Normal", value: NORMAL_BIOME }, ...choices].slice(0, 25) : choices);
 }
 
 function ansiInputFrom(args: CommandArgs): AnsiInput {
@@ -248,6 +259,9 @@ export async function runBiomeAdminSubcommand(ctx: CommandContext): Promise<void
             await ctx.reply(biomeCard("Biome enabled", entry, enabledNotes(entry, entry.key)));
             return;
         }
+        case "normal":
+            await ctx.reply(EmbedFormatter.success(await configureNormalBiome(args.getString("biome"))));
+            return;
         case "list":
             await ctx.open(biomeListView(), undefined);
             return;

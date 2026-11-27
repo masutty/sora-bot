@@ -5,9 +5,9 @@
 export { detectMacroParser } from "./macro-parser.registry";
 export { type BiomeExtraction, type EmbedLike, type ExtractionStep, MacroParser } from "./types";
 export {
+    type Checkpoint,
     detectedMacro,
     inspectMessage,
-    isMerchantReport,
     type MessageInspection,
     parseEvent,
     type WebhookMessageLike,
