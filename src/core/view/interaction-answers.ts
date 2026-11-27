@@ -66,12 +66,14 @@ export function createInteractionAnswers(): InteractionAnswers {
     }
 
     const canUpdate = (i: Answerable) => !i.isFromMessage || i.isFromMessage();
+    // A handler may answer the click itself through `c.raw` (e.g. to reply with a file).
+    const answeredByHandler = (i: Answerable) => i.replied === true || i.deferred === true;
     const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral, allowedMentions: NO_PINGS });
 
     return {
         render(i, payload, editMessage) {
             return enqueue(i, async (entry) => {
-                if (entry.state === "none" && canUpdate(i)) {
+                if (entry.state === "none" && canUpdate(i) && !answeredByHandler(i)) {
                     await i.update(payload);
                     entry.state = "updated";
                     editor = i;
@@ -94,7 +96,7 @@ export function createInteractionAnswers(): InteractionAnswers {
 
         notify(i, content) {
             return enqueue(i, async (entry) => {
-                if (entry.state === "none") {
+                if (entry.state === "none" && !answeredByHandler(i)) {
                     await i.reply(ephemeral(content));
                     entry.state = "replied";
                 } else {

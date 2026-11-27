@@ -44,6 +44,17 @@ test("render on an unanswered click updates it; a second render for it edits the
     expect(edits).toHaveLength(0);
 });
 
+test("a click a handler answered through c.raw is redrawn by editing the message, and notified by follow-up", async () => {
+    const answers = createInteractionAnswers();
+    const i = fakeInteraction();
+    i.replied = true;
+    const { edits, edit } = editRecorder();
+    await answers.render(i, { content: "a" }, edit);
+    await answers.notify(i, "note");
+    expect(i.calls).toEqual(["followUp"]);
+    expect(edits).toEqual([{ content: "a" }]);
+});
+
 test("watchdog ack still in flight, then render: render waits for the deferUpdate and edits the reply", async () => {
     const answers = createInteractionAnswers();
     const i = fakeInteraction({ manual: true });

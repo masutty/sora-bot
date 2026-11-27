@@ -153,9 +153,8 @@ export function traceView(): ViewDefinition<TraceState, void, { id: string; line
             back: (c) => {
                 c.state.screen = "summary";
             },
-            // `c.notify` is text only, so the file goes through the raw interaction. The engine then
-            // sees a handler that changed nothing and only acknowledges the click, which it skips
-            // for an interaction that is already replied to.
+            // `c.notify` is text only, so the file goes through the raw interaction. The engine's
+            // redraw then edits the message, since the click is already answered.
             download: async (c) => {
                 const file = new AttachmentBuilder(Buffer.from(c.state.lines.join("\n")), { name: `trace-${c.state.id}.txt` });
                 await (c.raw as MessageComponentInteraction).reply({
