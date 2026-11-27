@@ -163,8 +163,9 @@ export function forwardInfoButton(badges: ForwardBadges | undefined, voteId?: st
 export type VoteDecision = "real" | "fake" | "tie" | null;
 
 /**
- * The Real/Fake button pair: always the plain count as the label (0 stays "0"), the outlined icon
- * until the vote is decided, the filled icon on the winning side (both on a tie). Disabled once the vote is closed.
+ * The Real/Fake button pair: always the plain count as the label (0 stays "0"), the filled icon on
+ * the side that is winning (both once a tie is decided), outlined otherwise. Disabled once the vote
+ * is closed.
  */
 export function voteButtons(
     customIds: { real: string; fake: string },
@@ -172,8 +173,9 @@ export function voteButtons(
     decision: VoteDecision,
     disabled: boolean,
 ): [ButtonBuilder, ButtonBuilder] {
-    const realFilled = decision === "real" || decision === "tie";
-    const fakeFilled = decision === "fake" || decision === "tie";
+    // Decided: the winner (both on a tie). Still open: whichever side is ahead.
+    const realFilled = decision ? decision !== "fake" : !disabled && tally.real > tally.fake;
+    const fakeFilled = decision ? decision !== "real" : !disabled && tally.fake > tally.real;
     return [
         new ButtonBuilder()
             .setCustomId(customIds.real)

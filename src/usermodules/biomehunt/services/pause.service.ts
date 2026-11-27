@@ -3,6 +3,7 @@ import { parseDuration } from "@/utils/duration";
 import { Logger } from "@/utils/logging";
 import { markCurrentSessionUncounted } from "../repository/activity.repository";
 import {
+    claimPauseReminder,
     createPause,
     endActivePause,
     endPauseById,
@@ -16,7 +17,7 @@ import {
 } from "../repository/pauses.repository";
 import { getMacroChannelByUserId, getUserByDiscordId, getUserById } from "../repository/users.repository";
 import { BiomeHuntError, type UserRow } from "../types";
-import { sendPauseNotice } from "./pause-notice.service";
+import { sendPauseNotice, sendPauseReminder } from "./pause-notice.service";
 
 const logger = new Logger("biomehunt.services.pause");
 
@@ -39,6 +40,9 @@ export interface PauseStore {
 
 export interface PauseDeps extends PauseStore {
     sendNotice(pause: PauseRow, userId: number): Promise<boolean>;
+    claimPauseReminder: typeof claimPauseReminder;
+    /** Points the member back at their unanswered Notice. */
+    sendReminder(pause: PauseRow, userId: number): Promise<void>;
     now(): Date;
 }
 
@@ -60,6 +64,8 @@ export function defaultPauseDeps(client: BotClient): PauseDeps {
     return {
         ...repositoryStore,
         sendNotice: (pause, userId) => sendPauseNotice(client, userId, pause),
+        claimPauseReminder,
+        sendReminder: (pause, userId) => sendPauseReminder(client, userId, pause),
         now: () => new Date(),
     };
 }
@@ -96,6 +102,8 @@ export async function forcePause(
         count: boolean;
         notify: PauseNotify;
         until: UntilInput;
+        /** Whether the member gets a Dismiss button. Default: yes. */
+        dismissable?: boolean;
         byDiscordId: string;
     },
 ): Promise<string> {
@@ -112,6 +120,7 @@ export async function forcePause(
         counts: input.count,
         notify: input.notify,
         until,
+        dismissable: input.dismissable ?? true,
     });
     if (!input.count) await deps.markCurrentSessionUncounted(user.id);
 
@@ -130,23 +139,83 @@ export async function unpauseByAdmin(guildId: string, discordUserId: string, sto
     return `<@${discordUserId}> is no longer paused.`;
 }
 
-export async function endPauseFromMember(
+/** A pause that just ended, with whose it was. */
+export interface MemberPause {
+    pause: PauseRow;
+    discordUserId: string;
+    guildId: string;
+}
+
+/** The running pause `clickerDiscordId` owns, or why they can't act on it. */
+async function ownPause(
     pauseId: number,
     clickerDiscordId: string,
-    store: PauseStore = repositoryStore,
-): Promise<"ended" | "not_owner" | "not_active"> {
+    store: PauseStore,
+): Promise<{ pause: PauseRow; owner: UserRow } | "not_owner" | "not_active"> {
     const pause = await store.getPauseById(pauseId);
     if (!pause || pause.ended_at !== null) return "not_active";
     const owner = await store.getUserById(pause.user_id);
     if (!owner || owner.discord_user_id !== clickerDiscordId) return "not_owner";
-    return (await store.endPauseById(pauseId, "member")) ? "ended" : "not_active";
+    return { pause, owner };
+}
+
+const memberPause = (pause: PauseRow, owner: UserRow): MemberPause => ({
+    pause,
+    discordUserId: owner.discord_user_id,
+    guildId: owner.guild_id,
+});
+
+export async function endPauseFromMember(
+    pauseId: number,
+    clickerDiscordId: string,
+    store: PauseStore = repositoryStore,
+): Promise<MemberPause | "not_owner" | "not_active"> {
+    const own = await ownPause(pauseId, clickerDiscordId, store);
+    if (typeof own === "string") return own;
+    return (await store.endPauseById(pauseId, "member")) ? memberPause(own.pause, own.owner) : "not_active";
+}
+
+export async function checkDismiss(
+    pauseId: number,
+    clickerDiscordId: string,
+    store: PauseStore = repositoryStore,
+): Promise<"ok" | "not_owner" | "not_active" | "not_dismissable"> {
+    const own = await ownPause(pauseId, clickerDiscordId, store);
+    if (typeof own === "string") return own;
+    return own.pause.dismissable ? "ok" : "not_dismissable";
+}
+
+/** Ends the pause without the member saying it is solved. */
+export async function dismissPause(
+    pauseId: number,
+    clickerDiscordId: string,
+    store: PauseStore = repositoryStore,
+): Promise<MemberPause | "not_owner" | "not_active" | "not_dismissable"> {
+    const own = await ownPause(pauseId, clickerDiscordId, store);
+    if (typeof own === "string") return own;
+    if (!own.pause.dismissable) return "not_dismissable";
+    return (await store.endPauseById(pauseId, "dismissed")) ? memberPause(own.pause, own.owner) : "not_active";
+}
+
+/** An admin's cancel from the Notice itself - `null` when the pause is already over. */
+export async function cancelPause(pauseId: number, store: PauseStore = repositoryStore): Promise<MemberPause | null> {
+    const pause = await store.endPauseById(pauseId, "admin");
+    const owner = pause ? await store.getUserById(pause.user_id) : null;
+    return pause && owner ? memberPause(pause, owner) : null;
 }
 
 export async function onSessionEnded(deps: PauseDeps, userId: number): Promise<void> {
     const pause = await deps.getActivePause(userId);
     if (!pause) return;
     if (pause.notify === "session_end" && pause.notice_sent_at === null) await deliverNotice(deps, pause, userId);
-    if (pause.until.kind === "session_end") await deps.endPauseById(pause.id, "session_end");
+    if (pause.until.kind === "session_end") {
+        await deps.endPauseById(pause.id, "session_end");
+        return;
+    }
+    // A Notice sent right away and still unanswered gets one reminder, instead of repeated pings.
+    if (pause.notify === "now" && pause.notice_message_id && (await deps.claimPauseReminder(pause.id))) {
+        await deps.sendReminder(pause, userId);
+    }
 }
 
 export async function expireDueTimedPauses(deps: PauseDeps, now: Date): Promise<void> {

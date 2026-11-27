@@ -105,6 +105,14 @@ export async function processIncomingMessage(message: Message): Promise<void> {
     await trackMacroHealth(message, entry, inspection).catch((err) => logger.error(err instanceof Error ? err : new Error(String(err))));
     const now = new Date();
 
+    // A pause that invalidates contributions still tracks the session (uncounted), and nothing else:
+    // no find, reward, forward or Network post.
+    if (shouldMarkUncounted(await getActivePause(entry.userId))) {
+        const event = parsed ?? checkpoint;
+        if (event) await recordActivity(entry, event, now);
+        return;
+    }
+
     if (parsed) await recordBiomeEvent(message, entry, parsed, now);
     // A checkpoint is no find, but it proves the macro is hunting: it counts as macro time.
     else if (checkpoint) {

@@ -11,8 +11,10 @@ import { tabs } from "@/core/view/tabs";
 import type { ViewDefinition } from "@/define";
 import { formatCodeblock, NO_PINGS } from "@/utils/format";
 import type { ExtractionStep } from "../macro-parsers";
+import type { PauseRow } from "../repository/pauses.repository";
 import type { ChannelIndexEntry } from "../repository/users.repository";
 import { inline, KINDS, mark, type ReportSubject, reportKind } from "./parse-report.kinds";
+import { pauseUntilPhrase } from "./pause-notice.view";
 
 const MAX_STEPS = 8;
 const MAX_TEXT = 300;
@@ -25,6 +27,8 @@ export interface ParseReportData extends ReportSubject {
     tracked: ChannelIndexEntry | null;
     /** The channel's owner. */
     memberId: string | null;
+    /** The owner's running pause, as of now. */
+    pause?: PauseRow | null;
     url: string;
     messageId: string;
     /** The message's embeds and components, as JSON. */
@@ -49,6 +53,12 @@ function describeStep(step: ExtractionStep): string {
     return `**${step.source}** ${result}\n${quote(step.text)}`;
 }
 
+function describePause(pause: PauseRow | null | undefined): string {
+    if (!pause) return "- ▶️ Not paused";
+    const effect = pause.counts ? "contributions still count" : "contributions don't count";
+    return `- ⏸️ Paused ${pauseUntilPhrase(pause).replace("you respond", "they respond").replace("your", "their")}, ${effect}`;
+}
+
 function detectionGroups(data: ParseReportData): string[] {
     const { inspection, tracked, memberId } = data;
     return [
@@ -56,6 +66,7 @@ function detectionGroups(data: ParseReportData): string[] {
             "**Channel**",
             `- ${mark(tracked !== null)} Tracked macro channel`,
             ...(memberId ? [`> <@${memberId}>`] : []),
+            ...(memberId ? [describePause(data.pause)] : []),
             `- ${mark(tracked !== null && tracked.webhookId === data.webhookId)} Webhook matches`,
             `> ${inline(data.webhookId ?? "not a webhook")}`,
         ].join("\n"),

@@ -48,7 +48,9 @@ test("an open vote: both links, the live votes and '?' share one row - no byline
     expect(buttons[1].url).toBe("https://discord.gg/solhunters");
     expect(buttons[2].custom_id).toBe("biomehunt:net-vote:p1:real");
     expect(buttons[3].custom_id).toBe("biomehunt:net-vote:p1:fake");
-    expect(buttons[2].emoji?.id).toBe(VOTE_EMOJIS.realOutline.id);
+    // Real is ahead while the vote is open, so it already shows filled.
+    expect(buttons[2].emoji?.id).toBe(VOTE_EMOJIS.realFilled.id);
+    expect(buttons[3].emoji?.id).toBe(VOTE_EMOJIS.fakeOutline.id);
     expect(buttons[4].custom_id).toBe("biomehunt:forward-info:0:0:1:0:p1");
     const text = textsOf(c);
     expect(text).toContain("<@&r1>");

@@ -147,6 +147,12 @@ CREATE TABLE IF NOT EXISTS bh_pauses (
     ended_reason   VARCHAR(12)                                   /* member | admin | expired | session_end | replaced */
 );
 
+ALTER TABLE bh_pauses ADD COLUMN IF NOT EXISTS dismissable BOOLEAN NOT NULL DEFAULT TRUE;
+/* Where the Notice went, for the one reminder sent when the session ends. */
+ALTER TABLE bh_pauses ADD COLUMN IF NOT EXISTS notice_channel_id VARCHAR(20);
+ALTER TABLE bh_pauses ADD COLUMN IF NOT EXISTS notice_message_id VARCHAR(20);
+ALTER TABLE bh_pauses ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+
 CREATE UNIQUE INDEX IF NOT EXISTS bh_pauses_one_active ON bh_pauses(user_id) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS bh_pauses_due ON bh_pauses(until_at) WHERE ended_at IS NULL AND until_kind = 'time';
 
