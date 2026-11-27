@@ -13,6 +13,7 @@ import {
 import type { ViewPayload } from "@/define";
 import { ordinal } from "@/utils/format";
 import { formatBiomeName, getBiomeColor, getBiomeIconUrl, getBiomeMeta, spoofBiomeName } from "../constants/biomes.constants";
+import { merchantOfTarget } from "../constants/merchants.constants";
 import { VOTE_EMOJIS } from "../constants/vote-emojis.constants";
 import { VoteStatus } from "../types";
 import { localVoteVerdict, voteResultLine } from "./vote-outcome";
@@ -229,8 +230,11 @@ function findCountsLine(findCount: number | null | undefined, serverFindCount: n
  * card, beside the picture, so title and picture start at its top edge.
  */
 function titleBlock(params: ForwardContainerParams): string {
+    const emoji = merchantOfTarget(params.biome)?.emoji;
     const name = spoofBiomeName(params.biome);
-    const title = params.serverLink ? `[${name}](${params.serverLink})` : name;
+    const linked = params.serverLink ? `[${name}](${params.serverLink})` : name;
+    // Outside the link: a custom emoji doesn't render in link text.
+    const title = emoji ? `${emoji} ${linked}` : linked;
     const isRare = getBiomeMeta(params.biome)?.category === "rare";
 
     const lines: string[] = [isRare ? `## 🎉 ${title} found!` : `# ${title}`];

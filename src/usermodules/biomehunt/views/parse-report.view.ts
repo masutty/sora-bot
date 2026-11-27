@@ -12,6 +12,7 @@ import type { ViewDefinition } from "@/define";
 import { formatCodeblock, formatTime, NO_PINGS, unix } from "@/utils/format";
 import type { ExtractionStep, MessageInspection } from "../macro-parsers";
 import type { RecordedEvent } from "../repository/activity.repository";
+import type { MerchantEventRow } from "../repository/merchant-events.repository";
 import type { ChannelIndexEntry } from "../repository/users.repository";
 import type { FindRecord, Tally } from "../services/find-record.service";
 
@@ -32,6 +33,8 @@ export interface ParseReportData {
     /** What detection stored for this message when it arrived. */
     recorded: RecordedEvent | null;
     record: FindRecord;
+    /** The merchant find stored for this message, if it was one. */
+    merchantEvent?: MerchantEventRow | null;
     /** The message's embeds and components, as JSON. */
     raw: string;
 }
@@ -68,7 +71,10 @@ function describeStep(step: ExtractionStep): string {
 /** What the message means to detection, with the accent color that goes with it. */
 function verdict({ event, checkpoint }: MessageInspection): { label: string; color: number } {
     if (event?.eventType === "started") return { label: "✅ Biome start", color: 0x248046 };
-    if (checkpoint) return { label: `✅ Checkpoint (${checkpoint.kind === "normal" ? "normal biome" : "merchant"})`, color: 0x5865f2 };
+    if (checkpoint) {
+        const merchant = checkpoint.merchant ? `merchant ${checkpoint.merchant}` : "merchant, name not read";
+        return { label: `✅ Checkpoint (${checkpoint.kind === "normal" ? "normal biome" : merchant})`, color: 0x5865f2 };
+    }
     if (event) return { label: event.eventType ? "✅ Biome end" : "⚠️ Biome with no event type", color: 0xf0b232 };
     return { label: "❌ Nothing read", color: 0xda373c };
 }
@@ -89,6 +95,7 @@ function detectionGroups(data: ParseReportData): string[] {
             "**Detection**",
             `- **Parser:** ${inline(inspection.parserId ?? "none")}`,
             `- **Footer:** ${inline(inspection.footer ?? "none")}`,
+            `- **Author:** ${inline(inspection.author ?? "none")}`,
             `- **Input:** \`${inspection.input}\``,
             `- **Biome:** ${biome ? `\`${biome.biome}\` (${biome.eventType ?? "no event type"})` : "none"}`,
             `- **Server link:** ${serverLink ? inline(serverLink, 200) : "none"}`,
@@ -96,9 +103,22 @@ function detectionGroups(data: ParseReportData): string[] {
     ];
 }
 
-function findGroups({ recorded, record }: ParseReportData): string[] {
+function findGroups({ recorded, record, merchantEvent }: ParseReportData): string[] {
     const { session, reward } = record;
     return [
+        ...(merchantEvent
+            ? [
+                  group(
+                      "Merchant",
+                      [
+                          `- **Find:** \`#${merchantEvent.id}\` ${inline(merchantEvent.merchant)}`,
+                          `- **Parser:** ${inline(merchantEvent.macro_type ?? "none")}`,
+                          `- **When:** ${when(merchantEvent.received_at)}`,
+                      ],
+                      "No merchant stored",
+                  ),
+              ]
+            : []),
         group(
             "Event",
             recorded && [

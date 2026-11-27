@@ -19,6 +19,7 @@ import { shopManageComponent } from "./components/shop-manage.component";
 import { webhookComponent } from "./components/webhook.component";
 import { BIOMEHUNT_SCHEMA, HERBARIUM_BACKFILL, INFINITY_BADGE_BACKFILL, PAUSE_BACKFILL } from "./migrations";
 import { loadBiomeRegistry, seedDefaultBiomes } from "./repository/biomes.repository";
+import { loadMerchantRegistry, seedDefaultMerchants } from "./repository/merchants.repository";
 import { loadChannelIndex } from "./repository/users.repository";
 import { processIncomingMessage } from "./services/activity.service";
 import { loadNormalBiome } from "./services/normal-biome.service";
@@ -85,6 +86,8 @@ export default defineCog({
         await seedDefaultBiomes();
         await loadBiomeRegistry();
         await loadNormalBiome();
+        await seedDefaultMerchants();
+        await loadMerchantRegistry();
 
         logger.info("Loading channel index...");
         await loadChannelIndex();

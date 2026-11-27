@@ -354,7 +354,7 @@ test("forward: a vote that fails to open after a good send logs no forward warni
 
 test("setDelayedForward rejects a non-rare biome before touching the DB", async () => {
     await expect(setDelayedForward("g1", "HELL", "delayed-channel", null, 30)).rejects.toThrow(
-        new BiomeHuntError("Delayed forwards are only for rare biomes."),
+        new BiomeHuntError("Delayed forwards are only for rare biomes and merchants."),
     );
 });
 

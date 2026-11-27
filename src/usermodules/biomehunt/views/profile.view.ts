@@ -7,6 +7,7 @@ import { getActiveSecondsBetween, getActiveSecondsInWindow, getBiomeCounts, getR
 import { getUserBadges } from "../repository/badges.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { getMerchantCounts } from "../repository/merchant-events.repository";
 import { getUserQuotaProgress, type QuotaProgressRow } from "../repository/quota-roles.repository";
 import { getMacroChannelByUserId, getUserByDiscordId } from "../repository/users.repository";
 import { fixedQuotaProgressWindow, quotaDayWindow } from "../services/quota.service";
@@ -79,6 +80,7 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
         rareFinds,
         flowersEnabled,
         economyEnabled,
+        merchants,
     ] = await Promise.all([
         getActiveSecondsInWindow(user.id, RECENT_ACTIVITY_WINDOW_HOURS),
         getActiveSecondsBetween(user.id, quotaDay.start, quotaDay.end),
@@ -90,6 +92,7 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
         loadRareFinds(user.id),
         isFlagEnabled(guildId, "EXPERIMENT_WEBHOOK_FLOWERS"),
         isFlagEnabled(guildId, "EXPERIMENT_BIOME_ECONOMY"),
+        getMerchantCounts(user.id),
     ]);
 
     const elapsedMs = Date.now() - start;
@@ -104,6 +107,7 @@ export async function loadProfileData(guildId: string, discordUserId: string): P
         quotaDayStart: quotaDay.start,
         quotaDayEnd: quotaDay.end,
         biomes,
+        merchants,
         channelId: channel?.channel_id ?? null,
         flower: user.flower,
         quotaSummaryLines,

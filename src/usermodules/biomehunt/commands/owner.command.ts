@@ -16,23 +16,27 @@ import {
     rewardsOnDetection,
 } from "../constants/biomes.constants";
 import { FLOWER_META } from "../constants/flowers.constants";
+import { merchantTarget } from "../constants/merchants.constants";
 import { inspectMessage } from "../macro-parsers";
 import { getEventByMessageId, insertEventIfNew } from "../repository/activity.repository";
 import { getDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfig } from "../repository/forwards.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
+import { getMerchantEventByMessageId, insertMerchantEventIfNew } from "../repository/merchant-events.repository";
 import { getUserByDiscordId, getUserById, getUsersByDiscordId, lookupChannel } from "../repository/users.repository";
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
 import { setVoteWindow, VOTE_WINDOW_MAX_S, VOTE_WINDOW_MIN_S, type VoteKind } from "../services/biome-vote.service";
 import { loadFindRecord } from "../services/find-record.service";
 import { rerollFlower } from "../services/flower.service";
 import { forwardBiome } from "../services/forward.service";
+import { requireMerchant } from "../services/merchant-admin.service";
 import { fetchReferencedMessage } from "../services/message-reference.service";
 import { parseRelayGuildIds } from "../services/network-publish.service";
 import { type BiomeCategory, BiomeHuntError, type ParsedEvent } from "../types";
 import { parseReportView } from "../views/parse-report.view";
 import { biomeAdminSubcommandGroup, respondBiomeAdminAutocomplete, runBiomeAdminSubcommand } from "./biome-admin";
+import { merchantAdminSubcommandGroup, respondMerchantAutocomplete, runMerchantAdminSubcommand } from "./merchant-admin";
 import { relaySimulationToNetwork, runSimulateNetworkMirror } from "./network-admin";
 
 const logger = new Logger("biomehunt.commands.owner");
@@ -148,10 +152,20 @@ export default defineCommand({
                         .setMaxValue(VOTE_WINDOW_MAX_S),
                 ),
         )
-        .addSubcommandGroup(biomeAdminSubcommandGroup),
+        .addSubcommand((s) =>
+            s
+                .setName("simulate-merchant")
+                .setDescription("TESTING: fakes a merchant arrival to test its forward.")
+                .addStringOption((o) => o.setName("merchant").setDescription("Merchant").setRequired(true).setAutocomplete(true))
+                .addUserOption((o) => o.setName("user").setDescription("Target user (default: you)"))
+                .addBooleanOption((o) => o.setName("dry").setDescription("No pings, no vote, nothing recorded (default true)")),
+        )
+        .addSubcommandGroup(biomeAdminSubcommandGroup)
+        .addSubcommandGroup(merchantAdminSubcommandGroup),
 
     async executeAutocomplete(interaction) {
         const focused = interaction.options.getFocused(true);
+        if (focused.name === "merchant") return respondMerchantAutocomplete(interaction, focused.value);
         if (focused.name !== "biome") return interaction.respond([]);
         if (interaction.options.getSubcommandGroup(false) === "biome") return respondBiomeAdminAutocomplete(interaction, focused.value);
         await interaction.respond(biomeAutocompleteChoices(focused.value));
@@ -164,6 +178,11 @@ export default defineCommand({
 
         if (ctx.args.getSubcommandGroup() === "biome") {
             await runBiomeAdminSubcommand(ctx);
+            return;
+        }
+
+        if (ctx.args.getSubcommandGroup() === "merchant") {
+            await runMerchantAdminSubcommand(ctx);
             return;
         }
 
@@ -200,6 +219,11 @@ export default defineCommand({
             return;
         }
 
+        if (sub === "simulate-merchant") {
+            await runSimulateMerchant(ctx);
+            return;
+        }
+
         if (sub === "parse") {
             await runParseMessage(ctx);
             return;
@@ -217,6 +241,55 @@ export default defineCommand({
     },
 });
 
+/** TESTING ONLY - sends a merchant through the real forward pipeline. A dry run records nothing and pings nobody. */
+async function runSimulateMerchant(ctx: CommandContext): Promise<void> {
+    if (!ctx.guild) throw new UserFacingError("Run this in a server.");
+    const merchant = requireMerchant(ctx.args.getString("merchant", true));
+    const targetUser = (await ctx.args.getUser("user")) ?? ctx.user;
+    const dryRun = ctx.args.getBoolean("dry") ?? true;
+    const user = await getUserByDiscordId(ctx.guild.id, targetUser.id);
+    if (!user) throw new BiomeHuntError(`<@${targetUser.id}> has no profile in this server.`);
+
+    const target = merchantTarget(merchant.key);
+    const [forward, delayed] = await Promise.all([getForwardConfig(ctx.guild.id, target), getDelayedForwardConfig(ctx.guild.id, target)]);
+    if (!forward && !delayed)
+        throw new BiomeHuntError(`No forward is configured for ${merchant.label} - set one with \`/admin forwarding\`.`);
+
+    const eventId = dryRun
+        ? null
+        : await insertMerchantEventIfNew(
+              {
+                  userId: user.id,
+                  discordMessageId: `sim-${newTraceRef()}`,
+                  merchant: merchant.key,
+                  macroType: "simulated",
+                  serverLink: null,
+              },
+              0,
+          );
+    if (!dryRun && eventId === null) throw new BiomeHuntError("Failed to create the simulated merchant - try again.");
+
+    const channelId = ctx.raw.kind === "prefix" ? ctx.raw.message.channelId : ctx.raw.interaction.channelId;
+    const parsed: ParsedEvent = {
+        biome: target,
+        macroType: "simulated",
+        eventType: "started",
+        eventTimestamp: new Date(),
+        serverLink: null,
+    };
+    await forwardBiome(ctx.client, ctx.guild.id, user.id, parsed, eventId, `https://discord.com/channels/${ctx.guild.id}/${channelId}`);
+
+    logger.info(
+        `Simulated merchant ${merchant.key} for user ${user.id} (guild ${ctx.guild.id}), ${dryRun ? "dry run" : `event ${eventId}`}`,
+    );
+    await ctx.reply({
+        ...EmbedFormatter.success(
+            `Simulated ${merchant.label} for <@${targetUser.id}>.\n${dryRun ? "Dry run, nothing was recorded" : `Event ID: \`#${eventId}\`.`}`,
+        ),
+        allowedMentions: NO_PINGS,
+    });
+}
+
 async function runParseMessage(ctx: CommandContext): Promise<void> {
     const channelId = ctx.raw.kind === "prefix" ? ctx.raw.message.channelId : ctx.raw.interaction.channelId;
     const reply = ctx.raw.kind === "prefix" ? ctx.raw.message.reference : null;
@@ -225,6 +298,7 @@ async function runParseMessage(ctx: CommandContext): Promise<void> {
     const raw = { embeds: message.embeds.map((e) => e.toJSON()), components: message.components.map((c) => c.toJSON()) };
     const tracked = lookupChannel(message.channelId);
     const recorded = await getEventByMessageId(message.id);
+    const merchantEvent = await getMerchantEventByMessageId(message.id);
     await ctx.open(parseReportView(), {
         inspection: inspectMessage(message),
         webhookId: message.webhookId,
@@ -233,7 +307,8 @@ async function runParseMessage(ctx: CommandContext): Promise<void> {
         url: message.url,
         messageId: message.id,
         recorded,
-        record: await loadFindRecord(message.url, recorded, tracked?.userId ?? null),
+        record: await loadFindRecord(message.url, recorded, tracked?.userId ?? null, merchantEvent?.received_at),
+        merchantEvent,
         raw: JSON.stringify(raw, null, 2),
     });
 }

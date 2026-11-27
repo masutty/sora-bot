@@ -2,10 +2,12 @@ import type { Client, Message } from "discord.js";
 import { MessageFlags } from "discord.js";
 import type { BotClient } from "@/core/bot-client";
 import { Logger } from "@/utils/logging";
-import { formatBiomeName, getBiomeMeta, resolveBiomeSelector } from "../constants/biomes.constants";
+import { formatBiomeName, getBiomeFlavorText, getBiomeMeta, resolveBiomeSelector } from "../constants/biomes.constants";
+import { isMerchantTarget, merchantKeyOf } from "../constants/merchants.constants";
 import { eventExists, getBiomeCountForUser, getGuildBiomeFindStats } from "../repository/activity.repository";
 import { getDelayedForwardConfig, removeDelayedForwardConfig, setDelayedForwardConfig } from "../repository/delayed-forwards.repository";
 import { getForwardConfig } from "../repository/forwards.repository";
+import { getGuildMerchantFindStats, getMerchantCountForUser, merchantEventExists } from "../repository/merchant-events.repository";
 import { getUserById } from "../repository/users.repository";
 import { getVoteById } from "../repository/votes.repository";
 import { settings } from "../settings";
@@ -57,8 +59,12 @@ export function defaultForwardServiceDeps(): ForwardServiceDeps {
     return {
         getForwardConfig,
         getDelayedForwardConfig,
-        getBiomeCountForUser,
-        getGuildBiomeFindStats,
+        getBiomeCountForUser: (userId, target) =>
+            isMerchantTarget(target) ? getMerchantCountForUser(userId, merchantKeyOf(target)) : getBiomeCountForUser(userId, target),
+        getGuildBiomeFindStats: (guildId, target, excludeEventId) =>
+            isMerchantTarget(target)
+                ? getGuildMerchantFindStats(guildId, merchantKeyOf(target), excludeEventId)
+                : getGuildBiomeFindStats(guildId, target, excludeEventId),
         getUserById,
         newVoteId,
         openVote,
@@ -198,7 +204,7 @@ async function sendLiveForward(
         sentAt: now,
         vote: liveVote(voteId, casualId, dryRun),
         badges: dryRun ? { simulated: true } : undefined,
-        flavorText: getBiomeMeta(biome)?.flavorText,
+        flavorText: getBiomeFlavorText(biome),
     });
 
     let sent: Message | undefined;
@@ -262,7 +268,8 @@ function liveVote(voteId: string | null, casualId: string | null, dryRun: boolea
 
 /** Injected so tests never touch the DB or wait on a real timer - `defaultDelayedForwardDeps` wires the real ones. */
 export interface DelayedForwardDeps {
-    eventExists: typeof eventExists;
+    /** Whether the find behind an event is still recorded; `target` says which kind of event it is. */
+    eventExists: (eventId: number, target: string) => Promise<boolean>;
     getVoteById: typeof getVoteById;
     schedule(fn: () => Promise<void>, ms: number): void;
     log: typeof logToGuild;
@@ -270,7 +277,7 @@ export interface DelayedForwardDeps {
 
 export function defaultDelayedForwardDeps(): DelayedForwardDeps {
     return {
-        eventExists,
+        eventExists: (eventId, target) => (isMerchantTarget(target) ? merchantEventExists(eventId) : eventExists(eventId)),
         getVoteById,
         schedule: (fn, ms) => {
             setTimeout(() => void fn(), ms);
@@ -306,7 +313,7 @@ export function scheduleDelayedForward(job: DelayedForwardJob, deps: DelayedForw
 
 /** A find invalidated during the delay (its event deleted, or its vote ruled fake) never gets the delayed ping. */
 async function isInvalidated(job: DelayedForwardJob, deps: DelayedForwardDeps): Promise<boolean> {
-    if (job.eventId !== null && !(await deps.eventExists(job.eventId))) return true;
+    if (job.eventId !== null && !(await deps.eventExists(job.eventId, job.biome))) return true;
     if (!job.voteId) return false;
     const vote = await deps.getVoteById(job.voteId);
     return vote?.status === VoteStatus.COMMUNITY_FAKE || vote?.status === VoteStatus.ADMIN_DENIED;
@@ -330,7 +337,7 @@ export async function sendDelayedForward(job: DelayedForwardJob, deps: DelayedFo
             ...job.stats,
             sentAt: new Date(),
             badges: { delayed: true, simulated: job.dryRun },
-            flavorText: getBiomeMeta(job.biome)?.flavorText,
+            flavorText: getBiomeFlavorText(job.biome),
         });
         await channel.send({
             components: [container],
@@ -370,8 +377,8 @@ export async function setDelayedForward(
 
     const delay = requireValidDelay(delayS);
     const biomes = resolveBiomeSelector(selector);
-    if (biomes.some((biome) => getBiomeMeta(biome)?.category !== "rare")) {
-        throw new BiomeHuntError("Delayed forwards are only for rare biomes.");
+    if (biomes.some((biome) => !isMerchantTarget(biome) && getBiomeMeta(biome)?.category !== "rare")) {
+        throw new BiomeHuntError("Delayed forwards are only for rare biomes and merchants.");
     }
     for (const biome of biomes) await setDelayedForwardConfig(guildId, biome, channelId, roleId, delay);
 

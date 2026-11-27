@@ -38,8 +38,14 @@ const tallyOf = (ballots: ReadonlyArray<{ choice: VoteChoice }>): Tally => {
  * `jumpLink` is the macro message's link, which its forward votes keep. A vote is looked up by it
  * too, because an admin's Deny removes the event but leaves the vote.
  */
-export async function loadFindRecord(jumpLink: string, recorded: RecordedEvent | null, userId: number | null): Promise<FindRecord> {
-    const at = recorded?.received_at;
+export async function loadFindRecord(
+    jumpLink: string,
+    recorded: RecordedEvent | null,
+    userId: number | null,
+    /** When the message's merchant find was stored, for a message with no biome event. */
+    merchantAt?: Date,
+): Promise<FindRecord> {
+    const at = recorded?.received_at ?? merchantAt;
     const [sessions, rewards, vote, casualRow, post] = await Promise.all([
         at && userId !== null ? getSessionsCovering(userId, new Date(at.getTime() - SESSION_SLACK_MS), at) : [],
         recorded ? getRewardsByEventIds([recorded.id]) : [],

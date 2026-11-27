@@ -16,6 +16,7 @@ import {
     setSessionUncounted,
 } from "../repository/activity.repository";
 import { getGuildRoles, getOrCreateGuildConfig } from "../repository/guilds.repository";
+import { getMerchantCountsInRange } from "../repository/merchant-events.repository";
 import { getActivePause, type PauseRow } from "../repository/pauses.repository";
 import { enqueueRoleJob } from "../repository/role-jobs.repository";
 import {
@@ -32,6 +33,7 @@ import { RECENT_ACTIVITY_WINDOW_HOURS } from "../views/stats-builders";
 import { grantBiomeReward } from "./biome-reward.service";
 import { checkAndForward } from "./forward.service";
 import { trackMacroHealth } from "./macro-health.service";
+import { recordMerchantFind } from "./merchant.service";
 import { scheduleNetworkPostSafely } from "./network-publish.service";
 import { quotaDayWindow } from "./quota.service";
 
@@ -105,8 +107,17 @@ export async function processIncomingMessage(message: Message): Promise<void> {
 
     if (parsed) await recordBiomeEvent(message, entry, parsed, now);
     // A checkpoint is no find, but it proves the macro is hunting: it counts as macro time.
-    else if (checkpoint) await recordActivity(entry, checkpoint, now);
-    else logger.verbose(`No biome or checkpoint parsed for message ${message.id}`);
+    else if (checkpoint) {
+        const { merchant } = checkpoint;
+        if (merchant) {
+            const find = { userId: entry.userId, merchant, macroType: inspection.parserId, serverLink: inspection.serverLink };
+            // A failed record or forward must not cost the member their macro time.
+            await recordMerchantFind(message, entry.guildId, find).catch((err) =>
+                logger.error(err instanceof Error ? err : new Error(String(err))),
+            );
+        }
+        await recordActivity(entry, checkpoint, now);
+    } else logger.verbose(`No biome or checkpoint parsed for message ${message.id}`);
 }
 
 /** Stores the find, rewards and forwards it, and counts it as activity. A message seen before does nothing. */
@@ -193,16 +204,14 @@ export async function reportSessionEnd(client: BotClient, userId: number): Promi
     const guildConfig = await getOrCreateGuildConfig(user.guild_id);
     const quotaDay = quotaDayWindow(guildConfig.quota_eval_hour_utc, new Date());
 
-    const [biomes, windowSeconds, todaySeconds] = await Promise.all([
+    const [biomes, merchants, windowSeconds, todaySeconds] = await Promise.all([
         getBiomeCountsInRange(userId, session.started_at, session.ended_at),
+        getMerchantCountsInRange(userId, session.started_at, session.ended_at),
         getActiveSecondsInWindow(userId, RECENT_ACTIVITY_WINDOW_HOURS),
         getActiveSecondsBetween(userId, quotaDay.start, quotaDay.end),
     ]);
-    const container = buildSessionEndContainer(session, biomes, {
-        todaySeconds,
-        windowSeconds,
-        windowHours: RECENT_ACTIVITY_WINDOW_HOURS,
-    });
+    const totals = { todaySeconds, windowSeconds, windowHours: RECENT_ACTIVITY_WINDOW_HOURS };
+    const container = buildSessionEndContainer(session, biomes, totals, merchants);
 
     try {
         await channel.send({ flags: MessageFlags.IsComponentsV2, components: [container] });

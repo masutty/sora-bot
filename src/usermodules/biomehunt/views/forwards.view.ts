@@ -7,19 +7,22 @@ import { getDelayedForwardConfigs, removeDelayedForwardConfig } from "../reposit
 import { getForwardConfig, getForwardConfigs, removeForwardConfig, setForwardConfig } from "../repository/forwards.repository";
 import { getNetworkGuild } from "../repository/network.repository";
 import { setDelayedForward } from "../services/forward.service";
-import { type BiomeCategory, type BiomeDelayedForwardRow, type BiomeForwardRow, NetworkStatus } from "../types";
+import { type BiomeDelayedForwardRow, type BiomeForwardRow, NetworkStatus } from "../types";
 import { buildTestForwardPost } from "./forward-post.view";
 import {
     DEFAULT_DELAY_S,
     FORWARD_TABS,
     FORWARDS_PER_PAGE,
+    type ForwardTab,
     forwardPages,
+    hasDelay,
     isRare,
     NETWORK_NOTE,
     renderForwards,
     showNetworkNotes,
     TAB_NOUN,
     tabBiomes,
+    tabHasDelay,
 } from "./forwards.screens";
 
 const RED = 0xda373c;
@@ -31,7 +34,7 @@ export interface ForwardsDeps {
     getDelayedForwards(): Promise<BiomeDelayedForwardRow[]>;
     setForward(biome: string, channelId: string, roleId: string | null): Promise<void>;
     removeForward(biome: string): Promise<void>;
-    /** Rare biomes only. */
+    /** Rare biomes and merchants only. */
     setDelayed(biome: string, channelId: string, roleId: string | null, delayS: number): Promise<void>;
     removeDelayed(biome: string): Promise<void>;
     /** Whether the bot can see the channel and send in it. */
@@ -56,7 +59,7 @@ export interface ForwardsAllDraft {
 
 export interface ForwardsState {
     screen: ForwardsScreen;
-    tab: BiomeCategory;
+    tab: ForwardTab;
     page: number;
     /** The biome in the editor. */
     biome: string | null;
@@ -202,11 +205,15 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
         const name = formatBiomeName(biome);
         const rare = isRare(biome);
         const network = showNetworkNotes(c.state) && rare;
+        const delayable = hasDelay(biome);
         const stopped = await c.open(
             confirm({
                 name: "biomehunt.forwards-stop",
                 title: `Stop forwarding ${name}?`,
-                body: [rare ? "Its Now and delayed forwards both stop." : "Its forward stops.", ...(network ? [`-# ${NETWORK_NOTE}`] : [])],
+                body: [
+                    delayable ? "Its Now and delayed forwards both stop." : "Its forward stops.",
+                    ...(network ? [`-# ${NETWORK_NOTE}`] : []),
+                ],
                 color: RED,
                 confirmLabel: "Stop forwarding",
                 confirmStyle: ButtonStyle.Danger,
@@ -271,7 +278,7 @@ export function forwardsView(deps: ForwardsDeps): ViewDefinition<ForwardsState, 
                 writes.push({ kind: "now", biome, channelId: d.channelId, roleId: nowRole, delayS: 0 });
                 if (curNow) lines.push(`**Now:** ${name} is currently forwarding to <#${curNow.channel_id}>.`);
             }
-            if (s.tab !== "rare") continue;
+            if (!tabHasDelay(s.tab)) continue;
             const cur = lateByBiome[biome];
             const channelId = d.lateChannelId ?? cur?.channel_id;
             const touched = d.lateChannelId !== null || delay !== null || (d.copyPings && cur !== undefined);

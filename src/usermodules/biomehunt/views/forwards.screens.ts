@@ -14,9 +14,11 @@ import {
     BIOME_CATEGORY_LABELS,
     formatBiomeName,
     getAllBiomes,
+    getBiomeColor,
     getBiomeIconUrl,
     getBiomeMeta,
 } from "../constants/biomes.constants";
+import { getEnabledMerchants, isMerchantTarget, merchantTarget } from "../constants/merchants.constants";
 import { settings } from "../settings";
 import { type BiomeCategory, NetworkStatus } from "../types";
 import type { ForwardsState } from "./forwards.view";
@@ -25,12 +27,20 @@ export const FORWARDS_PER_PAGE = 5;
 
 /** Tabs in display order; the admin category is never listed. */
 const TAB_ORDER: BiomeCategory[] = ["weather", "biome", "event", "rare"];
-export const FORWARD_TABS: Array<{ key: BiomeCategory; label: string }> = TAB_ORDER.filter(
-    (key) => key !== "admin" && ALL_BIOME_CATEGORIES.includes(key),
-).map((key) => ({ key, label: { weather: "Weather", biome: "Biomes", event: "Events", rare: "Rare" }[key as string] ?? key }));
+/** A biome category, or the merchants. */
+export type ForwardTab = BiomeCategory | "merchant";
+
+export const FORWARD_TABS: Array<{ key: ForwardTab; label: string }> = [
+    ...TAB_ORDER.filter((key) => key !== "admin" && ALL_BIOME_CATEGORIES.includes(key)).map((key) => ({
+        key: key as ForwardTab,
+        label: { weather: "Weather", biome: "Biomes", event: "Events", rare: "Rare" }[key as string] ?? key,
+    })),
+    { key: "merchant", label: "Merchants" },
+];
 
 /** What the tab's biomes are called in a sentence ("Apply to all 4 rare biomes?"). */
-export const TAB_NOUN: Partial<Record<BiomeCategory, string>> = {
+export const TAB_NOUN: Partial<Record<ForwardTab, string>> = {
+    merchant: "merchants",
     weather: "weather biomes",
     biome: "biomes",
     event: "event biomes",
@@ -39,19 +49,24 @@ export const TAB_NOUN: Partial<Record<BiomeCategory, string>> = {
 
 export const NETWORK_NOTE = "The Network needs a forward for every rare biome.";
 
-/** The enabled biomes of a category, in registry order. */
-export function tabBiomes(tab: BiomeCategory): string[] {
+/** What a tab forwards: the enabled biomes of a category, or the enabled merchants, in registry order. */
+export function tabBiomes(tab: ForwardTab): string[] {
+    if (tab === "merchant") return getEnabledMerchants().map((m) => merchantTarget(m.key));
     return getAllBiomes()
         .filter((b) => b.enabled && b.category === tab)
         .map((b) => b.key);
 }
 
-export const forwardPages = (tab: BiomeCategory) => Math.max(1, Math.ceil(tabBiomes(tab).length / FORWARDS_PER_PAGE));
+export const forwardPages = (tab: ForwardTab) => Math.max(1, Math.ceil(tabBiomes(tab).length / FORWARDS_PER_PAGE));
 
 /** Whether the Network notes show: only for a server that is in the Network or asking to join. */
 export const showNetworkNotes = (s: ForwardsState) => s.network === NetworkStatus.PENDING || s.network === NetworkStatus.MEMBER;
 
 export const isRare = (biome: string) => getBiomeMeta(biome)?.category === "rare";
+
+/** Rare biomes and merchants can also have a delayed forward. */
+export const hasDelay = (biome: string) => isRare(biome) || isMerchantTarget(biome);
+export const tabHasDelay = (tab: ForwardTab) => tab === "rare" || tab === "merchant";
 
 /** The delay that "Set for all" and a new delayed forward start with. */
 export const DEFAULT_DELAY_S = settings.delayedForward.delayChoicesS.includes(30) ? 30 : settings.delayedForward.delayChoicesS[0];
@@ -75,7 +90,7 @@ const cantPost = (s: ForwardsState, channelId: string) => s.blocked.includes(cha
 /** One biome's lines on the list: its Now forward, then (rare only) its delayed forward. */
 function rowLines(s: ForwardsState, biome: string): string {
     const now = s.forwards[biome];
-    const late = isRare(biome) ? s.delayed[biome] : undefined;
+    const late = hasDelay(biome) ? s.delayed[biome] : undefined;
     const network = showNetworkNotes(s) && isRare(biome);
 
     if (!now && !late) return network ? `⚠️ Not forwarded\n-# ${NETWORK_NOTE}` : "-# Not forwarded";
@@ -113,13 +128,13 @@ function tabsRow(s: ForwardsState, kit: RenderKit): ActionRowBuilder<ButtonBuild
 
 function listScreen(s: ForwardsState, kit: RenderKit): Parts {
     const { container, divider } = newContainer();
-    const label = FORWARD_TABS.find((t) => t.key === s.tab)?.label ?? BIOME_CATEGORY_LABELS[s.tab];
+    const label = FORWARD_TABS.find((t) => t.key === s.tab)?.label ?? s.tab;
     container.addTextDisplayComponents((td) => td.setContent(`**Forwards · ${label}**\nWhere each find gets posted.`));
     divider();
     const biomes = tabBiomes(s.tab);
-    if (biomes.length === 0) container.addTextDisplayComponents((td) => td.setContent("No biomes in this category."));
+    if (biomes.length === 0) container.addTextDisplayComponents((td) => td.setContent("Nothing to forward here."));
     biomes.slice(s.page * FORWARDS_PER_PAGE, (s.page + 1) * FORWARDS_PER_PAGE).forEach((biome, slot, shown) => {
-        const configured = Boolean(s.forwards[biome] || (isRare(biome) && s.delayed[biome]));
+        const configured = Boolean(s.forwards[biome] || (hasDelay(biome) && s.delayed[biome]));
         container.addSectionComponents((section) =>
             section
                 .addTextDisplayComponents((td) => td.setContent(`**${formatBiomeName(biome)}**\n${rowLines(s, biome)}`))
@@ -147,10 +162,11 @@ function editorScreen(s: ForwardsState, kit: RenderKit): Parts {
     const meta = getBiomeMeta(biome);
     const now = s.forwards[biome];
     const late = s.delayed[biome];
-    const rare = isRare(biome);
-    const { container, divider } = newContainer(meta?.color);
+    const delayable = hasDelay(biome);
+    const { container, divider } = newContainer(getBiomeColor(biome));
 
-    const kind = rare ? "Rare biome" : (BIOME_CATEGORY_LABELS[meta?.category ?? "biome"] ?? "Biome");
+    const biomeKind = isRare(biome) ? "Rare biome" : (BIOME_CATEGORY_LABELS[meta?.category ?? "biome"] ?? "Biome");
+    const kind = isMerchantTarget(biome) ? "Merchant" : biomeKind;
     const heading = `## ${formatBiomeName(biome)}\n${kind}`;
     const iconUrl = getBiomeIconUrl(biome);
     if (iconUrl) {
@@ -183,7 +199,7 @@ function editorScreen(s: ForwardsState, kit: RenderKit): Parts {
         ),
     );
 
-    if (rare) {
+    if (delayable) {
         divider();
         container.addTextDisplayComponents((td) => td.setContent("**After a delay**\nA second post, later."));
         container.addActionRowComponents(
@@ -210,7 +226,7 @@ function editorScreen(s: ForwardsState, kit: RenderKit): Parts {
         );
     }
 
-    const any = Boolean(now || (rare && late));
+    const any = Boolean(now || (delayable && late));
     return [
         container,
         row(
@@ -224,11 +240,10 @@ function editorScreen(s: ForwardsState, kit: RenderKit): Parts {
 function allScreen(s: ForwardsState, kit: RenderKit): Parts {
     const { container, divider } = newContainer();
     const noun = TAB_NOUN[s.tab] ?? "biomes";
-    const rare = s.tab === "rare";
+    const rare = tabHasDelay(s.tab);
     const count = tabBiomes(s.tab).length;
-    container.addTextDisplayComponents((td) =>
-        td.setContent(`## Set for all ${noun}\nApplies to all ${count}.${rare ? " Each biome keeps its own ping." : ""}`),
-    );
+    const ownPing = ` Each ${s.tab === "merchant" ? "merchant" : "biome"} keeps its own ping.`;
+    container.addTextDisplayComponents((td) => td.setContent(`## Set for all ${noun}\nApplies to all ${count}.${rare ? ownPing : ""}`));
     divider();
     container.addTextDisplayComponents((td) => td.setContent("**Now**"));
     container.addActionRowComponents(
