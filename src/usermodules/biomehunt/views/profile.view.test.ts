@@ -30,6 +30,7 @@ function fakeUser(overrides: Partial<UserRow> = {}): UserRow {
         seeds: 0,
         xp: 0,
         flower: null,
+        webhook_regenerated_at: null,
         ...overrides,
     };
 }
