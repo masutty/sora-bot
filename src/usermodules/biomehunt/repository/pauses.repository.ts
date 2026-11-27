@@ -3,7 +3,7 @@ import { query, transaction } from "@/database/connection";
 
 export type PauseKind = "forced" | "self";
 export type PauseNotify = "now" | "session_end";
-export type PauseEndReason = "member" | "admin" | "expired" | "session_end" | "replaced";
+export type PauseEndReason = "member" | "dismissed" | "admin" | "expired" | "session_end" | "replaced";
 export type PauseUntil = { kind: "interaction" } | { kind: "session_end" } | { kind: "time"; at: Date };
 
 export interface PauseRow {
@@ -16,6 +16,10 @@ export interface PauseRow {
     notify: PauseNotify;
     until: PauseUntil;
     notice_sent_at: Date | null;
+    dismissable: boolean;
+    notice_channel_id: string | null;
+    notice_message_id: string | null;
+    reminder_sent_at: Date | null;
     started_at: Date;
     ended_at: Date | null;
     ended_reason: PauseEndReason | null;
@@ -60,6 +64,7 @@ export async function createPause(input: {
     counts: boolean;
     notify: PauseNotify;
     until: PauseUntil;
+    dismissable: boolean;
 }): Promise<PauseRow> {
     return transaction(async (client) => {
         await client.query(`SELECT id FROM bh_users WHERE id = $1 FOR UPDATE`, [input.userId]);
@@ -68,8 +73,8 @@ export async function createPause(input: {
             input.userId,
         ]);
         const result = await client.query<PauseDbRow>(
-            `INSERT INTO bh_pauses (user_id, kind, message, by_discord_id, counts, notify, until_kind, until_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO bh_pauses (user_id, kind, message, by_discord_id, counts, notify, until_kind, until_at, dismissable)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING *`,
             [
                 input.userId,
@@ -80,6 +85,7 @@ export async function createPause(input: {
                 input.notify,
                 input.until.kind,
                 input.until.kind === "time" ? input.until.at : null,
+                input.dismissable,
             ],
         );
         await client.query(`UPDATE bh_users SET paused_at = NOW() WHERE id = $1`, [input.userId]);
@@ -105,8 +111,28 @@ export async function getPauseById(pauseId: number): Promise<PauseRow | null> {
     return result.rows[0] ? toPauseRow(result.rows[0]) : null;
 }
 
-export async function markNoticeSent(pauseId: number): Promise<void> {
-    await query(`UPDATE bh_pauses SET notice_sent_at = NOW() WHERE id = $1`, [pauseId]);
+export interface NoticeLocation {
+    channelId: string;
+    messageId: string;
+}
+
+/** Records that the Notice went out, and where when known - a later call without it keeps the place. */
+export async function markNoticeSent(pauseId: number, location?: NoticeLocation): Promise<void> {
+    await query(
+        `UPDATE bh_pauses SET notice_sent_at = NOW(),
+             notice_channel_id = COALESCE($2, notice_channel_id), notice_message_id = COALESCE($3, notice_message_id)
+         WHERE id = $1`,
+        [pauseId, location?.channelId ?? null, location?.messageId ?? null],
+    );
+}
+
+/** `true` for the one call that gets to send the reminder of a still-running pause. */
+export async function claimPauseReminder(pauseId: number): Promise<boolean> {
+    const result = await query(
+        `UPDATE bh_pauses SET reminder_sent_at = NOW() WHERE id = $1 AND reminder_sent_at IS NULL AND ended_at IS NULL`,
+        [pauseId],
+    );
+    return (result.rowCount ?? 0) > 0;
 }
 
 export async function getDueTimedPauses(now: Date): Promise<PauseRow[]> {

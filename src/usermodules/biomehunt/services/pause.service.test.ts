@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PauseRow, PauseUntil } from "../repository/pauses.repository";
 import { BiomeHuntError, type UserRow } from "../types";
 import {
+    dismissPause,
     endPauseFromMember,
     expireDueTimedPauses,
     forcePause,
@@ -24,6 +25,10 @@ function pauseRow(over: Partial<PauseRow> = {}): PauseRow {
         notify: "session_end",
         until: { kind: "interaction" },
         notice_sent_at: null,
+        dismissable: true,
+        notice_channel_id: null,
+        notice_message_id: null,
+        reminder_sent_at: null,
         started_at: NOW,
         ended_at: null,
         ended_reason: null,
@@ -69,6 +74,8 @@ function makeDeps(
         markCurrentSessionUncounted: async (userId) => {
             calls.uncounted.push(userId);
         },
+        claimPauseReminder: async () => true,
+        sendReminder: async () => {},
         sendNotice: async (pause) => {
             calls.sent.push(pause.id);
             return opts.noticeOk ?? true;
@@ -214,7 +221,7 @@ describe("expireDueTimedPauses", () => {
 describe("endPauseFromMember", () => {
     test("ended for the owner", async () => {
         const { deps, calls } = makeDeps({ active: pauseRow() });
-        expect(await endPauseFromMember(7, "member", deps)).toBe("ended");
+        expect(await endPauseFromMember(7, "member", deps)).toMatchObject({ discordUserId: "member" });
         expect(calls.ended).toEqual([{ id: 7, reason: "member" }]);
     });
     test("not_owner for someone else", async () => {
@@ -235,5 +242,41 @@ describe("unpauseByAdmin", () => {
     });
     test("throws when not paused", async () => {
         await expect(unpauseByAdmin("g", "member", makeDeps({ active: null }).deps)).rejects.toThrow(BiomeHuntError);
+    });
+});
+
+describe("the reminder", () => {
+    const sent = pauseRow({ notify: "now", notice_sent_at: NOW, notice_channel_id: "c", notice_message_id: "m" });
+
+    async function endSession(active: PauseRow, claim = true) {
+        const reminded: number[] = [];
+        const { deps } = makeDeps({ active });
+        deps.claimPauseReminder = async () => claim;
+        deps.sendReminder = async (pause) => void reminded.push(pause.id);
+        await onSessionEnded(deps, 1);
+        return reminded;
+    }
+
+    test("an unanswered Notice sent right away gets one when the session ends", async () => {
+        expect(await endSession(sent)).toEqual([7]);
+        expect(await endSession(sent, false)).toEqual([]);
+    });
+    test("none for a Notice sent at session end, or a pause ending with the session", async () => {
+        expect(await endSession({ ...sent, notify: "session_end" })).toEqual([]);
+        expect(await endSession({ ...sent, until: { kind: "session_end" } })).toEqual([]);
+    });
+});
+
+describe("dismissPause", () => {
+    test("ends a dismissable pause as dismissed, for its owner only", async () => {
+        const { deps, calls } = makeDeps({ active: pauseRow() });
+        expect(await dismissPause(7, "other", deps)).toBe("not_owner");
+        expect(await dismissPause(7, "member", deps)).toMatchObject({ discordUserId: "member" });
+        expect(calls.ended).toEqual([{ id: 7, reason: "dismissed" }]);
+    });
+    test("refuses a pause that can't be dismissed", async () => {
+        const { deps, calls } = makeDeps({ active: pauseRow({ dismissable: false }) });
+        expect(await dismissPause(7, "member", deps)).toBe("not_dismissable");
+        expect(calls.ended).toEqual([]);
     });
 });

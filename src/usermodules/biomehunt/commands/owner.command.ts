@@ -24,6 +24,7 @@ import { isFlagEnabled } from "../repository/flags.repository";
 import { getForwardConfig } from "../repository/forwards.repository";
 import { deleteGuildData, getAllGuildIds, getGuildDataSummary, type StaleGuildSummary } from "../repository/guilds.repository";
 import { getMerchantEventByMessageId, insertMerchantEventIfNew } from "../repository/merchant-events.repository";
+import { getActivePause } from "../repository/pauses.repository";
 import { getUserByDiscordId, getUserById, getUsersByDiscordId, lookupChannel } from "../repository/users.repository";
 import { applyUserRewardBackfill, grantBiomeReward, planUserRewardBackfill } from "../services/biome-reward.service";
 import { setVoteWindow, VOTE_WINDOW_MAX_S, VOTE_WINDOW_MIN_S, type VoteKind } from "../services/biome-vote.service";
@@ -309,6 +310,7 @@ async function runParseMessage(ctx: CommandContext): Promise<void> {
         recorded,
         record: await loadFindRecord(message.url, recorded, tracked?.userId ?? null, message.createdAt),
         merchantEvent,
+        pause: tracked ? await getActivePause(tracked.userId) : null,
         raw: JSON.stringify(raw, null, 2),
     });
 }

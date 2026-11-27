@@ -3,6 +3,7 @@ import { type ContainerBuilder, MessageFlags, PermissionFlagsBits, SlashCommandB
 import type { BotClient } from "@/core/bot-client";
 import { type CommandArgs, defineCommand } from "@/define";
 import { CommandCategory } from "@/types";
+import { parseDuration } from "@/utils/duration";
 import { EmbedFormatter, type FormattedReply, NO_PINGS } from "@/utils/format";
 import { getBadgeMeta, getRoleBadges, resolveBadgeSlug } from "../constants/badges.constants";
 import { MAX_DISCORD_CHOICES } from "../constants/biomes.constants";
@@ -47,6 +48,23 @@ function normalizeChoice(raw: string): string {
 }
 
 /** Maps the `/admin pause` options (slash or prefix) to the `forcePause` input. Pure: no Discord calls. */
+const UNTIL_PRESETS = [
+    { name: "Until they respond", value: "interaction" },
+    { name: "Until their session ends", value: "session end" },
+    { name: "1 hour", value: "1h" },
+    { name: "6 hours", value: "6h" },
+    { name: "1 day", value: "1d" },
+    { name: "3 days", value: "3d" },
+];
+
+/** What `until` suggests: the presets matching what was typed, after the typed time itself when it is one. */
+export function untilChoices(typed: string): Array<{ name: string; value: string }> {
+    const text = typed.trim().toLowerCase();
+    const matching = UNTIL_PRESETS.filter((p) => p.name.toLowerCase().includes(text) || p.value.includes(text));
+    const isPreset = UNTIL_PRESETS.some((p) => p.value === text);
+    return text && !isPreset && parseDuration(text, "h") !== null ? [{ name: `For ${text}`, value: text }, ...matching] : matching;
+}
+
 export function parsePauseOptions(
     args: Pick<CommandArgs, "getString" | "getBoolean">,
     target: { guildId: string; discordUserId: string; byDiscordId: string },
@@ -68,7 +86,8 @@ export function parsePauseOptions(
     return {
         ...target,
         message,
-        count: args.getBoolean("count") ?? false,
+        count: !(args.getBoolean("invalidate_sessions_while_paused") ?? true),
+        dismissable: args.getBoolean("dismissable") ?? true,
         notify: notifyRaw === "now" ? "now" : "session_end",
         until,
     };
@@ -82,7 +101,7 @@ export default defineCommand({
     adminOnly: true,
     guildOnly: true,
     onMissingSubcommand: "run",
-    prefixNamedOnly: ["pause:count", "pause:notify", "pause:until"],
+    prefixNamedOnly: ["pause:invalidate_sessions_while_paused", "pause:notify", "pause:until", "pause:dismissable"],
 
     options: new SlashCommandBuilder()
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -121,7 +140,9 @@ export default defineCommand({
                 .setDescription("Pause a member and tell them in their Macro Channel.")
                 .addUserOption((o) => o.setName("user").setDescription("Member to pause").setRequired(true))
                 .addStringOption((o) => o.setName("message").setDescription("What the member is told").setRequired(true).setMaxLength(1000))
-                .addBooleanOption((o) => o.setName("count").setDescription("Sessions keep counting (default: no)"))
+                .addBooleanOption((o) =>
+                    o.setName("invalidate_sessions_while_paused").setDescription("Nothing they do counts while paused (default: yes)"),
+                )
                 .addStringOption((o) =>
                     o
                         .setName("notify")
@@ -129,8 +150,12 @@ export default defineCommand({
                         .addChoices({ name: "now", value: "now" }, { name: "session end", value: "session end" }),
                 )
                 .addStringOption((o) =>
-                    o.setName("until").setDescription("interaction, session end or a time like 3d (default: interaction)"),
-                ),
+                    o
+                        .setName("until")
+                        .setDescription("When it ends: pick one, or type a time like 12h (default: they respond)")
+                        .setAutocomplete(true),
+                )
+                .addBooleanOption((o) => o.setName("dismissable").setDescription("Let them dismiss the message (default: yes)")),
         )
         .addSubcommand((s) =>
             s
@@ -149,6 +174,7 @@ export default defineCommand({
         const focused = interaction.options.getFocused(true);
         if (focused.name === "id" && interaction.guild)
             return interaction.respond(await checkVoteChoices(interaction.guild, focused.value));
+        if (focused.name === "until") return interaction.respond(untilChoices(focused.value));
         if (focused.name !== "badge") return interaction.respond([]);
         await interaction.respond(badgeAutocompleteChoices(focused.value));
     },

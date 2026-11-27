@@ -4,7 +4,7 @@ import { prefixArgs } from "@/core/command/command-args";
 import { fakeClient, fakeUser } from "@/core/command/fakes";
 import { deriveSubcommandSchema, PrefixArgs } from "@/core/command/prefix-args";
 import { BiomeHuntError } from "../types";
-import admin, { parsePauseOptions } from "./admin.command";
+import admin, { parsePauseOptions, untilChoices } from "./admin.command";
 
 const target = { guildId: "g1", discordUserId: "u1", byDiscordId: "admin1" };
 
@@ -21,6 +21,7 @@ describe("parsePauseOptions", () => {
             count: false,
             notify: "now",
             until: { kind: "interaction" },
+            dismissable: true,
         });
     });
 
@@ -33,10 +34,15 @@ describe("parsePauseOptions", () => {
             expect(parsePauseOptions(args({ message: "hi", until }), target).until).toEqual({ kind: "session_end" });
     });
 
-    test("maps notify and count", () => {
-        const input = parsePauseOptions(args({ message: "hi", notify: "session end", count: true }), target);
-        expect(input.notify).toBe("session_end");
-        expect(input.count).toBe(true);
+    test("maps notify, invalidation and dismissable", () => {
+        const values = { message: "hi", notify: "session end", invalidate_sessions_while_paused: false, dismissable: false };
+        expect(parsePauseOptions(args(values), target)).toMatchObject({ notify: "session_end", count: true, dismissable: false });
+    });
+
+    test("until suggests the presets, and a typed time first", () => {
+        expect(untilChoices("").map((c) => c.value)).toEqual(["interaction", "session end", "1h", "6h", "1d", "3d"]);
+        expect(untilChoices("12h")[0]).toEqual({ name: "For 12h", value: "12h" });
+        expect(untilChoices("session").map((c) => c.value)).toEqual(["session end"]);
     });
 
     test("rejects a missing or blank message", () => {
@@ -74,7 +80,16 @@ describe("!admin pause prefix form", () => {
     });
 
     test("named options still work anywhere in the line", () => {
-        const input = parse(["pause", "<@1234567890123456789>", "count:no", "notify:now", "until:3d", "take", "a", "break"]);
+        const input = parse([
+            "pause",
+            "<@1234567890123456789>",
+            "invalidate_sessions_while_paused:yes",
+            "notify:now",
+            "until:3d",
+            "take",
+            "a",
+            "break",
+        ]);
         expect(input).toMatchObject({ message: "take a break", count: false, until: { kind: "time", duration: "3d" } });
     });
 
