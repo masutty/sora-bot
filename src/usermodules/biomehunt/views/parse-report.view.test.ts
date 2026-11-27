@@ -86,6 +86,30 @@ test("Texts read lists what the parser looked at", async () => {
     expect(payload).toContain("code=secret123");
 });
 
+test("a merchant report shows its own pages, with the session and without biome groups", async () => {
+    const at = new Date(1_000_000);
+    const record = {
+        session: { id: 9, user_id: 1, started_at: at, ended_at: at, duration_seconds: 60, counted: true },
+        reward: null,
+        vote: null,
+        casual: null,
+        network: null,
+    };
+    const inspection = inspectMessage({ webhookId: "w", embeds: [{ description: "> ## Mari has arrived!" }] });
+    const fake = await open("x", { inspection, record });
+    expect(shown(fake)).toContain("**Merchant:** `Mari`");
+
+    await fake.emit(fake.click("tab:find", OWNER));
+    expect(shown(fake)).toContain("No merchant stored");
+    expect(shown(fake)).toContain("**Session:** `#9`");
+    expect(shown(fake)).not.toContain("No biome event stored");
+    expect(shown(fake)).not.toContain("Given to the member");
+
+    await fake.emit(fake.click("tab:votes", OWNER));
+    expect(shown(fake)).toContain("No casual vote");
+    expect(shown(fake)).not.toContain("Network");
+});
+
 test("a message reference is a link, or an id in the current channel", () => {
     const id = "1575480119227846751";
     expect(parseMessageReference("https://ptb.discord.com/channels/1/2/3", "9")).toEqual({ channelId: "2", messageId: "3" });
