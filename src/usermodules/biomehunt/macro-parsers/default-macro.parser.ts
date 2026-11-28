@@ -12,7 +12,7 @@ export const MAX_BIOME_NAME_WORDS = 5;
  * "NULL'S" stays one word (key part `NULLS`) instead of being cut to "NULL", which would match the
  * Null biome.
  */
-const BIOME_WORD = "[A-Za-z0-9_]+(?:['’-][A-Za-z0-9_]+)*";
+const BIOME_WORD = String.raw`[\p{L}\p{M}\p{N}_]+(?:['’-][\p{L}\p{M}\p{N}_]+)*`;
 
 /**
  * The `words` group every biome regex captures: 1 to `MAX_BIOME_NAME_WORDS` words. It may run on
@@ -22,10 +22,10 @@ const BIOME_WORD = "[A-Za-z0-9_]+(?:['’-][A-Za-z0-9_]+)*";
 export const BIOME_WORDS_PATTERN = String.raw`(?<words>${BIOME_WORD}(?:\s+${BIOME_WORD}){0,${MAX_BIOME_NAME_WORDS - 1}})`;
 
 /** Matches "Biome Started/Ended - NAME". */
-export const DEFAULT_BIOME_REGEX = new RegExp(String.raw`Biome\s+(?<event>Started|Ended)\b[^A-Za-z0-9]*` + BIOME_WORDS_PATTERN, "i");
+export const DEFAULT_BIOME_REGEX = new RegExp(String.raw`Biome\s+(?<event>Started|Ended)\b[^\p{L}\p{N}]*` + BIOME_WORDS_PATTERN, "iu");
 
 /** Matches "NAME Biome Started/Ended" - the biome name comes before the anchor, not after. */
-export const NAME_FIRST_BIOME_REGEX = new RegExp(BIOME_WORDS_PATTERN + String.raw`\s+Biome\s+(?<event>Started|Ended)\b`, "i");
+export const NAME_FIRST_BIOME_REGEX = new RegExp(BIOME_WORDS_PATTERN + String.raw`\s+Biome\s+(?<event>Started|Ended)\b`, "iu");
 
 const DEFAULT_THUMBNAIL_REGEX = /\/([A-Z_]+)\.png$/i;
 

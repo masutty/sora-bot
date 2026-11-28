@@ -222,12 +222,16 @@ export const DEFAULT_BIOMES: Record<string, BiomeMeta> = {
 };
 
 /**
- * The form every biome key is stored in: uppercase letters and digits only. Macros write names with
- * spaces and punctuation ("SAND STORM", "THE NULL'S EXISTENCE") - all of it is dropped, so
- * `THE NULL'S EXISTENCE` -> `THENULLSEXISTENCE`.
+ * The form every biome key is stored in: uppercase letters and digits only, in any script (event
+ * biomes have Japanese names like `ビバリウム`). Macros write names with spaces and punctuation
+ * ("SAND STORM", "THE NULL'S EXISTENCE") - all of it is dropped, so
+ * `THE NULL'S EXISTENCE` -> `THENULLSEXISTENCE`. NFKC folds full-width/half-width forms together.
  */
 export function normalizeBiomeName(raw: string): string {
-    return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return raw
+        .normalize("NFKC")
+        .toUpperCase()
+        .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
 }
 
 function defaultEntries(): BiomeEntry[] {

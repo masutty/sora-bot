@@ -64,7 +64,6 @@ export interface CaseDiscord {
     removeButtons?(ref: PostRef): Promise<void>;
     /** Whether the user is in the server. */
     isMember(guildId: string, userId: string): Promise<boolean>;
-    isBanned(guildId: string, userId: string): Promise<boolean>;
     /**
      * `null` when the actor may act on the target, else the refusal text. `moderatorId` null is the
      * bot itself (Auto-Punishment): only the bot's own hierarchy is checked. `action` also checks
@@ -191,8 +190,9 @@ export function createCaseService(deps: CaseDeps): CaseService {
         }
     }
 
-    /** A DM failure never blocks anything - it only reads as "not delivered". */
+    /** A DM failure never blocks anything - it only reads as "not delivered". Someone not in the server is never DMed. */
     async function sendDm(cfg: ModSettings, guildId: string, userId: string, event: DmEvent): Promise<DmOutcome> {
+        if (!(await discord.isMember(guildId, userId))) return { dm_delivered: null, dm_error: null };
         let error: string | null;
         try {
             error = await discord.dm(
@@ -302,11 +302,8 @@ export function createCaseService(deps: CaseDeps): CaseService {
         if (kind === "mute") checkDuration(durationS ?? 0, settings.maxMuteSeconds, "a mute");
         if (kind === "ban" && durationS !== null) checkDuration(durationS, settings.maxLongSeconds, "a ban");
         const member = await discord.isMember(guildId, userId);
-        if ((kind === "mute" || kind === "kick") && !member) throw new ModerationError("That user is not in this server.");
-        // A softban ends with an unban, which would lift a ban that already stands.
-        if (kind === "softban" && !member && (await discord.isBanned(guildId, userId))) {
-            throw new ModerationError("That user is already banned.");
-        }
+        // Only a ban works on someone who already left; it never DMs them.
+        if (kind !== "ban" && !member) throw new ModerationError("That user is not in this server.");
 
         const cfg = await repo.getSettings(guildId);
         const now = deps.now();
@@ -393,6 +390,7 @@ export function createCaseService(deps: CaseDeps): CaseService {
             }
             const reason = reasonText(input.reason);
             if (!selfTest(userId, moderatorId)) await refuse(guildId, moderatorId, userId);
+            if (!(await discord.isMember(guildId, userId))) throw new ModerationError("That user is not in this server.");
             const cfg = await repo.getSettings(guildId);
             const now = deps.now();
             const draft = draftCase(

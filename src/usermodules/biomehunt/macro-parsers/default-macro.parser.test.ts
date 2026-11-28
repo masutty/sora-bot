@@ -136,3 +136,23 @@ test("the Normal biome is a checkpoint, never a find", () => {
         checkpoint: { kind: "normal", biome: "NORMAL", eventType: "started" },
     });
 });
+
+test("event biomes with Japanese names match, in both name orders", () => {
+    const names = ["うっせぇわ", "唱", "踊", "ビバリウム", "モンストロ"];
+    setBiomeRegistry([
+        ...getAllBiomes(),
+        ...names.map((name) => ({ key: name, label: name, category: "event" as const, color: 0xffffff, enabled: true })),
+    ]);
+    const jjaram = new JJaramParser();
+    for (const name of names) {
+        expect(parser.extractBiome({ title: `Biome Started - ${name}` })).toEqual({ biome: name, eventType: "started" });
+        expect(parser.extractBiome({ description: `**Biome Ended** - ${name} Join Server` })).toEqual({ biome: name, eventType: "ended" });
+        expect(jjaram.extractBiome({ title: `${name} Biome Started` })).toEqual({ biome: name, eventType: "started" });
+    }
+});
+
+test("an unknown Japanese biome is reported by its name, not dropped", () => {
+    const steps: Parameters<typeof parser.extractBiome>[1] = [];
+    expect(parser.extractBiome({ title: "Biome Started - 未知" }, steps)).toEqual({ biome: null, eventType: null });
+    expect(steps).toContainEqual(expect.objectContaining({ outcome: "unknown-biome", biome: "未知" }));
+});
