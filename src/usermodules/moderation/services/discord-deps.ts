@@ -72,13 +72,6 @@ export function createDiscordDeps(client: Client): CaseDiscord {
             await message.edit({ components: containers, flags: MessageFlags.IsComponentsV2 });
         },
         isMember: async (guildId, userId) => (await memberOf(guildOf(guildId), userId)) !== null,
-        isBanned: async (guildId, userId) =>
-            guildOf(guildId)
-                .bans.fetch(userId)
-                .then(
-                    () => true,
-                    () => false,
-                ),
         canAct: async (guildId, moderatorId, targetId, action) => {
             const guild = guildOf(guildId);
             const me = await meOf(guild);

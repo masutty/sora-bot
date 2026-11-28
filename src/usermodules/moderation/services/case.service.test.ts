@@ -15,7 +15,6 @@ export function makeHarness(
         dmOk?: boolean;
         refusal?: string | null;
         roleRefusal?: string | null;
-        banned?: boolean;
     } = {},
 ) {
     const cases: CaseRow[] = [];
@@ -132,9 +131,6 @@ export function makeHarness(
             async isMember() {
                 return true;
             },
-            async isBanned() {
-                return opts.banned ?? false;
-            },
             async canAct(_g, _m, _t, action) {
                 calls.push(action ? `canAct:${action}` : "canAct");
                 return opts.refusal ?? null;
@@ -250,11 +246,15 @@ describe("kick and ban", () => {
         expect(seen).toEqual(["a", "b", "c"]);
     });
 
-    test("a softban of an ID that is already banned is refused", async () => {
-        const h = makeHarness({ banned: true });
+    test("only a ban works on a user who is not in the server", async () => {
+        const h = makeHarness();
         h.deps.discord.isMember = async () => false;
-        await expect(h.service.softban(target)).rejects.toThrow("already banned");
-        expect(h.calls).not.toContain("unban");
+        for (const kind of ["mute", "kick", "softban"] as const) {
+            await expect(h.service[kind]({ ...target, durationS: 60 })).rejects.toThrow("not in this server");
+        }
+        await expect(h.service.warn(target)).rejects.toThrow("not in this server");
+        expect(h.calls).not.toContain("dm");
+        expect(h.cases).toHaveLength(0);
     });
 
     test("durations and reasons are capped", async () => {
@@ -489,6 +489,15 @@ describe("unmute, unban, editReason", () => {
             throw Object.assign(new Error("Unknown Ban"), { code: 10026 });
         };
         await expect(h.service.unban({ guildId: G, userId: USER, by: MOD })).rejects.toThrow("not banned");
+    });
+
+    test("unban of a user who is not in the server sends no DM", async () => {
+        const h = makeHarness();
+        h.deps.discord.isMember = async () => false;
+        await h.service.ban(target);
+        const ended = await h.service.unban({ guildId: G, userId: USER, by: MOD });
+        expect(ended[0]?.end_reason).toBe("revoked");
+        expect(h.calls).not.toContain("dm");
     });
 
     test("reason edit creates an event with the old and new text and posts to the Case Channel", async () => {
