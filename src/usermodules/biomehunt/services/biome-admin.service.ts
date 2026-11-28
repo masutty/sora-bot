@@ -117,7 +117,7 @@ export function biomeKeyFor(detectionName: string): string {
     const key = normalizeBiomeName(detectionName);
     if (!key)
         throw new BiomeHuntError(
-            `\`${detectionName}\` can't be matched against macro text - a detection name needs letters or digits (A-Z, 0-9). Pass \`detection_name\` with the name as macros write it.`,
+            `\`${detectionName}\` can't be matched against macro text - a detection name needs letters or digits. Pass \`detection_name\` with the name as macros write it.`,
         );
     if (key.length > MAX_KEY_LENGTH) throw new BiomeHuntError(`A detection name can have at most ${MAX_KEY_LENGTH} letters/digits.`);
     return key;
